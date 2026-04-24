@@ -1,1 +1,1 @@
-# compstat
+# This is a repository for the course stat 812
