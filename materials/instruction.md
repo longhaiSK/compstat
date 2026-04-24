@@ -1,6 +1,6 @@
 
 ## To add shinylive extension
-quarto add quarto-ext/shinylive
+quarto add quarto-ext/shinylive>
 
 ## math stat github
 
