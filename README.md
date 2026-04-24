@@ -1,2 +1,3 @@
-# This is a repository for the course computational stat
+
+This is a repository for the course **Computational Statistics**
 
