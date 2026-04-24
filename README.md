@@ -1,1 +1,1 @@
-# This is a repository for the course stat 812
+# This is a repository for the course computational stat
