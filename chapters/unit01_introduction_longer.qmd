@@ -2,9 +2,11 @@
 title: Introduction to R Programming
 ---
 
-# Vector 
+# Vector
 
-```{r }
+R's basic data structure is the vector. A single number is just a vector of length one.
+
+```{r}
 a <- 1
 
 a
@@ -12,26 +14,37 @@ a
 b <- 2:10
 
 b
+```
 
-#concatenate two vectors
+Two vectors can be joined together with `c()` ("combine"):
+
+```{r}
 c <- c(a,b)
 
 c
+```
 
-#vector arithmetics
+Arithmetic operators applied to a vector act element by element:
+
+```{r}
 1/c
 
-c^2 
+c^2
 
 c^2 + 1
+```
 
-#apply a function to each element
+To apply an arbitrary function to every element of a vector, either the function is already *vectorized* (like `log`), or we can use `sapply` to apply it element-wise:
+
+```{r}
 log(c)
 
 sapply(c,log)
+```
 
+When two vectors are combined with an operator, R again works element by element. If the vectors have different lengths, the shorter one is recycled:
 
-#operation on two vectors
+```{r}
 d <- (1:10)*10
 
 d
@@ -41,14 +54,21 @@ c + d
 c * d
 
 d ^ c
+```
 
-#more concrete example: computing variance of 'c'
+As a concrete example, here is the sample variance of `c` computed directly from its definition, and then with the built-in `var` function:
+
+```{r}
 sum((c - mean(c))^2)/(length(c)-1)
 
-#of course, there is build-in function for computing variance:
 var(c)
+```
 
-#subsetting vector
+## Subsetting a vector
+
+Elements of a vector are extracted with `[ ]`, using either positions or a logical condition:
+
+```{r}
 c
 
 c[2]
@@ -58,40 +78,56 @@ c[c(2,3)]
 c[c(3,2)]
 
 c[c > 5]
+```
 
-#let's see what is "c > 5"
+The condition itself is a logical vector, which is often useful to inspect on its own:
+
+```{r}
 c > 5
 
 c[c > 5 & c < 10]
 
-c[as.logical((c > 8) + (c < 3))] 
+c[as.logical((c > 8) + (c < 3))]
 
 log(c)
 
 c[log(c) < 2]
+```
 
-#modifying subset of vector
+A subset selected this way can also be assigned new values, which modifies the original vector in place:
+
+```{r}
 c[log(c) < 2] <- 3
 
 c
+```
 
-#introduce a function ``seq''
+## Generating sequences and repeated values
+
+`seq` generalizes the `:` operator, letting us control the step size or the number of points, and it behaves more predictably in edge cases:
+
+```{r}
 seq(0,10,by=1)
 
 seq(0,10,length=20)
 
 1:10
+```
 
-#seq is more reliable than ":"
+For example, `1:n` does *not* produce an empty sequence when `n` is 0 -- it silently counts backwards, which is a common source of bugs in loops:
+
+```{r}
 n <- 0
 
 1:n
 
-#seq(1,n,by=1) 
+#seq(1,n,by=1)
 #Error in seq.default(1, n, by = 1) : wrong sign in 'by' argument
-#Execution halted
+```
 
-#function ``rep''
+`rep` repeats a vector, either as a whole or element by element:
+
+```{r}
 c<- 1:5
 
 c
@@ -103,7 +139,9 @@ rep(c,each=5)
 
 # Strings
 
-```{r }
+Character vectors are created and combined just like numeric ones. `paste` and `paste0` glue strings together, optionally recycling shorter arguments:
+
+```{r}
 A <- c("a","b","c")
 
 A
@@ -121,26 +159,35 @@ paste(A,10,sep="")
 paste0(A,10)
 
 paste0(A,1:10)
+```
 
+`sprintf` gives C-style formatted strings, which is convenient for generating file names in a loop:
+
+```{r}
 sprintf("unit%g.pdf", 1:10)
 
 sprintf("unit%g.%s", 1:10, "html")
+```
 
+## Selecting strings with pattern matching
+
+`grep` returns the positions of the elements matching a pattern, which can then be used to subset a character vector -- here we list files in the working directory and pick out ones with particular extensions or prefixes:
+
+```{r}
 filelist <- list.files(); filelist
 
-# selecting strings
 filelist[grep( "*.pdf",filelist)]
 filelist[grep( "*.Rmd",filelist)]
 unit.files <- filelist[grep( "^unit",filelist)]; unit.files
 unit.pdf.files <- unit.files[grep("*.pdf", unit.files)]; unit.pdf.files
 unit.html.files <- unit.files[grep("*.html", unit.files)]; unit.html.files
-
 ```
 
 # Special Values
 
-```{r }
- 
+R has special values for results that are not ordinary numbers. `0/0` is "not a number" (`NaN`), `log(0)` is negative infinity (not finite), and `NA` marks a missing value:
+
+```{r}
 a <- 0/0
 
 a
@@ -158,12 +205,13 @@ c <- c(0:4,NA)
 c
 
 is.na(c)
-
 ```
 
 # Matrices
 
-```{r }
+A matrix is created either by filling in values directly or by reshaping a vector into rows and columns. By default values are filled by column; `byrow = TRUE` fills by row instead:
+
+```{r}
 
 A <- matrix(0,4,5)
 
@@ -171,11 +219,13 @@ A
 A <- matrix(1:20,4,5)
 
 B <- matrix(1:20,4,5,byrow = T)
+```
 
+## Subsetting and modifying a matrix
 
+Just like vectors, matrices can be subset with `[rows, columns]`, and the resulting subset can be assigned new values:
 
-#subsectioning and modifying subsection
-
+```{r}
 D <- A[c(1,4),c(2,3)]
 
 A[c(1,4),c(2,3)] <- 1
@@ -189,12 +239,19 @@ a<- A[4,]
 b<- A[3:4,]
 
 A[1,1]
+```
 
+Note that extracting a single row or column normally drops the matrix dimension and returns a plain vector; `drop = FALSE` keeps it as a matrix:
+
+```{r}
 a2<- A[4,, drop = FALSE]
+```
 
-#combining two matrices
+## Combining matrices
 
-#create another matrix using another way
+`array` is another way to build a matrix (or higher-dimensional array) from a vector. `cbind` and `rbind` glue matrices together by columns or by rows:
+
+```{r}
 A2 <- array(1:20,dim=c(4,5))
 
 A2
@@ -202,10 +259,13 @@ A2
 cbind(A,A2)
 
 rbind(A,A2)
+```
 
-#operating matrice
+## Matrix arithmetic
 
-#transpose matrix
+`t()` transposes a matrix. Arithmetic operators again act element by element, and when a matrix is combined with a shorter vector, the vector is recycled down the columns:
+
+```{r}
 t(A)
 
 A
@@ -215,19 +275,23 @@ A + 1
 x <- 1:5
 
 A*x
+```
 
-#the logical here is coercing the matrix "A" into a vector by joining the column
-#and repeat the shorter vector,x, as many times as making it have the same
-#length as the vector coerced from "A" 
+The logic here is that R first coerces the matrix `A` into a vector by joining its columns, and then repeats the shorter vector `x` as many times as needed to match that length. This means the recycling only lines up neatly with the columns when the vector's length divides the number of rows -- as in the next example, where `x` has length 3 and `A` has 4 rows:
 
-#see another example
-
+```{r}
 x <- 1:3
 
 A*x
 
 A^2
+```
 
+## Matrix multiplication and linear algebra
+
+Matrix multiplication uses `%*%`, and `solve` computes either a matrix inverse or the solution of a linear system:
+
+```{r}
 A <- matrix(sample(1:20),4,5)
 
 A
@@ -241,9 +305,11 @@ C <- A %*% B
 C
 
 solve(C)
+```
 
-#solving linear equation
+To solve $Cx = d$ for $x$, it is both faster and numerically more stable to call `solve(C, d)` directly than to explicitly compute the inverse first:
 
+```{r}
 x <- 1:4
 
 d <- C %*% x
@@ -252,21 +318,23 @@ solve(C,d)
 
 #altenative way (but not recommended)
 solve(C) %*% d
+```
 
-#SVD (C = UDV') and determinant 
+The singular value decomposition $C = UDV'$ gives another route to quantities like the determinant, here obtained as the product of the singular values:
 
+```{r}
 svd.C <- svd(C)
 
 svd.C
 
-#calculating determinant of C
-
 prod(svd.C$d)
 ```
 
-# Data frame 
+# Data frame
 
-```{r }
+A data frame stores columns of possibly different types (numbers, factors, strings) side by side, indexed by name. Columns can be pulled out with `[, ]`, by name, or with `$`:
+
+```{r}
 name <- c("john","peter","jennifer")
 
 gender <- factor(c("m","m","f"))
@@ -281,9 +349,13 @@ grades <- data.frame(name,gender,hw1,hw2)
 grades[,"gender"]
 
 grades[,2]
+```
 
-#subsectioning a data frame
+## Subsetting a data frame
 
+Rows and columns can be selected simultaneously, and `subset` offers a more readable way to filter rows by a condition on the columns:
+
+```{r}
 grades[1,2]
 
 grades[,"name"]
@@ -294,15 +366,19 @@ grades[grades$gender=="m",]
 subset (grades, hw1 >60)
 
 grades[,"hw1"]
+```
 
-#divide the subjects by "gender", and calculating means in each group
+`tapply` splits a column into groups defined by another column and applies a function within each group -- here, computing the mean of `hw1` for each `gender`:
+
+```{r}
 tapply(grades[,"hw1"], grades[,"gender"],mean)
-
 ```
 
 # List
 
-```{r }
+Unlike a vector, a list can hold components of different types and sizes -- here a numeric vector, a matrix, and a character vector:
+
+```{r}
 
 a <- 1:10
 
@@ -314,43 +390,48 @@ alst <- list(aa=a,b=b,c=c)
 
 names (alst)
 str(alst)
+```
 
+A component of a list is accessed by name with `$`, or by position with double brackets `[[ ]]`:
 
-#refering to component of a list
-
+```{r}
 alst$aa
 
 
 alst[[2]]
+```
 
+Two lists can be joined into one with `c()`, just as with vectors:
+
+```{r}
 blst <- list(d=2:10*10)
 
-#concatenating list
 ablst <- c(alst,blst)
 
 ablst
-
 ```
 
 # Reading and saving data to harddrive
 
-```{r }
+R can read plain numbers with `scan`, and tabular data with `read.csv`. Objects can then be written back to disk in several formats:
+
+```{r}
 a<- scan (text = "3 4 5.3 3")
 numbers <- scan (file="numbers.txt")
 mtcars <- read.csv ("mtcars.csv")
+```
 
-## save objects
-save (mtcars, numbers, file = "mtcars.RData")  
+`save`/`load` store and restore one or more R objects together in a single `.RData` file. Note that `load` silently overwrites any existing objects with the same names:
+
+```{r}
+save (mtcars, numbers, file = "mtcars.RData")
 load ("mtcars.RData")
-## note that load will override the objects with the same in .RData file
+```
 
-## output numbers to a text file
-cat (numbers, file = "numbers.txt")
+A data frame can also be written out as a plain csv file, and any single R object can be saved to its own `.RDS` file:
 
-## save data frame as csv or other types of file
+```{r}
 write.csv(mtcars, file = "mtcars2.csv")
-
-## save an object into an RDS file
 
 alist <- list (A = rnorm (100), B = letters[1:10])
 saveRDS(alist, file = "alist.RDS")
@@ -361,48 +442,52 @@ identical(alist, blist)
 
 # Function
 
-```{r }
+We can package a computation into a reusable function. Here is a hand-written function that finds the maximum value of a numeric vector and the position at which it occurs:
 
-#looking for the maximum value of a numeric vector x
+```{r}
+
 find.max <- function(x)
 {
     n <- length(x)
-    
+
     x.m <- x[1]
     ix.m <- 1
-    
+
     if(n > 1)
     {
         for( i in seq(2,n,by=1) )
         {
             if(x[i] > x.m)
-            {  
+            {
                 x.m <- x[i]
                 ix.m <- i
             }
         }
     }
-    
+
     #return the maximum value and the index
     list(max=x.m,index.max=ix.m)
 }
+```
 
-# To use this function
+We can now call `find.max` just like any built-in function, and compare its result with R's own built-in tools for the same task (`max`, `which.max`, `order`, `sort`):
 
+```{r}
 a <- rnorm (5); a
 find.max(a)
-# Some relevant R built-in functions
+
 max(a)
 which.max(a)
 order (a)
 sort (a)
 sort(a, index.return=TRUE)
-
 ```
 
 # Graphics
 
-```{r }
+Base R plotting builds a figure with a sequence of calls: `plot` starts a new plot, and functions like `points` add to the current one. Plotting parameters such as the layout of multiple panels are set with `par`:
+
+```{r}
 
 demofun1 <- function(x)
 {
@@ -425,7 +510,11 @@ points(x, demofun2(x), type="l", lty = 1)
 plot(x, demofun1(x), type="b", pch = 3, lty=1, ylab="y", main="Plot 2")
 #add another line to "Plot 2"
 points(x, demofun2(x), type="b", pch = 4, lty = 2)
+```
 
+The same sequence of calls can be redirected into a file instead of the screen by opening a graphics device such as `pdf()` before plotting, and closing it with `dev.off()` afterwards:
+
+```{r}
 # save plot in a file (for publication)
 pdf ("afig.pdf", height=4.8, width=10)
 #specify plotting parameters
@@ -441,8 +530,83 @@ plot(x, demofun1(x), type="b", pch = 3, lty=1, ylab="y", main="Plot 2")
 points(x, demofun2(x), type="b", pch = 4, lty = 2)
 
 dev.off()
-
-
 ```
 
+# Modern data workflows: ggplot2 and gt
 
+Base graphics build a plot with a sequence of side-effecting calls, as above. The **ggplot2** package instead builds a plot declaratively, by mapping columns of a data frame to visual properties ("aesthetics") and adding layers with `+`. The **gt** package does the analogous thing for tables: it turns a data frame into a polished, publication-ready table instead of a plain printout.
+
+```{r}
+library(ggplot2)
+library(gt)
+
+mtcars <- read.csv("mtcars.csv")
+```
+
+## A scatter plot with ggplot2
+
+We map `wt` (weight) to the x-axis, `mpg` (fuel efficiency) to the y-axis, and the number of cylinders `cyl` to color, then add a fitted regression line for each group with `geom_smooth`:
+
+```{r}
+mtcars$cyl <- factor(mtcars$cyl)
+
+ggplot(mtcars, aes(x = wt, y = mpg, color = cyl)) +
+    geom_point(size = 2) +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(
+        title = "Fuel Efficiency vs. Weight",
+        x = "Weight (1000 lbs)",
+        y = "Miles per Gallon",
+        color = "Cylinders"
+    ) +
+    theme_minimal()
+```
+
+## Facets and boxplots with ggplot2
+
+Layers combine freely: here a boxplot of `mpg` by number of gears is split into one panel per transmission type (`am`) using `facet_wrap`:
+
+```{r}
+mtcars$am <- factor(mtcars$am, labels = c("Automatic", "Manual"))
+
+ggplot(mtcars, aes(x = factor(gear), y = mpg, fill = factor(gear))) +
+    geom_boxplot(show.legend = FALSE) +
+    facet_wrap(~ am) +
+    labs(
+        title = "MPG by Number of Gears, split by Transmission",
+        x = "Number of Gears",
+        y = "Miles per Gallon"
+    ) +
+    theme_minimal()
+```
+
+## A summary table with gt
+
+We first use base R (`aggregate`) to compute, for each cylinder count, the average and standard deviation of `mpg` and `hp`. Piping the resulting data frame into `gt()` turns it into a formatted table with a title, readable column labels, and rounded numbers:
+
+```{r}
+summary.tbl <- aggregate(
+    cbind(mpg, hp) ~ cyl,
+    data = mtcars,
+    FUN = function(x) c(mean = mean(x), sd = sd(x))
+)
+summary.tbl <- do.call(data.frame, summary.tbl)
+names(summary.tbl) <- c("cyl", "mpg_mean", "mpg_sd", "hp_mean", "hp_sd")
+
+summary.tbl |>
+    gt(rowname_col = "cyl") |>
+    tab_header(
+        title = "Engine Performance by Cylinder Count",
+        subtitle = "Mean and standard deviation of mpg and horsepower"
+    ) |>
+    fmt_number(columns = -cyl, decimals = 1) |>
+    cols_label(
+        mpg_mean = "Mean MPG",
+        mpg_sd = "SD MPG",
+        hp_mean = "Mean HP",
+        hp_sd = "SD HP"
+    ) |>
+    tab_spanner(label = "Miles per Gallon", columns = c(mpg_mean, mpg_sd)) |>
+    tab_spanner(label = "Horsepower", columns = c(hp_mean, hp_sd)) |>
+    tab_stubhead(label = "Cylinders")
+```
