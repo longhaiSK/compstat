@@ -2,611 +2,362 @@
 title: Introduction to R Programming
 ---
 
-# Vector
+# The Mission
 
-R's basic data structure is the vector. A single number is just a vector of length one.
+Throughout this unit we will use one running example to introduce the basic building blocks of R: vectors, strings, special values, matrices, data frames, lists, functions, file I/O, and graphics.
+
+**The mission:** a class of students has taken four quizzes. Each student's final grade is the average of their *best three* quiz scores -- that is, we drop each student's single lowest quiz score before averaging. To make things realistic, one student missed a quiz entirely, so we also need to handle a missing value correctly. We want to
+
+1. work out the calculation step by step for one student,
+2. package that calculation into a reusable function,
+3. apply the function to every student to get a full set of results, and
+4. present those results as a table and as plots.
+
+This mirrors how real data-analysis code is usually built: explore on one case, generalize into a function, then apply and report.
+
+# Step by Step, for One Student
+
+## Vectors: recording quiz scores
+
+The score on each quiz, across all students, is naturally stored as a vector. Here are the scores for four quizzes and eight students (in the same order):
 
 ```{r}
-a <- 1
-
-a
-
-b <- 2:10
-
-b
+quiz1 <- c(7,8,6,9,5,8,7,6)
+quiz2 <- c(8,7,5,9,6,7,8,5)
+quiz3 <- c(6,9,7,8,NA,9,6,7)
+quiz4 <- c(9,8,8,7,7,8,5,8)
 ```
 
-Two vectors can be joined together with `c()` ("combine"):
+Notice the `NA` in `quiz3`: the fifth student missed that quiz. Ordinary arithmetic propagates a missing value rather than silently ignoring it, which is exactly the safe default we want:
 
 ```{r}
-c <- c(a,b)
+quiz3
 
-c
+mean(quiz3)
+
+mean(quiz3, na.rm = TRUE)
 ```
 
-Arithmetic operators applied to a vector act element by element:
+## Strings: naming the quizzes and students
+
+We could type out `"Quiz1"`, `"Quiz2"`, ... by hand, but `paste0` builds such labels programmatically -- a habit that pays off the moment there are 40 quizzes instead of 4:
 
 ```{r}
-1/c
+quiz.names <- paste0("Quiz", 1:4)
 
-c^2
-
-c^2 + 1
+quiz.names
 ```
 
-To apply an arbitrary function to every element of a vector, either the function is already *vectorized* (like `log`), or we can use `sapply` to apply it element-wise:
+The students' names are just another character vector:
 
 ```{r}
-log(c)
+students <- c("Ava","Ben","Cleo","Dae","Ellis","Faye","Gus","Hana")
 
-sapply(c,log)
+students
 ```
 
-When two vectors are combined with an operator, R again works element by element. If the vectors have different lengths, the shorter one is recycled:
+`sprintf` is useful for turning numbers back into readable text, for example a one-line summary for a single student:
 
 ```{r}
-d <- (1:10)*10
-
-d
-
-c + d
-
-c * d
-
-d ^ c
+sprintf("%s's scores were: %s", students[5], paste(c(quiz1[5],quiz2[5],quiz3[5],quiz4[5]), collapse = ", "))
 ```
 
-As a concrete example, here is the sample variance of `c` computed directly from its definition, and then with the built-in `var` function:
+## Matrices: all students, all quizzes, at once
+
+Binding the four quiz vectors together as columns gives a matrix with one row per student and one column per quiz. We then attach the row and column names we just built:
 
 ```{r}
-sum((c - mean(c))^2)/(length(c)-1)
+scores <- cbind(quiz1,quiz2,quiz3,quiz4)
 
-var(c)
+colnames(scores) <- quiz.names
+rownames(scores) <- students
+
+scores
 ```
 
-## Subsetting a vector
-
-Elements of a vector are extracted with `[ ]`, using either positions or a logical condition:
+A matrix is indexed as `[row, column]`. This lets us pull out one student's record, one quiz's results, or a logical selection such as "every score above 8":
 
 ```{r}
-c
+scores["Ellis", ]
 
-c[2]
+scores[, "Quiz1"]
 
-c[c(2,3)]
-
-c[c(3,2)]
-
-c[c > 5]
+scores[scores > 8]
 ```
 
-The condition itself is a logical vector, which is often useful to inspect on its own:
+## Special values: a missing quiz
+
+`is.na` locates missing values anywhere in an object, including a whole matrix at once, and `which(..., arr.ind = TRUE)` reports their row/column position:
 
 ```{r}
-c > 5
+is.na(scores)
 
-c[c > 5 & c < 10]
-
-c[as.logical((c > 8) + (c < 3))]
-
-log(c)
-
-c[log(c) < 2]
+which(is.na(scores), arr.ind = TRUE)
 ```
 
-A subset selected this way can also be assigned new values, which modifies the original vector in place:
+It is worth knowing what happens in the extreme case where a student has *no* recorded quiz at all: taking the mean of zero numbers is not zero, it is undefined, and R represents that with `NaN` ("not a number") rather than `NA`:
 
 ```{r}
-c[log(c) < 2] <- 3
+mean(numeric(0))
 
-c
+is.nan(mean(numeric(0)))
 ```
 
-## Generating sequences and repeated values
+We will rely on this distinction later, so that our function can automatically flag a student with no data at all.
 
-`seq` generalizes the `:` operator, letting us control the step size or the number of points, and it behaves more predictably in edge cases:
+## Data frames: adding names and gender
+
+A data frame lets us combine columns of different types -- here, the students' names and gender alongside their (numeric) quiz scores -- into a single table:
 
 ```{r}
-seq(0,10,by=1)
+gender <- factor(c("f","m","f","m","f","f","m","f"))
 
-seq(0,10,length=20)
+roster <- data.frame(name = students, gender = gender, scores)
 
-1:10
+roster
 ```
 
-For example, `1:n` does *not* produce an empty sequence when `n` is 0 -- it silently counts backwards, which is a common source of bugs in loops:
+Because the row names of `scores` were dropped when it became columns of `roster`, we now identify students by the `name` column instead. `grep` can find, by pattern, which columns hold quiz scores -- handy since we built those names programmatically earlier:
 
 ```{r}
-n <- 0
+quiz.cols <- grep("^Quiz", names(roster))
 
-1:n
+quiz.cols
 
-#seq(1,n,by=1)
-#Error in seq.default(1, n, by = 1) : wrong sign in 'by' argument
+names(roster)[quiz.cols]
 ```
 
-`rep` repeats a vector, either as a whole or element by element:
+The usual data-frame subsetting tools -- `[ , ]`, `$`, and `subset` -- work as expected, and `tapply` lets us summarize a column by group, e.g. the average `Quiz1` score by gender:
 
 ```{r}
-c<- 1:5
+roster[roster$gender == "f", ]
 
-c
+subset(roster, Quiz1 > 7)
 
-rep(c,5)
-
-rep(c,each=5)
+tapply(roster$Quiz1, roster$gender, mean)
 ```
 
-# Strings
+## Lists: packaging one student's full result
 
-Character vectors are created and combined just like numeric ones. `paste` and `paste0` glue strings together, optionally recycling shorter arguments:
+We now have everything needed to work out Ellis's final grade by hand. A **list** is the natural container for the result, because it bundles pieces of different shapes -- the raw scores, the scores kept, the score dropped, and a single final number -- under one name:
 
 ```{r}
-A <- c("a","b","c")
+ellis <- as.numeric(roster[roster$name == "Ellis", quiz.cols])
 
-A
+ellis
 
-paste("a","b",sep="")
+valid <- ellis[!is.na(ellis)]
 
-paste0("a","b",sep="")
+valid
 
-paste(A,c("d","e"))
+i.min <- which.min(valid)
 
-paste(A,10)
+kept <- valid[-i.min]
 
-paste(A,10,sep="")
+final <- mean(kept)
 
-paste0(A,10)
+result <- list(raw = ellis, kept = kept, dropped = valid[i.min], final = final)
 
-paste0(A,1:10)
+result
 ```
 
-`sprintf` gives C-style formatted strings, which is convenient for generating file names in a loop:
+This confirms the calculation for one student. The rest of the unit turns this scratch work into something we can reuse and apply to everyone.
+
+# Writing the Core Function
+
+## A loop-based implementation
+
+Before relying on `which.min`, it is worth seeing explicitly how a computer finds a minimum: by walking through the values one at a time and remembering the smallest one seen so far. This is the same control-flow pattern (a `for` loop with an `if` inside) used throughout numerical computing:
 
 ```{r}
-sprintf("unit%g.pdf", 1:10)
-
-sprintf("unit%g.%s", 1:10, "html")
-```
-
-## Selecting strings with pattern matching
-
-`grep` returns the positions of the elements matching a pattern, which can then be used to subset a character vector -- here we list files in the working directory and pick out ones with particular extensions or prefixes:
-
-```{r}
-filelist <- list.files(); filelist
-
-filelist[grep( "*.pdf",filelist)]
-filelist[grep( "*.Rmd",filelist)]
-unit.files <- filelist[grep( "^unit",filelist)]; unit.files
-unit.pdf.files <- unit.files[grep("*.pdf", unit.files)]; unit.pdf.files
-unit.html.files <- unit.files[grep("*.html", unit.files)]; unit.html.files
-```
-
-# Special Values
-
-R has special values for results that are not ordinary numbers. `0/0` is "not a number" (`NaN`), `log(0)` is negative infinity (not finite), and `NA` marks a missing value:
-
-```{r}
-a <- 0/0
-
-a
-
-is.nan(a)
-
-b <- log(0)
-
-b
-
-is.finite(b)
-
-c <- c(0:4,NA)
-
-c
-
-is.na(c)
-```
-
-# Matrices
-
-A matrix is created either by filling in values directly or by reshaping a vector into rows and columns. By default values are filled by column; `byrow = TRUE` fills by row instead:
-
-```{r}
-
-A <- matrix(0,4,5)
-
-A
-A <- matrix(1:20,4,5)
-
-B <- matrix(1:20,4,5,byrow = T)
-```
-
-## Subsetting and modifying a matrix
-
-Just like vectors, matrices can be subset with `[rows, columns]`, and the resulting subset can be assigned new values:
-
-```{r}
-D <- A[c(1,4),c(2,3)]
-
-A[c(1,4),c(2,3)] <- 1
-
-A[c(1,4),c(2,3)] <- 101:104
-
-A[c(1,4),c(2,3)] <- matrix (1001:1004, 2,2)
-
-a<- A[4,]
-
-b<- A[3:4,]
-
-A[1,1]
-```
-
-Note that extracting a single row or column normally drops the matrix dimension and returns a plain vector; `drop = FALSE` keeps it as a matrix:
-
-```{r}
-a2<- A[4,, drop = FALSE]
-```
-
-## Combining matrices
-
-`array` is another way to build a matrix (or higher-dimensional array) from a vector. `cbind` and `rbind` glue matrices together by columns or by rows:
-
-```{r}
-A2 <- array(1:20,dim=c(4,5))
-
-A2
-
-cbind(A,A2)
-
-rbind(A,A2)
-```
-
-## Matrix arithmetic
-
-`t()` transposes a matrix. Arithmetic operators again act element by element, and when a matrix is combined with a shorter vector, the vector is recycled down the columns:
-
-```{r}
-t(A)
-
-A
-
-A + 1
-
-x <- 1:5
-
-A*x
-```
-
-The logic here is that R first coerces the matrix `A` into a vector by joining its columns, and then repeats the shorter vector `x` as many times as needed to match that length. This means the recycling only lines up neatly with the columns when the vector's length divides the number of rows -- as in the next example, where `x` has length 3 and `A` has 4 rows:
-
-```{r}
-x <- 1:3
-
-A*x
-
-A^2
-```
-
-## Matrix multiplication and linear algebra
-
-Matrix multiplication uses `%*%`, and `solve` computes either a matrix inverse or the solution of a linear system:
-
-```{r}
-A <- matrix(sample(1:20),4,5)
-
-A
-
-B <- matrix(sample(1:20),5,4)
-
-B
-
-C <- A %*% B
-
-C
-
-solve(C)
-```
-
-To solve $Cx = d$ for $x$, it is both faster and numerically more stable to call `solve(C, d)` directly than to explicitly compute the inverse first:
-
-```{r}
-x <- 1:4
-
-d <- C %*% x
-
-solve(C,d)
-
-#altenative way (but not recommended)
-solve(C) %*% d
-```
-
-The singular value decomposition $C = UDV'$ gives another route to quantities like the determinant, here obtained as the product of the singular values:
-
-```{r}
-svd.C <- svd(C)
-
-svd.C
-
-prod(svd.C$d)
-```
-
-# Data frame
-
-A data frame stores columns of possibly different types (numbers, factors, strings) side by side, indexed by name. Columns can be pulled out with `[, ]`, by name, or with `$`:
-
-```{r}
-name <- c("john","peter","jennifer")
-
-gender <- factor(c("m","m","f"))
-
-hw1 <- c(60,60,80)
-
-hw2 <- c(40,50,30)
-
-grades <- data.frame(name,gender,hw1,hw2)
-
-
-grades[,"gender"]
-
-grades[,2]
-```
-
-## Subsetting a data frame
-
-Rows and columns can be selected simultaneously, and `subset` offers a more readable way to filter rows by a condition on the columns:
-
-```{r}
-grades[1,2]
-
-grades[,"name"]
-
-grades$name
-
-grades[grades$gender=="m",]
-subset (grades, hw1 >60)
-
-grades[,"hw1"]
-```
-
-`tapply` splits a column into groups defined by another column and applies a function within each group -- here, computing the mean of `hw1` for each `gender`:
-
-```{r}
-tapply(grades[,"hw1"], grades[,"gender"],mean)
-```
-
-# List
-
-Unlike a vector, a list can hold components of different types and sizes -- here a numeric vector, a matrix, and a character vector:
-
-```{r}
-
-a <- 1:10
-
-b <- matrix(1:10,2,5)
-
-c <- c("name1","name2")
-
-alst <- list(aa=a,b=b,c=c)
-
-names (alst)
-str(alst)
-```
-
-A component of a list is accessed by name with `$`, or by position with double brackets `[[ ]]`:
-
-```{r}
-alst$aa
-
-
-alst[[2]]
-```
-
-Two lists can be joined into one with `c()`, just as with vectors:
-
-```{r}
-blst <- list(d=2:10*10)
-
-ablst <- c(alst,blst)
-
-ablst
-```
-
-# Reading and saving data to harddrive
-
-R can read plain numbers with `scan`, and tabular data with `read.csv`. Objects can then be written back to disk in several formats:
-
-```{r}
-a<- scan (text = "3 4 5.3 3")
-numbers <- scan (file="numbers.txt")
-mtcars <- read.csv ("mtcars.csv")
-```
-
-`save`/`load` store and restore one or more R objects together in a single `.RData` file. Note that `load` silently overwrites any existing objects with the same names:
-
-```{r}
-save (mtcars, numbers, file = "mtcars.RData")
-load ("mtcars.RData")
-```
-
-A data frame can also be written out as a plain csv file, and any single R object can be saved to its own `.RDS` file:
-
-```{r}
-write.csv(mtcars, file = "mtcars2.csv")
-
-alist <- list (A = rnorm (100), B = letters[1:10])
-saveRDS(alist, file = "alist.RDS")
-blist <- readRDS("alist.RDS")
-## note that a list is not erased by readRDS
-identical(alist, blist)
-```
-
-# Function
-
-We can package a computation into a reusable function. Here is a hand-written function that finds the maximum value of a numeric vector and the position at which it occurs:
-
-```{r}
-
-find.max <- function(x)
+find.lowest <- function(x)
 {
     n <- length(x)
-
-    x.m <- x[1]
-    ix.m <- 1
+    i.min <- 1
+    x.min <- x[1]
 
     if(n > 1)
     {
-        for( i in seq(2,n,by=1) )
+        for(i in 2:n)
         {
-            if(x[i] > x.m)
+            if(x[i] < x.min)
             {
-                x.m <- x[i]
-                ix.m <- i
+                x.min <- x[i]
+                i.min <- i
             }
         }
     }
 
-    #return the maximum value and the index
-    list(max=x.m,index.max=ix.m)
+    list(value = x.min, index = i.min)
 }
+
+find.lowest(valid)
 ```
 
-We can now call `find.max` just like any built-in function, and compare its result with R's own built-in tools for the same task (`max`, `which.max`, `order`, `sort`):
+## A vectorized implementation
+
+R's built-in `which.min` (and, for dropping more than one value, `order`) does the same job in one call, and is what we will use going forward:
 
 ```{r}
-a <- rnorm (5); a
-find.max(a)
+which.min(valid)
 
-max(a)
-which.max(a)
-order (a)
-sort (a)
-sort(a, index.return=TRUE)
+order(valid)
 ```
 
-# Graphics
-
-Base R plotting builds a figure with a sequence of calls: `plot` starts a new plot, and functions like `points` add to the current one. Plotting parameters such as the layout of multiple panels are set with `par`:
+We now wrap the full calculation -- discard missing quizzes, drop the lowest remaining score(s), average what's left -- into one function. Passing `n.drop` as an argument (rather than hard-coding "drop 1") makes the function reusable for a different grading policy later. Following the special-value discussion above, a student with no valid quiz at all correctly returns `NaN` instead of causing an error:
 
 ```{r}
-
-demofun1 <- function(x)
+compute.final.grade <- function(scores, n.drop = 1)
 {
-    ( 1 + 2*x^2 + 3*x^3 + exp(x) ) / x^2
-}
-demofun2 <- function(x)
-{
-    ( 1 + 2*(10-x)^2 + 3*(10-x)^3 + exp(10-x) ) / (10-x)^2
-}
+    valid <- scores[!is.na(scores)]
 
-# plot in R windows (for quick look)
-#specify plotting parameters
-par(mfrow=c(1,2), mar = c(4,4,3,1))
-x <- seq(0,10,by=0.1)
-#make "Plot 1"
-plot(x, demofun1(x), type="p", pch = 1, ylab="y", main="Plot 1")
-#add another line to "Plot 1"
-points(x, demofun2(x), type="l", lty = 1)
-#make "plot 2"
-plot(x, demofun1(x), type="b", pch = 3, lty=1, ylab="y", main="Plot 2")
-#add another line to "Plot 2"
-points(x, demofun2(x), type="b", pch = 4, lty = 2)
+    if(length(valid) == 0)
+    {
+        return(list(raw = scores, kept = numeric(0), dropped = numeric(0), final = NaN))
+    }
+
+    #never drop every remaining score
+    n.drop <- min(n.drop, length(valid) - 1)
+
+    if(n.drop > 0)
+    {
+        drop.ix <- order(valid)[1:n.drop]
+        dropped <- valid[drop.ix]
+        kept <- valid[-drop.ix]
+    }
+    else
+    {
+        dropped <- numeric(0)
+        kept <- valid
+    }
+
+    list(raw = scores, kept = kept, dropped = dropped, final = mean(kept))
+}
 ```
 
-The same sequence of calls can be redirected into a file instead of the screen by opening a graphics device such as `pdf()` before plotting, and closing it with `dev.off()` afterwards:
+Checking the function against the by-hand result for Ellis, and against the all-missing edge case:
 
 ```{r}
-# save plot in a file (for publication)
-pdf ("afig.pdf", height=4.8, width=10)
-#specify plotting parameters
-par(mfrow=c(1,2), mar = c(4,4,3,1))
-x <- seq(0,10,by=0.1)
-#make "Plot 1"
-plot(x, demofun1(x), type="p", pch = 1, ylab="y", main="Plot 1")
-#add another line to "Plot 1"
-points(x, demofun2(x), type="l", lty = 1)
-#make "plot 2"
-plot(x, demofun1(x), type="b", pch = 3, lty=1, ylab="y", main="Plot 2")
-#add another line to "Plot 2"
-points(x, demofun2(x), type="b", pch = 4, lty = 2)
+compute.final.grade(ellis)
 
-dev.off()
+compute.final.grade(c(NA,NA,NA,NA))
 ```
 
-# Modern data workflows: ggplot2 and gt
+# Applying the Function to Every Student
 
-Base graphics build a plot with a sequence of side-effecting calls, as above. The **ggplot2** package instead builds a plot declaratively, by mapping columns of a data frame to visual properties ("aesthetics") and adding layers with `+`. The **gt** package does the analogous thing for tables: it turns a data frame into a polished, publication-ready table instead of a plain printout.
+`apply(X, 1, FUN)` calls `FUN` once per **row** of `X` -- exactly what we need to run `compute.final.grade` on every student's four quiz scores:
+
+```{r}
+final.scores <- apply(roster[, quiz.cols], 1, function(x) compute.final.grade(x)$final)
+
+final.scores
+
+roster$final <- final.scores
+```
+
+The dropped score for each student is extracted the same way, and both new columns are added to `roster`:
+
+```{r}
+roster$dropped <- sapply(1:nrow(roster), function(i) {
+    r <- compute.final.grade(as.numeric(roster[i, quiz.cols]))
+    if(length(r$dropped) == 0) NA else r$dropped
+})
+
+roster
+```
+
+It is instructive to compare this with a *fully vectorized* alternative that needs no per-student function call at all: if we did **not** need to drop a quiz, the weighted total for every student could be computed in one line via matrix multiplication of the score matrix by a vector of weights:
+
+```{r}
+w <- rep(1/4, 4)
+
+as.matrix(roster[, quiz.cols]) %*% w
+```
+
+Notice that Ellis's entry comes back as `NA` -- matrix multiplication has no way to skip a missing value on its own. This is precisely why we wrote `compute.final.grade`: it encodes the extra logic (ignore missing quizzes, then drop the lowest) that a single matrix operation cannot express.
+
+## Saving and reloading the results
+
+The final `roster` is worth keeping. A data frame can be written as a plain csv file for spreadsheets, or saved as an `.RDS` file to preserve it exactly (including the `gender` factor) for future R sessions:
+
+```{r}
+write.csv(roster, file = "roster.csv", row.names = FALSE)
+
+saveRDS(roster, file = "roster.RDS")
+
+roster.reloaded <- readRDS("roster.RDS")
+
+identical(roster, roster.reloaded)
+```
+
+# Presenting the Results
+
+## Base R graphics
+
+A quick histogram shows the distribution of final grades, with a vertical line marking the class average:
+
+```{r}
+hist(roster$final, breaks = 5, col = "lightblue",
+     main = "Distribution of Final Grades", xlab = "Final Grade")
+abline(v = mean(roster$final), col = "red", lwd = 2)
+```
+
+A side-by-side boxplot compares the two gender groups:
+
+```{r}
+boxplot(final ~ gender, data = roster,
+        main = "Final Grade by Gender", xlab = "Gender", ylab = "Final Grade")
+```
+
+## ggplot2
+
+**ggplot2** builds the same kind of comparison declaratively, by mapping columns of `roster` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual student scores jittered on top:
 
 ```{r}
 library(ggplot2)
+
+ggplot(roster, aes(x = gender, y = final, fill = gender)) +
+    geom_boxplot(show.legend = FALSE, alpha = 0.6) +
+    geom_jitter(width = 0.1, size = 2) +
+    labs(
+        title = "Final Grade by Gender",
+        x = "Gender", y = "Final Grade"
+    ) +
+    theme_minimal()
+```
+
+We can also ask a natural follow-up question -- does a strong first quiz predict a strong final grade? -- with a scatter plot colored by gender:
+
+```{r}
+ggplot(roster, aes(x = Quiz1, y = final, color = gender)) +
+    geom_point(size = 2) +
+    labs(
+        title = "Final Grade vs. Quiz 1 Score",
+        x = "Quiz 1 Score", y = "Final Grade", color = "Gender"
+    ) +
+    theme_minimal()
+```
+
+## gt
+
+Finally, **gt** turns `roster` into a polished report table instead of a plain printout: a title, grouped "Quizzes" columns, one decimal place on the computed grade, and a readable symbol for Ellis's missing quiz.
+
+```{r}
 library(gt)
 
-mtcars <- read.csv("mtcars.csv")
-```
-
-## A scatter plot with ggplot2
-
-We map `wt` (weight) to the x-axis, `mpg` (fuel efficiency) to the y-axis, and the number of cylinders `cyl` to color, then add a fitted regression line for each group with `geom_smooth`:
-
-```{r}
-mtcars$cyl <- factor(mtcars$cyl)
-
-ggplot(mtcars, aes(x = wt, y = mpg, color = cyl)) +
-    geom_point(size = 2) +
-    geom_smooth(method = "lm", se = FALSE) +
-    labs(
-        title = "Fuel Efficiency vs. Weight",
-        x = "Weight (1000 lbs)",
-        y = "Miles per Gallon",
-        color = "Cylinders"
-    ) +
-    theme_minimal()
-```
-
-## Facets and boxplots with ggplot2
-
-Layers combine freely: here a boxplot of `mpg` by number of gears is split into one panel per transmission type (`am`) using `facet_wrap`:
-
-```{r}
-mtcars$am <- factor(mtcars$am, labels = c("Automatic", "Manual"))
-
-ggplot(mtcars, aes(x = factor(gear), y = mpg, fill = factor(gear))) +
-    geom_boxplot(show.legend = FALSE) +
-    facet_wrap(~ am) +
-    labs(
-        title = "MPG by Number of Gears, split by Transmission",
-        x = "Number of Gears",
-        y = "Miles per Gallon"
-    ) +
-    theme_minimal()
-```
-
-## A summary table with gt
-
-We first use base R (`aggregate`) to compute, for each cylinder count, the average and standard deviation of `mpg` and `hp`. Piping the resulting data frame into `gt()` turns it into a formatted table with a title, readable column labels, and rounded numbers:
-
-```{r}
-summary.tbl <- aggregate(
-    cbind(mpg, hp) ~ cyl,
-    data = mtcars,
-    FUN = function(x) c(mean = mean(x), sd = sd(x))
-)
-summary.tbl <- do.call(data.frame, summary.tbl)
-names(summary.tbl) <- c("cyl", "mpg_mean", "mpg_sd", "hp_mean", "hp_sd")
-
-summary.tbl |>
-    gt(rowname_col = "cyl") |>
+roster |>
+    gt(rowname_col = "name") |>
     tab_header(
-        title = "Engine Performance by Cylinder Count",
-        subtitle = "Mean and standard deviation of mpg and horsepower"
+        title = "Course Grade Report",
+        subtitle = "Each student's lowest quiz score is dropped"
     ) |>
-    fmt_number(columns = -cyl, decimals = 1) |>
+    sub_missing(columns = everything(), missing_text = "—") |>
+    fmt_number(columns = final, decimals = 1) |>
     cols_label(
-        mpg_mean = "Mean MPG",
-        mpg_sd = "SD MPG",
-        hp_mean = "Mean HP",
-        hp_sd = "SD HP"
+        gender = "Gender",
+        dropped = "Dropped Score",
+        final = "Final Grade"
     ) |>
-    tab_spanner(label = "Miles per Gallon", columns = c(mpg_mean, mpg_sd)) |>
-    tab_spanner(label = "Horsepower", columns = c(hp_mean, hp_sd)) |>
-    tab_stubhead(label = "Cylinders")
+    tab_spanner(label = "Quizzes", columns = c(Quiz1, Quiz2, Quiz3, Quiz4)) |>
+    tab_stubhead(label = "Student")
 ```
