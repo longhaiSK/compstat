@@ -1,12 +1,13 @@
 ---
 title: Introduction to R Programming
+code-fold: true
 ---
 
-# The Mission
+## A toy example
 
 Throughout this unit we will use one running example to introduce the basic building blocks of R: vectors, strings, special values, matrices, data frames, lists, functions, file I/O, and graphics.
 
-**The mission:** a class of students has taken four quizzes. Each student's final grade is the average of their *best three* quiz scores -- that is, we drop each student's single lowest quiz score before averaging. To make things realistic, one student missed a quiz entirely, so we also need to handle a missing value correctly. We want to
+**The mission:** a class of 100 students has taken four quizzes, each scored out of 100 points. Each student's final grade is the average of their *best three* quiz scores -- that is, we drop each student's single lowest quiz score before averaging. To make things realistic, quite a few students missed one quiz or another, so we also need to handle missing values correctly. We want to
 
 1. work out the calculation step by step for one student,
 2. package that calculation into a reusable function,
@@ -15,30 +16,50 @@ Throughout this unit we will use one running example to introduce the basic buil
 
 This mirrors how real data-analysis code is usually built: explore on one case, generalize into a function, then apply and report.
 
-# Step by Step, for One Student
+## Step by Step, for One Student
 
-## Vectors: recording quiz scores
+### Vectors: recording quiz scores
 
-The score on each quiz, across all students, is naturally stored as a vector. Here are the scores for four quizzes and eight students (in the same order):
+The score on each quiz, across all students, is naturally stored as a vector. We simulate a class of 100 students, each quiz scored out of 100, using `rnorm` and clipping the result to a valid `0`-`100` range with `pmin`/`pmax`:
 
 ```{r}
-quiz1 <- c(7,8,6,9,5,8,7,6)
-quiz2 <- c(8,7,5,9,6,7,8,5)
-quiz3 <- c(6,9,7,8,NA,9,6,7)
-quiz4 <- c(9,8,8,7,7,8,5,8)
+set.seed(123)
+n <- 100
+
+gen.quiz <- function(mean, sd)
+{
+    x <- round(rnorm(n, mean, sd))
+    pmin(100, pmax(0, x))
+}
+
+quiz1 <- gen.quiz(78, 12)
+quiz2 <- gen.quiz(74, 14)
+quiz3 <- gen.quiz(80, 10)
+quiz4 <- gen.quiz(70, 15)
 ```
 
-Notice the `NA` in `quiz3`: the fifth student missed that quiz. Ordinary arithmetic propagates a missing value rather than silently ignoring it, which is exactly the safe default we want:
+To make the data realistic, we then mark a random 10% of the entries in *each* quiz as missing -- a student who did not sit that quiz:
 
 ```{r}
-quiz3
+miss.rate <- 0.10
 
+quiz1[sample(n, round(n*miss.rate))] <- NA
+quiz2[sample(n, round(n*miss.rate))] <- NA
+quiz3[sample(n, round(n*miss.rate))] <- NA
+quiz4[sample(n, round(n*miss.rate))] <- NA
+
+head(quiz3, 20)
+```
+
+Ordinary arithmetic propagates a missing value rather than silently ignoring it, which is exactly the safe default we want:
+
+```{r}
 mean(quiz3)
 
 mean(quiz3, na.rm = TRUE)
 ```
 
-## Strings: naming the quizzes and students
+### Strings: naming the quizzes and students
 
 We could type out `"Quiz1"`, `"Quiz2"`, ... by hand, but `paste0` builds such labels programmatically -- a habit that pays off the moment there are 40 quizzes instead of 4:
 
@@ -48,21 +69,25 @@ quiz.names <- paste0("Quiz", 1:4)
 quiz.names
 ```
 
-The students' names are just another character vector:
+With 100 students, typing out individual names is not realistic either. `sprintf` generates zero-padded IDs like `"S001"`, `"S002"`, ... in one line -- exactly the kind of job it is built for:
 
 ```{r}
-students <- c("Ava","Ben","Cleo","Dae","Ellis","Faye","Gus","Hana")
+students <- sprintf("S%03d", 1:n)
 
-students
+head(students)
 ```
 
-`sprintf` is useful for turning numbers back into readable text, for example a one-line summary for a single student:
+`sprintf` is equally useful for turning numbers back into readable text. Here we first find a student who is missing at least one quiz (using `is.na` and `which`, which we revisit below), and then build a one-line summary for them:
 
 ```{r}
-sprintf("%s's scores were: %s", students[5], paste(c(quiz1[5],quiz2[5],quiz3[5],quiz4[5]), collapse = ", "))
+example.ix <- which(is.na(quiz1) | is.na(quiz2) | is.na(quiz3) | is.na(quiz4))[1]
+example.name <- students[example.ix]
+
+sprintf("%s's scores were: %s", example.name,
+        paste(c(quiz1[example.ix],quiz2[example.ix],quiz3[example.ix],quiz4[example.ix]), collapse = ", "))
 ```
 
-## Matrices: all students, all quizzes, at once
+### Matrices: all students, all quizzes, at once
 
 Binding the four quiz vectors together as columns gives a matrix with one row per student and one column per quiz. We then attach the row and column names we just built:
 
@@ -72,27 +97,31 @@ scores <- cbind(quiz1,quiz2,quiz3,quiz4)
 colnames(scores) <- quiz.names
 rownames(scores) <- students
 
-scores
+dim(scores)
+
+head(scores)
 ```
 
-A matrix is indexed as `[row, column]`. This lets us pull out one student's record, one quiz's results, or a logical selection such as "every score above 8":
+A matrix is indexed as `[row, column]`. This lets us pull out one student's record, one quiz's results, or a logical selection such as "every score above 95":
 
 ```{r}
-scores["Ellis", ]
+scores[example.name, ]
 
-scores[, "Quiz1"]
+head(scores[, "Quiz1"])
 
-scores[scores > 8]
+head(scores[scores > 95])
 ```
 
-## Special values: a missing quiz
+### Special values: missing quizzes
 
-`is.na` locates missing values anywhere in an object, including a whole matrix at once, and `which(..., arr.ind = TRUE)` reports their row/column position:
+`is.na` locates missing values anywhere in an object, including a whole matrix at once. With 100 students and a 10% missing rate per quiz, there are quite a few:
 
 ```{r}
-is.na(scores)
+colSums(is.na(scores))
 
-which(is.na(scores), arr.ind = TRUE)
+sum(is.na(scores))
+
+head(which(is.na(scores), arr.ind = TRUE))
 ```
 
 It is worth knowing what happens in the extreme case where a student has *no* recorded quiz at all: taking the mean of zero numbers is not zero, it is undefined, and R represents that with `NaN` ("not a number") rather than `NA`:
@@ -105,16 +134,16 @@ is.nan(mean(numeric(0)))
 
 We will rely on this distinction later, so that our function can automatically flag a student with no data at all.
 
-## Data frames: adding names and gender
+### Data frames: adding names and gender
 
 A data frame lets us combine columns of different types -- here, the students' names and gender alongside their (numeric) quiz scores -- into a single table:
 
 ```{r}
-gender <- factor(c("f","m","f","m","f","f","m","f"))
+gender <- factor(sample(c("f","m"), n, replace = TRUE))
 
 roster <- data.frame(name = students, gender = gender, scores)
 
-roster
+head(roster)
 ```
 
 Because the row names of `scores` were dropped when it became columns of `roster`, we now identify students by the `name` column instead. `grep` can find, by pattern, which columns hold quiz scores -- handy since we built those names programmatically earlier:
@@ -130,23 +159,23 @@ names(roster)[quiz.cols]
 The usual data-frame subsetting tools -- `[ , ]`, `$`, and `subset` -- work as expected, and `tapply` lets us summarize a column by group, e.g. the average `Quiz1` score by gender:
 
 ```{r}
-roster[roster$gender == "f", ]
+head(roster[roster$gender == "f", ])
 
-subset(roster, Quiz1 > 7)
+head(subset(roster, Quiz1 > 90))
 
-tapply(roster$Quiz1, roster$gender, mean)
+tapply(roster$Quiz1, roster$gender, mean, na.rm = TRUE)
 ```
 
-## Lists: packaging one student's full result
+### Lists: packaging one student's full result
 
-We now have everything needed to work out Ellis's final grade by hand. A **list** is the natural container for the result, because it bundles pieces of different shapes -- the raw scores, the scores kept, the score dropped, and a single final number -- under one name:
+We now have everything needed to work out `r example.name`'s final grade by hand. A **list** is the natural container for the result, because it bundles pieces of different shapes -- the raw scores, the scores kept, the score dropped, and a single final number -- under one name:
 
 ```{r}
-ellis <- as.numeric(roster[roster$name == "Ellis", quiz.cols])
+example.scores <- as.numeric(roster[roster$name == example.name, quiz.cols])
 
-ellis
+example.scores
 
-valid <- ellis[!is.na(ellis)]
+valid <- example.scores[!is.na(example.scores)]
 
 valid
 
@@ -156,16 +185,16 @@ kept <- valid[-i.min]
 
 final <- mean(kept)
 
-result <- list(raw = ellis, kept = kept, dropped = valid[i.min], final = final)
+result <- list(raw = example.scores, kept = kept, dropped = valid[i.min], final = final)
 
 result
 ```
 
 This confirms the calculation for one student. The rest of the unit turns this scratch work into something we can reuse and apply to everyone.
 
-# Writing the Core Function
+## Writing the Core Function
 
-## A loop-based implementation
+### A loop-based implementation
 
 Before relying on `which.min`, it is worth seeing explicitly how a computer finds a minimum: by walking through the values one at a time and remembering the smallest one seen so far. This is the same control-flow pattern (a `for` loop with an `if` inside) used throughout numerical computing:
 
@@ -194,7 +223,7 @@ find.lowest <- function(x)
 find.lowest(valid)
 ```
 
-## A vectorized implementation
+### A vectorized implementation
 
 R's built-in `which.min` (and, for dropping more than one value, `order`) does the same job in one call, and is what we will use going forward:
 
@@ -235,22 +264,22 @@ compute.final.grade <- function(scores, n.drop = 1)
 }
 ```
 
-Checking the function against the by-hand result for Ellis, and against the all-missing edge case:
+Checking the function against the by-hand result for `r example.name`, and against the all-missing edge case:
 
 ```{r}
-compute.final.grade(ellis)
+compute.final.grade(example.scores)
 
 compute.final.grade(c(NA,NA,NA,NA))
 ```
 
-# Applying the Function to Every Student
+## Applying the Function to Every Student
 
 `apply(X, 1, FUN)` calls `FUN` once per **row** of `X` -- exactly what we need to run `compute.final.grade` on every student's four quiz scores:
 
 ```{r}
 final.scores <- apply(roster[, quiz.cols], 1, function(x) compute.final.grade(x)$final)
 
-final.scores
+summary(final.scores)
 
 roster$final <- final.scores
 ```
@@ -263,7 +292,7 @@ roster$dropped <- sapply(1:nrow(roster), function(i) {
     if(length(r$dropped) == 0) NA else r$dropped
 })
 
-roster
+head(roster)
 ```
 
 It is instructive to compare this with a *fully vectorized* alternative that needs no per-student function call at all: if we did **not** need to drop a quiz, the weighted total for every student could be computed in one line via matrix multiplication of the score matrix by a vector of weights:
@@ -271,12 +300,16 @@ It is instructive to compare this with a *fully vectorized* alternative that nee
 ```{r}
 w <- rep(1/4, 4)
 
-as.matrix(roster[, quiz.cols]) %*% w
+weighted.total <- as.matrix(roster[, quiz.cols]) %*% w
+
+head(weighted.total)
+
+sum(is.na(weighted.total))
 ```
 
-Notice that Ellis's entry comes back as `NA` -- matrix multiplication has no way to skip a missing value on its own. This is precisely why we wrote `compute.final.grade`: it encodes the extra logic (ignore missing quizzes, then drop the lowest) that a single matrix operation cannot express.
+Notice that `r sum(is.na(weighted.total))` students come back with `NA` -- matrix multiplication has no way to skip a missing value on its own, so a single missed quiz spoils the whole sum. This is precisely why we wrote `compute.final.grade`: it encodes the extra logic (ignore missing quizzes, then drop the lowest) that a single matrix operation cannot express.
 
-## Saving and reloading the results
+### Saving and reloading the results
 
 The final `roster` is worth keeping. A data frame can be written as a plain csv file for spreadsheets, or saved as an `.RDS` file to preserve it exactly (including the `gender` factor) for future R sessions:
 
@@ -290,14 +323,14 @@ roster.reloaded <- readRDS("roster.RDS")
 identical(roster, roster.reloaded)
 ```
 
-# Presenting the Results
+## Presenting the Results
 
-## Base R graphics
+### Base R graphics
 
 A quick histogram shows the distribution of final grades, with a vertical line marking the class average:
 
 ```{r}
-hist(roster$final, breaks = 5, col = "lightblue",
+hist(roster$final, breaks = 15, col = "lightblue",
      main = "Distribution of Final Grades", xlab = "Final Grade")
 abline(v = mean(roster$final), col = "red", lwd = 2)
 ```
@@ -309,7 +342,7 @@ boxplot(final ~ gender, data = roster,
         main = "Final Grade by Gender", xlab = "Gender", ylab = "Final Grade")
 ```
 
-## ggplot2
+### ggplot2
 
 **ggplot2** builds the same kind of comparison declaratively, by mapping columns of `roster` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual student scores jittered on top:
 
@@ -318,7 +351,7 @@ library(ggplot2)
 
 ggplot(roster, aes(x = gender, y = final, fill = gender)) +
     geom_boxplot(show.legend = FALSE, alpha = 0.6) +
-    geom_jitter(width = 0.1, size = 2) +
+    geom_jitter(width = 0.15, size = 1.5, alpha = 0.6) +
     labs(
         title = "Final Grade by Gender",
         x = "Gender", y = "Final Grade"
@@ -330,7 +363,7 @@ We can also ask a natural follow-up question -- does a strong first quiz predict
 
 ```{r}
 ggplot(roster, aes(x = Quiz1, y = final, color = gender)) +
-    geom_point(size = 2) +
+    geom_point(size = 2, alpha = 0.7) +
     labs(
         title = "Final Grade vs. Quiz 1 Score",
         x = "Quiz 1 Score", y = "Final Grade", color = "Gender"
@@ -338,18 +371,18 @@ ggplot(roster, aes(x = Quiz1, y = final, color = gender)) +
     theme_minimal()
 ```
 
-## gt
+### gt
 
-Finally, **gt** turns `roster` into a polished report table instead of a plain printout: a title, grouped "Quizzes" columns, one decimal place on the computed grade, and a readable symbol for Ellis's missing quiz.
+Finally, **gt** turns a slice of `roster` into a polished report table instead of a plain printout. With 100 students we show just the first 10 rows: a title, grouped "Quizzes" columns, one decimal place on the computed grade, and a readable symbol for any missing quiz.
 
 ```{r}
 library(gt)
 
-roster |>
+head(roster, 10) |>
     gt(rowname_col = "name") |>
     tab_header(
         title = "Course Grade Report",
-        subtitle = "Each student's lowest quiz score is dropped"
+        subtitle = "Each student's lowest quiz score is dropped (first 10 students shown)"
     ) |>
     sub_missing(columns = everything(), missing_text = "—") |>
     fmt_number(columns = final, decimals = 1) |>
