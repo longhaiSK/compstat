@@ -32,11 +32,11 @@ gen.quiz <- function(mean, sd)
     pmin(100, pmax(0, x))
 }
 
-Quiz1 <- gen.quiz(75, 12)
-Quiz2 <- gen.quiz(78, 10)
-Quiz3 <- gen.quiz(72, 14)
-Quiz4 <- gen.quiz(80, 11)
-Quiz5 <- gen.quiz(74, 13)
+Quiz1 <- gen.quiz(75, 20)
+Quiz2 <- gen.quiz(78, 20)
+Quiz3 <- gen.quiz(72, 20)
+Quiz4 <- gen.quiz(80, 20)
+Quiz5 <- gen.quiz(74, 20)
 
 Quiz1
 
@@ -148,47 +148,89 @@ A data frame lets us combine columns of different types -- here, the students' n
 
 ```{r}
 roster <- data.frame(name = students, gender = gender, scores, check.names = FALSE)
-head(roster)
+
+roster
 
 ```
 
-## Writing the Core Function
+## Calculating a Single Student's Score
 
-We want to write a reusable function that takes a **single student's record** (a row from our data frame) and calculates their overall course score.
-
-To make this function robust, we will use `grep` internally. `grep` searches for a text pattern in a vector of names. By having the function dynamically search for columns starting with "Quiz", "Test", or "Final", we don't have to hardcode column positions.
+Before writing a function, it often helps to work through the logic step by step on a single example. Let's find a student who missed a quiz so we can see how missing values are handled, and extract their record:
 
 ```{r}
-compute.course.score <- function(student_record) {
+# Find the index of the first student who has at least one NA in columns 1 to 5
+example.ix <- which(rowSums(is.na(scores[, 1:5])) > 0)[1]
+student_record <- roster[example.ix, ]
+
+student_record
+
+```
+
+To avoid hardcoding column positions, we can extract the column names from this record and use `grep` to dynamically search for columns starting with "Quiz", "Test", or "Final":
+
+```{r}
+# Extract all the column names from the student record
+col_names <- names(student_record)
+
+# Use grep to find the numeric indices of specific categories
+quiz.cols <- grep("^Quiz", col_names)
+test.cols <- grep("^Test", col_names)
+final.col <- grep("^Final", col_names)
+
+# Check which columns grep found for the quizzes
+quiz.cols
+
+```
+
+Next, we extract the scores using those indices, convert them to numeric values, and calculate the mean for each category. Using `na.rm = TRUE` ensures that the missing quiz is simply ignored rather than turning the whole average into `NA`:
+
+```{r}
+# Calculate the mean for each category, ignoring NAs
+quiz.mean <- mean(as.numeric(student_record[quiz.cols]), na.rm = TRUE)
+test.mean <- mean(as.numeric(student_record[test.cols]), na.rm = TRUE)
+final.score <- as.numeric(student_record[final.col])
+
+c(Quiz = quiz.mean, Test = test.mean, Final = final.score)
+
+```
+
+Finally, we apply the syllabus weights to calculate the overall course score:
+
+```{r}
+# Calculate the weighted course score
+course.score <- (0.3 * quiz.mean) + (0.3 * test.mean) + (0.4 * final.score)
+
+course.score
+
+```
+
+### Aggregating into a Reusable Function
+
+Now that we know the logic works perfectly for one student, we can package those exact steps into a reusable function. This function will take any `student_record` as its input and return a named vector containing the category means and the final score.
+
+```{r}
+compute.course.score <- function(student_record, w_quiz = 0.3, w_test = 0.3, w_final = 0.4) {
     
-    # Extract all the column names from the student record
     col_names <- names(student_record)
-    
-    # Use grep to find the indices of specific categories
     quiz.cols <- grep("^Quiz", col_names)
     test.cols <- grep("^Test", col_names)
     final.col <- grep("^Final", col_names)
     
-    # Calculate the mean for each category, ignoring NAs
     quiz.mean <- mean(as.numeric(student_record[quiz.cols]), na.rm = TRUE)
     test.mean <- mean(as.numeric(student_record[test.cols]), na.rm = TRUE)
     final.score <- as.numeric(student_record[final.col])
     
-    # Calculate the weighted course score
-    course.score <- (0.3 * quiz.mean) + (0.3 * test.mean) + (0.4 * final.score)
+    # The weights are now dynamic variables rather than hardcoded numbers
+    course.score <- (w_quiz * quiz.mean) + (w_test * test.mean) + (w_final * final.score)
     
-    # Bundle the results into a named vector
     c(Quiz = quiz.mean, Test = test.mean, Final = final.score, course.score = course.score)
 }
 
 ```
 
-Let's test this function on one student—specifically one who missed a quiz, to see the `na.rm = TRUE` handling in action.
+Let's test our new function on that same student to verify it produces the exact same results we just calculated by hand:
 
 ```{r}
-example.ix <- which(rowSums(is.na(scores[,1:5])) > 0)[1]
-roster[example.ix, ]
-
 compute.course.score(roster[example.ix, ])
 
 ```
@@ -222,6 +264,73 @@ results.reloaded <- readRDS("results.RDS")
 identical(results, results.reloaded)
 
 ```
+
+
+## Write a Function to Handle a Raw Score (Demonstrating list)
+
+Sometimes a function needs to return multiple distinct pieces of information that don't fit neatly into a single table. A **list** in R is a flexible container that can bundle objects of completely different types and sizes together.
+
+Let's write a wrapper function that takes our raw `roster` data and our weighting scheme. It will calculate the scores, but instead of just returning the table, it will return a list containing four very different items:
+1. The full processed data frame.
+2. A numeric vector of just the final course scores.
+3. A frequency table of scores binned into 10-point intervals.
+4. A character vector of the names of students who failed (scored below 60).
+
+```{r}
+analyze_class_performance <- function(roster_data, w_quiz = 0.3, w_test = 0.3, w_final = 0.4) {
+    
+    # 1. Pass the weights down into compute.course.score
+    all.results <- t(apply(roster_data, 1, compute.course.score, 
+                           w_quiz = w_quiz, w_test = w_test, w_final = w_final))
+                           
+    processed_table <- cbind(roster_data[, c("name", "gender")], all.results)
+    
+    # 2. Extract final course scores 
+    final_scores <- processed_table$course.score
+    
+    # 3. Create bins (handling NAs)
+    bins <- seq(0, 100, by = 10)
+    score_bins <- table(cut(final_scores, breaks = bins, include.lowest = TRUE), useNA = "ifany")
+    
+    # 4. Extract names of failing students (safely ignoring NAs using which)
+    failing_students <- processed_table$name[which(final_scores < 60)]
+    
+    # 5. Extract names of students with missing overall scores
+    missing_scores <- processed_table$name[is.na(final_scores)]
+    
+    # Bundle everything into a named list
+    list(
+        ProcessedTable = processed_table,
+        CourseScores = final_scores,
+        ScoreDistribution = score_bins,
+        FailingStudents = failing_students,
+        MissingScores = missing_scores
+    )
+}
+```
+
+When we run this function, it returns a single list object. We can use the `str()` function to quickly inspect the structure of our new list and see all the different data types nested inside it:
+
+```{r}
+# Run the analysis
+class_report <- analyze_class_performance(roster)
+
+# Inspect the structure of the returned list
+str(class_report, max.level = 1)
+
+```
+
+To access individual elements inside a list, you use the `$` operator (just like with data frames) or double brackets `[[ ]]`. Let's look at the score distribution and the failing students:
+
+```{r}
+# Access the 10-point bin distribution
+class_report$ScoreDistribution
+
+# Access the names of the failing students
+class_report$FailingStudents
+
+```
+
 
 ## Presenting the Results
 
