@@ -6,13 +6,18 @@ editor_options:
 
 
 ## Integer
-
 An integer $u$ is represented by a vector of binary numbers $(d_0,\ldots,d_{31})$ as follows:
-$$u=\sum_{i=0}^{31} d_i2^i - 2^{31}.$$
-A 32-bit integer uses bits for representation, where the maximum is $2^{31}-1$ and the minimum is $-2^{31}$[cite: 1]. The largest integer is, 
-$$u^{max}=\sum_{i=0}^{31} 1\times 2^i - 2^{31}=2^{31}-1.$$
+$$
+u=\sum_{i=0}^{31} d_i2^i - 2^{31}.
+$$
+The largest integer is, 
+$$
+u^{max}=\sum_{i=0}^{31} 1\times 2^i - 2^{31}=2^{31}-1.
+$$
 The smallest integer is, 
-$$u^{min}= - 2^{31}\approx -(2^{31}-1).$$
+$$
+u^{min}= - 2^{31}\approx -(2^{31}-1).
+$$
 
 The following chunk tests these limits in R. R uses 32-bit signed integers. When we attempt to cast a number larger than $2^{31}-1$ to an integer, R will return an `NA` and produce a warning because the value exceeds the maximum allowable threshold.
 
@@ -27,42 +32,15 @@ as.integer(2^31 - 1) + as.integer(1) # Overflows to NA
 as.integer(-(2^31 - 1))
 as.integer(- 2^31 ) # Minimum valid integer
 as.integer(- 2^31 -1 ) # Exceeds lower limit, returns NA
-
 ```
 
 ## Floating point numbers
 
-A floating-point number consists of a sign, mantissa, and exponent. A floating point number $x$ is reprented by a vector of binary numbers $(s,d_0,\ldots,d_{t-1},e_1,\ldots, e_{k-1})$ as follows:
-
-
-$$x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^k}.$$
-
-
-Typically, in double precision (64bits), $t= 52$ and $k=11$. The extreme limits are represented on a number line where values beyond $2^{1024}$ fall into overflow (Infinity), and values below $2^{-1074}$ fall into underflow (Zero).
-
-```{tikz, fig.cap="A Model for Understanding Floating Point Numbers: Overflow and Underflow Regions", fig.align="center"}
-%| echo: false
-\usetikzlibrary{decorations.pathreplacing}
-\begin{tikzpicture}[scale=1, font=\sffamily]
-  % Number line
-  \draw[<->, thick] (-6,0) -- (6,0);
-  
-  % Ticks and Labels
-  \draw[thick] (0,-0.2) -- (0,0.2) node[above] {$0$};
-  \draw[thick] (1.5,-0.2) -- (1.5,0.2) node[above] {$2^{-1074}$};
-  \draw[thick] (4,-0.2) -- (4,0.2) node[above] {$2^{1024}$};
-  \draw[thick] (-1.5,-0.2) -- (-1.5,0.2) node[above] {$-2^{-1074}$};
-  \draw[thick] (-4,-0.2) -- (-4,0.2) node[above] {$-2^{1024}$};
-  
-  % Regions
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},blue,thick] (-1.4,-0.5) -- (1.4,-0.5) node[midway,below=5pt] {Underflow ($\to 0$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},red,thick] (4.1,-0.5) -- (5.9,-0.5) node[midway,below=5pt] {Overflow ($+\infty$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},red,thick] (-5.9,-0.5) -- (-4.1,-0.5) node[midway,below=5pt] {Overflow ($-\infty$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},green!50!black,thick] (1.6,-0.5) -- (3.9,-0.5) node[midway,below=5pt] {Representable};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},green!50!black,thick] (-3.9,-0.5) -- (-1.6,-0.5) node[midway,below=5pt] {Representable};
-\end{tikzpicture}
-
-```
+A floating point number $x$ is reprented by a vector of binary numbers $(s,d_0,\ldots,d_{t-1},e_1,\ldots, e_{k-1})$ as follows:
+$$
+x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^k}.
+$$
+Typically, in double precision (64bits), $t= 52$ and $k=11$. The largest positive floating point number is roughly $2^{1024}$ and the smallest positive floating point number is roughly $2^{-1074}$. The numbers greater than $2^{1024}$ are overflow, called infinity. The numbers smaller than  $2^{-1074}$ are underflow, treated as 0. 
 
 We can observe how R behaves at these extreme boundaries. Once we hit $2^{1024}$, the number is too large to store and becomes `Inf` (Infinity). Conversely, when we drop below $2^{-1074}$, the precision runs out and the number rounds exactly to `0`.
 
@@ -75,44 +53,14 @@ We can observe how R behaves at these extreme boundaries. Once we hit $2^{1024}$
 ##smallest double precision floating-point number: > 2^(-1073)
 2^(-1074)
 2^(-1075) # Underflows to 0
-
 ```
 
-## Rounding error
+
+## Rounding error 
 
 ### Computing sum: avoiding computing large + small
-
-The mantissa has a finite capacity, meaning adding something extremely small like $2^{-54}$ to $1$ risks truncation because the bits fall outside the representable range. For example, in base 10 with 4 digits of precision, $1.000 \times 10^4 + 0.0001 \times 10^4$ evaluates to $1.000 \times 10^4$, losing the smaller term entirely.
-
-```{tikz, fig.cap="Visualizing Roundoff Error: Large + Small Numbers", fig.align="center"}
-%| echo: false
-\usetikzlibrary{positioning}
-\begin{tikzpicture}[font=\sffamily]
-  % Large number (1)
-  \node at (-1, 1) {$1.$};
-  \draw[thick] (0, 0.75) rectangle (6, 1.25) node[midway] {$00\dots00$ (52 bits)};
-  
-  % Plus sign
-  \node at (-2, 0.25) {\Large $+$};
-  
-  % Small number (2^-54)
-  \node at (-1, -0.5) {$0.$};
-  \draw[thick] (0, -0.75) rectangle (6, -0.25) node[midway] {$00\dots00$ (52 bits)};
-  
-  % The dropped bits
-  \draw[thick, red, fill=red!10] (6.2, -0.75) rectangle (7.2, -0.25) node[midway] {$01$};
-  \node[red, above] at (6.7, -0.25) {Truncated (Lost)};
-  \draw[red, ultra thick] (6.2, -0.75) -- (7.2, -0.25);
-  \draw[red, ultra thick] (6.2, -0.25) -- (7.2, -0.75);
-  
-  \draw[thick] (-2, -1.25) -- (8, -1.25);
-  
-  % Result
-  \node at (-1, -2) {$1.$};
-  \draw[thick] (0, -2.25) rectangle (6, -1.75) node[midway] {$00\dots00$ (52 bits)};
-\end{tikzpicture}
-
-```
+    
+Due to the limited length of the mantissa ($t=52$), adding a very small number to a very large number can result in the small number being completely ignored. If we add $2^{-53}$ to $1$, the result is just $1$, because the exact answer requires more bits than the computer has available. 
 
 Below, `f2` attempts to add $2^{-53}$ iteratively, but because $1 + 2^{-53} = 1$ at every single step, the final sum is simply $1$. To fix this, we can group the small numbers and add them together *before* adding them to the large number (`f6s`).
 
@@ -162,7 +110,6 @@ while(i <= 2^14){
 }
 print (f6s)
 f6 <- f6s + 1; f6
-
 ```
 
 We can use the `log()` function to see how the 52-bit limit translates into other bases, such as base $e$ or base $10$. This tells us roughly at what decimal place we lose precision (around 15-17 decimal digits).
@@ -176,12 +123,13 @@ log(2^(-52))
 
 ## based 10
 log(2^(-52),base=10)
-
 ```
 
 ### Computing exp (x): avoiding computing large - large
 
-The Taylor series for $e^x \approx 1 + x + \frac{x^2}{2!} + \dots + \frac{x^k}{k!}$ works well for $x > 0$, but fails for $x < 0$ due to alternating signs causing catastrophic cancellation. To compute $e^{-x}$ safely when $x > 0$, we calculate $\frac{1}{e^x}$.
+The Taylor series expansion for $e^x$ is $1 + x + x^2/2! + x^3/3! + \dots$. While this works well for positive values of $x$, it suffers from **catastrophic cancellation** for large negative values of $x$. 
+
+When $x$ is a large negative number, the terms in the sequence alternate between massive positive and massive negative numbers. Subtracting these enormous values wipes out the significant digits, leaving nothing but accumulated rounding errors, often producing completely impossible results (like negative outputs for an exponential function).
 
 Below, we test our custom `fexp` function. It has been updated so that when `debug = TRUE`, it returns a matrix of the internal steps rather than just the final answer.
 
@@ -222,7 +170,6 @@ res1 <- data.frame(
 )
 
 kable(res1, caption = "Comparison of built-in exp() vs naive Taylor series fexp()")
-
 ```
 
 Notice how `fexp(-50)` yields a completely wrong, negative number. Let's run it in debug mode and look at a table of the first and last 10 steps to see the massive terms canceling each other out.
@@ -239,7 +186,6 @@ debug_summary <- rbind(
 )
 
 kable(debug_summary, caption = "Debug trace for fexp(-50) showing catastrophic cancellation")
-
 ```
 
 To fix this, we can calculate $e^{|x|}$ (which avoids alternating signs and catastrophic cancellation) and then invert the final result if $x$ was negative.
@@ -267,12 +213,13 @@ res2 <- data.frame(
 )
 
 kable(res2, caption = "Comparison using robust fexp2() for negative values")
-
 ```
 
 ### Computing variance: avoiding computing large - large
 
-Using the computational formula $\sum_{i=1}^n x_i^2 - \frac{(\sum x_i)^2}{n}$ fails when data is shifted by a large constant $M$, as the terms grow proportionally to $M^2$ (e.g., $(M+1)^2$), causing catastrophic cancellation. The two-pass formula $\sum_{i=1}^n (x_i - \bar{x})^2$ centers the data first and avoids this completely.
+The "computational formula" for variance, $\frac{\sum x^2 - (\sum x)^2/n}{n-1}$, is notorious for catastrophic cancellation. If the values of $x$ are very large but have very little spread, both $\sum x^2$ and $(\sum x)^2/n$ become astronomically large. When we subtract them, we lose all precision, occasionally resulting in a variance of exactly 0.
+
+The two-pass formula, $\frac{\sum(x - \overline{x})^2}{n-1}$, centers the data first. This avoids squaring massive numbers and remains numerically stable.
 
 ```{r}
 ## Naive computational formula
@@ -295,12 +242,11 @@ c(var1(x), var2(x), var(x))
 ## Adding a massive shift exposes catastrophic cancellation in var1
 x <- c(1,2,3) + 1e10
 c(var1(x), var2(x), var(x))
-
 ```
 
-## Overflow and underflow
+## Overflow and underflow 
 
-In expressions like $\frac{e^x}{1 + e^x}$, evaluating at a large positive value yields $\frac{\text{Inf}}{\text{Inf}}$, which evaluates to `NaN`. Evaluating at a large negative value allows $e^x$ to safely underflow to $0$, yielding $\frac{0}{1+0} = 0$.
+A common calculation in statistics (like logistic regression) involves expressions like $e^\theta / (1 + e^\theta)$. If $\theta$ is large, $e^\theta$ evaluates to `Inf`. The computer then tries to calculate `Inf / (1 + Inf)`, which it evaluates as `NaN` (Not a Number), completely breaking the algorithm.
 
 By algebraically rewriting the formula as $1 / (1 + e^{-\theta})$, a large positive $\theta$ results in $e^{-\theta}$ underflowing harmlessly to $0$. The formula then easily computes $1 / (1 + 0) = 1$.
 
@@ -325,14 +271,13 @@ p2(theta)
 theta <- -2000
 p1(theta)
 p2(theta)
-
 ```
 
-### Log-Sum-Exp Trick
+## Log-Sum-Exp Trick
 
-Multiplying many small probabilities, such as $\prod_{i=1}^{2000} p(x_i) = (\frac{1}{2})^{2000}$, guarantees underflow to 0. We can represent numbers in logarithmic form $l_x = \log(x)$ to handle products and quotients safely: $\log(x_1 \cdot x_2) = l_1 + l_2$ and $\log(\frac{x_1}{x_2}) = l_1 - l_2$.
+When multiplying many small probabilities (e.g., evaluating a likelihood function), the product quickly underflows to 0. To prevent this, we operate in log-space. Multiplying numbers becomes adding their logarithms. 
 
-However, sometimes we need to add numbers in log-space: calculating $\log(e^x + e^y)$. Doing this directly reintroduces overflow. To compute $\log(\sum_{i=1}^n e^{l_i})$, factor out the maximum $m = \max(l_i)$ to get $m + \log(\sum_{i=1}^n e^{l_i - m})$. For example, with exponents 2000, 2001, and 2002, factoring out 2002 leaves safe terms like $e^{-2} + e^{-1} + e^0$. For subtraction, $\log(x - y) = \log(e^{l_x} - e^{l_y})$ can be factored as $l_x + \log(1 - e^{l_y - l_x})$ given $x > y$.
+However, sometimes we need to add numbers in log-space: calculating $\log(e^x + e^y)$. Doing this directly reintroduces overflow. The **Log-Sum-Exp trick** avoids this by factoring out the largest exponent, shifting the values down so the exponentiation operates on smaller, safer numbers.
 
 ```{r}
 log_x <- 800
@@ -381,5 +326,4 @@ log_minus_exp(2020,2000)
 
 ## Direct subtraction overflows
 exp(2000) - exp(1999)
-
 ```
