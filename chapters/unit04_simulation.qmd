@@ -1,10 +1,17 @@
 ---
-title: Simulation for Studying Point Estimation and Hypothesis Testing Procedures
+title: Simulation Studies for Statistics Research
+code-fold: true
 ---
 
 # Using simulation to study two estimators of proportions
-```{r}
 
+When estimating a binomial proportion $p$ from $n$ independent trials, the standard maximum likelihood estimator is the sample mean, $\hat{p}_1 = \bar{X}$. However, this estimator can have high variance for small sample sizes, particularly when the true $p$ is close to 0 or 1. 
+
+An alternative is a smoothed estimator (often called an "add-one-in" or Laplace estimator), defined as $\hat{p}_2 = \frac{\sum X_i + 1}{n + 2}$. This estimator introduces a slight bias but aims to reduce overall variance.
+
+To compare them, we use Monte Carlo simulation to estimate their Mean Squared Error (MSE) across a grid of true $p$ values ranging from 0 to 1. The MSE is calculated as $E[(\hat{p} - p)^2]$. We also compute the standard error of our Monte Carlo estimates to plot 95% confidence bands, allowing us to see exactly where the bias-variance tradeoff makes $\hat{p}_2$ a superior choice for small sample sizes $n$.
+
+```{r}
 ## Estimating Functios
 p_est1 <- function(x) mean(x)
 
@@ -81,12 +88,13 @@ for( n in n_set )
     
 }
 
-
 ```
 
 # Using simulation to study t-test on non-normal observations
 
+The standard Student's t-test relies on the assumption that the underlying data is normally distributed. A critical statistical question is robustness: what happens to our false positive rate (Type I error) when the data actually comes from a heavy-tailed distribution?
 
+If a statistical test is valid under the null hypothesis $H_0$, its p-values should follow a standard Uniform distribution. We will simulate data from a t-distribution with varying degrees of freedom (where lower df means heavier tails, and df=1 is the Cauchy distribution). We then evaluate whether the resulting p-values remain uniform.
 
 ```{r}
 # SIMULATE T TESTS ON DATA FROM A T DISTRIBUTION.  Simulates k data
@@ -134,18 +142,22 @@ t.test.pvalue <- function (x, mu=0)
     
     2 * pt (-abs(t), n-1)
 }
+
 ```
 
 ## Distribution of p-value of t.test under $H_0$
 
+We expect these histograms to be completely flat (uniform). A non-flat distribution indicates the t-test is either overly conservative or excessively liberal under these specific conditions.
+
 ```{r}
-
 N <- 2000
-
 bins <- 20
+
 ```
 
 ### Tests with 100 degrees of freedom, with 2 and 20 data points.
+
+With 100 degrees of freedom, the t-distribution is virtually indistinguishable from a Normal distribution. As expected, the p-values form a uniform flat line.
 
 ```{r}
 par (mfrow = c(1,2))
@@ -155,9 +167,12 @@ hist (t.test.sim(N,2,100), nclass=bins, prob=T,
 
 hist (t.test.sim(N,20,100), nclass=bins, prob=T, 
       main="", xlab=paste(N,"pvalues for n=20, df=100"))
+
 ```
 
 ### Tests with 3 degrees of freedom, with 2 and 20 data points.
+
+With 3 degrees of freedom, the data has noticeably heavier tails. We begin to see the p-value distribution warp, meaning the nominal Type I error rate is no longer perfectly calibrated.
 
 ```{r}
 par (mfrow = c(1,2))
@@ -167,9 +182,12 @@ hist (t.test.sim(N,2,3), nclass=bins, prob=T,
 
 hist (t.test.sim(N,20,3), nclass=bins, prob=T, 
       main="", xlab=paste(N,"pvalues for n=20, df=3"))
+
 ```
 
 ### Tests with 1 degree of freedom, with 2 and 20 data points.
+
+With 1 degree of freedom (the Cauchy distribution), the mean and variance are theoretically undefined. Extreme outliers are common, causing the t-test to behave erratically. The p-values cluster heavily at 1.0, rendering the test highly conservative and practically invalid.
 
 ```{r}
 par (mfrow = c(1,2))
@@ -179,9 +197,12 @@ hist (t.test.sim(N,2,1), nclass=bins, prob=T,
 
 hist (t.test.sim(N,20,1), nclass=bins, prob=T, 
       main="", xlab=paste(N,"pvalues for n=20, df=1"))
+
 ```
 
 ### Tests with 10 and 5 degrees of freedom, with 30 data points.
+
+As sample size increases to $n=30$, the Central Limit Theorem begins to compensate for the heavy tails of the df=5 and df=10 distributions, pulling the p-value distributions back toward uniformity.
 
 ```{r}
 
@@ -191,11 +212,14 @@ hist (t.test.sim(N,30,10), nclass=bins, prob=T,
 
 hist (t.test.sim(N,30,5), nclass=bins, prob=T, 
       main="", xlab=paste(N,"pvalues for n=30, df=5"))
+
 ```
 
 ## Find the power of t.test
 
-## Find the power of t.test for df = 5
+Statistical power is the probability of correctly rejecting a false null hypothesis. Here, we simulate data with a true mean of $\mu = 0.5$, while testing against $H_0: \mu = 0$. The power is the proportion of simulated p-values that fall below the $\alpha = 0.05$ significance threshold.
+
+### Find the power of t.test for df = 5
 
 ```{r}
 pvaues_H1_30 <- t.test.sim(N,30,5, mu.true = 0.5, mu = 0 )
@@ -208,7 +232,7 @@ hist(pvaues_H1_60, nclass = 20, main = paste ("The power is", mean (pvaues_H1_60
 
 ```
 
-## Find the power of t.test for df = 3
+### Find the power of t.test for df = 3
 
 ```{r}
 pvaues_H1_30 <- t.test.sim(N,30,3, mu.true = 0.5, mu = 0 )
@@ -221,7 +245,11 @@ hist(pvaues_H1_60, nclass = 20, main = paste ("The power is", mean (pvaues_H1_60
 
 ```
 
-# Using simulation to study a permuation test
+# Using simulation to study a permutation test
+
+When analytical assumptions for a test are doubtful, a permutation test offers a non-parametric alternative. To test if variables $X$ and $Y$ are correlated, we establish a null hypothesis that they are completely independent.
+
+If they are truly independent, randomly shuffling the values of $Y$ relative to $X$ shouldn't drastically change the correlation coefficient. By shuffling $Y$ many times, we generate an empirical null distribution for the absolute correlation $|r|$. The exact p-value is simply the proportion of permuted datasets that produced a correlation as extreme, or more extreme, than the actual observed data.
 
 ```{r permuted correlation, cache=TRUE}
 
@@ -267,10 +295,17 @@ pv <- test.perm.norm(2000,100)
 par (mfrow = c(1,1))
 hist(pv,20, xlab="2000 pvalues from permuation test",main="")
 
+
 ```
 
 # Using simulation to study a power regression test
+
+Often, researchers will search for a mathematical transformation that makes their data fit a model better. In this scenario, we find the power $p$ (e.g., $X^{0.5}, X^2$) that maximizes the correlation between $X^p$ and $Y$.
+
+If we report the standard linear regression p-value from this "optimized" model, the p-value will be artificially small. This is a form of optimization bias (or p-hacking). To generate a mathematically valid p-value, we must use a permutation test that repeats the *entire search process* (finding the best power) on the shuffled null datasets.
+
 ## R Functions for REGRESSION USING BEST POWER TRANSFORMATION
+
 ```{r Power Regression, cache=TRUE}
 # Takes as arguments a
 # vector of predictor values and a vector of response values (of equal
@@ -398,9 +433,12 @@ test.perm.power <- function (x, power.sim, N=100, resid.std.dev=1, ...)
     }
     pvalues
 }
+
 ```
 
 ## Checking the uniformity of p-values under $H_0$
+
+In the left plot, we examine the naive p-values under a true null hypothesis. The distribution is heavily skewed left, causing a massive inflation in the false-positive rate. In the right plot, the permutation test perfectly corrects this optimism bias, returning a uniform distribution of valid p-values.
 
 ```{r Power Regression under H0, cache=TRUE}
 par(mfrow=c(1,2),mar=c(4,4,3,1))
@@ -415,9 +453,12 @@ hist(naive.pv,nclass=20,xlab="1000 naive pvalues from power regression",
 hist(perm.pv,nclass=20,
      xlab="1000 permuation pvalues from power regression",
      main=paste("H0 is true, Permutation test, rejection rate=", mean (perm.pv< 0.05)))
+
 ```
 
 ## The statistical power of the permuation test
+
+Now that we have confirmed our permutation test maintains a valid 5% Type I error rate under the null, we evaluate its statistical power. Here, we inject a true relationship into the simulated data: $Y = X^{1.5} + \epsilon$ and $Y = X^{0.5} + \epsilon$. The resulting rejection rates demonstrate how effectively the permutation test detects these nonlinear true signals.
 
 ```{r Power Regression power, cache=TRUE}
 perm.pv.alt1 <- test.perm.power(x,1.5,1000,no.perm=99)
@@ -439,6 +480,7 @@ hist(perm.pv.alt2,nclass=20,
      main= paste0("H1: y = x^0.5 + e, permutation test, rej. rate=", 
           mean (perm.pv.alt2< 0.05))
 )
+
 
 
 ```

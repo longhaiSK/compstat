@@ -4,30 +4,35 @@ editor_options:
   chunk_output_type: console
 ---
 
+To begin, we adjust R's global options to display up to 22 significant digits. By default, R prints fewer digits to make output readable, but hiding those extra digits can obscure the subtle rounding errors we want to investigate in this document.
+
 ```{r}
 options(digits=22) ## display values in 22 digits
 ```
 
 # Integer
-An integer $u$ is represented by  a vector of binary numbers $(d_0,\ldots,d_{31})$ as follows:
+An integer $u$ is represented by a vector of binary numbers $(d_0,\ldots,d_{31})$ as follows:
 $$
 u=\sum_{i=0}^{31} d_i2^i - 2^{31}.
 $$
-The larguest integer is 
+The largest integer is 
 $$u^{max}=\sum_{i=0}^{31} 1\times 2^i - 2^{31}=2^{31}-1.$$
 The smallest integer is 
 $$u^{min}= - 2^{31}\approx -(2^{31}-1).$$
 
-Checking the largest and smallest integers
-```{r}
-as.integer(2^31)
+The following chunk tests these limits in R. R uses 32-bit signed integers. When we attempt to cast a number larger than $2^{31}-1$ to an integer, R will return an `NA` and produce a warning because the value exceeds the maximum allowable threshold.
 
-as.integer(2^31 - 1)
-as.integer(2^31 - 1) + as.integer(1) 
+```{r, warning=FALSE}
+# Check upper bounds
+as.integer(2^31) # Exceeds limit, returns NA
 
+as.integer(2^31 - 1) # Maximum valid integer
+as.integer(2^31 - 1) + as.integer(1) # Overflows to NA
+
+# Check lower bounds
 as.integer(-(2^31 - 1))
-as.integer(- 2^31 )
-as.integer(- 2^31 -1 )
+as.integer(- 2^31 ) # Minimum valid integer
+as.integer(- 2^31 -1 ) # Exceeds lower limit, returns NA
 ```
 
 # Floating point numbers
@@ -36,20 +41,19 @@ A floating point number $x$ is reprented by a vector of binary numbers $(s,d_0,\
 $$
 x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^k}.
 $$
-Typically, in double precision (64bits), $t= 52$ and $k=11$. The largest positive floating point number is roughly $2^{1024}$ and the smallest positive floating point number is roughly $2^{-1074}$. The numbers greater than $2^{1024}$ are overflow, called infinity. The numbers smaller than  $2^{-1074}$ are underlfow, treated as 0. 
+Typically, in double precision (64bits), $t= 52$ and $k=11$. The largest positive floating point number is roughly $2^{1024}$ and the smallest positive floating point number is roughly $2^{-1074}$. The numbers greater than $2^{1024}$ are overflow, called infinity. The numbers smaller than  $2^{-1074}$ are underflow, treated as 0. 
+
+We can observe how R behaves at these extreme boundaries. Once we hit $2^{1024}$, the number is too large to store and becomes `Inf` (Infinity). Conversely, when we drop below $2^{-1074}$, the precision runs out and the number rounds exactly to `0`.
 
 ```{r}
 # checking the largest double precision floating-point number: 
 2^1023
-
 2^1023+1
+2^1024 # Overflows to Inf
 
-2^1024
 #smallest double precision floating-point number: > 2^(-1073)
-
 2^(-1074)
-
-2^(-1075)
+2^(-1075) # Underflows to 0
 ```
 
 
@@ -57,14 +61,15 @@ Typically, in double precision (64bits), $t= 52$ and $k=11$. The largest positiv
 
 ## Computing sum: avoiding computing large + small
     
+Due to the limited length of the mantissa ($t=52$), adding a very small number to a very large number can result in the small number being completely ignored. If we add $2^{-53}$ to $1$, the result is just $1$, because the exact answer requires more bits than the computer has available. 
+
+Below, `f2` attempts to add $2^{-53}$ iteratively, but because $1 + 2^{-53} = 1$ at every single step, the final sum is simply $1$. To fix this, we can group the small numbers and add them together *before* adding them to the large number (`f6s`).
+
 ```{r}
-
 ### demo of roundoff error: avoid large +- small
-
 
 # a number f0
 f0 <- 1 + 2^(-40)
-
 f0
 
 f1 <- 1
@@ -73,44 +78,31 @@ while(i <= 2^12){
     f1 <- f1 + 2^(-52)   
     i <- i + 1   
 }
-
 f1
 
-
-#A method that will give your wrong answer
-
+# A method that will give your wrong answer due to lost precision
 f2 <- 1
 i <- 1
 while(i <= 2^13){     
     f2 <- f2 + 2^(-53)   
     i <- i + 1
 }
-
-
 f2
 
 # this difference is not due to number display in R:
-f0==f1
+f0 == f1
+f0 == f2
 
-f0==f2
-
-
-#R built-in function 'sum'
-
+# R built-in function 'sum' uses internal precision techniques
 f3 <- sum (c(1, rep (2^(-53),2^13)))
-
 f3
-
 f1 == f3
 
 f4 <- sum (c(1, rep (2^(-54),2^14)))
-
 f4
-
 f0 == f4
 
-# a possible solution is to sort the numbers before adding
-
+# a possible solution is to accumulate the small numbers first before adding to 1
 f6s <- 0
 i <- 1
 while(i <= 2^14){     
@@ -120,58 +112,86 @@ while(i <= 2^14){
 print (f6s)
 f6 <- f6s + 1; f6
 ```
-Let's get a rough sense of mantissa in different bases:
+
+We can use the `log()` function to see how the 52-bit limit translates into other bases, such as base $e$ or base $10$. This tells us roughly at what decimal place we lose precision (around 15-17 decimal digits).
 
 ```{r}
-
-#base= exp(1) = 2.71
+# base= exp(1) = 2.71
 log(2^(-52))
 
 1+ exp (-35)
-1+ exp (-37)
+1+ exp (-37) # Evaluates to exactly 1 due to precision loss
 
-#based 10
+# based 10
 log(2^(-52),base=10)
-
 ```
 
 ## Computing exp (x): avoiding computing large - large
 
-```{r}
+The Taylor series expansion for $e^x$ is $1 + x + x^2/2! + x^3/3! + \dots$. While this works well for positive values of $x$, it suffers from **catastrophic cancellation** for large negative values of $x$. 
+
+When $x$ is a large negative number, the terms in the sequence alternate between massive positive and massive negative numbers. Subtracting these enormous values wipes out the significant digits, leaving nothing but accumulated rounding errors, often producing completely impossible results (like negative outputs for an exponential function).
+
+Below, we test our custom `fexp` function. It has been updated so that when `debug = TRUE`, it returns a matrix of the internal steps rather than just the final answer.
+
+```{r, message=FALSE, warning=FALSE}
+library(knitr)
 
 fexp <- function(x, debug=FALSE) 
 {
     i <- 0
     expx <- 1
     u <- 1
+    
+    if (debug) debug_list <- list()
+    
     while(abs(u)>1e-20*abs(expx)) {
         i <- i+1
         u <- u*x/i
         expx <- expx+u
+        
         if (debug){
-            cat(sprintf ("Step %d: adding %f, exp(%f) = %f\n", i, u, x, expx))
+            debug_list[[i]] <- c(Step = i, Term_u = u, exp_x = expx)
         }
     }
+    
+    if (debug) {
+        return(do.call(rbind, debug_list))
+    }
+    
     expx
 }
 
-matrix(c(exp(10),fexp(10)))
+# Test the function over a range of positive and negative values
+test_vals <- c(10, 20, 60, -1, -10, -20, -50)
+res1 <- data.frame(
+  x = test_vals,
+  Built_in_Exp = exp(test_vals),
+  Taylor_fexp = sapply(test_vals, fexp)
+)
 
-matrix(c(exp(20),fexp(20)))
+kable(res1, caption = "Comparison of built-in exp() vs naive Taylor series fexp()")
+```
 
-matrix(c(exp(60),fexp(60)))
+Notice how `fexp(-50)` yields a completely wrong, negative number. Let's run it in debug mode and look at a table of the first and last 10 steps to see the massive terms canceling each other out.
 
-matrix(c(exp(-1),fexp(-1)))
+```{r}
+# See what's happening at x = -50
+debug_matrix <- fexp(-50, debug = TRUE)
 
-matrix(c(exp(-10),fexp(-10)))
+# Combine the first 10 and last 10 rows for a readable table
+debug_summary <- rbind(
+    head(debug_matrix, 10),
+    matrix(NA, nrow = 1, ncol = 3, dimnames = list("...", colnames(debug_matrix))), # divider row
+    tail(debug_matrix, 10)
+)
 
-matrix(c(exp(-20),fexp(-20)))
+kable(debug_summary, caption = "Debug trace for fexp(-50) showing catastrophic cancellation")
+```
 
-matrix(c(exp(-50),fexp(-50)))
+To fix this, we can calculate $e^{|x|}$ (which avoids alternating signs and catastrophic cancellation) and then invert the final result if $x$ was negative.
 
-# See what's happening
-fexp (-50, debug = TRUE)
-
+```{r}
 ## using another expression to avoid computing large - large
 fexp2 <- function(x) {
     xa <- abs(x)
@@ -186,48 +206,52 @@ fexp2 <- function(x) {
     if (x >= 0) expx else 1/expx
 }
 
+test_vals_neg <- c(-10, -20, -50)
+res2 <- data.frame(
+  x = test_vals_neg,
+  Built_in_Exp = exp(test_vals_neg),
+  Robust_fexp2 = sapply(test_vals_neg, fexp2)
+)
 
-
-
-
-
-matrix(c(exp(-10),fexp2(-10)))
-
-matrix(c(exp(-20),fexp2(-20)))
-
-matrix(c(exp(-50),fexp2(-50)))
+kable(res2, caption = "Comparison using robust fexp2() for negative values")
 ```
+
 ## Computing variance: avoiding computing large - large
 
-```{r}
+The "computational formula" for variance, $\frac{\sum x^2 - (\sum x)^2/n}{n-1}$, is notorious for catastrophic cancellation. If the values of $x$ are very large but have very little spread, both $\sum x^2$ and $(\sum x)^2/n$ become astronomically large. When we subtract them, we lose all precision, occasionally resulting in a variance of exactly 0.
 
+The two-pass formula, $\frac{\sum(x - \bar{x})^2}{n-1}$, centers the data first. This avoids squaring massive numbers and remains numerically stable.
+
+```{r}
+# Naive computational formula
 var1 <- function(x) 
 { n <- length(x)
 ( sum(x^2) - sum(x)^2/n ) / (n-1)
 }
 
+# Two-pass formula (centering on the mean)
 var2 <- function(x)
 {
     n <- length(x)
-    
     sum((x-mean(x))^2) / (n-1)
 }
 
+# Small data works fine for both
 x <- c(1,2,3)
+c(var1(x), var2(x), var(x))
 
-c(var1(x),var2(x),var(x))
-
-
+# Adding a massive shift exposes catastrophic cancellation in var1
 x <- c(1,2,3) + 1e10
-
-c(var1(x),var2(x),var(x))
-
-
+c(var1(x), var2(x), var(x))
 ```
 
 # Overflow and underflow 
-```{r}
 
+A common calculation in statistics (like logistic regression) involves expressions like $e^\theta / (1 + e^\theta)$. If $\theta$ is large, $e^\theta$ evaluates to `Inf`. The computer then tries to calculate `Inf / (1 + Inf)`, which it evaluates as `NaN` (Not a Number), completely breaking the algorithm.
+
+By algebraically rewriting the formula as $1 / (1 + e^{-\theta})$, a large positive $\theta$ results in $e^{-\theta}$ underflowing harmlessly to $0$. The formula then easily computes $1 / (1 + 0) = 1$.
+
+```{r}
 ## demo of overflow problem: avoid Inf/Inf, 0/0
 p1 <- function(theta)
 {
@@ -239,80 +263,68 @@ p2 <- function(theta)
     1/(1+exp(-theta))
 }
 
-
+# Large positive theta breaks p1, works in p2
 theta <- 2000
-
 p1(theta)
-
 p2(theta)
 
+# Large negative theta works fine for both 
 theta <- -2000
-
 p1(theta)
-
 p2(theta)
-
-
 ```
-# Use logarithm to handle overflow and underflow numbers
+
+# Log-Sum-Exp Trick
+
+When multiplying many small probabilities (e.g., evaluating a likelihood function), the product quickly underflows to 0. To prevent this, we operate in log-space. Multiplying numbers becomes adding their logarithms. 
+
+However, sometimes we need to add numbers in log-space: calculating $\log(e^x + e^y)$. Doing this directly reintroduces overflow. The **Log-Sum-Exp trick** avoids this by factoring out the largest exponent, shifting the values down so the exponentiation operates on smaller, safer numbers.
 
 ```{r}
-
 log_x <- 800
-
 x <- exp(log_x)
-
-x
+x # Overflow!
 
 log_y <- 805
-
 y <- exp(log_y)
+y # Overflow!
 
-y
-
+# Direct division evaluates to NaN because Inf/Inf
 x/y
 
+# Subtracting logs works safely
 log_xovery <- log_x- log_y
-
 log_xovery
-
 exp(log_xovery)
 
-
-#looking for log of sum of numbers in logarithm
-
+# Log-Sum-Exp trick: log(sum(exp(x)))
 log_sum_exp <- function(log_x)
 {
     max_log_x <- max(log_x)
-    
     max_log_x + log( sum(exp(log_x - max_log_x) ))
 }
 
+# Values that would overflow directly
 log_x <- c(2000,2010,2030)
+exp(log_x) # Produces Inf
+log_sum_exp(log_x) # Safe calculation
 
-exp(log_x)
-
-log_sum_exp(log_x)
-
+# Values that would underflow directly
 log_x <- - c(2000,2010,2030)
+exp(log_x) # Produces 0
+log_sum_exp(log_x) # Safe calculation
 
-exp(log_x)
-
-log_sum_exp(log_x)
-
+# Similarly, we can build a safe log-minus-exp function: log(e^x - e^y)
 log_minus_exp <- function(log_x,log_y)
-    
-{  if(log_x < log_y)
-    stop("The first argument is bigger than the second")
+{  
+    if(log_x < log_y)
+        stop("The first argument is bigger than the second")
     
     log_x + log(1-exp(log_y-log_x))
-    
 }
 
 log_minus_exp(2020,2000)
 
-
+# Direct subtraction overflows
 exp(2000) - exp(1999)
-
 ```
-
