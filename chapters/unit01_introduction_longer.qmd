@@ -1,13 +1,14 @@
 ---
 title: Introduction to R Programming
 code-fold: false
+warning: false
 ---
 
 ## A toy example
 
 Throughout this unit we will use one running example to introduce the basic building blocks of R: vectors, strings, special values, matrices, data frames, lists, functions, file I/O, and graphics.
 
-**The mission:** a class of 100 students has taken graded work in three *categories*: five quizzes, two tests, and one final exam, each scored out of 100 points. A student's **course score** is a weighted average of the category means -- quizzes count 30%, tests count 30%, and the final counts 40%. To make the simulated data realistic, a student's test and final scores are generated from their quiz performance by a simple linear regression, with a different intercept for female and male students, and a few quizzes are missing entirely (a student who did not sit that quiz). We want to
+**The mission:** a class of 100 students has taken graded work in three *categories*: five quizzes, two tests, and one final exam, each scored out of 100 points. A student's **course score** is a weighted average of the category means -- quizzes count 30%, tests count 30%, and the final counts 40%. To make the simulated data realistic, a student's test and final scores are generated from their quiz performance by a simple linear regression, with a different intercept for Program A and Program B students, and a few quizzes are missing entirely (a student who did not sit that quiz). We want to
 
 1. work out the calculation step by step for one student,
 2. package that calculation into a reusable function,
@@ -71,16 +72,16 @@ In a real class, a student's test and final scores are not independent of how th
 This is a great place to demonstrate **vectorized calculations** in R. Instead of writing a `for` loop to calculate each student's score one by one, we can simply add and multiply whole vectors of length 100 together. R aligns the elements automatically:
 
 ```{r}
-gender <- factor(sample(c("f","m"), n, replace = TRUE))
+program <- factor(sample(c("Program A", "Program B"), n, replace = TRUE))
 
 quiz.mat <- cbind(Quiz1, Quiz2, Quiz3, Quiz4, Quiz5)
 quiz.mean.true <- rowMeans(quiz.mat)
 
-b0.test  <- ifelse(gender == "f", 12, 6)
+b0.test  <- ifelse(program == "Program A", 12, 6)
 
 b1.test  <- 0.80
 
-b0.final <- ifelse(gender == "f", 15, 8)
+b0.final <- ifelse(program == "Program A", 15, 8)
 b1.final <- 0.85
 
 clip.round <- function(x) round(pmin(100, pmax(0, x)))
@@ -92,10 +93,11 @@ jitter <- rnorm(n, 0, 8)
 Test1.raw <- b0.test  + b1.test*quiz.mean.true  + rnorm(n, 0, 8)
 Test1 <- clip.round(Test1.raw)
 
-data.frame(gender,b0.test, b1.test, quiz.mean.true, jitter, Test1.raw)
+data.frame(program, b0.test, b1.test, quiz.mean.true, jitter, Test1.raw)
 ```
 
-Using the above method, we generate two tests and a final
+Using the above method, we generate two tests and a final:
+
 ```{r}
 # Vectorized math: b0.test + b1.test * quiz.mean.true + rnorm(...)
 Test1 <- clip.round(b0.test  + b1.test*quiz.mean.true  + rnorm(n, 0, 8))
@@ -129,7 +131,7 @@ for(j in 1:ncol(scores)) {
     scores[sample(n, round(n*miss.rate)), j] <- NA
 }
 
-head(scores,10)
+head(scores, 10)
 
 ```
 
@@ -142,12 +144,12 @@ colSums(is.na(scores))
 
 We will rely on `na.rm = TRUE` later so that a missing quiz simply drops out of a student's quiz average, rather than returning `NA` for their whole course score.
 
-### Data frames: adding names and gender
+### Data frames: adding names and program
 
-A data frame lets us combine columns of different types -- here, the students' names and gender alongside their (numeric) scores -- into a single table:
+A data frame lets us combine columns of different types -- here, the students' names and program alongside their (numeric) scores -- into a single table:
 
 ```{r}
-roster <- data.frame(name = students, gender = gender, scores, check.names = FALSE)
+roster <- data.frame(name = students, program = program, scores, check.names = FALSE)
 
 roster
 
@@ -244,7 +246,7 @@ Now that we have a function working for one student, we can apply it across the 
 all.results <- t(apply(roster, 1, compute.course.score))
 
 # Combine the original demographic info with the calculated scores
-results <- cbind(roster[, c("name","gender")], all.results)
+results <- cbind(roster[, c("name", "program")], all.results)
 
 results
 
@@ -252,7 +254,7 @@ results
 
 ### Saving and reloading the results
 
-The `results` table is worth keeping. A data frame can be written as a plain csv file for spreadsheets, or saved as an `.RDS` file to preserve it exactly (including the `gender` factor) for future R sessions:
+The `results` table is worth keeping. A data frame can be written as a plain csv file for spreadsheets, or saved as an `.RDS` file to preserve it exactly (including the `program` factor) for future R sessions:
 
 ```{r}
 write.csv(results, file = "results.csv", row.names = FALSE)
@@ -266,7 +268,7 @@ identical(results, results.reloaded)
 ```
 
 
-## Write a Function to Handle a Raw Score (Demonstrating list)
+## Writing a Function for the Whole Process with List Output
 
 Sometimes a function needs to return multiple distinct pieces of information that don't fit neatly into a single table. A **list** in R is a flexible container that can bundle objects of completely different types and sizes together.
 
@@ -283,7 +285,7 @@ analyze_class_performance <- function(roster_data, w_quiz = 0.3, w_test = 0.3, w
     all.results <- t(apply(roster_data, 1, compute.course.score, 
                            w_quiz = w_quiz, w_test = w_test, w_final = w_final))
                            
-    processed_table <- cbind(roster_data[, c("name", "gender")], all.results)
+    processed_table <- cbind(roster_data[, c("name", "program")], all.results)
     
     # 2. Extract final course scores 
     final_scores <- processed_table$course.score
@@ -345,33 +347,33 @@ abline(v = mean(results$course.score), col = "red", lwd = 2)
 
 ```
 
-### ggplot2
+### Plotting with ggplot2
 
-**ggplot2** builds a comparison across gender declaratively, by mapping columns of `results` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual course scores jittered on top:
+**ggplot2** builds a comparison across programs declaratively, by mapping columns of `results` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual course scores jittered on top:
 
 ```{r}
 library(ggplot2)
 
-ggplot(results, aes(x = gender, y = course.score, fill = gender)) +
+ggplot(results, aes(x = program, y = course.score, fill = program)) +
     geom_boxplot(show.legend = FALSE, alpha = 0.6) +
     geom_jitter(width = 0.15, size = 1.5, alpha = 0.6) +
     labs(
-        title = "Course Score by Gender",
-        x = "Gender", y = "Course Score"
+        title = "Course Score by Academic Program",
+        x = "Program", y = "Course Score"
     ) +
     theme_minimal()
 
 ```
 
-We built a gender-specific intercept into the simulation when generating the final exam scores; a scatter plot of the final versus each student's mean quiz score, with a fitted line per gender, should reveal it:
+We built a program-specific intercept into the simulation when generating the final exam scores; a scatter plot of the final versus each student's mean quiz score, with a fitted line per program, should reveal it:
 
 ```{r}
-ggplot(results, aes(x = Quiz, y = Final, color = gender)) +
+ggplot(results, aes(x = Quiz, y = Final, color = program)) +
     geom_point(size = 2, alpha = 0.6) +
     geom_smooth(method = "lm", se = FALSE) +
     labs(
-        title = "Final Exam vs. Mean Quiz Score, by Gender",
-        x = "Mean Quiz Score", y = "Final Exam Score", color = "Gender"
+        title = "Final Exam vs. Mean Quiz Score, by Program",
+        x = "Mean Quiz Score", y = "Final Exam Score", color = "Program"
     ) +
     theme_minimal()
 
@@ -379,28 +381,28 @@ ggplot(results, aes(x = Quiz, y = Final, color = gender)) +
 
 The two fitted lines are roughly parallel but vertically offset -- exactly the intercept difference we built into `b0.final` when simulating the data.
 
-### gt
+### Making table with gt
 
-Finally, **gt** turns a group summary of `results` into a polished report table: the average of each category mean and the average course score, by gender.
+Finally, **gt** turns a group summary of `results` into a polished report table: the average of each category mean and the average course score, by program.
 
 ```{r}
 library(gt)
 
-summary.by.gender <- aggregate(cbind(Quiz, Test, Final, course.score) ~ gender, data = results, FUN = mean)
+summary.by.program <- aggregate(cbind(Quiz, Test, Final, course.score) ~ program, data = results, FUN = mean)
 
-summary.by.gender |>
-    gt(rowname_col = "gender") |>
+summary.by.program |>
+    gt(rowname_col = "program") |>
     tab_header(
-        title = "Category Means and Course Score by Gender",
-        subtitle = "Averaged across all students in each group"
+        title = "Category Means and Course Score by Program",
+        subtitle = "Averaged across all students in each program"
     ) |>
-    fmt_number(columns = -gender, decimals = 1) |>
+    fmt_number(columns = -program, decimals = 1) |>
     cols_label(
         Quiz = "Quiz Mean",
         Test = "Test Mean",
         Final = "Final Exam",
         course.score = "Course Score"
     ) |>
-    tab_stubhead(label = "Gender")
+    tab_stubhead(label = "Program")
 
 ```
