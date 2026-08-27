@@ -208,7 +208,9 @@ course.score
 
 ### Aggregating into a Reusable Function
 
-Now that we know the logic works perfectly for one student, we can package those exact steps into a reusable function. This function will take any `student_record` as its input and return a named vector containing the category means and the final score.
+Now that we know the logic works perfectly for one student, we can package those exact steps into a reusable function. This function will take any `student_record` as its input and return a named vector containing the category means and the final score. 
+
+To make the grading policy more forgiving, we are adding a conditional rule: if a student's final exam score is strictly higher than their test average, the final exam score will replace the test average. Because `compute.course.score` processes exactly one student at a time, we evaluate a single logical condition using a standard `if` statement rather than a vectorized alternative like `ifelse`. We also use `!is.na()` checks to ensure the `if` statement doesn't crash by attempting to evaluate a missing value (which could happen if a student had no test or final scores).
 
 ```{r}
 compute.course.score <- function(student_record, w_quiz = 0.3, w_test = 0.3, w_final = 0.4) {
@@ -222,6 +224,11 @@ compute.course.score <- function(student_record, w_quiz = 0.3, w_test = 0.3, w_f
     test.mean <- mean(as.numeric(student_record[test.cols]), na.rm = TRUE)
     final.score <- as.numeric(student_record[final.col])
     
+    # Explicit conditional check: replace test mean with final score if it is higher
+    if (!is.na(final.score) && !is.na(test.mean) && final.score > test.mean) {
+        test.mean <- final.score
+    }
+    
     # The weights are now dynamic variables rather than hardcoded numbers
     course.score <- (w_quiz * quiz.mean) + (w_test * test.mean) + (w_final * final.score)
     
@@ -230,11 +237,37 @@ compute.course.score <- function(student_record, w_quiz = 0.3, w_test = 0.3, w_f
 
 ```
 
-Let's test our new function on that same student to verify it produces the exact same results we just calculated by hand:
+Let's test our updated function on two specific scenarios to verify the conditional logic. We will format these inputs as **named vectors** rather than data frames. This mimics exactly what the `apply()` function will do later when it passes rows of our dataset to this function.
+
+**Student A** struggled on the tests (average: 70) but aced the final (95). The function should detect that `95 > 70` and replace their test mean with 95 before calculating the final course score.
+**Student B** did great on the tests (average: 90) but dropped on the final (75). The function should keep their original test mean.
 
 ```{r}
-compute.course.score(roster[example.ix, ])
+# Create the mock record for Student A as a named vector
+student_A <- c(
+    name = "Student_A", program = "Program A",
+    Quiz1 = "80", Quiz2 = "80", Quiz3 = "80", Quiz4 = "80", Quiz5 = "80", # Quiz mean = 80
+    Test1 = "65", Test2 = "75",                                           # Test mean = 70
+    Final = "95"
+)
 
+# Create the mock record for Student B as a named vector
+student_B <- c(
+    name = "Student_B", program = "Program B",
+    Quiz1 = "80", Quiz2 = "80", Quiz3 = "80", Quiz4 = "80", Quiz5 = "80", # Quiz mean = 80
+    Test1 = "90", Test2 = "90",                                           # Test mean = 90
+    Final = "75"
+)
+
+# Test Student A: The Test mean should be updated to 95 in the output
+cat("Student A Results:\n")
+compute.course.score(student_A)
+# Math check: (0.3 * 80) + (0.3 * 95) + (0.4 * 95) = 90.5
+
+# Test Student B: The Test mean should remain 90 in the output
+cat("\nStudent B Results:\n")
+compute.course.score(student_B)
+# Math check: (0.3 * 80) + (0.3 * 90) + (0.4 * 75) = 81
 ```
 
 ## Applying the Function to Every Student
@@ -250,6 +283,46 @@ results <- cbind(roster[, c("name", "program")], all.results)
 
 results
 
+```
+
+**Looping over the dataset: `for` loop vs. `apply`**
+
+While `apply()` is idiomatic R and very concise, we can also use a traditional `for` loop to process each student. To do this efficiently, we first pre-allocate an empty matrix of the correct size to store our output. Then, we iterate through the row indices one by one.
+
+Inside the loop, we use `unlist()` to convert the single row of our data frame into a named vector. This guarantees we are feeding our `compute.course.score` function the exact same data structure that `apply()` uses under the hood.
+
+```{r}
+# 1. Pre-allocate an empty matrix to hold the results
+num_students <- nrow(roster)
+loop_results <- matrix(NA, nrow = num_students, ncol = 4)
+
+# Set the column and row names to match our expected output
+colnames(loop_results) <- c("Quiz", "Test", "Final", "course.score")
+rownames(loop_results) <- roster$name
+
+# 2. Iterate over each row index
+for (i in 1:num_students) {
+    # Extract the single row as a named character vector
+    student_record <- unlist(roster[i, ]) 
+    
+    # Compute the score and store it in the corresponding row of our matrix
+    loop_results[i, ] <- compute.course.score(student_record)
+}
+
+# Peek at the first few rows of the loop results
+head(loop_results)
+```
+
+Now, let's run the exact same calculation using `apply()` and use the `all.equal()` function to verify that both methods yield the exact same mathematical results. 
+
+```{r}
+
+# 3. Check if they are mathematically identical
+# (We set check.attributes = FALSE to ignore minor metadata differences, 
+# like how apply() inherits row names vs. how we manually assigned them)
+is_same <- all.equal(loop_results, results, check.attributes = FALSE)
+
+print(paste("Do the for loop and apply() give the exact same results?", is_same))
 ```
 
 ### Saving and reloading the results
@@ -273,6 +346,7 @@ identical(results, results.reloaded)
 Sometimes a function needs to return multiple distinct pieces of information that don't fit neatly into a single table. A **list** in R is a flexible container that can bundle objects of completely different types and sizes together.
 
 Let's write a wrapper function that takes our raw `roster` data and our weighting scheme. It will calculate the scores, but instead of just returning the table, it will return a list containing four very different items:
+
 1. The full processed data frame.
 2. A numeric vector of just the final course scores.
 3. A frequency table of scores binned into 10-point intervals.
@@ -333,30 +407,83 @@ class_report$Failing_Students
 class_report$incomplete_students 
 ```
 
-
 ## Presenting the Results
+
+### Presenting the Processed Results with `gt`
+
+Finally, **gt** turns the raw data frame of results into a polished, presentation-ready report. We can extract the `ProcessedTable` directly from our `class_report` list and enhance it. 
+
+Here we use `tab_spanner()` to group the category scores and the final score under distinct visual headers, and `fmt_number()` to ensure all grades display exactly two decimal places.
+
+```{r}
+library(gt)
+
+# Extract the full processed table from our list output
+# (We use head() to display just the first 10 rows in the report)
+full_results <- head(class_report$ProcessedTable, 10)
+
+gt(full_results) |>
+    tab_header(
+        title = "Class Performance Report",
+        subtitle = "Individual category means and final calculated course scores"
+    ) |>
+    # Student Information
+    tab_spanner(
+        label = "Student Information",
+        columns = c(name, program)
+    )|>
+    # Group the individual graded categories
+    tab_spanner(
+        label = "Category Breakdown",
+        columns = c(Quiz, Test, Final)
+    ) |>
+    # Group the final processed output
+    tab_spanner(
+        label = "Submitted Score",
+        columns = c(course.score)
+    ) |>
+    # Enforce two decimal places for all numeric score columns
+    fmt_number(
+        columns = c(Quiz, Test, Final),
+        decimals = 2
+    ) |>
+    fmt_number(
+        columns = c(course.score),
+        decimals = 0
+    ) |>
+    cols_label(
+        name = "Name",
+        program = "Program",
+        Quiz = "Quizzes",
+        Test = "Tests",
+        Final = "Final Exam",
+        course.score = "Course Score"
+    ) |>
+    tab_stubhead(label = "Student ID")
+
+```
 
 ### Base R graphics
 
 A quick histogram shows the distribution of course scores, with a vertical line marking the class average:
 
 ```{r}
-hist(results$course.score, breaks = 15, col = "lightblue",
+hist(class_report$ProcessedTable$course.score, breaks = 15, col = "lightblue",
      main = "Distribution of Course Scores", xlab = "Course Score")
-abline(v = mean(results$course.score), col = "red", lwd = 2)
+abline(v = mean(class_report$ProcessedTable$course.score, na.rm = TRUE), col = "red", lwd = 2)
 
 ```
 
 ### Plotting with ggplot2
 
-**ggplot2** builds a comparison across programs declaratively, by mapping columns of `results` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual course scores jittered on top:
+**ggplot2** builds a comparison across programs declaratively, by mapping columns of `class_report$ProcessedTable` to visual properties and layering geometries with `+`. Here the boxplot is enhanced with the individual course scores jittered on top:
 
 ```{r}
 library(ggplot2)
 
-ggplot(results, aes(x = program, y = course.score, fill = program)) +
+ggplot(class_report$ProcessedTable, aes(x = program, y = course.score, fill = program)) +
     geom_boxplot(show.legend = FALSE, alpha = 0.6) +
-    geom_jitter(width = 0.15, size = 1.5, alpha = 0.6) +
+    geom_jitter(width = 0.05, size = 1.5, alpha = 0.6) +
     labs(
         title = "Course Score by Academic Program",
         x = "Program", y = "Course Score"
@@ -368,7 +495,7 @@ ggplot(results, aes(x = program, y = course.score, fill = program)) +
 We built a program-specific intercept into the simulation when generating the final exam scores; a scatter plot of the final versus each student's mean quiz score, with a fitted line per program, should reveal it:
 
 ```{r}
-ggplot(results, aes(x = Quiz, y = Final, color = program)) +
+ggplot(class_report$ProcessedTable, aes(x = Quiz, y = Final, color = program)) +
     geom_point(size = 2, alpha = 0.6) +
     geom_smooth(method = "lm", se = FALSE) +
     labs(
@@ -380,29 +507,3 @@ ggplot(results, aes(x = Quiz, y = Final, color = program)) +
 ```
 
 The two fitted lines are roughly parallel but vertically offset -- exactly the intercept difference we built into `b0.final` when simulating the data.
-
-### Making table with gt
-
-Finally, **gt** turns a group summary of `results` into a polished report table: the average of each category mean and the average course score, by program.
-
-```{r}
-library(gt)
-
-summary.by.program <- aggregate(cbind(Quiz, Test, Final, course.score) ~ program, data = results, FUN = mean)
-
-summary.by.program |>
-    gt(rowname_col = "program") |>
-    tab_header(
-        title = "Category Means and Course Score by Program",
-        subtitle = "Averaged across all students in each program"
-    ) |>
-    fmt_number(columns = -program, decimals = 1) |>
-    cols_label(
-        Quiz = "Quiz Mean",
-        Test = "Test Mean",
-        Final = "Final Exam",
-        course.score = "Course Score"
-    ) |>
-    tab_stubhead(label = "Program")
-
-```
