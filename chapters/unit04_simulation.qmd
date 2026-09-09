@@ -3,484 +3,555 @@ title: Point Estimation and Hypothesis Testing
 code-fold: true
 ---
 
-## Two estimators of proportions
+```{r}
+#| label: setup
+#| echo: false
+library(latex2exp)   # TeX() renders LaTeX in plot titles, axis labels and legends
 
-When estimating a binomial proportion $p$ from $n$ independent trials, the standard maximum likelihood estimator is the sample mean, $\hat{p}_1 = \bar{X}$. However, this estimator can have high variance for small sample sizes, particularly when the true $p$ is close to 0 or 1. 
+```
 
-An alternative is a smoothed estimator (often called an "add-one-in" or Laplace estimator), defined as $\hat{p}_2 = \frac{\sum X_i + 1}{n + 2}$. This estimator introduces a slight bias but aims to reduce overall variance.
 
-To compare them, we use Monte Carlo simulation to estimate their Mean Squared Error (MSE) across a grid of true $p$ values ranging from 0 to 1. The MSE is calculated as $E[(\hat{p} - p)^2]$. We also compute the standard error of our Monte Carlo estimates to plot 95% confidence bands, allowing us to see exactly where the bias-variance tradeoff makes $\hat{p}_2$ a superior choice for small sample sizes $n$.
+## Point Estimation
+
+Assume data $X = (X_1, \ldots, X_n)$ is drawn from a distribution $f(x; \theta)$ indexed by an unknown parameter $\theta \in \Theta$. An estimator $\hat\theta = T(X)$ is a function derived exclusively from the data. Because it relies on random samples, $\hat\theta$ is itself a random variable. Its behavior is defined by its sampling distribution.
+
+The two fundamental summaries of an estimator's performance are bias and variance:
+
+
+$$\mathrm{bias}(\hat\theta) = E_{\theta}(\hat\theta) - \theta, \qquad \mathrm{Var}_{\theta}(\hat\theta) = E_{\theta}\left[\left(\hat\theta - E_{\theta}(\hat\theta)\right)^{2}\right].$$
+
+The most comprehensive single-number summary is the Mean Squared Error (MSE), defined as $\mathrm{MSE}_{\theta}(\hat\theta) = E_{\theta}[(\hat\theta - \theta)^{2}]$. By adding and subtracting $E_{\theta}(\hat\theta)$ inside the square, the cross term vanishes, yielding the MSE decomposition:
+
+
+$$\mathrm{MSE}_{\theta}(\hat\theta) = \mathrm{Var}_{\theta}(\hat\theta) + \left[\mathrm{bias}_{\theta}(\hat\theta)\right]^{2}.$$
+
+**Key Insight:** Unbiasedness is not strictly necessary. An estimator that introduces a small bias in exchange for a massive reduction in variance will frequently achieve a lower MSE than a strictly unbiased competitor.
+
+Because MSE is a *function* of $\theta$, it acts as the risk function under squared-error loss. Two estimators rarely have one absolute winner; their risk curves often cross. To choose a single estimator globally, statisticians summarize the risk curve via two main criteria:
+
+* **Minimax:** Minimize the worst-case scenario: $\sup_{\theta \in \Theta} \mathrm{MSE}_{\theta}(\hat\theta)$
+* **Bayes Risk:** Average the error against a prior distribution $\pi$: $\int_{\Theta} \mathrm{MSE}_{\theta}(\hat\theta)\, \pi(\theta)\, d\theta$
+
+Asymptotically, $\hat\theta_n$ is consistent if it converges to $\theta$ in probability. Under regularity conditions, Maximum Likelihood Estimators (MLEs) are consistent and asymptotically normal, achieving the Cramér–Rao lower variance bound $1/I(\theta)$. However, in small samples, the MLE can often be outperformed.
+
+### Monte Carlo Evaluation of an Estimator
+
+Risk functions are rarely available in closed form, but because they are expectations, we can estimate them efficiently using Monte Carlo simulation.
+
+**The Monte Carlo Recipe:**
+
+1. Define a grid of $\theta$ values.
+2. For each $\theta$, generate $M$ independent datasets.
+3. Compute the estimate $\hat\theta^{(m)}$ for each dataset.
+4. Average the squared errors:
+
+$$\widehat{\mathrm{MSE}}_{\theta} = \frac{1}{M} \sum_{m=1}^{M} \left(\hat\theta^{(m)} - \theta\right)^{2}$$
+
+
+
+Because this represents an average of independent, identically distributed (i.i.d.) quantities, its standard error is $s/\sqrt{M}$, where $s^{2}$ is the sample variance of the squared errors. Always report the Monte Carlo error boundaries ($\widehat{\mathrm{MSE}}_{\theta} \pm 1.96\, s/\sqrt{M}$) to distinguish true differences in risk curves from mere simulation noise.
+
+### Two Estimators of Proportions
+
+Consider estimating a binomial proportion $p$ from $n$ independent trials.
+
+* **Maximum Likelihood Estimator ($\hat{p}_1$):** The sample mean, $\hat{p}_1 = \bar{X}$. This is unbiased but exhibits high variance in small samples, especially near boundaries ($p \approx 0$ or $1$).
+* **Smoothed Estimator ($\hat{p}_2$):** Often called the Laplace or "add-one-in" estimator, $\hat{p}_2 = (\sum_i X_i + 1)/(n + 2)$. This introduces bias by shrinking the estimate toward $1/2$ (the posterior mean under a uniform prior), but reduces variance by a factor of $[n/(n+2)]^2$.
+
+We can estimate the risk curves on a grid of $p$ values using the Monte Carlo method. Both estimators rely strictly on the sufficient statistic $S = \sum_i X_i \sim \mathrm{Binomial}(n, p)$, allowing us to vectorize the simulation without looping over replicates.
 
 ```{r}
-## Estimating Functios
-p_est1 <- function(x) mean(x)
+#| label: prop-estimators
+###Estimators, written in terms of the sufficient statistic S = sum(X_i)
+p_est1 <- function(s, n) s / n
+p_est2 <- function(s, n) (s + 1) / (n + 2)
 
-p_est2 <- function(x) {
-    n <- length (x)
-    (sum(x) + 1) / (n+2)
-}
-
-## Functions for estimating MSE
-mse_est_mc <- function(n,p,no_sim,p_est)
+### Monte Carlo estimate of the MSE and its standard error.  All no_sim
+### replicates are generated in a single vectorized draw.
+mse_est_mc <- function(n, p, no_sim, p_est)
 {
-    sq_error <- rep(0, no_sim)
-    for(i_sim in 1:no_sim)
-    {  sq_error[i_sim] <- (p_est( rbinom(n,1,p) ) - p)^2
-    }
-    list(mse=mean(sq_error), sd = sqrt(var(sq_error)/no_sim) )
+    sq_error <- (p_est(rbinom(no_sim, size = n, prob = p), n) - p)^2
+    c(mse = mean(sq_error), sd = sqrt(var(sq_error) / no_sim))
 }
 
+### MSE over a grid of p values, returned as a 2 by length(p_set) matrix
+mse_curve <- function(n, p_set, no_sim, p_est)
+    vapply(p_set, function(p) mse_est_mc(n, p, no_sim, p_est), c(mse = 0, sd = 0))
 
-mse_p1 <- function(n,p,no_sim)
-{
-    sq_error <- rep(0, no_sim)
-    for(i_sim in 1:no_sim)
-    {  sq_error[i_sim] <- (p1_est( rbinom(n,1,p) ) - p)^2
-    }
-    list(mse=mean(sq_error), sd = sqrt(var(sq_error)/no_sim) )
-}
+```
 
-mse_p2 <- function(n,p,no_sim)
-{
-    sq_error <- rep(0, no_sim)
-    for(i_sim in 1:no_sim)
-    {  sq_error[i_sim] <- (p2_est( rbinom(n,1,p) ) - p)^2
-    }
-    list(mse=mean(sq_error), sd = sqrt(var(sq_error)/no_sim) )
-}
-
-## Simulation
-par( mfrow=c(2,2), mar=c(4,4,2,1) )
-
+```{r}
+#| label: prop-mse-plot
+#| fig-width: 10
+#| fig-height: 7
 no_sim <- 10000
+p_set <- seq(0, 1, by = 0.05)
+n_set <- c(2, 10, 50, 100)
 
-p_set <- seq(0,1,by = 0.05)
+par(mfrow = c(2, 2), mar = c(4, 4.5, 2.5, 1))
 
-risk_est1 <- risk_est2 <- rep(0, length(p_set))
-sd_risk_est1 <- sd_risk_est2 <- rep(0, length(p_set))
-
-
-n_set <- c(2,10,50,100)
-
-for( n in n_set )
+for (n in n_set)
 {
-    
-    for(i in 1:length(p_set) )
-    {
-        output_est <- mse_est_mc(n=n,p=p_set[i],no_sim=no_sim,p_est1)
-        risk_est1[i] <- output_est$mse
-        sd_risk_est1[i] <- output_est$sd
-        
-        output_est <- mse_est_mc(n=n,p=p_set[i],no_sim=no_sim,p_est2)
-        risk_est2[i] <- output_est$mse
-        sd_risk_est2[i] <- output_est$sd
-        
-    }
-    
-    plot(p_set, risk_est1,type="l", 
-         xlab="p",ylab="MSE",main=paste("n=",n))
-    points(p_set, risk_est1 + 1.96*sd_risk_est1,type="l",lty=2)
-    points(p_set, risk_est1 - 1.96*sd_risk_est1,type="l",lty=2)
-    
-    points(p_set, risk_est2,type="l",col=2)
-    points(p_set, risk_est2 + 1.96*sd_risk_est2,type="l",lty=2,col=2)
-    points(p_set, risk_est2 - 1.96*sd_risk_est2,type="l",lty=2,col=2)
-    
+    r1 <- mse_curve(n, p_set, no_sim, p_est1)
+    r2 <- mse_curve(n, p_set, no_sim, p_est2)
+
+    bands <- cbind(r1["mse", ], r1["mse", ] + 1.96 * r1["sd", ], r1["mse", ] - 1.96 * r1["sd", ],
+                   r2["mse", ], r2["mse", ] + 1.96 * r2["sd", ], r2["mse", ] - 1.96 * r2["sd", ])
+
+    matplot(p_set, bands, type = "l", lty = c(1, 2, 2, 1, 2, 2), col = rep(c(1, 2), each = 3),
+            xlab = TeX(r"($p$)"),
+            ylab = TeX(r"($E[(\hat{p} - p)^2]$)"),
+            main = TeX(sprintf(r"($n = %d$)", n)))
+
+    legend("top", bty = "n", lty = 1, col = c(1, 2), cex = 0.9,
+           legend = TeX(c(r"($\hat{p}_1 = S/n$)", r"($\hat{p}_2 = (S+1)/(n+2)$)")))
 }
 
 ```
 
-## t-test on non-normal observations
+When $n$ is small, the smoothed estimator significantly outperforms the MLE across most of the parameter space. As $n$ grows, the curves converge, reflecting the asymptotic efficiency of the MLE. The exception occurs strictly at the extremes ($p \approx 0$ or $1$), where the shrinkage penalty overrides the variance reduction, making $\hat{p}_1$ superior. The confidence bands confirm this crossing is a true mathematical property, not simulation variance.
 
-The standard Student's t-test relies on the assumption that the underlying data is normally distributed. A critical statistical question is robustness: what happens to our false positive rate (Type I error) when the data actually comes from a heavy-tailed distribution?
+## Hypothesis Testing
 
-If a statistical test is valid under the null hypothesis $H_0$, its p-values should follow a standard Uniform distribution. We will simulate data from a t-distribution with varying degrees of freedom (where lower df means heavier tails, and df=1 is the Cauchy distribution). We then evaluate whether the resulting p-values remain uniform.
+A hypothesis test maps data to a binary decision regarding a null hypothesis ($H_0$) versus an alternative ($H_1$). It relies on a test statistic $T(X)$, where extreme values serve as evidence against $H_0$.
+
+* **Type I Error:** Rejecting a true $H_0$.
+* **Type II Error:** Failing to reject a false $H_0$.
+* **Power Function $\beta(\theta)$:** The probability of rejecting $H_0$. It represents the Type I error rate when $\theta \in H_0$, and the statistical power when $\theta \in H_1$.
+* **Size & Level:** The maximum Type I error probability across all parameters in $H_0$. A test has *level $\alpha$* if its size is at most $\alpha$.
+
+The **p-value** repackages the test rule without locking into a fixed $\alpha$ in advance. It represents the probability of observing a test statistic at least as extreme as the one observed, assuming $H_0$ is true:
+
+
+$$pv = \Pr_{H_0}\left(T(X^{*}) \ge T(x^{obs})\right)$$
+
+A functional p-value must maintain **validity**: $\Pr_{H_0}(pv \le \alpha) \le \alpha$ for every $\alpha \in (0, 1)$. If $T$ possesses a continuous null distribution and is applied exactly, this inequality becomes an equality, meaning the p-values will follow a uniform distribution on $[0,1]$ under $H_0$.
+
+**Diagnostic:** Simulate multiple datasets under $H_0$, compute the p-value for each, and plot the histogram.
+
+* **Flat histogram:** The test is valid.
+* **Left-skewed (mass near 0):** The test is invalid and liberal; true size exceeds nominal level.
+* **Right-skewed (mass near 1):** The test is excessively conservative; sacrifices statistical power.
+
+P-values generally fail uniformity for two reasons:
+
+1. **Distributional Misspecification:** A foundational assumption (e.g., normality) fails, skewing the null distribution.
+2. **Optimization Bias (Data-dependent procedures):** The null distribution is computed assuming a fixed procedure, but the actual procedure was chosen by inspecting the data (e.g., feature selection).
+
+### Permutation Tests
+
+Permutation tests offer a non-parametric alternative when analytical assumptions are dubious. If the null hypothesis states two variables are independent, the exact null distribution can be mapped without assuming normality.
+
+Because the variables are independent under $H_0$, their labels can be scrambled without altering the joint distribution (exchangeability). The true p-value is simply the rank of the observed statistic among all permuted statistics:
+
+
+$$\widehat{pv} = \frac{1 + \#\{j : T^{(j)} \ge T^{obs}\}}{N + 1}$$
+
+The $+1$ correction counts the observed dataset alongside the $N$ permutations, ensuring $\widehat{pv}$ remains mathematically valid for any finite $N$.
+
+### Example: The t-test on Non-Normal Observations
+
+The standard Student's t-test assumes normally distributed data. Here, we test its robustness when exposed to heavy-tailed distributions. This highlights the first failure mode: applying the wrong null distribution to the test statistic.
+
+We simulate data using a t-distribution across varying degrees of freedom (df). Lower df creates heavier tails, with df=1 representing the Cauchy distribution.
 
 ```{r}
-# SIMULATE T TESTS ON DATA FROM A T DISTRIBUTION.  Simulates k data
-# sets, each consisting of n data points that are drawn independently
-# from the t distribution with df degrees of freedom.  For each data
-# set, the p-value for a two-sided t test of the null hypothesis that
-# the mean is mu (default 0) is computed.  The value returned by this
-# function is the vector of these k p-values.
-
-t.test.sim <- function (N, n, df, mu.true =0, mu=0)
+#| label: t-test-functions
+t.test.pvalue <- function (x, mu = 0)
 {
-    pvalues <- numeric(N)
-    
-    for (i in 1:N)
-    { x <- rt (n, df) + mu.true
-    pvalues[i] <- t.test.pvalue(x,mu)
-    }
-    
-    pvalues
-}
-
-
-# FIND THE P-VALUE FOR A TWO-SIDED T TEST.  The data is given by the first
-# argument, x, which must be a numeric vector.  The mean under the null 
-# hypothesis is given by the second argument, mu, which defaults to zero.
-#
-# Note:  This function is just for illustrative purposes.  The p-value
-# can be obtained using the built-in t.test function with the expression:
-# 
-#     t.test(x,mu=mu)$p.value
-
-t.test.pvalue <- function (x, mu=0)
-{ 
-    if (!is.numeric(x) || !is.numeric(mu) || length(mu)!=1)
-    { stop("Invalid argument")
-    }
-    
+    if (!is.numeric(x) || !is.numeric(mu) || length(mu) != 1) { stop("Invalid argument") }
     n <- length(x)
+    if (n < 2) { stop("Can't do a t test with less than two data points") }
     
-    if (n<2)
-    { stop("Can't do a t test with less than two data points")
-    }
-    
-    t <- (mean(x)-mu) / sqrt(var(x)/n)
-    
-    2 * pt (-abs(t), n-1)
+    t <- (mean(x) - mu) / sqrt(var(x) / n)
+    2 * pt (-abs(t), n - 1)
+}
+
+t.test.sim <- function (N, n, df, mu.true = 0, mu = 0)
+{
+    X <- matrix(rt(n * N, df), n, N) + mu.true
+    m <- colMeans(X)
+    v <- colSums((X - rep(m, each = n))^2) / (n - 1)
+    2 * pt(-abs((m - mu) / sqrt(v / n)), n - 1)
+}
+
+hist.pv <- function (pv, n, df, bins = 20)
+{
+    hist(pv, nclass = bins, prob = TRUE, col = "grey90",
+         xlab = TeX(sprintf(r"($%d$ p-values, $n = %d$, $\nu = %d$)", length(pv), n, df)),
+         main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
+    abline(h = 1, col = 4, lwd = 2)
 }
 
 ```
 
-### Distribution of p-value of t.test under $H_0$
+#### Null Distribution Diagnostics
 
-We expect these histograms to be completely flat (uniform). A non-flat distribution indicates the t-test is either overly conservative or excessively liberal under these specific conditions.
+We expect these histograms to sit perfectly flat against the blue uniform density line.
 
 ```{r}
+#| label: t-test-settings
 N <- 2000
 bins <- 20
 
 ```
 
-### Tests with 100 degrees of freedom, with 2 and 20 data points.
-
-With 100 degrees of freedom, the t-distribution is virtually indistinguishable from a Normal distribution. As expected, the p-values form a uniform flat line.
+**100 Degrees of Freedom (Nearly Normal)**
+With 100 df, the distribution is practically Normal. The p-values form a perfect uniform line, confirming validity.
 
 ```{r}
-par (mfrow = c(1,2))
-
-hist (t.test.sim(N,2,100), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=2, df=100"))
-
-hist (t.test.sim(N,20,100), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=20, df=100"))
+#| label: t-test-df100
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.pv(t.test.sim(N, 2, 100), n = 2, df = 100, bins)
+hist.pv(t.test.sim(N, 20, 100), n = 20, df = 100, bins)
 
 ```
 
-### Tests with 3 degrees of freedom, with 2 and 20 data points.
-
-With 3 degrees of freedom, the data has noticeably heavier tails. We begin to see the p-value distribution warp, meaning the nominal Type I error rate is no longer perfectly calibrated.
+**3 Degrees of Freedom (Heavy Tails)**
+Heavier tails warp the p-value distribution. The nominal Type I error rate is no longer perfectly calibrated, leading to false confidence.
 
 ```{r}
-par (mfrow = c(1,2))
-
-hist (t.test.sim(N,2,3), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=2, df=3"))
-
-hist (t.test.sim(N,20,3), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=20, df=3"))
+#| label: t-test-df3
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.pv(t.test.sim(N, 2, 3), n = 2, df = 3, bins)
+hist.pv(t.test.sim(N, 20, 3), n = 20, df = 3, bins)
 
 ```
 
-### Tests with 1 degree of freedom, with 2 and 20 data points.
-
-With 1 degree of freedom (the Cauchy distribution), the mean and variance are theoretically undefined. Extreme outliers are common, causing the t-test to behave erratically. The p-values cluster heavily at 1.0, rendering the test highly conservative and practically invalid.
+**1 Degree of Freedom (Cauchy Distribution)**
+With an undefined mean and variance, extreme outliers dominate. The t-test entirely breaks down, clustering p-values near 1.0 and rendering the test virtually useless.
 
 ```{r}
-par (mfrow = c(1,2))
-
-hist (t.test.sim(N,2,1), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=2, df=1"))
-
-hist (t.test.sim(N,20,1), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=20, df=1"))
+#| label: t-test-df1
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.pv(t.test.sim(N, 2, 1), n = 2, df = 1, bins)
+hist.pv(t.test.sim(N, 20, 1), n = 20, df = 1, bins)
 
 ```
 
-### Tests with 10 and 5 degrees of freedom, with 30 data points.
-
-As sample size increases to $n=30$, the Central Limit Theorem begins to compensate for the heavy tails of the df=5 and df=10 distributions, pulling the p-value distributions back toward uniformity.
+**Increasing Sample Size ($n=30$)**
+As sample size scales, the Central Limit Theorem rescues the underlying math. The p-value distributions for df=5 and df=10 flatten back into uniformity.
 
 ```{r}
-
-par (mfrow = c(1,2))
-hist (t.test.sim(N,30,10), nclass=bins, prob=T, 
-      main="",xlab=paste(N,"pvalues for n=30, df=10"))
-
-hist (t.test.sim(N,30,5), nclass=bins, prob=T, 
-      main="", xlab=paste(N,"pvalues for n=30, df=5"))
+#| label: t-test-n30
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.pv(t.test.sim(N, 30, 10), n = 30, df = 10, bins)
+hist.pv(t.test.sim(N, 30, 5), n = 30, df = 5, bins)
 
 ```
 
-### Find the power of t.test
+#### Power of the t-test
 
-Statistical power is the probability of correctly rejecting a false null hypothesis. Here, we simulate data with a true mean of $\mu = 0.5$, while testing against $H_0: \mu = 0$. The power is the proportion of simulated p-values that fall below the $\alpha = 0.05$ significance threshold.
-
-#### Find the power of t.test for df = 5
+Statistical power represents the ability to successfully detect a true effect. Here, we inject a true mean of $\mu = 0.5$ while testing against $H_0: \mu = 0$.
 
 ```{r}
-pvaues_H1_30 <- t.test.sim(N,30,5, mu.true = 0.5, mu = 0 )
-pvaues_H1_60 <- t.test.sim(N,60,5, mu.true = 0.5, mu = 0 )
-
-par (mfrow = c(1,2))
-
-hist(pvaues_H1_30, nclass = 20, main = paste ("The power is", mean (pvaues_H1_30 < 0.05)), xlab=paste(N,"pvalues for n=30, df=5, mu=0.5"))
-hist(pvaues_H1_60, nclass = 20, main = paste ("The power is", mean (pvaues_H1_60 < 0.05)), xlab=paste(N,"pvalues for n=60, df=5, mu=0.5"))
+#| label: hist-power-fn
+hist.power <- function (pv, n, df, mu.true)
+    hist(pv, nclass = 20, col = "grey90",
+         xlab = TeX(sprintf(r"($%d$ p-values, $n = %d$, $\nu = %d$, $\mu = %.1f$)",
+                            length(pv), n, df, mu.true)),
+         main = TeX(sprintf(r"(power at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
 
 ```
 
-#### Find the power of t.test for df = 3
-
 ```{r}
-pvaues_H1_30 <- t.test.sim(N,30,3, mu.true = 0.5, mu = 0 )
-pvaues_H1_60 <- t.test.sim(N,60,3, mu.true = 0.5, mu = 0 )
-
-par (mfrow = c(1,2))
-
-hist(pvaues_H1_30, nclass = 20, main = paste ("The power is", mean (pvaues_H1_30 < 0.05)), xlab=paste(N,"pvalues for n=30, df=3, mu=0.5"))
-hist(pvaues_H1_60, nclass = 20, main = paste ("The power is", mean (pvaues_H1_60 < 0.05)),xlab=paste(N,"pvalues for n=60, df=3, mu=0.5"))
+#| label: t-test-power-df5
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.power(t.test.sim(N, 30, 5, mu.true = 0.5), n = 30, df = 5, mu.true = 0.5)
+hist.power(t.test.sim(N, 60, 5, mu.true = 0.5), n = 60, df = 5, mu.true = 0.5)
 
 ```
 
-## A permutation test for correlation coefficient
+```{r}
+#| label: t-test-power-df3
+par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist.power(t.test.sim(N, 30, 3, mu.true = 0.5), n = 30, df = 3, mu.true = 0.5)
+hist.power(t.test.sim(N, 60, 3, mu.true = 0.5), n = 60, df = 3, mu.true = 0.5)
 
-When analytical assumptions for a test are doubtful, a permutation test offers a non-parametric alternative. To test if variables $X$ and $Y$ are correlated, we establish a null hypothesis that they are completely independent.
+```
 
-If they are truly independent, randomly shuffling the values of $Y$ relative to $X$ shouldn't drastically change the correlation coefficient. By shuffling $Y$ many times, we generate an empirical null distribution for the absolute correlation $|r|$. The exact p-value is simply the proportion of permuted datasets that produced a correlation as extreme, or more extreme, than the actual observed data.
+### Example: A Permutation Test for Correlation
 
-```{r permuted correlation, cache=TRUE}
+When evaluating the correlation between variables $X$ and $Y$, dropping the analytical normality assumption in favor of a permutation test avoids the first failure mode entirely.
 
-# COMPUTE THE P-VALUE FOR A PERMUTATION TEST OF CORRELATION.  Tests the null
-# hypothesis that the the vectors x and y are independent, versus the 
-# alternative that they are correlated (either positively or negatively).
-# The vectors x and y are given as the first and second arguments; they
-# must be of equal length.
-#
+**The Procedure:**
 
-perm.cor.test <- function (x, y, no.perm=100)
-{ 
-    real.abs.cor <- abs(cor(x,y))
-    permuted.abs.cor <- rep (0, no.perm)
-    for (i in 1:no.perm)
-    { 
-      permuted.abs.cor[i] <- abs(cor(x,sample(y)))
-     
-    }
-    
-    mean (permuted.abs.cor > real.abs.cor)
+1. Calculate the observed correlation $\rho^{obs} = \hat\rho(X, Y)$.
+2. For $j = 1, \ldots, N$: randomly shuffle $Y$ to create $Y^{(j)}$, then calculate $\rho^{(j)} = \hat\rho(X, Y^{(j)})$.
+3. Calculate the permutation p-value as the proportion of shuffled correlations whose absolute value meets or exceeds the observed correlation.
+
+```{r}
+#| label: perm-cor
+perm.cor.test <- function (x, y, no.perm = 100)
+{
+    Yp <- replicate(no.perm, sample(y))          # n by no.perm permuted responses
+    permuted.abs.cor <- abs(as.vector(cor(x, Yp)))
+    real.cor <- cor(x, y)
+
+    list (rho = real.cor,
+          pv = (1 + sum(permuted.abs.cor >= abs(real.cor))) / (no.perm + 1),
+          perm.abs.cor = permuted.abs.cor)
 }
 
-# TEST ON NORMALLY-DISTRIBUTED DATA, COMPARED TO TEST BASED ON NORMAL DIST.
+```
 
-test.perm.norm <- function(no.sim,no.perm)
-{
-    pvalue <- rep(0,no.sim)
-    
-    for(i in 1:no.sim)
-    {
-        x <- rnorm(20)
-        y <- rnorm(20)
-        
-        pvalue[i] <- perm.cor.test(x,y,no.perm)
-    }   
-    
-    pvalue
-}
+#### Performance on Non-Normal Dependent Data
 
+We generate non-normal exponential variables with a direct dependency. The observed $\vert{}\hat\rho\vert{}$ rests squarely in the far right tail of the randomized permutation distribution.
 
-pv <- test.perm.norm(2000,100)
-par (mfrow = c(1,1))
-hist(pv,20, xlab="2000 pvalues from permuation test",main="")
+```{r}
+#| label: perm-cor-illustration
+#| cache: true
+#| fig-width: 8
+#| fig-height: 4.5
+par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
 
+x <- rexp(30); y <- 0.4 * x + rexp(30)     # non-normal, dependent
+out <- perm.cor.test(x, y, no.perm = 2000)
+
+hist(out$perm.abs.cor, breaks = 40, col = "grey90",
+     xlab = TeX(r"($|\hat{\rho}|$ from permuted data)"),
+     main = TeX(sprintf(r"(Permutation distribution of $|\hat{\rho}|$; $\hat{\rho}^{obs} = %.3f$)",
+                        out$rho)))
+abline(v = abs(out$rho), col = 2, lwd = 2)
+
+c(rho_obs = out$rho, perm_pv = out$pv, pearson_pv = cor.test(x, y)$p.value)
 
 ```
 
-##  A power regression test
+#### Evaluating Null Validity
 
-Often, researchers will search for a mathematical transformation that makes their data fit a model better. In this scenario, we find the power $p$ (e.g., $X^{0.5}, X^2$) that maximizes the correlation between $X^p$ and $Y$.
+Under an identical, normal distribution, the permutation test perfectly mirrors a standard analytical test, maintaining true uniformity under $H_0$.
 
-If we report the standard linear regression p-value from this "optimized" model, the p-value will be artificially small. This is a form of optimization bias (or **p-hacking**). To generate a mathematically valid p-value, we must use a permutation test that repeats the *entire search process* (finding the best power) on the shuffled null datasets.
+```{r}
+#| label: perm-cor-normal-h0
+#| cache: true
+#| fig-width: 8
+#| fig-height: 4.5
+test.perm.norm <- function (no.sim, no.perm, n = 20)
+    replicate(no.sim, perm.cor.test(rnorm(n), rnorm(n), no.perm)$pv)
 
-### R Functions for REGRESSION USING BEST POWER TRANSFORMATION
+pv <- test.perm.norm(2000, 100)
 
-```{r Power Regression, cache=TRUE}
-# Takes as arguments a
-# vector of predictor values and a vector of response values (of equal
-# length).  The predictor values must be non-negative.  Finds the
-# power transformation for the predictors that produces the highest
-# correlation (in absolute value) with the response, chosing the power
-# from the powers argument (which defaults to seq(0.1,2.0,by=0.1).
-# Returns the pvalue
+par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
+hist(pv, 20, prob = TRUE, col = "grey90",
+     xlab = TeX(r"($2000$ permutation p-values, normal data)"),
+     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
+abline(h = 1, col = 4, lwd = 2)
 
-pvalue.lm.pow <- function (x, y, powers=seq(0.1,4.0,by=0.1))
+```
+
+Crucially, when testing non-normal, entirely independent data, the permutation test remains flawless. The standard Pearson test (relying on a normal approximation) struggles, while the permutation test yields a perfect uniform distribution without needing normality.
+
+```{r}
+#| label: perm-cor-nonnormal-h0
+#| cache: true
+res <- replicate(500, {
+  x <- rexp(30); y <- rexp(30)                    # independent, non-normal
+  c(perm    = perm.cor.test(x, y, no.perm = 500)$pv,
+    pearson = cor.test(x, y)$p.value)
+})
+
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+for (m in c("perm", "pearson")) {
+  hist(res[m, ], breaks = 20, prob = TRUE, col = "grey90",
+       xlab = TeX(sprintf(r"($500$ %s p-values under $H_0$)", m)),
+       main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(res[m, ] < 0.05))))
+  abline(h = 1, col = 4, lwd = 2)
+}
+
+```
+
+### Example: Variable Selection and Optimization Bias
+
+This section addresses the second failure mode: calculating a p-value as if the model was fixed in advance, when the model was actually chosen by actively querying the data (p-hacking).
+
+**The Scenario:** You have a response $Y$ and 20 candidate predictors, $X_1 \dots X_{20}$, with a sample size of $n=50$. You test the null hypothesis that $Y$ has no relationship with any $X$.
+
+A deeply flawed but common practice is to:
+
+1. Scan for the single predictor $X_{k^*}$ that happens to correlate highest with $Y$.
+2. Run a standard linear regression $Y \sim X_{k^*}$.
+3. Report the standard t-test p-value for the slope.
+
+```{r}
+#| label: test-lm-sel
+test_lm_sel <- function(y, X) {
+  k <- which.max(abs(cor(X, y)))
+  summary(lm(y ~ X[, k]))$coefficients[2, 4]    # t-test p-value of selected slope
+}
+
+```
+
+```{r}
+#| label: test-lm-sel-fast
+### two-sided p-value of the slope in a simple linear regression, vectorized in r
+cor_pvalue <- function(r, n) 2 * pt(-abs(r * sqrt((n - 2) / (1 - r^2))), n - 2)
+test_lm_sel_fast <- function(y, X) cor_pvalue(max(abs(cor(X, y))), length(y))
+sim_null <- function(n = 50, p = 20) list(y = rnorm(n), X = matrix(rnorm(n * p), n, p))
+
+d <- sim_null()
+c(lm = test_lm_sel(d$y, d$X), fast = test_lm_sel_fast(d$y, d$X))   # identical
+
+```
+
+By intentionally fishing for the maximum correlation first, the naive test is overwhelmingly likely to discover "significant" correlations strictly out of random noise.
+
+```{r}
+#| label: test-lm-sel-h0
+#| cache: true
+#| fig-width: 8
+#| fig-height: 4.5
+pv_sel <- replicate(2000, { d <- sim_null(); test_lm_sel_fast(d$y, d$X) })
+
+par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
+hist(pv_sel, breaks = 20, prob = TRUE, col = "grey90",
+     xlab = TeX(r"($2000$ naive p-values after selection, $H_0$ true)"),
+     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv_sel < 0.05))))
+abline(h = 1, col = 4, lwd = 2)
+
+```
+
+As the histogram proves, the false-positive rate under this naive approach explodes far above the accepted 0.05 threshold.
+
+#### The Permutation Fix
+
+To repair the p-value, we must embed the *entire selection process* inside the permutation loop.
+
+1. Record the naive p-value from the observed data.
+2. Shuffle $Y$, re-select the best predictor, and compute a new p-value. Repeat $N$ times.
+3. The true valid p-value is the proportion of permuted runs that beat the original observed run.
+
+```{r}
+#| label: perm-lm-sel
+perm_lm_sel <- function(y, X, N = 500) {
+  n <- length(y)
+  pobs <- test_lm_sel_fast(y, X)
+
+  Yp <- replicate(N, sample(y))            # n by N permuted responses
+  rmax <- apply(abs(cor(X, Yp)), 2, max)   # selection redone in each column
+  pperm <- cor_pvalue(rmax, n)
+
+  (1 + sum(pperm <= pobs)) / (N + 1)
+}
+
+```
+
+```{r}
+#| label: perm-lm-sel-size-power
+#| cache: true
+#| fig-width: 8
+#| fig-height: 4.5
+sim_alt <- function(n = 50, p = 20, beta = 0.5) {
+  X <- matrix(rnorm(n * p), n, p); list(y = beta * X[, 1] + rnorm(n), X = X)
+}
+
+pv_perm0 <- replicate(300, { d <- sim_null(); perm_lm_sel(d$y, d$X) })
+pv_perm1 <- replicate(300, { d <- sim_alt();  perm_lm_sel(d$y, d$X) })
+pv_sel1  <- replicate(300, { d <- sim_alt();  test_lm_sel_fast(d$y, d$X) })
+
+par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
+hist(pv_perm0, breaks = 20, prob = TRUE, col = "grey90",
+     xlab = TeX(r"($300$ permutation p-values, $H_0$ true)"),
+     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv_perm0 < 0.05))))
+abline(h = 1, col = 4, lwd = 2)
+
+rbind(test_lm_sel = c(size = mean(pv_sel < 0.05),   power = mean(pv_sel1 < 0.05)),
+      permutation = c(size = mean(pv_perm0 < 0.05), power = mean(pv_perm1 < 0.05)))
+
+```
+
+The permutation distribution restores the flat, uniform distribution. Because power can only be honestly compared between tests of the same size, the permutation test provides the mathematically sound baseline.
+
+### Example: A Power Regression Test
+
+The same optimization bias occurs when iterating through continuous power transformations (e.g., $X^{0.5}, X^2$) to maximize correlation between $X^q$ and $Y$. Because the selection rule adapts to the data, applying standard analytical p-values directly to the final "optimized" model will yield artificially inflated significance.
+
+We employ the same fix: encapsulate the entire search process inside the permutation randomization.
+
+```{r}
+#| label: power-regression-functions
+pow.matrix <- function (x, powers = seq(0.1, 4.0, by = 0.1))
 {
-    if (!is.vector(x,"numeric") || !is.vector(y,"numeric") 
-        || length(x)!=length(y))
-    { 
-      stop("Arguments should be numeric vectors of equal length")
-    }
-    
-    if (any(x<0))
-    { 
-      stop("Predictors must be non-negative")
-    }
-    
+    if (!is.vector(x, "numeric")) stop("Argument should be a numeric vector")
+    if (any(x < 0)) stop("Predictors must be non-negative")
+    outer(x, powers, "^")
+}
+
+pvalue.lm.pow <- function (Y, Xp)
+{
+    Y <- as.matrix(Y)
+    rmax <- apply(abs(cor(Xp, Y)), 2, max)
+    cor_pvalue(rmax, nrow(Y))
+}
+
+test.lm.power <- function (Xp, N)
+    pvalue.lm.pow(matrix(rnorm(nrow(Xp) * N), nrow(Xp), N), Xp)
+
+pvalue.perm.lm.pow <- function (y, Xp, no.perm = 100)
+{
+    actual <- pvalue.lm.pow(y, Xp)
+    permuted <- pvalue.lm.pow(replicate(no.perm, sample(y)), Xp)
+    (1 + sum(permuted <= actual)) / (no.perm + 1)
+}
+
+test.perm.power <- function (x, Xp, power.sim, N = 100, resid.std.dev = 1, no.perm = 99)
+{
     n <- length(x)
-    
-    # Find the power that produces the highest correlation with the response.
-    
-    best.r <- 0
-    
-    for (p in powers)
-    { 
-      r <- cor(x^p,y)
-      if (abs(r)>=abs(best.r))
-      { 
-        power <- p
-        best.r <- r
-      }
-    }
-    
-    # Return the best power and the linear model using that power.
-    
-    xp <- x^power
-    #return naive pvalue
-    coef(summary(lm(y~xp)))[2,4]
-}
-
-# TEST VALIDITY OF THE NAIVE P-VALUES.  Simulates the results of
-# naively interpreting pvalues for the regression on the best
-# power of the predictor variable (from pvalue.lm.pow) as a real pvalue.
-# The arguments of this function are the vector of predictor variables
-# to use (x), the number of datasets to simulate (N), and possible
-# further arguments that are passed on to pvalue.lm.pow.  N datasets of n
-# cases are generated in which x is as specified and the corresponding
-# y values are generated independently from the standard normal
-# distribution (without reference to x).  The result is the vector of
-# N p-values obtained from the models that pvalue.lm.pow chooses for these
-# datasets.  Since the null hypothesis of no relationship is true,
-# these p-values should be uniformly distributed between 0 and 1, if
-# they are valid.
-
-test.lm.power <- function (x, N, ...)
-{ 
-    n <- length(x)
-    
-    # Simulate N datasets and record the naive p-value found for each.
-    
-    pvalues <- rep(0,N)
-    
-    for (k in 1:N)
-    { 
-        y <- rnorm(n)
-        
-        pvalues[k] <- pvalue.lm.pow(x,y,...)
-    }
-    
-    # Return the vector of N p-values that were obtained.
-    
-    pvalues
-}
-
-# FIND PERMUTATION PVALUE FOR REGRESSION USING BEST POWER TRANSFORM.
-# Takes as arguments the vectors of predictors (x) and responses (y),
-# as for pvalue.lm.pow, the number of permutations to use in finding the
-# p-value (default is 100), and possible further arguments that are
-# passed on to pvalue.lm.pow.  Returns the p-value from the permutation
-# test, which is (roughly) the fraction of times that reg.pow applied
-# to a randomly shuffled data sets gives a smaller p-value than reg.pow
-# gives when applied to the actual dataset.  In detail, the pvalue is
-# count/perms, with count being the number of smaller p-values
-# obtained from permuted datasets.  If the null hypothesis of no
-# relationship is true, these p-values will be uniformly distributed
-# over the possible values (ie, roughly uniform between 0 and 1).
-
-pvalue.perm.lm.pow <- function (x, y, no.perm=100, ...)
-{
-    # Find the naive p-value using pvalue.lm.pow for the actual data.
-    
-    actual <- pvalue.lm.pow(x,y,...)
-    
-    # Count how many times pvalue.lm.pow applied to a random permutation finds 
-    # a model with as small a naive p-value as for the actual data.
-    
-    permuted_pvalue <- rep(0, no.perm)
-    for (k in 1:no.perm)
-    { 
-      permuted_pvalue[k] <- pvalue.lm.pow(x,sample(y),...)
-    }
-    
-    mean (permuted_pvalue < actual)
-}
-
-#TEST VALIDITY OF THE PERMUATION PVALUES. The method is the same as for 
-#test.lm.power. When power.sim is not 0, it can be used to calculate the power
-#of the test
-
-test.perm.power <- function (x, power.sim, N=100, resid.std.dev=1, ...)
-{
-    n <- length(x)
-    
-    pvalues <- rep(0,N)
-    
-    for (k in 1:N)
-    { 
-      y <- x^power.sim + rnorm(n,0,resid.std.dev)
-      pvalues[k] <- pvalue.perm.lm.pow(x,y,...)
-    }
-    pvalues
+    vapply(1:N,
+           function(k) pvalue.perm.lm.pow(x^power.sim + rnorm(n, 0, resid.std.dev),
+                                          Xp, no.perm),
+           numeric(1))
 }
 
 ```
 
-### Checking the uniformity of p-values under $H_0$
+#### Diagnostic Uniformity and Statistical Power
 
-In the left plot, we examine the naive p-values under a true null hypothesis. The distribution is heavily skewed left, causing a massive inflation in the false-positive rate. In the right plot, the permutation test perfectly corrects this optimism bias, returning a uniform distribution of valid p-values.
+As observed previously, the naive approach causes a massive false-positive cascade (left). The permutation algorithm absorbs the optimization phase, correcting the bias and yielding perfectly valid, uniform p-values (right).
 
-```{r Power Regression under H0, cache=TRUE}
-par(mfrow=c(1,2),mar=c(4,4,3,1))
-
+```{r}
+#| label: power-regression-h0
+#| cache: true
 x <- exp(rnorm(20))
+Xp <- pow.matrix(x)
 
-naive.pv <- test.lm.power(x, 1000)
-perm.pv <- test.perm.power(x,0,1000, no.perm=99)
+naive.pv <- test.lm.power(Xp, 1000)
+perm.pv <- test.perm.power(x, Xp, power.sim = 0, N = 1000, no.perm = 99)
 
-hist(naive.pv,nclass=20,xlab="1000 naive pvalues from power regression",
-     main=paste("H0 is true, naive test, rejection rate=", mean (naive.pv< 0.05)))
-hist(perm.pv,nclass=20,
-     xlab="1000 permuation pvalues from power regression",
-     main=paste("H0 is true, Permutation test, rejection rate=", mean (perm.pv< 0.05)))
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+hist(naive.pv, nclass = 20, prob = TRUE, col = "grey90",
+     xlab = TeX(r"($1000$ naive p-values, $H_0$ true)"),
+     main = TeX(sprintf(r"(naive test, size $= %.3f$)", mean(naive.pv < 0.05))))
+abline(h = 1, col = 4, lwd = 2)
+
+hist(perm.pv, nclass = 20, prob = TRUE, col = "grey90",
+     xlab = TeX(r"($1000$ permutation p-values, $H_0$ true)"),
+     main = TeX(sprintf(r"(permutation test, size $= %.3f$)", mean(perm.pv < 0.05))))
+abline(h = 1, col = 4, lwd = 2)
 
 ```
 
-### The statistical power of the permuation test
+With the size strictly regulated, we inject mathematical signals ($Y = X^{1.5} + \epsilon$ and $Y = X^{0.5} + \epsilon$) to observe statistical power dynamically capturing the non-linear true signals.
 
-Now that we have confirmed our permutation test maintains a valid 5% Type I error rate under the null, we evaluate its statistical power. Here, we inject a true relationship into the simulated data: $Y = X^{1.5} + \epsilon$ and $Y = X^{0.5} + \epsilon$. The resulting rejection rates demonstrate how effectively the permutation test detects these nonlinear true signals.
+```{r}
+#| label: power-regression-power
+#| cache: true
+perm.pv.alt1 <- test.perm.power(x, Xp, power.sim = 1.5, N = 1000, no.perm = 99)
+perm.pv.alt2 <- test.perm.power(x, Xp, power.sim = 0.5, N = 1000, no.perm = 99)
 
-```{r Power Regression power, cache=TRUE}
-perm.pv.alt1 <- test.perm.power(x,1.5,1000,no.perm=99)
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
 
+hist(perm.pv.alt1, nclass = 20, col = "grey90",
+     xlab = TeX(r"($1000$ permutation p-values)"),
+     main = TeX(sprintf(r"($H_1: y = x^{1.5} + \epsilon$, power $= %.3f$)",
+                        mean(perm.pv.alt1 < 0.05))))
 
-#p-value when the true power in function is 0.5
-perm.pv.alt2 <- test.perm.power(x,0.5,1000,no.perm=99)
-
-par(mfrow=c(1,2),mar=c(4,4,3,1))
-
-hist(perm.pv.alt1,nclass=20,
-     xlab="1000 permuation pvalues from power regression",
-     main= paste0("H1: y = x^1.5 + e, permutation test, rej. rate=", 
-          mean (perm.pv.alt1< 0.05))
-)
-
-hist(perm.pv.alt2,nclass=20,
-     xlab="1000 permuation pvalues from power regression",
-     main= paste0("H1: y = x^0.5 + e, permutation test, rej. rate=", 
-          mean (perm.pv.alt2< 0.05))
-)
-
-
+hist(perm.pv.alt2, nclass = 20, col = "grey90",
+     xlab = TeX(r"($1000$ permutation p-values)"),
+     main = TeX(sprintf(r"($H_1: y = x^{0.5} + \epsilon$, power $= %.3f$)",
+                        mean(perm.pv.alt2 < 0.05))))
 
 ```
