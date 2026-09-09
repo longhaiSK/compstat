@@ -780,7 +780,7 @@ poisson_mle <- function(low, high) {
 pn <- rpois(1000, lambda = 20)
 
 tight <- poisson_mle(pmax(pn - 1, 0), pn + 4)      # narrow intervals: much information
-wide  <- poisson_mle(pmax(pn - 50, 0), pn + 5)     # wide intervals: little information
+wide  <- poisson_mle(pmax(pn - 5, 0), pn + 5)     # wide intervals: little information
 
 rbind(tight = c(est = tight$est, sd = tight$sd, tight$CI),
       wide  = c(est = wide$est,  sd = wide$sd,  wide$CI))
@@ -804,3 +804,32 @@ for (iv in list(list(lo = pmax(pn - 1, 0), hi = pn + 4, lab = "narrow intervals"
 ```
 
 With narrow intervals the log-likelihood is sharply peaked and the standard error is small and reliable. With wide intervals, most of which include the lower boundary at zero, the log-likelihood is nearly flat over a broad range: the curvature at the maximum is tiny, the reported standard error is large, and — because the curve is visibly asymmetric and non-quadratic — even that large value understates the true uncertainty. The information-based standard error is an asymptotic approximation resting on local quadratic behaviour, and this is what its failure looks like. When the log-likelihood is this shape, report a likelihood-based interval, read off where $\ell$ drops by 1.92, instead of a Wald interval.
+
+## A Practical Newton-Raphson Algorithm for Finding $\sqrt{a}$
+
+**Derivation.** To find $\sqrt{a}$, take $f(x) = x^2 - a$, whose positive root is $\sqrt a$. Then $f'(x) = 2x$, and the Newton step is
+
+$$x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)} = x_k - \frac{x_k^{2} - a}{2x_k} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right).$$
+
+The final form is the Babylonian rule: if $x_k$ is too small then $a/x_k$ is too large, and the root lies between them, so average the pair. Newton's tangent line lands exactly on the midpoint.
+
+The error follows the general quadratic law. Writing $e_k = x_k - \sqrt a$,
+
+$$e_{k+1} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right) - \sqrt a = \frac{\left(x_k - \sqrt a\right)^{2}}{2x_k} = \frac{e_k^{2}}{2x_k},$$
+
+so the number of correct digits roughly doubles each step.
+
+```{r}
+#| label: babylonian-sqrt
+babylonian <- function(a, x0 = 1, iters = 6)
+  Reduce(function(x, k) (x + a / x) / 2, 1:iters, init = x0, accumulate = TRUE)
+
+traces <- sapply(c(10, 20, 50), babylonian)
+dimnames(traces) <- list(paste("iter", 0:6), sprintf("sqrt(%d)", c(10, 20, 50)))
+
+print(traces, digits = 12)
+sqrt(c(10, 20, 50))                       # for comparison
+signif(abs(traces - rep(sqrt(c(10, 20, 50)), each = 7)), 3)    # errors
+```
+
+Starting from $x_0 = 1$ in every case, the first two steps do the coarse work — the larger $a$ is, the further the opening leap — and from the third step on the error squares: roughly $10^{-1}$, then $10^{-3}$, then $10^{-6}$, then machine precision. Six iterations suffice for all three, though $\sqrt{50}$ spends one more step than $\sqrt{10}$ recovering from the poor start.
