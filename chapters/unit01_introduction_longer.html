@@ -110,6 +110,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script>
+<link href="../site_libs/pagedtable-1.1/css/pagedtable.css" rel="stylesheet">
+<script src="../site_libs/pagedtable-1.1/js/pagedtable.js"></script>
 
 
 </head>
@@ -274,9 +276,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#writing-a-function-for-the-whole-process-with-list-output" id="toc-writing-a-function-for-the-whole-process-with-list-output" class="nav-link" data-scroll-target="#writing-a-function-for-the-whole-process-with-list-output"><span class="header-section-number">1.5</span> Writing a Function for the Whole Process with List Output</a></li>
   <li><a href="#data-manipulation-with-dplyr" id="toc-data-manipulation-with-dplyr" class="nav-link" data-scroll-target="#data-manipulation-with-dplyr"><span class="header-section-number">1.6</span> Data Manipulation with <code>dplyr</code></a>
   <ul>
-  <li><a href="#recomputing-course-scores-with-mutate-and-rowwise" id="toc-recomputing-course-scores-with-mutate-and-rowwise" class="nav-link" data-scroll-target="#recomputing-course-scores-with-mutate-and-rowwise"><span class="header-section-number">1.6.1</span> Recomputing course scores with <code>mutate()</code> and <code>rowwise()</code></a></li>
-  <li><a href="#summarizing-by-group-with-group_by-and-summarize" id="toc-summarizing-by-group-with-group_by-and-summarize" class="nav-link" data-scroll-target="#summarizing-by-group-with-group_by-and-summarize"><span class="header-section-number">1.6.2</span> Summarizing by group with <code>group_by()</code> and <code>summarize()</code></a></li>
-  <li><a href="#filtering-and-sorting-with-filter-and-arrange" id="toc-filtering-and-sorting-with-filter-and-arrange" class="nav-link" data-scroll-target="#filtering-and-sorting-with-filter-and-arrange"><span class="header-section-number">1.6.3</span> Filtering and sorting with <code>filter()</code> and <code>arrange()</code></a></li>
+  <li><a href="#generating-a-roster-with-mutate" id="toc-generating-a-roster-with-mutate" class="nav-link" data-scroll-target="#generating-a-roster-with-mutate"><span class="header-section-number">1.6.1</span> Generating a roster with <code>mutate()</code></a></li>
+  <li><a href="#recomputing-course-scores-with-mutate-and-rowwise" id="toc-recomputing-course-scores-with-mutate-and-rowwise" class="nav-link" data-scroll-target="#recomputing-course-scores-with-mutate-and-rowwise"><span class="header-section-number">1.6.2</span> Recomputing course scores with <code>mutate()</code> and <code>rowwise()</code></a></li>
+  <li><a href="#summarizing-by-group-with-group_by-and-summarize" id="toc-summarizing-by-group-with-group_by-and-summarize" class="nav-link" data-scroll-target="#summarizing-by-group-with-group_by-and-summarize"><span class="header-section-number">1.6.3</span> Summarizing by group with <code>group_by()</code> and <code>summarize()</code></a></li>
+  <li><a href="#filtering-and-sorting-with-filter-and-arrange" id="toc-filtering-and-sorting-with-filter-and-arrange" class="nav-link" data-scroll-target="#filtering-and-sorting-with-filter-and-arrange"><span class="header-section-number">1.6.4</span> Filtering and sorting with <code>filter()</code> and <code>arrange()</code></a></li>
   </ul></li>
   <li><a href="#presenting-the-results" id="toc-presenting-the-results" class="nav-link" data-scroll-target="#presenting-the-results"><span class="header-section-number">1.7</span> Presenting the Results</a>
   <ul>
@@ -909,25 +912,74 @@ S006 73.40   68    68       69.620</code></pre>
 <section id="data-manipulation-with-dplyr" class="level2" data-number="1.6">
 <h2 data-number="1.6" class="anchored" data-anchor-id="data-manipulation-with-dplyr"><span class="header-section-number">1.6</span> Data Manipulation with <code>dplyr</code></h2>
 <p>Base R’s indexing, <code>apply()</code>, and <code>for</code> loops can do everything we’ve done so far, but <strong>dplyr</strong> offers a grammar of a handful of verbs – <code>mutate()</code>, <code>filter()</code>, <code>select()</code>, <code>arrange()</code>, <code>group_by()</code>, <code>summarize()</code> – that are chained together with the pipe <code>|&gt;</code>, so a whole data-wrangling recipe reads top to bottom like a sentence instead of nesting function calls inside one another.</p>
-<section id="recomputing-course-scores-with-mutate-and-rowwise" class="level3" data-number="1.6.1">
-<h3 data-number="1.6.1" class="anchored" data-anchor-id="recomputing-course-scores-with-mutate-and-rowwise"><span class="header-section-number">1.6.1</span> Recomputing course scores with <code>mutate()</code> and <code>rowwise()</code></h3>
-<p>Our course-score calculation is inherently a <strong>row-wise</strong> operation: for each student we need to look across several quiz columns and average just that student’s values. <code>rowwise()</code> tells dplyr to treat each row as its own little group, and <code>c_across()</code> lets <code>mean()</code> reach across a <em>selection</em> of columns (here found with the tidyselect helper <code>starts_with()</code>, the dplyr analogue of the <code>grep("^Quiz", ...)</code> trick we used earlier) within that row.</p>
-<p>Inside a single <code>mutate()</code> call, later expressions can refer to columns just created earlier in the <em>same</em> call – so we can reproduce the “replace the test mean with the final score if it’s higher” rule from <code>compute.course.score()</code> using <code>if_else()</code> in place of the base-R <code>if</code> statement:</p>
+<section id="generating-a-roster-with-mutate" class="level3" data-number="1.6.1">
+<h3 data-number="1.6.1" class="anchored" data-anchor-id="generating-a-roster-with-mutate"><span class="header-section-number">1.6.1</span> Generating a roster with <code>mutate()</code></h3>
+<p><code>mutate()</code> isn’t limited to computing new columns from data that already exists in a data frame – it can build up a data frame from nothing at all, one column at a time, chaining together exactly the same generative steps we used in <a href="#generating-an-artificial-score-dataset">Generating an artificial score dataset</a>. Within a single <code>mutate()</code> call, each new column is available to the expressions that follow it, so we can go straight from raw quiz scores to <code>quiz.mean.true</code> to <code>Test1</code>/<code>Test2</code>/<code>Final</code>, all in one pipeline, reusing the <code>gen.quiz()</code> and <code>clip.round()</code> helpers we already defined:</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb74"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
 <span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="ot">&lt;-</span> roster <span class="sc">|&gt;</span></span>
-<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rowwise</span>() <span class="sc">|&gt;</span></span>
-<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
-<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz  =</span> <span class="fu">mean</span>(<span class="fu">c_across</span>(<span class="fu">starts_with</span>(<span class="st">"Quiz"</span>)), <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb74-7"><a href="#cb74-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test  =</span> <span class="fu">mean</span>(<span class="fu">c_across</span>(<span class="fu">starts_with</span>(<span class="st">"Test"</span>)), <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb74-8"><a href="#cb74-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test  =</span> <span class="fu">if_else</span>(<span class="sc">!</span><span class="fu">is.na</span>(Final) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(Test) <span class="sc">&amp;</span> Final <span class="sc">&gt;</span> Test, Final, Test),</span>
-<span id="cb74-9"><a href="#cb74-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">course.score =</span> <span class="fl">0.3</span> <span class="sc">*</span> Quiz <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> Test <span class="sc">+</span> <span class="fl">0.4</span> <span class="sc">*</span> Final</span>
-<span id="cb74-10"><a href="#cb74-10" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb74-11"><a href="#cb74-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
-<span id="cb74-12"><a href="#cb74-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, Quiz, Test, Final, course.score)</span>
-<span id="cb74-13"><a href="#cb74-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb74-14"><a href="#cb74-14" aria-hidden="true" tabindex="-1"></a>dplyr_results</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2026</span>)   <span class="co"># a fresh cohort, just for this demonstration</span></span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a>n2 <span class="ot">&lt;-</span> <span class="dv">100</span></span>
+<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a>students2 <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">"S%03d"</span>, <span class="dv">1</span><span class="sc">:</span>n2)</span>
+<span id="cb74-7"><a href="#cb74-7" aria-hidden="true" tabindex="-1"></a>program2  <span class="ot">&lt;-</span> <span class="fu">factor</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="st">"Program A"</span>, <span class="st">"Program B"</span>), n2, <span class="at">replace =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb74-8"><a href="#cb74-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-9"><a href="#cb74-9" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">name =</span> students2, <span class="at">program =</span> program2) <span class="sc">|&gt;</span></span>
+<span id="cb74-10"><a href="#cb74-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb74-11"><a href="#cb74-11" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz1 =</span> <span class="fu">gen.quiz</span>(<span class="dv">75</span>, <span class="dv">20</span>),</span>
+<span id="cb74-12"><a href="#cb74-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz2 =</span> <span class="fu">gen.quiz</span>(<span class="dv">78</span>, <span class="dv">20</span>),</span>
+<span id="cb74-13"><a href="#cb74-13" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz3 =</span> <span class="fu">gen.quiz</span>(<span class="dv">72</span>, <span class="dv">20</span>),</span>
+<span id="cb74-14"><a href="#cb74-14" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz4 =</span> <span class="fu">gen.quiz</span>(<span class="dv">80</span>, <span class="dv">20</span>),</span>
+<span id="cb74-15"><a href="#cb74-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz5 =</span> <span class="fu">gen.quiz</span>(<span class="dv">74</span>, <span class="dv">20</span>),</span>
+<span id="cb74-16"><a href="#cb74-16" aria-hidden="true" tabindex="-1"></a>        <span class="at">quiz.mean.true =</span> <span class="fu">rowMeans</span>(<span class="fu">cbind</span>(Quiz1, Quiz2, Quiz3, Quiz4, Quiz5)),</span>
+<span id="cb74-17"><a href="#cb74-17" aria-hidden="true" tabindex="-1"></a>        <span class="at">b0.test  =</span> <span class="fu">if_else</span>(program <span class="sc">==</span> <span class="st">"Program A"</span>, <span class="dv">12</span>, <span class="dv">6</span>),</span>
+<span id="cb74-18"><a href="#cb74-18" aria-hidden="true" tabindex="-1"></a>        <span class="at">b0.final =</span> <span class="fu">if_else</span>(program <span class="sc">==</span> <span class="st">"Program A"</span>, <span class="dv">15</span>, <span class="dv">8</span>),</span>
+<span id="cb74-19"><a href="#cb74-19" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test1 =</span> <span class="fu">clip.round</span>(b0.test  <span class="sc">+</span> <span class="fl">0.80</span> <span class="sc">*</span> quiz.mean.true <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="fu">n</span>(), <span class="dv">0</span>, <span class="dv">8</span>)),</span>
+<span id="cb74-20"><a href="#cb74-20" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test2 =</span> <span class="fu">clip.round</span>(b0.test  <span class="sc">+</span> <span class="fl">0.80</span> <span class="sc">*</span> quiz.mean.true <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="fu">n</span>(), <span class="dv">0</span>, <span class="dv">8</span>)),</span>
+<span id="cb74-21"><a href="#cb74-21" aria-hidden="true" tabindex="-1"></a>        <span class="at">Final =</span> <span class="fu">clip.round</span>(b0.final <span class="sc">+</span> <span class="fl">0.85</span> <span class="sc">*</span> quiz.mean.true <span class="sc">+</span> <span class="fu">rnorm</span>(<span class="fu">n</span>(), <span class="dv">0</span>, <span class="dv">6</span>)),</span>
+<span id="cb74-22"><a href="#cb74-22" aria-hidden="true" tabindex="-1"></a>        <span class="fu">across</span>(<span class="fu">c</span>(<span class="fu">starts_with</span>(<span class="st">"Quiz"</span>), <span class="fu">starts_with</span>(<span class="st">"Test"</span>), Final),</span>
+<span id="cb74-23"><a href="#cb74-23" aria-hidden="true" tabindex="-1"></a>               <span class="sc">~</span> <span class="fu">replace</span>(.x, <span class="fu">sample</span>(<span class="fu">n</span>(), <span class="fu">round</span>(<span class="fu">n</span>() <span class="sc">*</span> miss.rate)), <span class="cn">NA</span>))</span>
+<span id="cb74-24"><a href="#cb74-24" aria-hidden="true" tabindex="-1"></a>    ) <span class="ot">-&gt;</span> roster_worktable</span>
+<span id="cb74-25"><a href="#cb74-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-26"><a href="#cb74-26" aria-hidden="true" tabindex="-1"></a>roster_worktable <span class="sc">|&gt;</span> <span class="fu">slice_head</span> (<span class="at">n =</span> <span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div data-pagedtable="false">
+  <script data-pagedtable-source="" type="application/json">
+{"columns":[{"label":["name"],"name":[1],"type":["chr"],"align":["left"]},{"label":["program"],"name":[2],"type":["fct"],"align":["left"]},{"label":["Quiz1"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["Quiz2"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Quiz3"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Quiz4"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["Quiz5"],"name":[7],"type":["dbl"],"align":["right"]},{"label":["quiz.mean.true"],"name":[8],"type":["dbl"],"align":["right"]},{"label":["b0.test"],"name":[9],"type":["dbl"],"align":["right"]},{"label":["b0.final"],"name":[10],"type":["dbl"],"align":["right"]},{"label":["Test1"],"name":[11],"type":["dbl"],"align":["right"]},{"label":["Test2"],"name":[12],"type":["dbl"],"align":["right"]},{"label":["Final"],"name":[13],"type":["dbl"],"align":["right"]}],"data":[{"1":"S001","2":"Program A","3":"52","4":"78","5":"66","6":"NA","7":"84","8":"76.0","9":"12","10":"15","11":"80","12":"75","13":"82"},{"1":"S002","2":"Program A","3":"71","4":"NA","5":"86","6":"NA","7":"97","8":"NA","9":"12","10":"15","11":"78","12":"79","13":"84"},{"1":"S003","2":"Program A","3":"56","4":"98","5":"64","6":"100","7":"80","8":"79.6","9":"12","10":"15","11":"80","12":"77","13":"85"},{"1":"S004","2":"Program B","3":"84","4":"88","5":"70","6":"65","7":"75","8":"76.4","9":"6","10":"8","11":"65","12":"60","13":"72"},{"1":"S005","2":"Program A","3":"62","4":"90","5":"100","6":"47","7":"100","8":"79.8","9":"12","10":"15","11":"70","12":"78","13":"82"},{"1":"S006","2":"Program A","3":"70","4":"100","5":"59","6":"78","7":"88","8":"79.0","9":"12","10":"15","11":"87","12":"86","13":"73"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+  </script>
+</div>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb75"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a>roster_mutate <span class="ot">&lt;-</span> roster_worktable <span class="sc">|&gt;</span> <span class="fu">select</span>(<span class="sc">-</span>quiz.mean.true, <span class="sc">-</span>b0.test, <span class="sc">-</span>b0.final) </span>
+<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb75-3"><a href="#cb75-3" aria-hidden="true" tabindex="-1"></a>roster_mutate <span class="sc">|&gt;</span> <span class="fu">slice_head</span> (<span class="at">n=</span> <span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div data-pagedtable="false">
+  <script data-pagedtable-source="" type="application/json">
+{"columns":[{"label":["name"],"name":[1],"type":["chr"],"align":["left"]},{"label":["program"],"name":[2],"type":["fct"],"align":["left"]},{"label":["Quiz1"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["Quiz2"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["Quiz3"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Quiz4"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["Quiz5"],"name":[7],"type":["dbl"],"align":["right"]},{"label":["Test1"],"name":[8],"type":["dbl"],"align":["right"]},{"label":["Test2"],"name":[9],"type":["dbl"],"align":["right"]},{"label":["Final"],"name":[10],"type":["dbl"],"align":["right"]}],"data":[{"1":"S001","2":"Program A","3":"52","4":"78","5":"66","6":"NA","7":"84","8":"80","9":"75","10":"82"},{"1":"S002","2":"Program A","3":"71","4":"NA","5":"86","6":"NA","7":"97","8":"78","9":"79","10":"84"},{"1":"S003","2":"Program A","3":"56","4":"98","5":"64","6":"100","7":"80","8":"80","9":"77","10":"85"},{"1":"S004","2":"Program B","3":"84","4":"88","5":"70","6":"65","7":"75","8":"65","9":"60","10":"72"},{"1":"S005","2":"Program A","3":"62","4":"90","5":"100","6":"47","7":"100","8":"70","9":"78","10":"82"},{"1":"S006","2":"Program A","3":"70","4":"100","5":"59","6":"78","7":"88","8":"87","9":"86","10":"73"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
+  </script>
+</div>
+</div>
+</div>
+<p>A few things are worth noticing here. <code>b0.test</code> and <code>b0.final</code> are computed with <code>if_else()</code> – the vectorized, type-checked dplyr analogue of <code>ifelse()</code> – directly from the <code>program</code> column, and then used (and finally dropped again with <code>select(-...)</code>) just like the helper vectors from the original script. <code>n()</code>, dplyr’s built-in count of the current number of rows, replaces the standalone <code>n &lt;- 100</code> we relied on earlier, so this pipeline needs nothing from the outside except <code>students2</code>/<code>program2</code> to start from. The tidyselect helper <code>starts_with()</code> – the dplyr analogue of the <code>grep("^Quiz", ...)</code> trick from earlier – picks out groups of columns by name, and wrapping it in <code>across()</code> applies the <em>same</em> NA-injection rule to all eight score columns at once, in place of the explicit <code>for</code> loop over <code>1:ncol(scores)</code>.</p>
+<p>Because this pipeline draws its own random numbers with a fresh seed, <code>roster_mutate</code> is a different simulated class from <code>roster</code> – not a reproduction of it – but it is built by <em>exactly</em> the same recipe, entirely inside one <code>mutate()</code> chain. The rest of this section goes back to analyzing the original <code>roster</code>.</p>
+</section>
+<section id="recomputing-course-scores-with-mutate-and-rowwise" class="level3" data-number="1.6.2">
+<h3 data-number="1.6.2" class="anchored" data-anchor-id="recomputing-course-scores-with-mutate-and-rowwise"><span class="header-section-number">1.6.2</span> Recomputing course scores with <code>mutate()</code> and <code>rowwise()</code></h3>
+<p>Our course-score calculation is inherently a <strong>row-wise</strong> operation: for each student we need to look across several quiz columns and average just that student’s values. <code>rowwise()</code> tells dplyr to treat each row as its own little group, and <code>c_across()</code> lets <code>mean()</code> reach across a <em>selection</em> of columns (again using <code>starts_with()</code>) within that row.</p>
+<p>Inside a single <code>mutate()</code> call, later expressions can refer to columns just created earlier in the <em>same</em> call – so we can reproduce the “replace the test mean with the final score if it’s higher” rule from <code>compute.course.score()</code> using <code>if_else()</code> in place of the base-R <code>if</code> statement:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb76"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="ot">&lt;-</span> roster <span class="sc">|&gt;</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">rowwise</span>() <span class="sc">|&gt;</span></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(</span>
+<span id="cb76-4"><a href="#cb76-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz  =</span> <span class="fu">mean</span>(<span class="fu">c_across</span>(<span class="fu">starts_with</span>(<span class="st">"Quiz"</span>)), <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb76-5"><a href="#cb76-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test  =</span> <span class="fu">mean</span>(<span class="fu">c_across</span>(<span class="fu">starts_with</span>(<span class="st">"Test"</span>)), <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb76-6"><a href="#cb76-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test  =</span> <span class="fu">if_else</span>(<span class="sc">!</span><span class="fu">is.na</span>(Final) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(Test) <span class="sc">&amp;</span> Final <span class="sc">&gt;</span> Test, Final, Test),</span>
+<span id="cb76-7"><a href="#cb76-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">course.score =</span> <span class="fl">0.3</span> <span class="sc">*</span> Quiz <span class="sc">+</span> <span class="fl">0.3</span> <span class="sc">*</span> Test <span class="sc">+</span> <span class="fl">0.4</span> <span class="sc">*</span> Final</span>
+<span id="cb76-8"><a href="#cb76-8" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb76-9"><a href="#cb76-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
+<span id="cb76-10"><a href="#cb76-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, Quiz, Test, Final, course.score)</span>
+<span id="cb76-11"><a href="#cb76-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb76-12"><a href="#cb76-12" aria-hidden="true" tabindex="-1"></a>dplyr_results</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 100 × 6
    name  program    Quiz  Test Final course.score
@@ -947,26 +999,26 @@ S006 73.40   68    68       69.620</code></pre>
 </div>
 <p><code>rowwise()</code> groups by row, so we <code>ungroup()</code> again immediately afterward – otherwise every later verb would keep operating one row at a time. As a sanity check, this dplyr pipeline should produce <em>exactly</em> the same numbers as <code>results</code>, our earlier <code>apply()</code>-based table, just as the <code>for</code>-loop version did:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb76"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="fu">all.equal</span>(<span class="fu">as.data.frame</span>(dplyr_results), results, <span class="at">check.attributes =</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb78"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="fu">all.equal</span>(<span class="fu">as.data.frame</span>(dplyr_results), results, <span class="at">check.attributes =</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] TRUE</code></pre>
 </div>
 </div>
 </section>
-<section id="summarizing-by-group-with-group_by-and-summarize" class="level3" data-number="1.6.2">
-<h3 data-number="1.6.2" class="anchored" data-anchor-id="summarizing-by-group-with-group_by-and-summarize"><span class="header-section-number">1.6.2</span> Summarizing by group with <code>group_by()</code> and <code>summarize()</code></h3>
+<section id="summarizing-by-group-with-group_by-and-summarize" class="level3" data-number="1.6.3">
+<h3 data-number="1.6.3" class="anchored" data-anchor-id="summarizing-by-group-with-group_by-and-summarize"><span class="header-section-number">1.6.3</span> Summarizing by group with <code>group_by()</code> and <code>summarize()</code></h3>
 <p>This is where dplyr’s advantage over base R really shows. Producing a by-program summary table with <code>tapply()</code> or nested <code>sapply()</code> calls in base R takes some fiddling; with dplyr it’s a direct continuation of the same pipeline. <code>group_by()</code> splits the data by <code>program</code>, and every subsequent <code>summarize()</code> argument is computed separately within each group:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb78"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
-<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(program) <span class="sc">|&gt;</span></span>
-<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarize</span>(</span>
-<span id="cb78-4"><a href="#cb78-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">n                 =</span> <span class="fu">n</span>(),</span>
-<span id="cb78-5"><a href="#cb78-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_quiz         =</span> <span class="fu">mean</span>(Quiz, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb78-6"><a href="#cb78-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_test         =</span> <span class="fu">mean</span>(Test, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb78-7"><a href="#cb78-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_final        =</span> <span class="fu">mean</span>(Final, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb78-8"><a href="#cb78-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_course_score =</span> <span class="fu">mean</span>(course.score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb78-9"><a href="#cb78-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">.groups =</span> <span class="st">"drop"</span></span>
-<span id="cb78-10"><a href="#cb78-10" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">group_by</span>(program) <span class="sc">|&gt;</span></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">summarize</span>(</span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">n                 =</span> <span class="fu">n</span>(),</span>
+<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_quiz         =</span> <span class="fu">mean</span>(Quiz, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_test         =</span> <span class="fu">mean</span>(Test, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb80-7"><a href="#cb80-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_final        =</span> <span class="fu">mean</span>(Final, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb80-8"><a href="#cb80-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">mean_course_score =</span> <span class="fu">mean</span>(course.score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb80-9"><a href="#cb80-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb80-10"><a href="#cb80-10" aria-hidden="true" tabindex="-1"></a>    )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 2 × 6
   program       n mean_quiz mean_test mean_final mean_course_score
@@ -977,15 +1029,15 @@ S006 73.40   68    68       69.620</code></pre>
 </div>
 <p>Program A’s mean course score comes out noticeably higher – exactly the intercept difference (<code>b0.test</code>, <code>b0.final</code>) we built into the simulation, and the same pattern we’ll see again in the by-program boxplot below.</p>
 </section>
-<section id="filtering-and-sorting-with-filter-and-arrange" class="level3" data-number="1.6.3">
-<h3 data-number="1.6.3" class="anchored" data-anchor-id="filtering-and-sorting-with-filter-and-arrange"><span class="header-section-number">1.6.3</span> Filtering and sorting with <code>filter()</code> and <code>arrange()</code></h3>
+<section id="filtering-and-sorting-with-filter-and-arrange" class="level3" data-number="1.6.4">
+<h3 data-number="1.6.4" class="anchored" data-anchor-id="filtering-and-sorting-with-filter-and-arrange"><span class="header-section-number">1.6.4</span> Filtering and sorting with <code>filter()</code> and <code>arrange()</code></h3>
 <p><code>filter()</code> keeps rows matching a logical condition (replacing the <code>which()</code>-based indexing we used for <code>Failing_Students</code>), and <code>arrange()</code> sorts rows by one or more columns – <code>desc()</code> reverses the order. Chaining them together gives the failing students, worst first, and separately the top five performers in the class:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Failing students, worst first</span></span>
-<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
-<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(course.score <span class="sc">&lt;</span> <span class="dv">60</span>) <span class="sc">|&gt;</span></span>
-<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(course.score) <span class="sc">|&gt;</span></span>
-<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, course.score)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb82"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Failing students, worst first</span></span>
+<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
+<span id="cb82-3"><a href="#cb82-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(course.score <span class="sc">&lt;</span> <span class="dv">60</span>) <span class="sc">|&gt;</span></span>
+<span id="cb82-4"><a href="#cb82-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(course.score) <span class="sc">|&gt;</span></span>
+<span id="cb82-5"><a href="#cb82-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, course.score)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 2 × 3
   name  program   course.score
@@ -993,11 +1045,11 @@ S006 73.40   68    68       69.620</code></pre>
 1 S094  Program B         57.7
 2 S018  Program A         58.4</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb82"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Top 5 students in the class</span></span>
-<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
-<span id="cb82-3"><a href="#cb82-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(<span class="fu">desc</span>(course.score)) <span class="sc">|&gt;</span></span>
-<span id="cb82-4"><a href="#cb82-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, course.score) <span class="sc">|&gt;</span></span>
-<span id="cb82-5"><a href="#cb82-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">slice_head</span>(<span class="at">n =</span> <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb84"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Top 5 students in the class</span></span>
+<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a>dplyr_results <span class="sc">|&gt;</span></span>
+<span id="cb84-3"><a href="#cb84-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(<span class="fu">desc</span>(course.score)) <span class="sc">|&gt;</span></span>
+<span id="cb84-4"><a href="#cb84-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(name, program, course.score) <span class="sc">|&gt;</span></span>
+<span id="cb84-5"><a href="#cb84-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">slice_head</span>(<span class="at">n =</span> <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 5 × 3
   name  program   course.score
@@ -1019,68 +1071,68 @@ S006 73.40   68    68       69.620</code></pre>
 <p>Finally, <strong>gt</strong> turns the raw data frame of results into a polished, presentation-ready report. We can extract the <code>ProcessedTable</code> directly from our <code>class_report</code> list and enhance it.</p>
 <p>Here we use <code>tab_spanner()</code> to group the category scores and the final score under distinct visual headers, and <code>fmt_number()</code> to ensure all grades display exactly two decimal places.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb84"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
-<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb84-3"><a href="#cb84-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Extract the full processed table from our list output</span></span>
-<span id="cb84-4"><a href="#cb84-4" aria-hidden="true" tabindex="-1"></a><span class="co"># (We use head() to display just the first 10 rows in the report)</span></span>
-<span id="cb84-5"><a href="#cb84-5" aria-hidden="true" tabindex="-1"></a>full_results <span class="ot">&lt;-</span> <span class="fu">head</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="dv">10</span>)</span>
-<span id="cb84-6"><a href="#cb84-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb84-7"><a href="#cb84-7" aria-hidden="true" tabindex="-1"></a><span class="fu">gt</span>(full_results) <span class="sc">|&gt;</span></span>
-<span id="cb84-8"><a href="#cb84-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_header</span>(</span>
-<span id="cb84-9"><a href="#cb84-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Class Performance Report"</span>,</span>
-<span id="cb84-10"><a href="#cb84-10" aria-hidden="true" tabindex="-1"></a>        <span class="at">subtitle =</span> <span class="st">"Individual category means and final calculated course scores"</span></span>
-<span id="cb84-11"><a href="#cb84-11" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-12"><a href="#cb84-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Student Information</span></span>
-<span id="cb84-13"><a href="#cb84-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
-<span id="cb84-14"><a href="#cb84-14" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Student Information"</span>,</span>
-<span id="cb84-15"><a href="#cb84-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(name, program)</span>
-<span id="cb84-16"><a href="#cb84-16" aria-hidden="true" tabindex="-1"></a>    )<span class="sc">|&gt;</span></span>
-<span id="cb84-17"><a href="#cb84-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Group the individual graded categories</span></span>
-<span id="cb84-18"><a href="#cb84-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
-<span id="cb84-19"><a href="#cb84-19" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Category Breakdown"</span>,</span>
-<span id="cb84-20"><a href="#cb84-20" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(Quiz, Test, Final)</span>
-<span id="cb84-21"><a href="#cb84-21" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-22"><a href="#cb84-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Group the final processed output</span></span>
-<span id="cb84-23"><a href="#cb84-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
-<span id="cb84-24"><a href="#cb84-24" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Submitted Score"</span>,</span>
-<span id="cb84-25"><a href="#cb84-25" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(course.score)</span>
-<span id="cb84-26"><a href="#cb84-26" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-27"><a href="#cb84-27" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Enforce two decimal places for all numeric score columns</span></span>
-<span id="cb84-28"><a href="#cb84-28" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(</span>
-<span id="cb84-29"><a href="#cb84-29" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(Quiz, Test, Final),</span>
-<span id="cb84-30"><a href="#cb84-30" aria-hidden="true" tabindex="-1"></a>        <span class="at">decimals =</span> <span class="dv">2</span></span>
-<span id="cb84-31"><a href="#cb84-31" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-32"><a href="#cb84-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(</span>
-<span id="cb84-33"><a href="#cb84-33" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(course.score),</span>
-<span id="cb84-34"><a href="#cb84-34" aria-hidden="true" tabindex="-1"></a>        <span class="at">decimals =</span> <span class="dv">0</span></span>
-<span id="cb84-35"><a href="#cb84-35" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-36"><a href="#cb84-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_label</span>(</span>
-<span id="cb84-37"><a href="#cb84-37" aria-hidden="true" tabindex="-1"></a>        <span class="at">name =</span> <span class="st">"Name"</span>,</span>
-<span id="cb84-38"><a href="#cb84-38" aria-hidden="true" tabindex="-1"></a>        <span class="at">program =</span> <span class="st">"Program"</span>,</span>
-<span id="cb84-39"><a href="#cb84-39" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz =</span> <span class="st">"Quizzes"</span>,</span>
-<span id="cb84-40"><a href="#cb84-40" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test =</span> <span class="st">"Tests"</span>,</span>
-<span id="cb84-41"><a href="#cb84-41" aria-hidden="true" tabindex="-1"></a>        <span class="at">Final =</span> <span class="st">"Final Exam"</span>,</span>
-<span id="cb84-42"><a href="#cb84-42" aria-hidden="true" tabindex="-1"></a>        <span class="at">course.score =</span> <span class="st">"Course Score"</span></span>
-<span id="cb84-43"><a href="#cb84-43" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
-<span id="cb84-44"><a href="#cb84-44" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_stubhead</span>(<span class="at">label =</span> <span class="st">"Student ID"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb86"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
+<span id="cb86-2"><a href="#cb86-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb86-3"><a href="#cb86-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Extract the full processed table from our list output</span></span>
+<span id="cb86-4"><a href="#cb86-4" aria-hidden="true" tabindex="-1"></a><span class="co"># (We use head() to display just the first 10 rows in the report)</span></span>
+<span id="cb86-5"><a href="#cb86-5" aria-hidden="true" tabindex="-1"></a>full_results <span class="ot">&lt;-</span> <span class="fu">head</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="dv">10</span>)</span>
+<span id="cb86-6"><a href="#cb86-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb86-7"><a href="#cb86-7" aria-hidden="true" tabindex="-1"></a><span class="fu">gt</span>(full_results) <span class="sc">|&gt;</span></span>
+<span id="cb86-8"><a href="#cb86-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_header</span>(</span>
+<span id="cb86-9"><a href="#cb86-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Class Performance Report"</span>,</span>
+<span id="cb86-10"><a href="#cb86-10" aria-hidden="true" tabindex="-1"></a>        <span class="at">subtitle =</span> <span class="st">"Individual category means and final calculated course scores"</span></span>
+<span id="cb86-11"><a href="#cb86-11" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-12"><a href="#cb86-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Student Information</span></span>
+<span id="cb86-13"><a href="#cb86-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
+<span id="cb86-14"><a href="#cb86-14" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Student Information"</span>,</span>
+<span id="cb86-15"><a href="#cb86-15" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(name, program)</span>
+<span id="cb86-16"><a href="#cb86-16" aria-hidden="true" tabindex="-1"></a>    )<span class="sc">|&gt;</span></span>
+<span id="cb86-17"><a href="#cb86-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Group the individual graded categories</span></span>
+<span id="cb86-18"><a href="#cb86-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
+<span id="cb86-19"><a href="#cb86-19" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Category Breakdown"</span>,</span>
+<span id="cb86-20"><a href="#cb86-20" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(Quiz, Test, Final)</span>
+<span id="cb86-21"><a href="#cb86-21" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-22"><a href="#cb86-22" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Group the final processed output</span></span>
+<span id="cb86-23"><a href="#cb86-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(</span>
+<span id="cb86-24"><a href="#cb86-24" aria-hidden="true" tabindex="-1"></a>        <span class="at">label =</span> <span class="st">"Submitted Score"</span>,</span>
+<span id="cb86-25"><a href="#cb86-25" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(course.score)</span>
+<span id="cb86-26"><a href="#cb86-26" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-27"><a href="#cb86-27" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Enforce two decimal places for all numeric score columns</span></span>
+<span id="cb86-28"><a href="#cb86-28" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(</span>
+<span id="cb86-29"><a href="#cb86-29" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(Quiz, Test, Final),</span>
+<span id="cb86-30"><a href="#cb86-30" aria-hidden="true" tabindex="-1"></a>        <span class="at">decimals =</span> <span class="dv">2</span></span>
+<span id="cb86-31"><a href="#cb86-31" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-32"><a href="#cb86-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(</span>
+<span id="cb86-33"><a href="#cb86-33" aria-hidden="true" tabindex="-1"></a>        <span class="at">columns =</span> <span class="fu">c</span>(course.score),</span>
+<span id="cb86-34"><a href="#cb86-34" aria-hidden="true" tabindex="-1"></a>        <span class="at">decimals =</span> <span class="dv">0</span></span>
+<span id="cb86-35"><a href="#cb86-35" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-36"><a href="#cb86-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_label</span>(</span>
+<span id="cb86-37"><a href="#cb86-37" aria-hidden="true" tabindex="-1"></a>        <span class="at">name =</span> <span class="st">"Name"</span>,</span>
+<span id="cb86-38"><a href="#cb86-38" aria-hidden="true" tabindex="-1"></a>        <span class="at">program =</span> <span class="st">"Program"</span>,</span>
+<span id="cb86-39"><a href="#cb86-39" aria-hidden="true" tabindex="-1"></a>        <span class="at">Quiz =</span> <span class="st">"Quizzes"</span>,</span>
+<span id="cb86-40"><a href="#cb86-40" aria-hidden="true" tabindex="-1"></a>        <span class="at">Test =</span> <span class="st">"Tests"</span>,</span>
+<span id="cb86-41"><a href="#cb86-41" aria-hidden="true" tabindex="-1"></a>        <span class="at">Final =</span> <span class="st">"Final Exam"</span>,</span>
+<span id="cb86-42"><a href="#cb86-42" aria-hidden="true" tabindex="-1"></a>        <span class="at">course.score =</span> <span class="st">"Course Score"</span></span>
+<span id="cb86-43"><a href="#cb86-43" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">|&gt;</span></span>
+<span id="cb86-44"><a href="#cb86-44" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_stubhead</span>(<span class="at">label =</span> <span class="st">"Student ID"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
-<div id="chqyvmolis" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
-<style>#chqyvmolis table {
+<div id="pegndolusk" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#pegndolusk table {
   font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-#chqyvmolis thead, #chqyvmolis tbody, #chqyvmolis tfoot, #chqyvmolis tr, #chqyvmolis td, #chqyvmolis th {
+#pegndolusk thead, #pegndolusk tbody, #pegndolusk tfoot, #pegndolusk tr, #pegndolusk td, #pegndolusk th {
   border-style: none;
 }
 
-#chqyvmolis p {
+#pegndolusk p {
   margin: 0;
   padding: 0;
 }
 
-#chqyvmolis .gt_table {
+#pegndolusk .gt_table {
   display: table;
   border-collapse: collapse;
   line-height: normal;
@@ -1106,12 +1158,12 @@ S006 73.40   68    68       69.620</code></pre>
   border-left-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_caption {
+#pegndolusk .gt_caption {
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
-#chqyvmolis .gt_title {
+#pegndolusk .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -1123,7 +1175,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-bottom-width: 0;
 }
 
-#chqyvmolis .gt_subtitle {
+#pegndolusk .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -1135,7 +1187,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-top-width: 0;
 }
 
-#chqyvmolis .gt_heading {
+#pegndolusk .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -1147,13 +1199,13 @@ S006 73.40   68    68       69.620</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_bottom_border {
+#pegndolusk .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_col_headings {
+#pegndolusk .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1168,7 +1220,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_col_heading {
+#pegndolusk .gt_col_heading {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1188,7 +1240,7 @@ S006 73.40   68    68       69.620</code></pre>
   overflow-x: hidden;
 }
 
-#chqyvmolis .gt_column_spanner_outer {
+#pegndolusk .gt_column_spanner_outer {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1200,15 +1252,15 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 4px;
 }
 
-#chqyvmolis .gt_column_spanner_outer:first-child {
+#pegndolusk .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#chqyvmolis .gt_column_spanner_outer:last-child {
+#pegndolusk .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#chqyvmolis .gt_column_spanner {
+#pegndolusk .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -1220,11 +1272,11 @@ S006 73.40   68    68       69.620</code></pre>
   width: 100%;
 }
 
-#chqyvmolis .gt_spanner_row {
+#pegndolusk .gt_spanner_row {
   border-bottom-style: hidden;
 }
 
-#chqyvmolis .gt_group_heading {
+#pegndolusk .gt_group_heading {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1250,7 +1302,7 @@ S006 73.40   68    68       69.620</code></pre>
   text-align: left;
 }
 
-#chqyvmolis .gt_empty_group_heading {
+#pegndolusk .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -1265,15 +1317,15 @@ S006 73.40   68    68       69.620</code></pre>
   vertical-align: middle;
 }
 
-#chqyvmolis .gt_from_md > :first-child {
+#pegndolusk .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#chqyvmolis .gt_from_md > :last-child {
+#pegndolusk .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#chqyvmolis .gt_row {
+#pegndolusk .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1292,7 +1344,7 @@ S006 73.40   68    68       69.620</code></pre>
   overflow-x: hidden;
 }
 
-#chqyvmolis .gt_stub {
+#pegndolusk .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1305,7 +1357,7 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 5px;
 }
 
-#chqyvmolis .gt_stub_row_group {
+#pegndolusk .gt_stub_row_group {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -1319,15 +1371,15 @@ S006 73.40   68    68       69.620</code></pre>
   vertical-align: top;
 }
 
-#chqyvmolis .gt_row_group_first td {
+#pegndolusk .gt_row_group_first td {
   border-top-width: 2px;
 }
 
-#chqyvmolis .gt_row_group_first th {
+#pegndolusk .gt_row_group_first th {
   border-top-width: 2px;
 }
 
-#chqyvmolis .gt_summary_row {
+#pegndolusk .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1337,16 +1389,16 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 5px;
 }
 
-#chqyvmolis .gt_first_summary_row {
+#pegndolusk .gt_first_summary_row {
   border-top-style: solid;
   border-top-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_first_summary_row.thick {
+#pegndolusk .gt_first_summary_row.thick {
   border-top-width: 2px;
 }
 
-#chqyvmolis .gt_last_summary_row {
+#pegndolusk .gt_last_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1356,7 +1408,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_grand_summary_row {
+#pegndolusk .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -1366,7 +1418,7 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 5px;
 }
 
-#chqyvmolis .gt_first_grand_summary_row {
+#pegndolusk .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1376,7 +1428,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-top-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_last_grand_summary_row_top {
+#pegndolusk .gt_last_grand_summary_row_top {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -1386,11 +1438,11 @@ S006 73.40   68    68       69.620</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_striped {
+#pegndolusk .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#chqyvmolis .gt_table_body {
+#pegndolusk .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -1399,7 +1451,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-bottom-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_footnotes {
+#pegndolusk .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1413,7 +1465,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_footnote {
+#pegndolusk .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding-top: 4px;
@@ -1422,7 +1474,7 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 5px;
 }
 
-#chqyvmolis .gt_sourcenotes {
+#pegndolusk .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -1436,7 +1488,7 @@ S006 73.40   68    68       69.620</code></pre>
   border-right-color: #D3D3D3;
 }
 
-#chqyvmolis .gt_sourcenote {
+#pegndolusk .gt_sourcenote {
   font-size: 90%;
   padding-top: 4px;
   padding-bottom: 4px;
@@ -1444,72 +1496,72 @@ S006 73.40   68    68       69.620</code></pre>
   padding-right: 5px;
 }
 
-#chqyvmolis .gt_left {
+#pegndolusk .gt_left {
   text-align: left;
 }
 
-#chqyvmolis .gt_center {
+#pegndolusk .gt_center {
   text-align: center;
 }
 
-#chqyvmolis .gt_right {
+#pegndolusk .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#chqyvmolis .gt_font_normal {
+#pegndolusk .gt_font_normal {
   font-weight: normal;
 }
 
-#chqyvmolis .gt_font_bold {
+#pegndolusk .gt_font_bold {
   font-weight: bold;
 }
 
-#chqyvmolis .gt_font_italic {
+#pegndolusk .gt_font_italic {
   font-style: italic;
 }
 
-#chqyvmolis .gt_super {
+#pegndolusk .gt_super {
   font-size: 65%;
 }
 
-#chqyvmolis .gt_footnote_marks {
+#pegndolusk .gt_footnote_marks {
   font-size: 75%;
   vertical-align: 0.4em;
   position: initial;
 }
 
-#chqyvmolis .gt_asterisk {
+#pegndolusk .gt_asterisk {
   font-size: 100%;
   vertical-align: 0;
 }
 
-#chqyvmolis .gt_indent_1 {
+#pegndolusk .gt_indent_1 {
   text-indent: 5px;
 }
 
-#chqyvmolis .gt_indent_2 {
+#pegndolusk .gt_indent_2 {
   text-indent: 10px;
 }
 
-#chqyvmolis .gt_indent_3 {
+#pegndolusk .gt_indent_3 {
   text-indent: 15px;
 }
 
-#chqyvmolis .gt_indent_4 {
+#pegndolusk .gt_indent_4 {
   text-indent: 20px;
 }
 
-#chqyvmolis .gt_indent_5 {
+#pegndolusk .gt_indent_5 {
   text-indent: 25px;
 }
 
-#chqyvmolis .katex-display {
+#pegndolusk .katex-display {
   display: inline-flex !important;
   margin-bottom: 0.75em !important;
 }
 
-#chqyvmolis div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+#pegndolusk div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
   height: 0px !important;
 }
 </style>
@@ -1642,13 +1694,13 @@ Submitted Score
 <h3 data-number="1.7.2" class="anchored" data-anchor-id="base-r-graphics"><span class="header-section-number">1.7.2</span> Base R graphics</h3>
 <p>A quick histogram shows the distribution of course scores, with a vertical line marking the class average:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb85"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(class_report<span class="sc">$</span>ProcessedTable<span class="sc">$</span>course.score, <span class="at">breaks =</span> <span class="dv">15</span>, <span class="at">col =</span> <span class="st">"lightblue"</span>,</span>
-<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"Distribution of Course Scores"</span>, <span class="at">xlab =</span> <span class="st">"Course Score"</span>)</span>
-<span id="cb85-3"><a href="#cb85-3" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">mean</span>(class_report<span class="sc">$</span>ProcessedTable<span class="sc">$</span>course.score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">col =</span> <span class="st">"red"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb87"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(class_report<span class="sc">$</span>ProcessedTable<span class="sc">$</span>course.score, <span class="at">breaks =</span> <span class="dv">15</span>, <span class="at">col =</span> <span class="st">"lightblue"</span>,</span>
+<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"Distribution of Course Scores"</span>, <span class="at">xlab =</span> <span class="st">"Course Score"</span>)</span>
+<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">mean</span>(class_report<span class="sc">$</span>ProcessedTable<span class="sc">$</span>course.score, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">col =</span> <span class="st">"red"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-36-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-37-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>
@@ -1658,38 +1710,38 @@ Submitted Score
 <h3 data-number="1.7.3" class="anchored" data-anchor-id="plotting-with-ggplot2"><span class="header-section-number">1.7.3</span> Plotting with ggplot2</h3>
 <p><strong>ggplot2</strong> builds a comparison across programs declaratively, by mapping columns of <code>class_report$ProcessedTable</code> to visual properties and layering geometries with <code>+</code>. Here the boxplot is enhanced with the individual course scores jittered on top:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb86"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
-<span id="cb86-2"><a href="#cb86-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb86-3"><a href="#cb86-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="fu">aes</span>(<span class="at">x =</span> program, <span class="at">y =</span> course.score, <span class="at">fill =</span> program)) <span class="sc">+</span></span>
-<span id="cb86-4"><a href="#cb86-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_boxplot</span>(<span class="at">show.legend =</span> <span class="cn">FALSE</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
-<span id="cb86-5"><a href="#cb86-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_jitter</span>(<span class="at">width =</span> <span class="fl">0.05</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
-<span id="cb86-6"><a href="#cb86-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
-<span id="cb86-7"><a href="#cb86-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Course Score by Academic Program"</span>,</span>
-<span id="cb86-8"><a href="#cb86-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="st">"Program"</span>, <span class="at">y =</span> <span class="st">"Course Score"</span></span>
-<span id="cb86-9"><a href="#cb86-9" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
-<span id="cb86-10"><a href="#cb86-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb88"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb88-3"><a href="#cb88-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="fu">aes</span>(<span class="at">x =</span> program, <span class="at">y =</span> course.score, <span class="at">fill =</span> program)) <span class="sc">+</span></span>
+<span id="cb88-4"><a href="#cb88-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_boxplot</span>(<span class="at">show.legend =</span> <span class="cn">FALSE</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
+<span id="cb88-5"><a href="#cb88-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_jitter</span>(<span class="at">width =</span> <span class="fl">0.05</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
+<span id="cb88-6"><a href="#cb88-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
+<span id="cb88-7"><a href="#cb88-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Course Score by Academic Program"</span>,</span>
+<span id="cb88-8"><a href="#cb88-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="st">"Program"</span>, <span class="at">y =</span> <span class="st">"Course Score"</span></span>
+<span id="cb88-9"><a href="#cb88-9" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
+<span id="cb88-10"><a href="#cb88-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-37-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-38-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>
 </div>
 <p>We built a program-specific intercept into the simulation when generating the final exam scores; a scatter plot of the final versus each student’s mean quiz score, with a fitted line per program, should reveal it:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb87"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="fu">aes</span>(<span class="at">x =</span> Quiz, <span class="at">y =</span> Final, <span class="at">color =</span> program)) <span class="sc">+</span></span>
-<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="dv">2</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
-<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_smooth</span>(<span class="at">method =</span> <span class="st">"lm"</span>, <span class="at">se =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
-<span id="cb87-4"><a href="#cb87-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
-<span id="cb87-5"><a href="#cb87-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Final Exam vs. Mean Quiz Score, by Program"</span>,</span>
-<span id="cb87-6"><a href="#cb87-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="st">"Mean Quiz Score"</span>, <span class="at">y =</span> <span class="st">"Final Exam Score"</span>, <span class="at">color =</span> <span class="st">"Program"</span></span>
-<span id="cb87-7"><a href="#cb87-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
-<span id="cb87-8"><a href="#cb87-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb89"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(class_report<span class="sc">$</span>ProcessedTable, <span class="fu">aes</span>(<span class="at">x =</span> Quiz, <span class="at">y =</span> Final, <span class="at">color =</span> program)) <span class="sc">+</span></span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="dv">2</span>, <span class="at">alpha =</span> <span class="fl">0.6</span>) <span class="sc">+</span></span>
+<span id="cb89-3"><a href="#cb89-3" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_smooth</span>(<span class="at">method =</span> <span class="st">"lm"</span>, <span class="at">se =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb89-4"><a href="#cb89-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(</span>
+<span id="cb89-5"><a href="#cb89-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">title =</span> <span class="st">"Final Exam vs. Mean Quiz Score, by Program"</span>,</span>
+<span id="cb89-6"><a href="#cb89-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="st">"Mean Quiz Score"</span>, <span class="at">y =</span> <span class="st">"Final Exam Score"</span>, <span class="at">color =</span> <span class="st">"Program"</span></span>
+<span id="cb89-7"><a href="#cb89-7" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
+<span id="cb89-8"><a href="#cb89-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
-<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-38-1.png" class="img-fluid figure-img" width="672"></p>
+<p><img src="unit01_introduction_longer_files/figure-html/unnamed-chunk-39-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
 </div>

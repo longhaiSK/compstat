@@ -6,6 +6,7 @@ code-fold: false
 warning: false
 format: 
     html: default 
+    typst: default
       
 ---
 
@@ -453,15 +454,54 @@ class_report$incomplete_students
 
 Base R's indexing, `apply()`, and `for` loops can do everything we've done so far, but **dplyr** offers a grammar of a handful of verbs -- `mutate()`, `filter()`, `select()`, `arrange()`, `group_by()`, `summarize()` -- that are chained together with the pipe `|>`, so a whole data-wrangling recipe reads top to bottom like a sentence instead of nesting function calls inside one another.
 
-### Recomputing course scores with `mutate()` and `rowwise()`
+### Generating a roster with `mutate()`
 
-Our course-score calculation is inherently a **row-wise** operation: for each student we need to look across several quiz columns and average just that student's values. `rowwise()` tells dplyr to treat each row as its own little group, and `c_across()` lets `mean()` reach across a *selection* of columns (here found with the tidyselect helper `starts_with()`, the dplyr analogue of the `grep("^Quiz", ...)` trick we used earlier) within that row.
-
-Inside a single `mutate()` call, later expressions can refer to columns just created earlier in the *same* call -- so we can reproduce the "replace the test mean with the final score if it's higher" rule from `compute.course.score()` using `if_else()` in place of the base-R `if` statement:
+`mutate()` isn't limited to computing new columns from data that already exists in a data frame -- it can build up a data frame from nothing at all, one column at a time, chaining together exactly the same generative steps we used in [Generating an artificial score dataset]. Within a single `mutate()` call, each new column is available to the expressions that follow it, so we can go straight from raw quiz scores to `quiz.mean.true` to `Test1`/`Test2`/`Final`, all in one pipeline, reusing the `gen.quiz()` and `clip.round()` helpers we already defined:
 
 ```{r}
 library(dplyr)
 
+set.seed(2026)   # a fresh cohort, just for this demonstration
+
+n2 <- 100
+students2 <- sprintf("S%03d", 1:n2)
+program2  <- factor(sample(c("Program A", "Program B"), n2, replace = TRUE))
+
+data.frame(name = students2, program = program2) |>
+    mutate(
+        Quiz1 = gen.quiz(75, 20),
+        Quiz2 = gen.quiz(78, 20),
+        Quiz3 = gen.quiz(72, 20),
+        Quiz4 = gen.quiz(80, 20),
+        Quiz5 = gen.quiz(74, 20),
+        quiz.mean.true = rowMeans(cbind(Quiz1, Quiz2, Quiz3, Quiz4, Quiz5)),
+        b0.test  = if_else(program == "Program A", 12, 6),
+        b0.final = if_else(program == "Program A", 15, 8),
+        Test1 = clip.round(b0.test  + 0.80 * quiz.mean.true + rnorm(n(), 0, 8)),
+        Test2 = clip.round(b0.test  + 0.80 * quiz.mean.true + rnorm(n(), 0, 8)),
+        Final = clip.round(b0.final + 0.85 * quiz.mean.true + rnorm(n(), 0, 6)),
+        across(c(starts_with("Quiz"), starts_with("Test"), Final),
+               ~ replace(.x, sample(n(), round(n() * miss.rate)), NA))
+    ) -> roster_worktable
+
+roster_worktable |> slice_head (n = 6)
+
+roster_mutate <- roster_worktable |> select(-quiz.mean.true, -b0.test, -b0.final) 
+
+roster_mutate |> slice_head (n= 6)
+```
+
+A few things are worth noticing here. `b0.test` and `b0.final` are computed with `if_else()` -- the vectorized, type-checked dplyr analogue of `ifelse()` -- directly from the `program` column, and then used (and finally dropped again with `select(-...)`) just like the helper vectors from the original script. `n()`, dplyr's built-in count of the current number of rows, replaces the standalone `n <- 100` we relied on earlier, so this pipeline needs nothing from the outside except `students2`/`program2` to start from. The tidyselect helper `starts_with()` -- the dplyr analogue of the `grep("^Quiz", ...)` trick from earlier -- picks out groups of columns by name, and wrapping it in `across()` applies the *same* NA-injection rule to all eight score columns at once, in place of the explicit `for` loop over `1:ncol(scores)`.
+
+Because this pipeline draws its own random numbers with a fresh seed, `roster_mutate` is a different simulated class from `roster` -- not a reproduction of it -- but it is built by *exactly* the same recipe, entirely inside one `mutate()` chain. The rest of this section goes back to analyzing the original `roster`.
+
+### Recomputing course scores with `mutate()` and `rowwise()`
+
+Our course-score calculation is inherently a **row-wise** operation: for each student we need to look across several quiz columns and average just that student's values. `rowwise()` tells dplyr to treat each row as its own little group, and `c_across()` lets `mean()` reach across a *selection* of columns (again using `starts_with()`) within that row.
+
+Inside a single `mutate()` call, later expressions can refer to columns just created earlier in the *same* call -- so we can reproduce the "replace the test mean with the final score if it's higher" rule from `compute.course.score()` using `if_else()` in place of the base-R `if` statement:
+
+```{r}
 dplyr_results <- roster |>
     rowwise() |>
     mutate(
