@@ -1,21 +1,25 @@
 ---
-title: Introduction to R Programming
+title: Introduction to R and Quarto
 name: Longhai Li
 date: last-modified
 code-fold: false
 warning: false
+format: 
+    html: default 
+      
 ---
 
 ## A toy example
+
 
 Throughout this unit we will use one running example to introduce the basic building blocks of R: vectors, strings, special values, matrices, data frames, lists, functions, file I/O, and graphics.
 
 **The mission:** a class of 100 students has taken graded work in three *categories*: five quizzes, two tests, and one final exam, each scored out of 100 points. A student's **course score** is a weighted average of the category means -- quizzes count 30%, tests count 30%, and the final counts 40%. To make the simulated data realistic, a student's test and final scores are generated from their quiz performance by a simple linear regression, with a different intercept for Program A and Program B students, and a few quizzes are missing entirely (a student who did not sit that quiz). We want to
 
-1. work out the calculation step by step for one student,
-2. package that calculation into a reusable function,
-3. apply the function to every student to get a full set of results, and
-4. present those results as a table and as plots.
+1.  work out the calculation step by step for one student,
+2.  package that calculation into a reusable function,
+3.  apply the function to every student to get a full set of results, and
+4.  present those results as a table and as plots.
 
 This mirrors how real data-analysis code is usually built: explore on one case, generalize into a function, then apply and report.
 
@@ -77,22 +81,55 @@ This is a great place to demonstrate **vectorized calculations** in R. Instead o
 program <- factor(sample(c("Program A", "Program B"), n, replace = TRUE))
 
 quiz.mat <- cbind(Quiz1, Quiz2, Quiz3, Quiz4, Quiz5)
+
+head(quiz.mat)
+```
+
+
+```{r}
 quiz.mean.true <- rowMeans(quiz.mat)
+quiz.mean.true
+```
 
-b0.test  <- ifelse(program == "Program A", 12, 6)
 
+```{r}
+b0.test  <- ifelse(program == "Program A", 12, 6); 
+data.frame(program,b0.test)
+```
+
+
+```{r}
 b1.test  <- 0.80
 
+
+
+data.frame (program, b1.test)
+```
+```{r}
 b0.final <- ifelse(program == "Program A", 15, 8)
 b1.final <- 0.85
+```
 
+
+```{r}
 clip.round <- function(x) round(pmin(100, pmax(0, x)))
 
 b0.test
 b1.test
 quiz.mean.true
 jitter <- rnorm(n, 0, 8)
-Test1.raw <- b0.test  + b1.test*quiz.mean.true  + rnorm(n, 0, 8)
+data.frame(b0.test, b1.test, quiz.mean.true)
+```
+
+
+```{r}
+error <- rnorm (n,0,8)
+Test1.raw <- b0.test  + b1.test*quiz.mean.true  + error
+data.frame(b0.test, b1.test, quiz.mean.true, error,Test1.raw)
+```
+
+
+```{r}
 Test1 <- clip.round(Test1.raw)
 
 data.frame(program, b0.test, b1.test, quiz.mean.true, jitter, Test1.raw)
@@ -175,12 +212,18 @@ To avoid hardcoding column positions, we can extract the column names from this 
 ```{r}
 # Extract all the column names from the student record
 col_names <- names(student_record)
-
+col_names
 # Use grep to find the numeric indices of specific categories
+grep("^Quiz", col_names, value = TRUE)
 quiz.cols <- grep("^Quiz", col_names)
+quiz.cols
 test.cols <- grep("^Test", col_names)
 final.col <- grep("^Final", col_names)
+```
 
+
+
+```{r}
 # Check which columns grep found for the quizzes
 quiz.cols
 
@@ -210,7 +253,7 @@ course.score
 
 ### Aggregating into a Reusable Function
 
-Now that we know the logic works perfectly for one student, we can package those exact steps into a reusable function. This function will take any `student_record` as its input and return a named vector containing the category means and the final score. 
+Now that we know the logic works perfectly for one student, we can package those exact steps into a reusable function. This function will take any `student_record` as its input and return a named vector containing the category means and the final score.
 
 To make the grading policy more forgiving, we are adding a conditional rule: if a student's final exam score is strictly higher than their test average, the final exam score will replace the test average. Because `compute.course.score` processes exactly one student at a time, we evaluate a single logical condition using a standard `if` statement rather than a vectorized alternative like `ifelse`. We also use `!is.na()` checks to ensure the `if` statement doesn't crash by attempting to evaluate a missing value (which could happen if a student had no test or final scores).
 
@@ -241,8 +284,7 @@ compute.course.score <- function(student_record, w_quiz = 0.3, w_test = 0.3, w_f
 
 Let's test our updated function on two specific scenarios to verify the conditional logic. We will format these inputs as **named vectors** rather than data frames. This mimics exactly what the `apply()` function will do later when it passes rows of our dataset to this function.
 
-**Student A** struggled on the tests (average: 70) but aced the final (95). The function should detect that `95 > 70` and replace their test mean with 95 before calculating the final course score.
-**Student B** did great on the tests (average: 90) but dropped on the final (75). The function should keep their original test mean.
+**Student A** struggled on the tests (average: 70) but aced the final (95). The function should detect that `95 > 70` and replace their test mean with 95 before calculating the final course score. **Student B** did great on the tests (average: 90) but dropped on the final (75). The function should keep their original test mean.
 
 ```{r}
 # Create the mock record for Student A as a named vector
@@ -315,7 +357,7 @@ for (i in 1:num_students) {
 head(loop_results)
 ```
 
-Now, let's run the exact same calculation using `apply()` and use the `all.equal()` function to verify that both methods yield the exact same mathematical results. 
+Now, let's run the exact same calculation using `apply()` and use the `all.equal()` function to verify that both methods yield the exact same mathematical results.
 
 ```{r}
 
@@ -333,15 +375,13 @@ The `results` table is worth keeping. A data frame can be written as a plain csv
 
 ```{r}
 write.csv(results, file = "results.csv", row.names = FALSE)
+read.csv ("results.csv")
 
 saveRDS(results, file = "results.RDS")
-
 results.reloaded <- readRDS("results.RDS")
-
 identical(results, results.reloaded)
 
 ```
-
 
 ## Writing a Function for the Whole Process with List Output
 
@@ -349,10 +389,10 @@ Sometimes a function needs to return multiple distinct pieces of information tha
 
 Let's write a wrapper function that takes our raw `roster` data and our weighting scheme. It will calculate the scores, but instead of just returning the table, it will return a list containing four very different items:
 
-1. The full processed data frame.
-2. A numeric vector of just the final course scores.
-3. A frequency table of scores binned into 10-point intervals.
-4. A character vector of the names of students who failed (scored below 60).
+1.  The full processed data frame.
+2.  A numeric vector of just the final course scores.
+3.  A frequency table of scores binned into 10-point intervals.
+4.  A character vector of the names of students who failed (scored below 60).
 
 ```{r}
 analyze_class_performance <- function(roster_data, w_quiz = 0.3, w_test = 0.3, w_final = 0.4) {
@@ -409,11 +449,83 @@ class_report$Failing_Students
 class_report$incomplete_students 
 ```
 
+## Data Manipulation with `dplyr`
+
+Base R's indexing, `apply()`, and `for` loops can do everything we've done so far, but **dplyr** offers a grammar of a handful of verbs -- `mutate()`, `filter()`, `select()`, `arrange()`, `group_by()`, `summarize()` -- that are chained together with the pipe `|>`, so a whole data-wrangling recipe reads top to bottom like a sentence instead of nesting function calls inside one another.
+
+### Recomputing course scores with `mutate()` and `rowwise()`
+
+Our course-score calculation is inherently a **row-wise** operation: for each student we need to look across several quiz columns and average just that student's values. `rowwise()` tells dplyr to treat each row as its own little group, and `c_across()` lets `mean()` reach across a *selection* of columns (here found with the tidyselect helper `starts_with()`, the dplyr analogue of the `grep("^Quiz", ...)` trick we used earlier) within that row.
+
+Inside a single `mutate()` call, later expressions can refer to columns just created earlier in the *same* call -- so we can reproduce the "replace the test mean with the final score if it's higher" rule from `compute.course.score()` using `if_else()` in place of the base-R `if` statement:
+
+```{r}
+library(dplyr)
+
+dplyr_results <- roster |>
+    rowwise() |>
+    mutate(
+        Quiz  = mean(c_across(starts_with("Quiz")), na.rm = TRUE),
+        Test  = mean(c_across(starts_with("Test")), na.rm = TRUE),
+        Test  = if_else(!is.na(Final) & !is.na(Test) & Final > Test, Final, Test),
+        course.score = 0.3 * Quiz + 0.3 * Test + 0.4 * Final
+    ) |>
+    ungroup() |>
+    select(name, program, Quiz, Test, Final, course.score)
+
+dplyr_results
+```
+
+`rowwise()` groups by row, so we `ungroup()` again immediately afterward -- otherwise every later verb would keep operating one row at a time. As a sanity check, this dplyr pipeline should produce *exactly* the same numbers as `results`, our earlier `apply()`-based table, just as the `for`-loop version did:
+
+```{r}
+all.equal(as.data.frame(dplyr_results), results, check.attributes = FALSE)
+```
+
+### Summarizing by group with `group_by()` and `summarize()`
+
+This is where dplyr's advantage over base R really shows. Producing a by-program summary table with `tapply()` or nested `sapply()` calls in base R takes some fiddling; with dplyr it's a direct continuation of the same pipeline. `group_by()` splits the data by `program`, and every subsequent `summarize()` argument is computed separately within each group:
+
+```{r}
+dplyr_results |>
+    group_by(program) |>
+    summarize(
+        n                 = n(),
+        mean_quiz         = mean(Quiz, na.rm = TRUE),
+        mean_test         = mean(Test, na.rm = TRUE),
+        mean_final        = mean(Final, na.rm = TRUE),
+        mean_course_score = mean(course.score, na.rm = TRUE),
+        .groups = "drop"
+    )
+```
+
+Program A's mean course score comes out noticeably higher -- exactly the intercept difference (`b0.test`, `b0.final`) we built into the simulation, and the same pattern we'll see again in the by-program boxplot below.
+
+### Filtering and sorting with `filter()` and `arrange()`
+
+`filter()` keeps rows matching a logical condition (replacing the `which()`-based indexing we used for `Failing_Students`), and `arrange()` sorts rows by one or more columns -- `desc()` reverses the order. Chaining them together gives the failing students, worst first, and separately the top five performers in the class:
+
+```{r}
+# Failing students, worst first
+dplyr_results |>
+    filter(course.score < 60) |>
+    arrange(course.score) |>
+    select(name, program, course.score)
+
+# Top 5 students in the class
+dplyr_results |>
+    arrange(desc(course.score)) |>
+    select(name, program, course.score) |>
+    slice_head(n = 5)
+```
+
+We'll keep using `class_report$ProcessedTable` -- our original `apply()`-based results -- for the reports and plots below, but from here on in the course, dplyr's pipe-and-verb style will be our default tool for wrangling real datasets.
+
 ## Presenting the Results
 
 ### Presenting the Processed Results with `gt`
 
-Finally, **gt** turns the raw data frame of results into a polished, presentation-ready report. We can extract the `ProcessedTable` directly from our `class_report` list and enhance it. 
+Finally, **gt** turns the raw data frame of results into a polished, presentation-ready report. We can extract the `ProcessedTable` directly from our `class_report` list and enhance it.
 
 Here we use `tab_spanner()` to group the category scores and the final score under distinct visual headers, and `fmt_number()` to ensure all grades display exactly two decimal places.
 
@@ -509,3 +621,4 @@ ggplot(class_report$ProcessedTable, aes(x = Quiz, y = Final, color = program)) +
 ```
 
 The two fitted lines are roughly parallel but vertically offset -- exactly the intercept difference we built into `b0.final` when simulating the data.
+
