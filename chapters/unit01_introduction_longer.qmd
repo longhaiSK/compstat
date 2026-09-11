@@ -86,54 +86,48 @@ quiz.mat <- cbind(Quiz1, Quiz2, Quiz3, Quiz4, Quiz5)
 head(quiz.mat)
 ```
 
-
 ```{r}
 quiz.mean.true <- rowMeans(quiz.mat)
-quiz.mean.true
+data.frame(program, quiz.mean.true)
 ```
 
+The intercept depends on `program`, so we compute it with `ifelse`; the slope is the same for every student:
 
 ```{r}
-b0.test  <- ifelse(program == "Program A", 12, 6); 
-data.frame(program,b0.test)
+b0.test <- ifelse(program == "Program A", 12, 6)
+b1.test <- 0.80
+
+data.frame(program, b0.test, b1.test)
 ```
 
+The final exam uses its own intercept and slope, computed the same way:
 
-```{r}
-b1.test  <- 0.80
-
-
-
-data.frame (program, b1.test)
-```
 ```{r}
 b0.final <- ifelse(program == "Program A", 15, 8)
 b1.final <- 0.85
+
+data.frame(program, b0.final, b1.final)
 ```
 
+`clip.round` rounds a score and clips it to the valid `0`-`100` range -- we'll reuse it for every test and the final:
 
 ```{r}
 clip.round <- function(x) round(pmin(100, pmax(0, x)))
-
-b0.test
-b1.test
-quiz.mean.true
-jitter <- rnorm(n, 0, 8)
-data.frame(b0.test, b1.test, quiz.mean.true)
 ```
 
+Now we add random error to the linear predictor to get each student's raw `Test1` score, then clip and round it:
 
 ```{r}
-error <- rnorm (n,0,8)
-Test1.raw <- b0.test  + b1.test*quiz.mean.true  + error
-data.frame(b0.test, b1.test, quiz.mean.true, error,Test1.raw)
-```
+error <- rnorm(n, 0, 8)
+Test1.raw <- b0.test + b1.test*quiz.mean.true + error
 
+data.frame(program, b0.test, b1.test, quiz.mean.true, error, Test1.raw)
+```
 
 ```{r}
 Test1 <- clip.round(Test1.raw)
 
-data.frame(program, b0.test, b1.test, quiz.mean.true, jitter, Test1.raw)
+data.frame(program, Test1.raw, Test1)
 ```
 
 Using the above method, we generate two tests and a final:
@@ -165,7 +159,7 @@ In reality, students occasionally miss a quiz. Let's randomly drop about 5% of t
 
 ```{r}
 miss.rate <- 0.05
-
+sample(n, round(n*miss.rate))
 # We only want to introduce NAs into the first 5 columns (the quizzes)
 for(j in 1:ncol(scores)) {
     scores[sample(n, round(n*miss.rate)), j] <- NA
@@ -317,6 +311,8 @@ compute.course.score(student_B)
 
 ## Applying the Function to Every Student
 
+### Using `apply` function
+
 Now that we have a function working for one student, we can apply it across the entire class. The `apply` function is perfect for this: it takes our `roster` data frame, loops over either rows (`1`) or columns (`2`), and executes our custom function.
 
 ```{r}
@@ -330,7 +326,7 @@ results
 
 ```
 
-**Looping over the dataset: `for` loop vs. `apply`**
+### Looping the rows with `for`
 
 While `apply()` is idiomatic R and very concise, we can also use a traditional `for` loop to process each student. To do this efficiently, we first pre-allocate an empty matrix of the correct size to store our output. Then, we iterate through the row indices one by one.
 
@@ -449,6 +445,48 @@ class_report$ScoreDistribution
 class_report$Failing_Students
 class_report$incomplete_students 
 ```
+
+
+## The use of pipe `|>`
+
+The pipe operator `x |> f(...)` is just shorthand for `f(x, ...)` -- it takes whatever is on its left and inserts it as the *first* argument of the function call on its right. This lets you write a sequence of transformations in the order you think of them, instead of nesting calls inside out:
+
+```{r}
+# Without the pipe: read from the inside out
+round(sqrt(mean(c(4, 9, 16, 25))), 2)
+
+# With the pipe: read top to bottom, left to right
+c(4, 9, 16, 25) |>
+    mean() |>
+    sqrt() |>
+    round(2)
+```
+
+Each step's output becomes the next step's first input, so `mean()` receives the vector, `sqrt()` receives the mean, and `round(2)` receives the square root (with `2` filling the *second* argument, `digits`). Extra arguments after the first are passed straight through exactly as they would be in a normal call, which matters once a pipeline mixes several multi-argument functions -- much like the quiz-generating recipe used throughout this unit:
+
+```{r}
+set.seed(123)
+
+# Same idea as gen.quiz(), written as one pipeline: each step's output
+# fills the *first* argument of the next call, while the remaining,
+# named arguments are supplied just as in an ordinary function call
+rnorm(20, mean = 75, sd = 10) |>
+    round(digits = 0) |>       # round(x, digits = 0)
+    pmin(100) |>                # pmin(x, 100)
+    pmax(0) |>                  # pmax(x, 0)
+    sort(decreasing = TRUE) |>  # sort(x, decreasing = TRUE)
+    head(n = 5)                 # head(x, n = 5)
+```
+
+Sometimes the piped value needs to land in an argument *other than* the first. The placeholder `_` marks exactly where it goes, as long as that argument is named:
+
+```{r}
+# seq(1, to = 10, by = 2) -- the piped 10 fills the "to" argument
+10 |> seq(1, to = _, by = 2)
+```
+
+This same idea -- chaining verbs with `|>` -- is what makes the dplyr pipelines below read like a recipe.
+
 
 ## Data Manipulation with `dplyr`
 
