@@ -7,9 +7,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-08-26">
+<meta name="dcterms.date" content="2026-09-13">
 
-<title>7&nbsp; EM Algorithm – Elements of Computational Techniques in Statistics</title>
+<title>7&nbsp; The EM Algorithm – Elements of Computational Techniques in Statistics</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -83,6 +83,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/num_eq.js"></script>
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/merge-toc.js"></script>
 <link href="../site_libs/quarto-contrib/custombook-1.0.0/bookstyles.css" rel="stylesheet">
+<meta name="shinylive:serviceworker_dir" content="..">
+<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
+<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
+<link href="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -113,6 +118,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/pagedtable-1.1/css/pagedtable.css" rel="stylesheet">
 <script src="../site_libs/pagedtable-1.1/js/pagedtable.js"></script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -125,7 +159,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/unit07_em.html"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">EM Algorithm</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/unit07_em.html"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The EM Algorithm</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -198,7 +232,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/unit07_em.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">EM Algorithm</span></span></a>
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The EM Algorithm</span></span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -255,8 +289,41 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#fitting-a-normal-mixture-model-with-em" id="toc-fitting-a-normal-mixture-model-with-em" class="nav-link active" data-scroll-target="#fitting-a-normal-mixture-model-with-em"><span class="header-section-number">8</span> Fitting a Normal Mixture Model with EM</a></li>
-  <li><a href="#fitting-a-censored-poisson-model-with-em" id="toc-fitting-a-censored-poisson-model-with-em" class="nav-link" data-scroll-target="#fitting-a-censored-poisson-model-with-em"><span class="header-section-number">9</span> Fitting a censored poisson model with EM</a></li>
+  <li><a href="#overview-of-em" id="toc-overview-of-em" class="nav-link active" data-scroll-target="#overview-of-em"><span class="header-section-number">7.1</span> Overview of EM</a>
+  <ul>
+  <li><a href="#setup-and-motivation" id="toc-setup-and-motivation" class="nav-link" data-scroll-target="#setup-and-motivation"><span class="header-section-number">7.1.1</span> Setup and motivation</a></li>
+  <li><a href="#the-algorithm" id="toc-the-algorithm" class="nav-link" data-scroll-target="#the-algorithm"><span class="header-section-number">7.1.2</span> The algorithm</a></li>
+  <li><a href="#q-as-an-average-of-complete-log-likelihoods" id="toc-q-as-an-average-of-complete-log-likelihoods" class="nav-link" data-scroll-target="#q-as-an-average-of-complete-log-likelihoods"><span class="header-section-number">7.1.3</span> <span class="math inline">\(Q\)</span> as an average of complete log-likelihoods</a></li>
+  <li><a href="#q-functions-as-tangent-lower-bounds" id="toc-q-functions-as-tangent-lower-bounds" class="nav-link" data-scroll-target="#q-functions-as-tangent-lower-bounds"><span class="header-section-number">7.1.4</span> <span class="math inline">\(Q\)</span> functions as tangent lower bounds</a></li>
+  <li><a href="#the-ascending-property" id="toc-the-ascending-property" class="nav-link" data-scroll-target="#the-ascending-property"><span class="header-section-number">7.1.5</span> The ascending property</a></li>
+  <li><a href="#em-as-alternating-optimization" id="toc-em-as-alternating-optimization" class="nav-link" data-scroll-target="#em-as-alternating-optimization"><span class="header-section-number">7.1.6</span> EM as alternating optimization</a></li>
+  </ul></li>
+  <li><a href="#sec-mixture" id="toc-sec-mixture" class="nav-link" data-scroll-target="#sec-mixture"><span class="header-section-number">7.2</span> Example 1: Two-Component Normal Mixture</a>
+  <ul>
+  <li><a href="#model-and-likelihoods" id="toc-model-and-likelihoods" class="nav-link" data-scroll-target="#model-and-likelihoods"><span class="header-section-number">7.2.1</span> Model and likelihoods</a></li>
+  <li><a href="#complete-log-likelihood" id="toc-complete-log-likelihood" class="nav-link" data-scroll-target="#complete-log-likelihood"><span class="header-section-number">7.2.2</span> Complete log-likelihood</a></li>
+  <li><a href="#e-step-soft-classification" id="toc-e-step-soft-classification" class="nav-link" data-scroll-target="#e-step-soft-classification"><span class="header-section-number">7.2.3</span> E-step: soft classification</a></li>
+  <li><a href="#m-step-weighted-proportions-and-means" id="toc-m-step-weighted-proportions-and-means" class="nav-link" data-scroll-target="#m-step-weighted-proportions-and-means"><span class="header-section-number">7.2.4</span> M-step: weighted proportions and means</a></li>
+  <li><a href="#implementation" id="toc-implementation" class="nav-link" data-scroll-target="#implementation"><span class="header-section-number">7.2.5</span> Implementation</a></li>
+  <li><a href="#sec-mixture-app" id="toc-sec-mixture-app" class="nav-link" data-scroll-target="#sec-mixture-app"><span class="header-section-number">7.2.6</span> Interactive demonstration</a></li>
+  <li><a href="#comparison-with-general-purpose-optimizers" id="toc-comparison-with-general-purpose-optimizers" class="nav-link" data-scroll-target="#comparison-with-general-purpose-optimizers"><span class="header-section-number">7.2.7</span> Comparison with general-purpose optimizers</a></li>
+  </ul></li>
+  <li><a href="#sec-poisson" id="toc-sec-poisson" class="nav-link" data-scroll-target="#sec-poisson"><span class="header-section-number">7.3</span> Example 2: Censored Poisson Data</a>
+  <ul>
+  <li><a href="#truncated-distributions-in-brief" id="toc-truncated-distributions-in-brief" class="nav-link" data-scroll-target="#truncated-distributions-in-brief"><span class="header-section-number">7.3.1</span> Truncated distributions in brief</a></li>
+  <li><a href="#data-and-likelihoods" id="toc-data-and-likelihoods" class="nav-link" data-scroll-target="#data-and-likelihoods"><span class="header-section-number">7.3.2</span> Data and likelihoods</a></li>
+  <li><a href="#e-step" id="toc-e-step" class="nav-link" data-scroll-target="#e-step"><span class="header-section-number">7.3.3</span> E-step</a></li>
+  <li><a href="#m-step-and-the-em-update" id="toc-m-step-and-the-em-update" class="nav-link" data-scroll-target="#m-step-and-the-em-update"><span class="header-section-number">7.3.4</span> M-step and the EM update</a></li>
+  <li><a href="#implementation-1" id="toc-implementation-1" class="nav-link" data-scroll-target="#implementation-1"><span class="header-section-number">7.3.5</span> Implementation</a></li>
+  <li><a href="#comparison-with-general-purpose-optimizers-1" id="toc-comparison-with-general-purpose-optimizers-1" class="nav-link" data-scroll-target="#comparison-with-general-purpose-optimizers-1"><span class="header-section-number">7.3.6</span> Comparison with general-purpose optimizers</a></li>
+  </ul></li>
+  <li><a href="#more-complex-applications" id="toc-more-complex-applications" class="nav-link" data-scroll-target="#more-complex-applications"><span class="header-section-number">7.4</span> More Complex Applications</a>
+  <ul>
+  <li><a href="#model-based-clustering" id="toc-model-based-clustering" class="nav-link" data-scroll-target="#model-based-clustering"><span class="header-section-number">7.4.1</span> Model-based clustering</a></li>
+  <li><a href="#hidden-markov-models" id="toc-hidden-markov-models" class="nav-link" data-scroll-target="#hidden-markov-models"><span class="header-section-number">7.4.2</span> Hidden Markov models</a></li>
+  <li><a href="#factor-analysis-and-the-common-pattern" id="toc-factor-analysis-and-the-common-pattern" class="nav-link" data-scroll-target="#factor-analysis-and-the-common-pattern"><span class="header-section-number">7.4.3</span> Factor analysis and the common pattern</a></li>
+  </ul></li>
+  <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">7.5</span> Summary</a></li>
   </ul>
 </nav>
 </nav>
@@ -269,7 +336,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">EM Algorithm</span></h1>
+<h1 class="title"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The EM Algorithm</span></h1>
 </div>
 
 
@@ -286,7 +353,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">August 26, 2026</p>
+      <p class="date">September 13, 2026</p>
     </div>
   </div>
   
@@ -298,533 +365,1242 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<section id="fitting-a-normal-mixture-model-with-em" class="level1" data-number="8">
-<h1 data-number="8"><span class="header-section-number">8</span> Fitting a Normal Mixture Model with EM</h1>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x)</span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>    max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>    </span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    max_log_x <span class="sc">+</span> <span class="fu">log</span>( <span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x) ))</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>log_like_obs <span class="ot">&lt;-</span> <span class="cf">function</span>(theta,Y)</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>    log_jointlike <span class="ot">&lt;-</span> <span class="fu">cbind</span>(<span class="fu">log</span>( theta[<span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">dnorm</span>(Y,theta[<span class="dv">2</span>],<span class="dv">1</span>,<span class="at">log =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> theta[<span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">dnorm</span>(Y,theta[<span class="dv">3</span>],<span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sum</span>(<span class="fu">apply</span>(log_jointlike,<span class="dv">1</span>,log_sum_exp))</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>em_mixnorm <span class="ot">&lt;-</span> <span class="cf">function</span>(theta0,Y,no_iters)</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>{   col_weigh <span class="ot">&lt;-</span> <span class="fu">cm.colors</span>(<span class="dv">100</span>)</span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>    result <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>,no_iters <span class="sc">+</span> <span class="dv">1</span>,<span class="dv">4</span>)</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="fu">colnames</span>(result) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"p"</span>,<span class="st">"mu1"</span>,<span class="st">"mu0"</span>,<span class="st">"log_lik"</span>)</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    result[<span class="dv">1</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>] <span class="ot">&lt;-</span> theta0</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    result[<span class="dv">1</span>,<span class="dv">4</span>] <span class="ot">&lt;-</span> <span class="fu">log_like_obs</span>(theta0,Y)</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>no_iters <span class="sc">+</span> <span class="dv">1</span>) {</span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>        log_like1 <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(Y,result[i<span class="dv">-1</span>,<span class="dv">2</span>],<span class="dv">1</span>,<span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">log</span>(result[i<span class="dv">-1</span>,<span class="dv">1</span>])</span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>        log_like0 <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(Y,result[i<span class="dv">-1</span>,<span class="dv">3</span>],<span class="dv">1</span>,<span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span><span class="sc">-</span>result[i<span class="dv">-1</span>,<span class="dv">1</span>])</span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>        log_like_average <span class="ot">&lt;-</span> <span class="fu">apply</span>(<span class="fu">cbind</span>(log_like1, log_like0),<span class="dv">1</span>,log_sum_exp)</span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>        weighs <span class="ot">&lt;-</span>   <span class="fu">exp</span>(log_like1 <span class="sc">-</span> log_like_average)</span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>        </span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>        <span class="do">## making plots showing steps</span></span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>        xlim <span class="ot">&lt;-</span> <span class="fu">range</span> (Y, result[i<span class="dv">-1</span>,<span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>])<span class="sc">+</span><span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>,<span class="dv">2</span>)</span>
-<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(<span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, result[i<span class="dv">-1</span>,<span class="dv">2</span>])<span class="sc">*</span>result[i<span class="dv">-1</span>,<span class="dv">1</span>], <span class="at">ylim=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="fl">0.4</span>), </span>
-<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>             xlim[<span class="dv">1</span>], xlim[<span class="dv">2</span>], <span class="at">col=</span>col_weigh[<span class="dv">100</span>])</span>
-<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>        <span class="fu">title</span>(<span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"Step %g: p=%4.2f, mu1=%5.2f, mu0=%5.2f"</span>,</span>
-<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>              i<span class="dv">-1</span>, result[i<span class="dv">-1</span>,<span class="dv">1</span>],result[i<span class="dv">-1</span>,<span class="dv">2</span>],result[i<span class="dv">-1</span>,<span class="dv">3</span>]))</span>
-<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(<span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, result[i<span class="dv">-1</span>,<span class="dv">3</span>])<span class="sc">*</span>(<span class="dv">1</span><span class="sc">-</span>result[i<span class="dv">-1</span>,<span class="dv">1</span>]),</span>
-<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>             xlim[<span class="dv">1</span>], xlim[<span class="dv">2</span>], <span class="at">col=</span>col_weigh[<span class="dv">1</span>], <span class="at">add=</span><span class="cn">TRUE</span>)</span>
-<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(Y, <span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">length</span>(Y)), <span class="at">col=</span>col_weigh[<span class="fu">ceiling</span>(weighs<span class="sc">*</span><span class="dv">100</span>)] )</span>
-<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>        </span>
-<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>        <span class="co">#update p</span></span>
-<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>        result[i,<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">mean</span>(weighs)</span>
-<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>        <span class="co">#update u1</span></span>
-<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>        result[i,<span class="dv">2</span>] <span class="ot">&lt;-</span> <span class="fu">sum</span>(Y<span class="sc">*</span>weighs)<span class="sc">/</span><span class="fu">sum</span>(weighs)</span>
-<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>        result[i,<span class="dv">3</span>] <span class="ot">&lt;-</span> <span class="fu">sum</span>(Y<span class="sc">*</span>(<span class="dv">1</span><span class="sc">-</span>weighs))<span class="sc">/</span><span class="fu">sum</span>(<span class="dv">1</span><span class="sc">-</span>weighs)</span>
-<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>        result[i,<span class="dv">4</span>] <span class="ot">&lt;-</span> <span class="fu">log_like_obs</span>(result[i,<span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>],Y)</span>
-<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>        <span class="co">#plot the change of mu</span></span>
-<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>        <span class="fu">arrows</span>(result[i<span class="dv">-1</span>,<span class="dv">2</span>], <span class="fl">0.01</span>,result[i,<span class="dv">2</span>],<span class="fl">0.01</span>,</span>
-<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>               <span class="at">length =</span> <span class="fl">0.05</span>,<span class="at">col=</span>col_weigh[<span class="dv">100</span>])</span>
-<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>        <span class="fu">arrows</span>(result[i<span class="dv">-1</span>,<span class="dv">3</span>], <span class="fl">0.01</span>,result[i,<span class="dv">3</span>],<span class="fl">0.01</span>,</span>
-<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>               <span class="at">length =</span> <span class="fl">0.05</span>,<span class="at">col=</span>col_weigh[<span class="dv">1</span>])</span>
-<span id="cb1-48"><a href="#cb1-48" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb1-49"><a href="#cb1-49" aria-hidden="true" tabindex="-1"></a>    <span class="fu">invisible</span>(result)</span>
-<span id="cb1-50"><a href="#cb1-50" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="overview-of-em" class="level2" data-number="7.1">
+<h2 data-number="7.1" class="anchored" data-anchor-id="overview-of-em"><span class="header-section-number">7.1</span> Overview of EM</h2>
+<section id="setup-and-motivation" class="level3" data-number="7.1.1">
+<h3 data-number="7.1.1" class="anchored" data-anchor-id="setup-and-motivation"><span class="header-section-number">7.1.1</span> Setup and motivation</h3>
+<p>Let <span class="math inline">\(Y\)</span> denote the observed data and <span class="math inline">\(\theta\)</span> the parameter, with likelihood <span class="math inline">\(L(\theta) = P(Y \mid \theta)\)</span>. In many models this quantity is itself an integral (or sum) over latent or missing data <span class="math inline">\(Z\)</span>:</p>
+<p><span class="math display">\[
+P(Y \mid \theta) = \int P(Y, Z \mid \theta) \, dZ .
+\]</span></p>
+<p>The integral is what makes direct maximization awkward: it destroys the product structure that would otherwise make the log-likelihood a sum of simple terms. The EM algorithm avoids it by working with the complete-data likelihood, which retains that structure, and correcting for the fact that <span class="math inline">\(Z\)</span> is unobserved.</p>
+<div id="tbl-terminology" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-terminology-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;7.1: Observed and complete likelihoods
+</figcaption>
+<div aria-describedby="tbl-terminology-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>Likelihood</th>
+<th>Log-likelihood</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Observed</td>
+<td><span class="math inline">\(L_{\text{obs}}(\theta) = P(Y \mid \theta)\)</span></td>
+<td><span class="math inline">\(\ell_{\text{obs}}(\theta) = \log P(Y \mid \theta)\)</span></td>
+</tr>
+<tr class="even">
+<td>Complete</td>
+<td><span class="math inline">\(L_{\text{comp}}(\theta) = P(Y, Z \mid \theta)\)</span></td>
+<td><span class="math inline">\(\ell_{\text{comp}}(\theta; Y, Z) = \log P(Y, Z \mid \theta)\)</span></td>
+</tr>
+</tbody>
+</table>
 </div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>gen_mixnorm <span class="ot">&lt;-</span> <span class="cf">function</span>(theta,n)</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    Z <span class="ot">&lt;-</span> <span class="dv">1</span><span class="sc">*</span>(<span class="fu">runif</span>(n) <span class="sc">&lt;</span> theta[<span class="dv">1</span>])</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    Y <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="dv">0</span>,n)</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>n){</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span>(Z[i]<span class="sc">==</span><span class="dv">1</span>) Y[i] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>,theta[<span class="dv">2</span>],<span class="dv">1</span>)</span>
-<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span> Y[i] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>,theta[<span class="dv">3</span>],<span class="dv">1</span>)</span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>    col_weigh <span class="ot">&lt;-</span> <span class="fu">cm.colors</span>(<span class="dv">2</span>)</span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot</span> (Y, Z, <span class="at">col =</span> col_weigh[Z<span class="sc">+</span><span class="dv">1</span>])</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>    Y</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">gen_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.3</span>,<span class="dv">0</span>,<span class="dv">3</span>),<span class="dv">200</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-3-1.png" class="img-fluid figure-img" width="672"></p>
 </figure>
 </div>
-</div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>,<span class="sc">-</span><span class="dv">10</span>,<span class="dv">5</span>),data,<span class="dv">20</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-4-.gif" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>,<span class="dv">5</span>,<span class="dv">10</span>),data,<span class="dv">40</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-5-.gif" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>,<span class="fl">0.1</span>,<span class="fl">0.2</span>),data,<span class="dv">40</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-6-.gif" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>random_label <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(<span class="fu">length</span>(data), <span class="at">size=</span><span class="dv">1</span>, <span class="at">prob =</span> <span class="fl">0.5</span>)</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fu">mean</span>(data[random_label<span class="sc">==</span><span class="dv">1</span>]),<span class="fu">mean</span>(data[random_label<span class="sc">==</span><span class="dv">0</span>])),</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>           data,<span class="dv">40</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-7-.gif" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>data2 <span class="ot">&lt;-</span> <span class="fu">gen_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.3</span>,<span class="dv">0</span>,<span class="dv">5</span>),<span class="dv">200</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>random_label <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(<span class="fu">length</span>(data2), <span class="at">size=</span><span class="dv">1</span>, <span class="at">prob =</span> <span class="fl">0.5</span>)</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>, <span class="fu">mean</span>(data2[random_label<span class="sc">==</span><span class="dv">1</span>]),</span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">mean</span>(data2[random_label<span class="sc">==</span><span class="dv">0</span>])),</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>           data2,<span class="dv">40</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="unit07_em_files/figure-html/unnamed-chunk-8-.gif" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<p><strong>Compare with other optimization methods</strong></p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>log_like_obs <span class="ot">&lt;-</span> <span class="cf">function</span>(theta,Y)</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    log_joint <span class="ot">&lt;-</span> <span class="fu">cbind</span>(<span class="fu">log</span>(theta[<span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">dnorm</span>(Y,theta[<span class="dv">2</span>],<span class="dv">1</span>,<span class="at">log =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> theta[<span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">dnorm</span>(Y,theta[<span class="dv">3</span>],<span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sum</span>(<span class="fu">apply</span>(log_joint,<span class="dv">1</span>,log_sum_exp))</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="do">## define negative log likelihood function</span></span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>neg_loglike_obs <span class="ot">&lt;-</span> <span class="cf">function</span> (theta,Y)</span>
-<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="sc">-</span><span class="fu">log_like_obs</span>(theta,Y)</span>
-<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="do">## define negative log likelihood function with a transformed parametrization</span></span>
-<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>neg_loglike_obs_transf <span class="ot">&lt;-</span>  <span class="cf">function</span>(ttheta,Y)</span>
-<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  theta <span class="ot">&lt;-</span> ttheta</span>
-<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  theta[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="dv">1</span><span class="sc">/</span>(<span class="dv">1</span><span class="sc">+</span><span class="fu">exp</span>(<span class="sc">-</span>ttheta[<span class="dv">1</span>]))</span>
-<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">neg_loglike_obs</span>(theta,Y)</span>
-<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a><span class="do">## applying optimization algorithms</span></span>
-<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs, <span class="at">p =</span> <span class="fu">c</span>(<span class="fl">0.3</span>,<span class="dv">0</span>,<span class="dv">3</span>), <span class="at">Y =</span> data))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] 372.7562
-
-$estimate
-[1]  0.2527433 -0.2792517  2.8843968
-
-$gradient
-[1] -1.645617e-04 -8.560619e-05  8.562784e-05
-
-$code
-[1] 1
-
-$iterations
-[1] 8</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs, <span class="at">p =</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="dv">5</span>), <span class="at">Y =</span> data))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] 856.6042
-
-$estimate
-[1]  8.694628e-06 -1.000001e+01  4.037842e+00
-
-$gradient
-[1] 200.0018   0.0000 390.6077
-
-$code
-[1] 2
-
-$iterations
-[1] 22</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">log</span>(<span class="fl">0.3</span><span class="sc">/</span><span class="fl">0.7</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] -0.8472979</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="do">## Newton method</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs_transf, <span class="at">p =</span> <span class="fu">c</span>(<span class="fu">log</span>(<span class="fl">0.3</span><span class="sc">/</span><span class="fl">0.7</span>),<span class="dv">0</span>,<span class="dv">3</span>), <span class="at">Y =</span> data))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] 372.7562
-
-$estimate
-[1] -1.084029 -0.279247  2.884397
-
-$gradient
-[1] -1.206055e-05 -1.136868e-06  1.828829e-05
-
-$code
-[1] 1
-
-$iterations
-[1] 6</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs_transf, <span class="at">p =</span> <span class="fu">c</span>(<span class="dv">0</span>,<span class="sc">-</span><span class="dv">10</span>,<span class="dv">5</span>), <span class="at">Y =</span> data))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] 475.1673
-
-$estimate
-[1] -16.613965  -9.999310   2.084804
-
-$gradient
-[1]  1.217343e-05  0.000000e+00 -4.018949e-05
-
-$code
-[1] 1
-
-$iterations
-[1] 24</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="do">## Nelder-Mead</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="fu">c</span>(<span class="fu">log</span>(<span class="fl">0.3</span><span class="sc">/</span><span class="fl">0.7</span>),<span class="dv">0</span>,<span class="dv">3</span>),neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method=</span><span class="st">"Nelder-Mead"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] -1.0841807 -0.2794934  2.8843893
-
-$value
-[1] 372.7562
-
-$counts
-function gradient 
-      74       NA 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="fu">c</span>(<span class="dv">0</span>,<span class="sc">-</span><span class="dv">10</span>,<span class="dv">5</span>),neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method=</span><span class="st">"Nelder-Mead"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] -1.0841697 -0.2796854  2.8845034
-
-$value
-[1] 372.7562
-
-$counts
-function gradient 
-     170       NA 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="do">## Conjugate Gradient</span></span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">0</span>,<span class="dv">3</span>),neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method=</span><span class="st">"CG"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] -1.0840267 -0.2792445  2.8843995
-
-$value
-[1] 372.7562
-
-$counts
-function gradient 
-      75       25 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="fu">c</span>(<span class="dv">0</span>,<span class="sc">-</span><span class="dv">10</span>,<span class="dv">5</span>),neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method=</span><span class="st">"CG"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] -6.090906 -9.999639  2.078632
-
-$value
-[1] 475.6188
-
-$counts
-function gradient 
-     305      101 
-
-$convergence
-[1] 1
-
-$message
-NULL</code></pre>
-</div>
-</div>
-<p>We see that these optimization algorithms applied to the observed log likelihood are more fragile when the initial values are not well chosen. Nelder-mead algorithm is more stable.</p>
 </section>
-<section id="fitting-a-censored-poisson-model-with-em" class="level1" data-number="9">
-<h1 data-number="9"><span class="header-section-number">9</span> Fitting a censored poisson model with EM</h1>
-<p><strong>Define EM algorithms</strong></p>
+<section id="the-algorithm" class="level3" data-number="7.1.2">
+<h3 data-number="7.1.2" class="anchored" data-anchor-id="the-algorithm"><span class="header-section-number">7.1.2</span> The algorithm</h3>
+<p>Start from <span class="math inline">\(\hat\theta^{(0)}\)</span>. For <span class="math inline">\(t = 0, 1, 2, \ldots\)</span>:</p>
+<p><strong>E-step.</strong> Replace <span class="math inline">\(\ell_{\text{obs}}(\theta)\)</span> by the expected complete log-likelihood,</p>
+<p><span class="math display">\[
+Q\!\left(\theta \mid \hat\theta^{(t)}\right)
+= E_{Z \mid Y, \hat\theta^{(t)}}\!\left[\ell_{\text{comp}}(\theta; Y, Z)\right].
+\]</span></p>
+<p><strong>M-step.</strong> Maximize it,</p>
+<p><span class="math display">\[
+\hat\theta^{(t+1)} = \arg\max_{\theta} \; Q\!\left(\theta \mid \hat\theta^{(t)}\right).
+\]</span></p>
+<p>Iterate until <span class="math inline">\(\hat\theta^{(t)}\)</span> converges.</p>
+<div class="callout callout-style-default callout-warning callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Warning</span>A common misreading
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(Q\)</span> is an <em>average of</em> <span class="math inline">\(\ell_{\text{comp}}(\theta; Y, Z)\)</span> over <span class="math inline">\(P(Z \mid Y, \hat\theta^{(t)})\)</span>. It is <strong>not</strong> <span class="math inline">\(\ell_{\text{comp}}\!\left(\theta; Y, E(Z \mid Y, \hat\theta^{(t)})\right)\)</span> — that is, EM is not “fill in the missing values with their expectations and maximize”. The two coincide only when <span class="math inline">\(\ell_{\text{comp}}\)</span> happens to be linear in <span class="math inline">\(Z\)</span>, which is true in both examples of this chapter and false in general.</p>
+</div>
+</div>
+</section>
+<section id="q-as-an-average-of-complete-log-likelihoods" class="level3" data-number="7.1.3">
+<h3 data-number="7.1.3" class="anchored" data-anchor-id="q-as-an-average-of-complete-log-likelihoods"><span class="header-section-number">7.1.3</span> <span class="math inline">\(Q\)</span> as an average of complete log-likelihoods</h3>
+<p>Fix <span class="math inline">\(\hat\theta^{(t)}\)</span>. Each draw <span class="math inline">\(Z^{(s)} \sim P(Z \mid Y, \hat\theta^{(t)})\)</span> gives one curve <span class="math inline">\(\ell_{\text{comp}}(\theta; Y, Z^{(s)})\)</span>, and <span class="math inline">\(Q(\theta \mid \hat\theta^{(t)})\)</span> is their expectation. The figure uses the censored Poisson model of <a href="#sec-poisson" class="quarto-xref"><span>Section 7.3</span></a> with <span class="math inline">\(\lambda^{(t)} = 1.5\)</span>.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="co"># The data consists of n observed counts, whose mean is m, plus c counts</span></span>
-<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="co"># that are observed to be less than 2 (ie, 0 or 1), but whose exact value</span></span>
-<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="co"># is not known.  The counts are assumed to be Poisson distributed with </span></span>
-<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="co"># unknown mean, lambda.  </span></span>
-<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a><span class="co">#</span></span>
-<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="co"># The function below finds the maximum likelihood estimate for lambda given</span></span>
-<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a><span class="co"># the data, using the EM algorithm started from the specified guess at lambda</span></span>
-<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="co"># (default being the mean count with censored counts set to 1), run for the</span></span>
-<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a><span class="co"># specified number of iterations (default 20).  The log likelihood is printed </span></span>
-<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a><span class="co"># at each iteration.  It should never decrease.</span></span>
-<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a><span class="co">#n is the number of observed poisson counts</span></span>
-<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a><span class="co">#c is the number of missed poisson counts</span></span>
-<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a><span class="co">#y_bar is is the mean of observed poisson counts</span></span>
-<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a>EM.censored.poisson <span class="ot">&lt;-</span> <span class="cf">function</span> (n, y_bar, c, <span class="at">lambda0=</span>(n<span class="sc">*</span>y_bar<span class="sc">+</span>c)<span class="sc">/</span>(n<span class="sc">+</span>c),</span>
-<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a><span class="at">iterations=</span><span class="dv">20</span>)</span>
-<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Set initial guess, and print it and its log likelihood.</span></span>
-<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-20"><a href="#cb28-20" aria-hidden="true" tabindex="-1"></a>  lambda <span class="ot">&lt;-</span> lambda0</span>
-<span id="cb28-21"><a href="#cb28-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-22"><a href="#cb28-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cat</span> (<span class="dv">0</span>, lambda, <span class="fu">log.likelihood_obs</span>(n,y_bar,c,lambda), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
-<span id="cb28-23"><a href="#cb28-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-24"><a href="#cb28-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Do EM iterations.</span></span>
-<span id="cb28-25"><a href="#cb28-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-26"><a href="#cb28-26" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>iterations)</span>
-<span id="cb28-27"><a href="#cb28-27" aria-hidden="true" tabindex="-1"></a>  {</span>
-<span id="cb28-28"><a href="#cb28-28" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The E step: Figure out the distribution of the unobserved data.  For </span></span>
-<span id="cb28-29"><a href="#cb28-29" aria-hidden="true" tabindex="-1"></a>    <span class="co"># this model, we need the probability that an unobserved count that is </span></span>
-<span id="cb28-30"><a href="#cb28-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># either 0 or 1 is actually equal to 1, which is p1 below.</span></span>
-<span id="cb28-31"><a href="#cb28-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-32"><a href="#cb28-32" aria-hidden="true" tabindex="-1"></a>    y_mis <span class="ot">&lt;-</span> lambda <span class="sc">/</span> (<span class="dv">1</span><span class="sc">+</span>lambda)</span>
-<span id="cb28-33"><a href="#cb28-33" aria-hidden="true" tabindex="-1"></a>    </span>
-<span id="cb28-34"><a href="#cb28-34" aria-hidden="true" tabindex="-1"></a>    <span class="co"># The M step: Find the lambda that maximizes the expected log likelihood</span></span>
-<span id="cb28-35"><a href="#cb28-35" aria-hidden="true" tabindex="-1"></a>    <span class="co"># with unobserved data filled in according to the distribution found in</span></span>
-<span id="cb28-36"><a href="#cb28-36" aria-hidden="true" tabindex="-1"></a>    <span class="co"># the E step.</span></span>
-<span id="cb28-37"><a href="#cb28-37" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-38"><a href="#cb28-38" aria-hidden="true" tabindex="-1"></a>    lambda <span class="ot">&lt;-</span> (n<span class="sc">*</span>y_bar <span class="sc">+</span> c<span class="sc">*</span>y_mis) <span class="sc">/</span> (n<span class="sc">+</span>c)</span>
-<span id="cb28-39"><a href="#cb28-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-40"><a href="#cb28-40" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Print the new guess for lambda and its log likelihood.</span></span>
-<span id="cb28-41"><a href="#cb28-41" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-42"><a href="#cb28-42" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cat</span> (i, lambda, <span class="fu">log.likelihood_obs</span>(n,y_bar,c,lambda), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
-<span id="cb28-43"><a href="#cb28-43" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb28-44"><a href="#cb28-44" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-45"><a href="#cb28-45" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Return the value for lambda from the final EM iteration.</span></span>
-<span id="cb28-46"><a href="#cb28-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-47"><a href="#cb28-47" aria-hidden="true" tabindex="-1"></a>  lambda</span>
-<span id="cb28-48"><a href="#cb28-48" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb28-49"><a href="#cb28-49" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb28-50"><a href="#cb28-50" aria-hidden="true" tabindex="-1"></a>log.likelihood_obs <span class="ot">&lt;-</span> <span class="cf">function</span> (n, y_bar, c, lambda)</span>
-<span id="cb28-51"><a href="#cb28-51" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb28-52"><a href="#cb28-52" aria-hidden="true" tabindex="-1"></a>  n<span class="sc">*</span>y_bar<span class="sc">*</span><span class="fu">log</span>(lambda) <span class="sc">-</span> (n<span class="sc">+</span>c)<span class="sc">*</span>lambda <span class="sc">+</span> c<span class="sc">*</span><span class="fu">log</span>(<span class="dv">1</span><span class="sc">+</span>lambda)</span>
-<span id="cb28-53"><a href="#cb28-53" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>lt <span class="ot">&lt;-</span> <span class="fl">1.5</span>; S <span class="ot">&lt;-</span> <span class="dv">10</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>Z <span class="ot">&lt;-</span> <span class="fu">replicate</span>(S, <span class="fu">rbinom</span>(ncen_d, <span class="dv">1</span>, lt <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> lt)))</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>curves <span class="ot">&lt;-</span> <span class="fu">sapply</span>(<span class="dv">1</span><span class="sc">:</span>S, <span class="cf">function</span>(s) <span class="fu">sapply</span>(lam, lcomp, <span class="at">z =</span> Z[, s]))</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>Qexact <span class="ot">&lt;-</span> <span class="fu">sapply</span>(lam, Qfun, <span class="at">lt =</span> lt)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>))</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">matplot</span>(lam, curves, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lty =</span> <span class="dv">1</span>, <span class="at">lwd =</span> <span class="dv">1</span>, <span class="at">col =</span> <span class="st">"gray60"</span>,</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">xlab =</span> <span class="fu">expression</span>(theta), <span class="at">ylab =</span> <span class="st">"log-likelihood"</span>,</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylim =</span> <span class="fu">range</span>(curves) <span class="sc">+</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">2</span>))</span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(lam, <span class="fu">rowMeans</span>(curves), <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(lam, Qexact, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"black"</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> lt, <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"bottomright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">3</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">2</span>),</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray60"</span>, <span class="st">"firebrick"</span>, <span class="st">"black"</span>),</span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(l[comp](theta<span class="sc">*</span><span class="st">";"</span><span class="sc">*</span>Y<span class="sc">*</span><span class="st">","</span><span class="sc">*</span>Z<span class="sc">^</span>(s)) <span class="sc">~</span> <span class="st">"for 10 draws"</span>),</span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"average of the 10 curves"</span>,</span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(<span class="fu">Q</span>(theta<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span><span class="fu">hat</span>(theta)<span class="sc">^</span>(t)) <span class="sc">~</span> <span class="st">"(exact expectation)"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-q-average" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-q-average-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-q-average-1.png" class="img-fluid figure-img" width="864">
 </div>
-<p><strong>Generate a dataset</strong></p>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-q-average-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.1: Ten complete-data log-likelihood curves, their average, and the exact <span class="math inline">\(Q\)</span> function.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="q-functions-as-tangent-lower-bounds" class="level3" data-number="7.1.4">
+<h3 data-number="7.1.4" class="anchored" data-anchor-id="q-functions-as-tangent-lower-bounds"><span class="header-section-number">7.1.4</span> <span class="math inline">\(Q\)</span> functions as tangent lower bounds</h3>
+<p>The geometric picture that explains why EM works: each <span class="math inline">\(Q(\cdot \mid \hat\theta^{(t)})\)</span>, shifted by a constant, lies <strong>below</strong> <span class="math inline">\(\ell_{\text{obs}}\)</span> and <strong>touches</strong> it at <span class="math inline">\(\hat\theta^{(t)}\)</span>. Maximizing the bound therefore moves uphill on <span class="math inline">\(\ell_{\text{obs}}\)</span> itself.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">rpois</span>(<span class="dv">200</span>,<span class="dv">3</span>)</span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>c<span class="ot">&lt;-</span> <span class="fu">sum</span>(y <span class="sc">&lt;</span> <span class="dv">2</span>)</span>
-<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>y_bar <span class="ot">&lt;-</span> <span class="fu">mean</span>(y[y <span class="sc">&gt;=</span><span class="dv">2</span>]); y_bar</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 3.588889</code></pre>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>lo <span class="ot">&lt;-</span> <span class="fu">sapply</span>(lam, lobs); top <span class="ot">&lt;-</span> <span class="fu">max</span>(lo)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>))</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(lam, lo, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(theta),</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>     <span class="at">ylab =</span> <span class="st">"log-likelihood"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(top <span class="sc">-</span> <span class="dv">16</span>, top <span class="sc">+</span> <span class="fl">2.5</span>))</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>lt <span class="ot">&lt;-</span> <span class="fl">0.5</span>; cols <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"darkorange"</span>, <span class="st">"forestgreen"</span>)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>  shift <span class="ot">&lt;-</span> <span class="fu">lobs</span>(lt) <span class="sc">-</span> <span class="fu">Qfun</span>(lt, lt)            <span class="co"># make Q touch l_obs at theta^(t)</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">lines</span>(lam, <span class="fu">sapply</span>(lam, Qfun, <span class="at">lt =</span> lt) <span class="sc">+</span> shift, <span class="at">col =</span> cols[k], <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(lt, <span class="fu">lobs</span>(lt), <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> cols[k])</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  lt_new <span class="ot">&lt;-</span> (<span class="fu">sum</span>(yobs_d) <span class="sc">+</span> ncen_d <span class="sc">*</span> lt <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> lt)) <span class="sc">/</span> n_d     <span class="co"># M-step</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">segments</span>(lt_new, top <span class="sc">-</span> <span class="dv">16</span>, lt_new, <span class="fu">lobs</span>(lt_new), <span class="at">col =</span> cols[k], <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">text</span>(lt, <span class="fu">lobs</span>(lt), <span class="fu">bquote</span>(<span class="fu">hat</span>(theta)<span class="sc">^</span>(.(k <span class="sc">-</span> <span class="dv">1</span>))), <span class="at">pos =</span> <span class="dv">3</span>, <span class="at">col =</span> cols[k], <span class="at">xpd =</span> <span class="cn">NA</span>)</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>  lt <span class="ot">&lt;-</span> lt_new</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"bottomright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">2</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>),</span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(l[obs](theta)),</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(<span class="fu">Q</span>(theta<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span><span class="fu">hat</span>(theta)<span class="sc">^</span>(t)) <span class="sc">+</span> <span class="st">"const"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-tangent-bound" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-tangent-bound-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-tangent-bound-1.png" class="img-fluid figure-img" width="864">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-tangent-bound-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.2: Three EM iterations viewed as successive tangent minorants of the observed log-likelihood.
+</figcaption>
+</figure>
 </div>
 </div>
-<p>We see that the naive mean with y &gt;=2 is an upward biased estimate of the true mean 3</p>
-<p><strong>Implementing EM</strong></p>
+</div>
+</section>
+<section id="the-ascending-property" class="level3" data-number="7.1.5">
+<h3 data-number="7.1.5" class="anchored" data-anchor-id="the-ascending-property"><span class="header-section-number">7.1.5</span> The ascending property</h3>
+<p>Write <span class="math inline">\(h(Y, Z \mid \theta) = P(Y, Z \mid \theta)\)</span>, <span class="math inline">\(g(Y \mid \theta) = \int h(Y, Z \mid \theta) \, dZ\)</span>, and <span class="math inline">\(K(Z \mid Y, \theta) = h / g\)</span>.</p>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>Theorem
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p><span class="math inline">\(\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) \ \ge\ \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)\)</span> at every iteration.</p>
+</div>
+</div>
+<p><strong>Key identity.</strong> Since <span class="math inline">\(\log g(Y \mid \theta) = \log h(Y, Z \mid \theta) - \log K(Z \mid Y, \theta)\)</span> holds for every <span class="math inline">\(Z\)</span>, taking <span class="math inline">\(E_{Z \mid Y, \theta_0}\)</span> of both sides gives, for any <span class="math inline">\(\theta_0\)</span>,</p>
+<p><span class="math display">\[
+\ell_{\text{obs}}(\theta)
+= \underbrace{E_{Z \mid Y, \theta_0}\!\left[\log h(Y, Z \mid \theta)\right]}_{Q(\theta \mid \theta_0)}
+- \underbrace{E_{Z \mid Y, \theta_0}\!\left[\log K(Z \mid Y, \theta)\right]}_{H(\theta \mid \theta_0)} .
+\]</span></p>
+<p>The left side does not depend on <span class="math inline">\(Z\)</span>, so the expectation leaves it unchanged; this is the whole content of the step.</p>
+<p><strong>Proof.</strong> Set <span class="math inline">\(\theta_0 = \hat\theta^{(t)}\)</span> and subtract the identity evaluated at <span class="math inline">\(\theta = \hat\theta^{(t)}\)</span> from the one evaluated at <span class="math inline">\(\theta = \hat\theta^{(t+1)}\)</span>:</p>
+<p><span class="math display">\[
+\begin{aligned}
+\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) - \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)
+&amp;= \underbrace{\left[Q\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - Q\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]}_{\ge\, 0 \text{ by the M-step}} \\
+&amp;\quad - \underbrace{\left[H\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - H\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]}_{\le\, 0 \text{ by Jensen, below}} .
+\end{aligned}
+\]</span></p>
+<p><strong>The <span class="math inline">\(H\)</span> term.</strong> We need <span class="math inline">\(H(\theta \mid \hat\theta^{(t)}) \le H(\hat\theta^{(t)} \mid \hat\theta^{(t)})\)</span> for every <span class="math inline">\(\theta\)</span>, that is</p>
+<p><span class="math display">\[
+E_{Z \mid Y, \hat\theta^{(t)}}\!\left[\log \frac{K(Z \mid Y, \theta)}{K(Z \mid Y, \hat\theta^{(t)})}\right] \le 0 .
+\]</span></p>
+<p>Because <span class="math inline">\(\log\)</span> is concave, Jensen’s inequality gives <span class="math inline">\(E[\log W] \le \log E[W]\)</span>, so</p>
+<p><span class="math display">\[
+\begin{aligned}
+E_{Z \mid Y, \hat\theta^{(t)}}\!\left[\log \frac{K(Z \mid Y, \theta)}{K(Z \mid Y, \hat\theta^{(t)})}\right]
+&amp;\le \log \int \frac{K(Z \mid Y, \theta)}{K(Z \mid Y, \hat\theta^{(t)})} \, K(Z \mid Y, \hat\theta^{(t)}) \, dZ \\
+&amp;= \log \int K(Z \mid Y, \theta) \, dZ = \log 1 = 0 . \qquad \blacksquare
+\end{aligned}
+\]</span></p>
+<p>The quantity on the left is <span class="math inline">\(-\mathrm{KL}\!\left(K(\cdot \mid Y, \hat\theta^{(t)}) \,\|\, K(\cdot \mid Y, \theta)\right)\)</span>. Note carefully what the theorem does and does not say: the observed likelihood never decreases, but that guarantees convergence only to a stationary point, which may be a local maximum or even a saddle point.</p>
+</section>
+<section id="em-as-alternating-optimization" class="level3" data-number="7.1.6">
+<h3 data-number="7.1.6" class="anchored" data-anchor-id="em-as-alternating-optimization"><span class="header-section-number">7.1.6</span> EM as alternating optimization</h3>
+<p>There is a second formulation that makes the algorithm’s structure clearer and generalizes better. Let <span class="math inline">\(\tilde P(\cdot)\)</span> be any distribution on the hidden data <span class="math inline">\(Z\)</span>, and define</p>
+<p><span class="math display">\[
+F\!\left(\tilde P, \theta\right)
+= \int \tilde P(z) \log P(Y, z \mid \theta) \, dz
+- \int \tilde P(z) \log \tilde P(z) \, dz .
+\]</span></p>
+<p>Using <span class="math inline">\(P(Y, z \mid \theta) = P(Y \mid \theta) \, P(z \mid Y, \theta)\)</span>,</p>
+<p><span class="math display">\[
+F\!\left(\tilde P, \theta\right)
+= \ell_{\text{obs}}(\theta) - \mathrm{KL}\!\left(\tilde P \,\|\, P(\cdot \mid Y, \theta)\right),
+\qquad
+\mathrm{KL}(P \| q) = \int P(z) \log \frac{P(z)}{q(z)} \, dz \; \ge\; 0 .
+\]</span></p>
+<p>Both steps of EM are now coordinate ascent on the single function <span class="math inline">\(F\)</span>:</p>
+<ul>
+<li><strong>E-step</strong> maximizes <span class="math inline">\(F\)</span> over <span class="math inline">\(\tilde P\)</span> with <span class="math inline">\(\theta = \hat\theta^{(t)}\)</span> fixed. Since <span class="math inline">\(\mathrm{KL} \ge 0\)</span> with equality if and only if <span class="math inline">\(\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})\)</span>, the E-step sets <span class="math inline">\(\tilde P\)</span> to the conditional distribution of <span class="math inline">\(Z\)</span>.</li>
+<li><strong>M-step</strong> maximizes <span class="math inline">\(F\)</span> over <span class="math inline">\(\theta\)</span> with <span class="math inline">\(\tilde P\)</span> fixed. The entropy term is free of <span class="math inline">\(\theta\)</span>, so this is <span class="math inline">\(\arg\max_\theta Q(\theta \mid \hat\theta^{(t)})\)</span>.</li>
+</ul>
+<p>The ascending property is then immediate: alternating maximization of a single objective cannot decrease it. This view also explains the variational methods used when the E-step is intractable — restrict <span class="math inline">\(\tilde P\)</span> to a manageable family and accept a bound rather than an equality.</p>
+<p>For completeness, <span class="math inline">\(\mathrm{KL} \ge 0\)</span> follows from <span class="math inline">\(\log x \le x - 1\)</span>:</p>
+<p><span class="math display">\[
+\mathrm{KL}(P \| q) = -\int P(z) \log \frac{q(z)}{P(z)} \, dz
+\;\ge\; -\int P(z) \left(\frac{q(z)}{P(z)} - 1\right) dz
+= -\int \left[q(z) - P(z)\right] dz = 0 .
+\]</span></p>
+</section>
+</section>
+<section id="sec-mixture" class="level2" data-number="7.2">
+<h2 data-number="7.2" class="anchored" data-anchor-id="sec-mixture"><span class="header-section-number">7.2</span> Example 1: Two-Component Normal Mixture</h2>
+<section id="model-and-likelihoods" class="level3" data-number="7.2.1">
+<h3 data-number="7.2.1" class="anchored" data-anchor-id="model-and-likelihoods"><span class="header-section-number">7.2.1</span> Model and likelihoods</h3>
+<p><span class="math display">\[
+Z_i \sim \text{Bern}(p), \qquad
+Y_i \mid Z_i = 1 \sim N(\mu_1, 1), \qquad
+Y_i \mid Z_i = 0 \sim N(\mu_0, 1) .
+\]</span></p>
+<p>Observed: <span class="math inline">\(y_1, \ldots, y_n\)</span>. Hidden: <span class="math inline">\(z_1, \ldots, z_n\)</span>. Parameter <span class="math inline">\(\theta = (\mu_0, \mu_1, p)\)</span>.</p>
+<p><strong>Complete likelihood</strong></p>
+<p><span class="math display">\[
+P(y, z \mid \theta) = \prod_{i=1}^{n} P(y_i \mid z_i, \theta) \, P(z_i \mid \theta)
+= \prod_{i=1}^{n} \varphi(y_i \mid \mu_{z_i}, 1) \, p^{z_i} (1-p)^{1-z_i} .
+\]</span></p>
+<p><strong>Observed likelihood</strong>, summing out each <span class="math inline">\(z_i\)</span>,</p>
+<p><span class="math display">\[
+P(y \mid \theta) = \prod_{i=1}^{n}\left[\varphi(y_i \mid \mu_1, 1)\, p + \varphi(y_i \mid \mu_0, 1)(1 - p)\right] .
+\]</span></p>
+<p>The sum inside the product is what makes direct maximization awkward.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">EM.censored.poisson</span>(<span class="fu">length</span>(y)<span class="sc">-</span>c,y_bar,c,<span class="at">lambda0=</span><span class="dv">100</span>, <span class="at">iterations =</span> <span class="dv">10</span>) <span class="ot">-&gt;</span> lambda.em</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>0 100 -16932.76 
-1 3.32901 140.4328 
-2 3.3069 140.4476 
-3 3.306781 140.4476 
-4 3.306781 140.4476 
-5 3.306781 140.4476 
-6 3.306781 140.4476 
-7 3.306781 140.4476 
-8 3.306781 140.4476 
-9 3.306781 140.4476 
-10 3.306781 140.4476 </code></pre>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>)); mu0 <span class="ot">&lt;-</span> <span class="dv">0</span>; mu1 <span class="ot">&lt;-</span> <span class="dv">4</span>; p <span class="ot">&lt;-</span> <span class="fl">0.3</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>((<span class="dv">1</span> <span class="sc">-</span> p) <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu0), <span class="sc">-</span><span class="fl">3.5</span>, <span class="fl">7.5</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">ylab =</span> <span class="st">"density"</span>, <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.3</span>))</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(p <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu1), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>((<span class="dv">1</span> <span class="sc">-</span> p) <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu0) <span class="sc">+</span> p <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu1), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">3</span>),</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>, <span class="st">"black"</span>),</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>((<span class="dv">1</span><span class="sc">-</span>p)<span class="sc">*</span><span class="fu">phi</span>(y<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span>mu[<span class="dv">0</span>])),</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(p<span class="sc">*</span><span class="fu">phi</span>(y<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span>mu[<span class="dv">1</span>])),</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(<span class="fu">f</span>(y<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span>theta) <span class="sc">==</span> <span class="st">"sum"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-mixture-components" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-mixture-components-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-mixture-components-1.png" class="img-fluid figure-img" width="864">
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">EM.censored.poisson</span>(<span class="fu">length</span>(y)<span class="sc">-</span>c,y_bar,c,<span class="at">lambda0=</span>y_bar, <span class="at">iterations =</span> <span class="dv">10</span>) <span class="ot">-&gt;</span> lambda.em</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>0 3.588889 138.1813 
-1 3.308208 140.4475 
-2 3.306788 140.4476 
-3 3.306781 140.4476 
-4 3.306781 140.4476 
-5 3.306781 140.4476 
-6 3.306781 140.4476 
-7 3.306781 140.4476 
-8 3.306781 140.4476 
-9 3.306781 140.4476 
-10 3.306781 140.4476 </code></pre>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-mixture-components-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.3: The observed density is a sum of two weighted normal components.
+</figcaption>
+</figure>
 </div>
 </div>
-<p><strong>Compare with Other Optimization Methods</strong></p>
+</div>
+<p>The marginal density may be bimodal or unimodal depending on <span class="math inline">\(p\)</span> and <span class="math inline">\(|\mu_1 - \mu_0|\)</span> — a point worth keeping in mind, since the unimodal case is where EM struggles most.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>log.likelihood_obs <span class="ot">&lt;-</span> <span class="cf">function</span> (n, y_bar, c, lambda)</span>
-<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>  n<span class="sc">*</span>y_bar<span class="sc">*</span><span class="fu">log</span>(lambda) <span class="sc">-</span> (n<span class="sc">+</span>c)<span class="sc">*</span>lambda <span class="sc">+</span> c<span class="sc">*</span><span class="fu">log</span>(<span class="dv">1</span><span class="sc">+</span>lambda)</span>
-<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>neg_loglike_obs <span class="ot">&lt;-</span> <span class="cf">function</span> (n, y_bar, c, lambda)</span>
-<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>{</span>
-<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>  <span class="sc">-</span> <span class="fu">log.likelihood_obs</span> (n, y_bar, c, lambda)</span>
-<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs, <span class="at">p =</span> y_bar, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>mix <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu0, mu1, p) (<span class="dv">1</span> <span class="sc">-</span> p) <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu0) <span class="sc">+</span> p <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu1)</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (s <span class="cf">in</span> <span class="fu">list</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">4</span>, <span class="fl">0.5</span>), <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">4</span>, <span class="fl">0.15</span>), <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.5</span>, <span class="fl">0.5</span>))) {</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">curve</span>(<span class="fu">mix</span>(x, s[<span class="dv">1</span>], s[<span class="dv">2</span>], s[<span class="dv">3</span>]), <span class="sc">-</span><span class="dv">4</span>, <span class="dv">7</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylab =</span> <span class="st">"density"</span>,</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="fu">bquote</span>(mu[<span class="dv">0</span>] <span class="sc">==</span> .(s[<span class="dv">1</span>]) <span class="sc">~</span> <span class="st">","</span> <span class="sc">~</span> mu[<span class="dv">1</span>] <span class="sc">==</span> .(s[<span class="dv">2</span>]) <span class="sc">~</span> <span class="st">","</span> <span class="sc">~</span> p <span class="sc">==</span> .(s[<span class="dv">3</span>])))</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>  y <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(<span class="fu">rbinom</span>(<span class="dv">200</span>, <span class="dv">1</span>, s[<span class="dv">3</span>]) <span class="sc">==</span> <span class="dv">1</span>, <span class="fu">rnorm</span>(<span class="dv">200</span>, s[<span class="dv">2</span>]), <span class="fu">rnorm</span>(<span class="dv">200</span>, s[<span class="dv">1</span>]))</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rug</span>(y, <span class="at">col =</span> <span class="st">"gray40"</span>)</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-mixture-shapes" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-mixture-shapes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-mixture-shapes-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-mixture-shapes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.4: Separation and mixing proportion determine whether the mixture is visibly bimodal.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="complete-log-likelihood" class="level3" data-number="7.2.2">
+<h3 data-number="7.2.2" class="anchored" data-anchor-id="complete-log-likelihood"><span class="header-section-number">7.2.2</span> Complete log-likelihood</h3>
+<p>With <span class="math inline">\(\log \varphi(y \mid \mu, 1) = -\tfrac{1}{2}(y - \mu)^2 - \log\sqrt{2\pi}\)</span>,</p>
+<p><span class="math display">\[
+\begin{aligned}
+\ell_{\text{comp}}(\theta; y, z)
+&amp;= \sum_{i=1}^{n}\left[z_i \log p + (1 - z_i)\log(1-p) - \tfrac{1}{2}(y_i - \mu_{z_i})^2\right] + C \\
+&amp;= \left(\sum_{i=1}^{n} z_i\right) \log \frac{p}{1-p} + n \log(1-p) \\
+&amp;\quad - \frac{1}{2}\sum_{i=1}^{n}\left[z_i (y_i - \mu_1)^2 + (1 - z_i)(y_i - \mu_0)^2\right] + C .
+\end{aligned}
+\]</span></p>
+<p>Two features drive everything that follows. The expression is <strong>linear in each <span class="math inline">\(z_i\)</span></strong>, so the E-step needs only <span class="math inline">\(E(Z_i \mid y_i, \hat\theta^{(t)})\)</span> rather than the full conditional distribution. And given <span class="math inline">\(z\)</span>, the parameters <strong>separate</strong>: <span class="math inline">\(p\)</span> is a Bernoulli proportion while <span class="math inline">\(\mu_1\)</span> and <span class="math inline">\(\mu_0\)</span> are group means.</p>
+</section>
+<section id="e-step-soft-classification" class="level3" data-number="7.2.3">
+<h3 data-number="7.2.3" class="anchored" data-anchor-id="e-step-soft-classification"><span class="header-section-number">7.2.3</span> E-step: soft classification</h3>
+<p>Given <span class="math inline">\(\hat\theta^{(t)} = (\hat\mu_0^{(t)}, \hat\mu_1^{(t)}, \hat p^{(t)})\)</span>, Bayes’ rule gives</p>
+<p><span class="math display">\[
+\hat p_i^{(t)} \equiv P\!\left(Z_i = 1 \mid y_i, \hat\theta^{(t)}\right)
+= \frac{\varphi\!\left(y_i \mid \hat\mu_1^{(t)}, 1\right) \hat p^{(t)}}
+       {\varphi\!\left(y_i \mid \hat\mu_0^{(t)}, 1\right)\!\left(1 - \hat p^{(t)}\right)
+        + \varphi\!\left(y_i \mid \hat\mu_1^{(t)}, 1\right) \hat p^{(t)}} ,
+\]</span></p>
+<p>and therefore</p>
+<p><span class="math display">\[
+\begin{aligned}
+Q\!\left(\theta \mid \hat\theta^{(t)}\right)
+&amp;= \left(\sum_i \hat p_i^{(t)}\right) \log \frac{p}{1-p} + n \log(1-p) \\
+&amp;\quad - \frac{1}{2}\sum_i \left[\hat p_i^{(t)} (y_i - \mu_1)^2 + \left(1 - \hat p_i^{(t)}\right)(y_i - \mu_0)^2\right] .
+\end{aligned}
+\]</span></p>
+<p>Computationally, <span class="math inline">\(\hat p_i^{(t)}\)</span> must be formed on the log scale. Writing <span class="math inline">\(a_i = \log \varphi(y_i \mid \hat\mu_1^{(t)}, 1) + \log \hat p^{(t)}\)</span> and <span class="math inline">\(b_i = \log \varphi(y_i \mid \hat\mu_0^{(t)}, 1) + \log(1 - \hat p^{(t)})\)</span>, we have <span class="math inline">\(\hat p_i^{(t)} = \exp\{a_i - \operatorname{lse}(a_i, b_i)\}\)</span> where <span class="math inline">\(\operatorname{lse}\)</span> is the log-sum-exp function of the chapter on computer arithmetic. Forming the ratio directly underflows as soon as an observation sits far from both means.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>)); mu0 <span class="ot">&lt;-</span> <span class="dv">0</span>; mu1 <span class="ot">&lt;-</span> <span class="dv">4</span>; p <span class="ot">&lt;-</span> <span class="fl">0.3</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>f0 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) (<span class="dv">1</span> <span class="sc">-</span> p) <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu0)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>f1 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) p <span class="sc">*</span> <span class="fu">dnorm</span>(x, mu1)</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(f0, <span class="sc">-</span><span class="fl">3.5</span>, <span class="fl">7.5</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">ylab =</span> <span class="st">"weighted density"</span>,</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>      <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.3</span>))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(f1, <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>yi <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">1.8</span>, <span class="fl">3.2</span>)</span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (y <span class="cf">in</span> yi) {</span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">segments</span>(y, <span class="dv">0</span>, y, <span class="fu">f0</span>(y), <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">lwd =</span> <span class="dv">4</span>)</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">segments</span>(y, <span class="fu">f0</span>(y), y, <span class="fu">f0</span>(y) <span class="sc">+</span> <span class="fu">f1</span>(y), <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">4</span>)</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">text</span>(y, <span class="fu">f0</span>(y) <span class="sc">+</span> <span class="fu">f1</span>(y), <span class="fu">sprintf</span>(<span class="st">"%.2f"</span>, <span class="fu">f1</span>(y) <span class="sc">/</span> (<span class="fu">f0</span>(y) <span class="sc">+</span> <span class="fu">f1</span>(y))), <span class="at">pos =</span> <span class="dv">3</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>),</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>((<span class="dv">1</span><span class="sc">-</span><span class="fu">hat</span>(p))<span class="sc">*</span><span class="fu">phi</span>(y<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span><span class="fu">hat</span>(mu)[<span class="dv">0</span>])),</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(<span class="fu">hat</span>(p)<span class="sc">*</span><span class="fu">phi</span>(y<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span><span class="fu">hat</span>(mu)[<span class="dv">1</span>]))))</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(<span class="fu">f1</span>(x) <span class="sc">/</span> (<span class="fu">f0</span>(x) <span class="sc">+</span> <span class="fu">f1</span>(x)), <span class="sc">-</span><span class="fl">3.5</span>, <span class="fl">7.5</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="st">"y"</span>,</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>      <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">P</span>(Z[i] <span class="sc">==</span> <span class="dv">1</span><span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span>y[i]<span class="sc">*</span><span class="st">","</span><span class="sc">*</span><span class="fu">hat</span>(theta)<span class="sc">^</span>(t))))</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">lty =</span> <span class="dv">3</span>); <span class="fu">points</span>(yi, <span class="fu">f1</span>(yi) <span class="sc">/</span> (<span class="fu">f0</span>(yi) <span class="sc">+</span> <span class="fu">f1</span>(yi)), <span class="at">pch =</span> <span class="dv">19</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-estep" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-estep-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-estep-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-estep-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.5: Left: the responsibility at each <span class="math inline">\(y_i\)</span> is the red share of the total height. Right: responsibility as a function of <span class="math inline">\(y\)</span>.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="m-step-weighted-proportions-and-means" class="level3" data-number="7.2.4">
+<h3 data-number="7.2.4" class="anchored" data-anchor-id="m-step-weighted-proportions-and-means"><span class="header-section-number">7.2.4</span> M-step: weighted proportions and means</h3>
+<p><span class="math inline">\(Q\)</span> separates into one term in <span class="math inline">\(p\)</span> and two in <span class="math inline">\(\mu_1\)</span>, <span class="math inline">\(\mu_0\)</span>, each maximized in closed form.</p>
+<div id="tbl-mstep-mixture" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-mstep-mixture-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;7.2: M-step updates for the two-component mixture
+</figcaption>
+<div aria-describedby="tbl-mstep-mixture-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Update</th>
+<th>Stationary equation <span class="math inline">\(\Longrightarrow\)</span> solution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><span class="math inline">\(p\)</span></td>
+<td><span class="math inline">\(\dfrac{\partial Q}{\partial p} = \dfrac{\sum_i \hat p_i^{(t)}}{p(1-p)} - \dfrac{n}{1-p} = 0 \;\Longrightarrow\; \hat p^{(t+1)} = \dfrac{1}{n}\sum_{i=1}^{n} \hat p_i^{(t)}\)</span></td>
+</tr>
+<tr class="even">
+<td><span class="math inline">\(\mu_1\)</span></td>
+<td><span class="math inline">\(\dfrac{\partial Q}{\partial \mu_1} = \sum_i \hat p_i^{(t)}(y_i - \mu_1) = 0 \;\Longrightarrow\; \hat\mu_1^{(t+1)} = \dfrac{\sum_i \hat p_i^{(t)} y_i}{\sum_i \hat p_i^{(t)}}\)</span></td>
+</tr>
+<tr class="odd">
+<td><span class="math inline">\(\mu_0\)</span></td>
+<td>weights <span class="math inline">\(1 - \hat p_i^{(t)}\)</span>: <span class="math inline">\(\;\hat\mu_0^{(t+1)} = \dfrac{\sum_i \left(1 - \hat p_i^{(t)}\right) y_i}{\sum_i \left(1 - \hat p_i^{(t)}\right)}\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<p>In words: the M-step is the complete-data MLE with each observation split between the two groups in proportion to its soft classification. Return to the E-step with <span class="math inline">\(\hat\theta^{(t+1)}\)</span> and recompute the responsibilities.</p>
+</section>
+<section id="implementation" class="level3" data-number="7.2.5">
+<h3 data-number="7.2.5" class="anchored" data-anchor-id="implementation"><span class="header-section-number">7.2.5</span> Implementation</h3>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x) {</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    max_log_x <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x)))</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="do">### observed log-likelihood, theta = (p, mu1, mu0)</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>log_like_obs <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, Y) {</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    log_joint <span class="ot">&lt;-</span> <span class="fu">cbind</span>(<span class="fu">log</span>(theta[<span class="dv">1</span>])     <span class="sc">+</span> <span class="fu">dnorm</span>(Y, theta[<span class="dv">2</span>], <span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> theta[<span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">dnorm</span>(Y, theta[<span class="dv">3</span>], <span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sum</span>(<span class="fu">apply</span>(log_joint, <span class="dv">1</span>, log_sum_exp))</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="do">### E-step: responsibilities P(Z_i = 1 | y_i, theta)</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>e_step <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, Y) {</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    l1 <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(Y, theta[<span class="dv">2</span>], <span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">log</span>(theta[<span class="dv">1</span>])</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    l0 <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(Y, theta[<span class="dv">3</span>], <span class="dv">1</span>, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> theta[<span class="dv">1</span>])</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    <span class="fu">exp</span>(l1 <span class="sc">-</span> <span class="fu">apply</span>(<span class="fu">cbind</span>(l1, l0), <span class="dv">1</span>, log_sum_exp))</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a><span class="do">### M-step: closed-form weighted updates</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>m_step <span class="ot">&lt;-</span> <span class="cf">function</span>(w, Y) {</span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="fu">mean</span>(w),</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sum</span>(Y <span class="sc">*</span> w) <span class="sc">/</span> <span class="fu">sum</span>(w),</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sum</span>(Y <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> w)) <span class="sc">/</span> <span class="fu">sum</span>(<span class="dv">1</span> <span class="sc">-</span> w))</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>em_mixnorm <span class="ot">&lt;-</span> <span class="cf">function</span>(theta0, Y, no_iters) {</span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, no_iters <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">4</span>,</span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>                  <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"p"</span>, <span class="st">"mu1"</span>, <span class="st">"mu0"</span>, <span class="st">"log_lik"</span>)))</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>    theta <span class="ot">&lt;-</span> theta0</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>    out[<span class="dv">1</span>, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(theta, <span class="fu">log_like_obs</span>(theta, Y))</span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(no_iters)) {</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>        theta <span class="ot">&lt;-</span> <span class="fu">m_step</span>(<span class="fu">e_step</span>(theta, Y), Y)</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>        out[i <span class="sc">+</span> <span class="dv">1</span>, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(theta, <span class="fu">log_like_obs</span>(theta, Y))</span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    out</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>gen_mixnorm <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, n) {</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    Z <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n, <span class="dv">1</span>, theta[<span class="dv">1</span>])</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    Y <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n, <span class="at">mean =</span> <span class="fu">ifelse</span>(Z <span class="sc">==</span> <span class="dv">1</span>, theta[<span class="dv">2</span>], theta[<span class="dv">3</span>]), <span class="at">sd =</span> <span class="dv">1</span>)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot</span>(Y, Z, <span class="at">col =</span> <span class="fu">cm.colors</span>(<span class="dv">2</span>)[Z <span class="sc">+</span> <span class="dv">1</span>], <span class="at">pch =</span> <span class="dv">19</span>,</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>         <span class="at">ylab =</span> <span class="st">"component label Z"</span>)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>    Y</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">812</span>)</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">gen_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.3</span>, <span class="dv">0</span>, <span class="dv">3</span>), <span class="dv">200</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="unit07_em_files/figure-html/mix-data-1.png" class="img-fluid figure-img" width="576"></p>
+<figcaption>Simulated mixture data, coloured by the (normally unobserved) component label.</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>A well-chosen start converges quickly:</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">em_mixnorm</span>(<span class="fu">c</span>(<span class="fl">0.5</span>, <span class="dv">0</span>, <span class="dv">3</span>), data, <span class="dv">10</span>), <span class="dv">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] -140.4476
-
-$estimate
-[1] 3.30678
-
-$gradient
-[1] 2.177968e-05
-
-$code
-[1] 1
-
-$iterations
-[1] 3</code></pre>
+<pre><code>           p    mu1    mu0   log_lik
+ [1,] 0.5000 0.0000 3.0000 -375.3490
+ [2,] 0.3377 0.2695 3.0137 -361.6709
+ [3,] 0.3242 0.2319 2.9768 -361.3077
+ [4,] 0.3154 0.1956 2.9584 -361.1388
+ [5,] 0.3094 0.1694 2.9463 -361.0581
+ [6,] 0.3054 0.1513 2.9380 -361.0202
+ [7,] 0.3026 0.1389 2.9323 -361.0026
+ [8,] 0.3007 0.1306 2.9285 -360.9945
+ [9,] 0.2995 0.1249 2.9258 -360.9908
+[10,] 0.2986 0.1211 2.9240 -360.9891
+[11,] 0.2980 0.1185 2.9228 -360.9884</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">nlm</span> (neg_loglike_obs, <span class="at">p =</span> <span class="dv">100</span>, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The monotone increase of the last column is the ascending property in action; it is the single most useful diagnostic when debugging an EM implementation, since any decrease indicates an error in the E- or M-step.</p>
+</section>
+<section id="sec-mixture-app" class="level3" data-number="7.2.6">
+<h3 data-number="7.2.6" class="anchored" data-anchor-id="sec-mixture-app"><span class="header-section-number">7.2.6</span> Interactive demonstration</h3>
+<p>The figure below replaces the frame-by-frame animation of earlier versions of this chapter. Choose a data set and a starting value — either from the presets in the left panel or by typing your own — then step through the fit with <strong>Prev</strong> and <strong>Next</strong>, or press <strong>Play</strong> to run it automatically. <strong>Regenerate data</strong> draws a fresh sample from the same model, which is the quickest way to see how much of the algorithm’s behaviour is a property of the model and how much is an accident of one data set. Changing the data, the sample size or any starting value resets the display to iteration 0.</p>
+<p>Upper panel: the two weighted component densities, with each observation coloured by its current responsibility <span class="math inline">\(\hat p_i^{(t)}\)</span> and arrows showing where the M-step moves the two means. Lower panel: the observed log-likelihood, which must never decrease.</p>
+<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
+#|   shinylive does not work in self-contained HTML documents.
+#|   Please set `embed-resources: false` in your metadata.
+#| label: em-mixture-app
+#| standalone: true
+#| viewerHeight: 760
+
+library(shiny)
+
+### ---------- model functions -------------------------------------------------
+log_sum_exp &lt;- function(lx) { mx &lt;- max(lx); mx + log(sum(exp(lx - mx))) }
+
+log_like_obs &lt;- function(theta, Y) {
+    A &lt;- cbind(log(theta[1])     + dnorm(Y, theta[2], 1, log = TRUE),
+               log(1 - theta[1]) + dnorm(Y, theta[3], 1, log = TRUE))
+    sum(apply(A, 1, log_sum_exp))
+}
+
+e_step &lt;- function(theta, Y) {
+    l1 &lt;- dnorm(Y, theta[2], 1, log = TRUE) + log(theta[1])
+    l0 &lt;- dnorm(Y, theta[3], 1, log = TRUE) + log(1 - theta[1])
+    exp(l1 - apply(cbind(l1, l0), 1, log_sum_exp))
+}
+
+m_step &lt;- function(w, Y) {
+    c(mean(w), sum(Y * w) / sum(w), sum(Y * (1 - w)) / sum(1 - w))
+}
+
+em_path &lt;- function(theta0, Y, no_iters) {
+    out &lt;- matrix(NA_real_, no_iters + 1, 4,
+                  dimnames = list(NULL, c("p", "mu1", "mu0", "log_lik")))
+    th &lt;- theta0
+    out[1, ] &lt;- c(th, log_like_obs(th, Y))
+    for (i in seq_len(no_iters)) {
+        th &lt;- m_step(e_step(th, Y), Y)
+        if (any(!is.finite(th))) break
+        out[i + 1, ] &lt;- c(th, log_like_obs(th, Y))
+    }
+    out
+}
+
+### ---------- preset starting values -----------------------------------------
+presets &lt;- list(
+    "near the truth: (0.5, 0, 3)"                 = c(0.5,  0.0,  3.0),
+    "far outside the data: (0.5, -10, 5)"         = c(0.5, -10.0, 5.0),
+    "both means too high: (0.5, 5, 10)"           = c(0.5,  5.0, 10.0),
+    "means nearly equal: (0.5, 0.1, 0.2)"         = c(0.5,  0.1,  0.2),
+    "label-switched: (0.5, 3, 0)"                 = c(0.5,  3.0,  0.0),
+    "random labels"                               = NA,
+    "manual entry"                                = NULL
+)
+
+datasets &lt;- list(
+    "well separated: p = 0.3, mu = (3, 0)"  = c(0.3, 3, 0),
+    "widely separated: p = 0.3, mu = (5, 0)" = c(0.3, 5, 0),
+    "overlapping: p = 0.3, mu = (1.5, 0)"    = c(0.3, 1.5, 0),
+    "balanced and overlapping: p = 0.5, mu = (1.5, 0)" = c(0.5, 1.5, 0)
+)
+
+### ---------- UI ---------------------------------------------------------------
+ui &lt;- fluidPage(
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            h5("Data"),
+            selectInput("dataset", NULL, choices = names(datasets)),
+            sliderInput("n", "sample size", 50, 400, 200, step = 50),
+            actionButton("newdata", "Regenerate data", width = "100%"),
+            tags$hr(),
+            h5("Starting value"),
+            selectInput("preset", NULL, choices = names(presets),
+                        selected = "far outside the data: (0.5, -10, 5)"),
+            fluidRow(
+                column(4, numericInput("p0",   "p",       0.5, min = 0.01,
+                                       max = 0.99, step = 0.05)),
+                column(4, numericInput("mu10", "mu1",   -10,   step = 0.5)),
+                column(4, numericInput("mu00", "mu0",     5,   step = 0.5))
+            ),
+            helpText("Selecting a preset fills the three boxes. The boxes are ",
+                     "always live: edit them to use your own values."),
+            tags$hr(),
+            sliderInput("maxit", "iterations to run", 5, 60, 30, step = 5),
+            h5(textOutput("stepLabel", inline = TRUE)),
+            fluidRow(
+                column(4, actionButton("prv",  "\u25c0 Prev", width = "100%")),
+                column(4, actionButton("nxt",  "Next \u25b6", width = "100%")),
+                column(4, actionButton("play", "Play",         width = "100%"))
+            ),
+            tags$br(),
+            tableOutput("tab")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("fit",   height = "400px"),
+            plotOutput("trace", height = "260px")
+        )
+    )
+)
+
+### ---------- server -----------------------------------------------------------
+server &lt;- function(input, output, session) {
+
+    seed &lt;- reactiveVal(812)
+    observeEvent(input$newdata, seed(seed() + 1))
+
+    Y &lt;- reactive({
+        s &lt;- datasets[[input$dataset]]
+        set.seed(seed())
+        Z &lt;- rbinom(input$n, 1, s[1])
+        rnorm(input$n, mean = ifelse(Z == 1, s[2], s[3]), sd = 1)
+    })
+
+    ## preset -&gt; fill the three boxes
+    observeEvent(list(input$preset, input$dataset, input$n, seed()), {
+        pr &lt;- presets[[input$preset]]
+        if (is.null(pr)) return(invisible(NULL))          # manual entry
+        if (length(pr) == 1 &amp;&amp; is.na(pr)) {               # random labels
+            y &lt;- Y()
+            lab &lt;- rbinom(length(y), 1, 0.5)
+            pr &lt;- c(0.5, mean(y[lab == 1]), mean(y[lab == 0]))
+        }
+        updateNumericInput(session, "p0",   value = round(pr[1], 3))
+        updateNumericInput(session, "mu10", value = round(pr[2], 3))
+        updateNumericInput(session, "mu00", value = round(pr[3], 3))
+    }, ignoreInit = FALSE)
+
+    ## ---- iteration state driven by the three buttons ----------------------
+    t_cur   &lt;- reactiveVal(0)      # iteration currently displayed
+    playing &lt;- reactiveVal(FALSE)
+
+    stop_play &lt;- function() {
+        playing(FALSE)
+        updateActionButton(session, "play", label = "Play")
+    }
+
+    ## any change to the data or the starting value restarts the fit
+    observeEvent(list(input$dataset, input$n, seed(), input$maxit,
+                      input$p0, input$mu10, input$mu00), {
+        t_cur(0)
+        stop_play()
+    })
+
+    observeEvent(input$nxt, {
+        stop_play()
+        t_cur(min(t_cur() + 1, input$maxit))
+    })
+
+    observeEvent(input$prv, {
+        stop_play()
+        t_cur(max(t_cur() - 1, 0))
+    })
+
+    observeEvent(input$play, {
+        if (playing()) {
+            stop_play()
+        } else {
+            if (t_cur() &gt;= input$maxit) t_cur(0)   # replay from the start
+            playing(TRUE)
+            updateActionButton(session, "play", label = "Pause")
+        }
+    })
+
+    ## the timer: advances one iteration per tick while playing
+    observe({
+        if (!playing()) return(NULL)
+        invalidateLater(700, session)
+        isolate({
+            if (t_cur() &gt;= input$maxit) stop_play() else t_cur(t_cur() + 1)
+        })
+    })
+
+    output$stepLabel &lt;- renderText(
+        sprintf("Iteration %d of %d", t_cur(), input$maxit)
+    )
+
+    theta0 &lt;- reactive({
+        p &lt;- input$p0
+        validate(need(is.finite(p) &amp;&amp; p &gt; 0 &amp;&amp; p &lt; 1, "p must lie strictly between 0 and 1"),
+                 need(is.finite(input$mu10) &amp;&amp; is.finite(input$mu00),
+                      "both means must be numeric"))
+        c(p, input$mu10, input$mu00)
+    })
+
+    path &lt;- reactive(em_path(theta0(), Y(), input$maxit))
+
+    output$fit &lt;- renderPlot({
+        y &lt;- Y(); P &lt;- path()
+        k  &lt;- min(t_cur() + 1, nrow(P))
+        th &lt;- P[k, 1:3]
+        validate(need(all(is.finite(th)), "the iteration broke down numerically"))
+        w  &lt;- e_step(th, y)
+        cw &lt;- cm.colors(100)
+
+        xr &lt;- range(y, th[2:3]) + c(-2, 2)
+        xg &lt;- seq(xr[1], xr[2], length.out = 400)
+        d1 &lt;- dnorm(xg, th[2]) * th[1]
+        d0 &lt;- dnorm(xg, th[3]) * (1 - th[1])
+
+        par(mar = c(4, 4, 3, 1))
+        plot(xg, d1, type = "l", lwd = 2, col = cw[100],
+             ylim = c(0, max(0.42, d1, d0)), xlab = "y", ylab = "weighted density",
+             main = sprintf("step %d:  p = %.3f,  mu1 = %.3f,  mu0 = %.3f,  loglik = %.2f",
+                            k - 1, th[1], th[2], th[3], P[k, 4]))
+        lines(xg, d0, lwd = 2, col = cw[1])
+        points(y, rep(0, length(y)), col = cw[pmax(1, ceiling(w * 100))], pch = 19,
+               cex = 0.7)
+        if (k &lt; nrow(P) &amp;&amp; all(is.finite(P[k + 1, 1:3]))) {
+            arrows(th[2], 0.02, P[k + 1, 2], 0.02, length = 0.08, lwd = 2, col = cw[100])
+            arrows(th[3], 0.02, P[k + 1, 3], 0.02, length = 0.08, lwd = 2, col = cw[1])
+        }
+        legend("topright", bty = "n", lwd = 2, col = c(cw[100], cw[1]),
+               legend = c(expression(hat(p) * phi(y * "|" * hat(mu)[1])),
+                          expression((1 - hat(p)) * phi(y * "|" * hat(mu)[0]))))
+    })
+
+    output$trace &lt;- renderPlot({
+        P &lt;- path(); k &lt;- min(t_cur() + 1, nrow(P))
+        par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+        it &lt;- 0:(nrow(P) - 1)
+        plot(it, P[, 4], type = "n", xlab = "iteration",
+             ylab = "observed log-likelihood", main = "must never decrease")
+        lines(it[1:k], P[1:k, 4], type = "b", pch = 19, col = "firebrick")
+        yl &lt;- range(P[, 2:3], na.rm = TRUE)
+        plot(it, P[, 2], type = "n", ylim = yl, xlab = "iteration",
+             ylab = "component means", main = "parameter paths")
+        lines(it[1:k], P[1:k, 2], type = "b", pch = 19, col = "firebrick")
+        lines(it[1:k], P[1:k, 3], type = "b", pch = 19, col = "steelblue")
+        legend("right", bty = "n", lwd = 2, col = c("firebrick", "steelblue"),
+               legend = c(expression(hat(mu)[1]), expression(hat(mu)[0])))
+    })
+
+    output$tab &lt;- renderTable({
+        P &lt;- path(); k &lt;- min(t_cur() + 1, nrow(P))
+        d &lt;- as.data.frame(P[seq_len(k), , drop = FALSE])
+        d$iter &lt;- seq_len(k) - 1
+        tail(d[, c("iter", "p", "mu1", "mu0", "log_lik")], 5)
+    }, digits = 4, rownames = FALSE)
+}
+
+shinyApp(ui, server)</code></pre>
+<p>Four behaviours are worth producing deliberately.</p>
+<p><strong>Slow drift from a distant start.</strong> With <span class="math inline">\((0.5, -10, 5)\)</span> both means begin far outside the data. The early iterations move them very little, because every observation is assigned almost the same responsibility; progress accelerates only once one mean reaches the data.</p>
+<p><strong>Label switching.</strong> The starts <span class="math inline">\((0.5, 0, 3)\)</span> and <span class="math inline">\((0.5, 3, 0)\)</span> converge to the same fitted mixture with the roles of the two components exchanged. The likelihood is invariant to this relabelling, so the fitted density is identical while the parameter estimates differ — a genuine identifiability problem for the model, not a defect of the algorithm.</p>
+<p><strong>Stalling at a symmetric point.</strong> With <span class="math inline">\(\mu_1^{(0)} = 0.1\)</span> and <span class="math inline">\(\mu_0^{(0)} = 0.2\)</span> the two components are nearly indistinguishable, every responsibility is close to <span class="math inline">\(\hat p^{(0)}\)</span>, and the algorithm creeps away from the one-component solution very slowly. That configuration is close to a saddle point of <span class="math inline">\(\ell_{\text{obs}}\)</span>.</p>
+<p><strong>Separation and speed.</strong> Switch the data set from <span class="math inline">\(\mu = (1.5, 0)\)</span> to <span class="math inline">\(\mu = (5, 0)\)</span>. Well-separated components make the responsibilities nearly <span class="math inline">\(0\)</span> or <span class="math inline">\(1\)</span>, the E-step becomes almost a hard classification, and convergence takes a handful of iterations rather than dozens. This is the practical face of the general result that EM’s linear convergence rate is governed by the fraction of missing information.</p>
+</section>
+<section id="comparison-with-general-purpose-optimizers" class="level3" data-number="7.2.7">
+<h3 data-number="7.2.7" class="anchored" data-anchor-id="comparison-with-general-purpose-optimizers"><span class="header-section-number">7.2.7</span> Comparison with general-purpose optimizers</h3>
+<p>EM is not the only way to maximize the observed likelihood. Applying a general-purpose optimizer directly requires attention to the parameter space: <span class="math inline">\(p\)</span> must lie in <span class="math inline">\((0,1)\)</span>, so we reparameterize with the logit.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>neg_loglike_obs <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, Y) <span class="sc">-</span><span class="fu">log_like_obs</span>(theta, Y)</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="do">### transformed parameterization: ttheta[1] = logit(p)</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>neg_loglike_obs_transf <span class="ot">&lt;-</span> <span class="cf">function</span>(ttheta, Y) {</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    theta <span class="ot">&lt;-</span> ttheta</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    theta[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>ttheta[<span class="dv">1</span>]))</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">neg_loglike_obs</span>(theta, Y)</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>lp0 <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fl">0.3</span> <span class="sc">/</span> <span class="fl">0.7</span>)</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="do">### Newton-type, untransformed: p can leave (0, 1)</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglike_obs, <span class="at">p =</span> <span class="fu">c</span>(<span class="fl">0.3</span>, <span class="dv">0</span>, <span class="dv">3</span>), <span class="at">Y =</span> data)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$minimum
-[1] -140.4476
-
-$estimate
-[1] 3.306779
-
-$gradient
-[1] 1.089844e-05
-
-$code
-[1] 1
-
-$iterations
-[1] 11</code></pre>
+<pre><code>[1] 0.2968473 0.1131871 2.9203484</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> y_bar, neg_loglike_obs, <span class="at">method=</span><span class="st">"CG"</span>, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglike_obs, <span class="at">p =</span> <span class="fu">c</span>(<span class="fl">0.5</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="dv">5</span>), <span class="at">Y =</span> data)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] 3.306781
-
-$value
-[1] -140.4476
-
-$counts
-function gradient 
-     141       26 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
+<pre><code>[1]  4.872163e-06 -1.000004e+01  4.038012e+00</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="dv">100</span>, neg_loglike_obs, <span class="at">method=</span><span class="st">"CG"</span>, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="do">### Newton-type, transformed</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglike_obs_transf, <span class="at">p =</span> <span class="fu">c</span>(lp0, <span class="dv">0</span>, <span class="dv">3</span>), <span class="at">Y =</span> data)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] 3.306781
-
-$value
-[1] -140.4476
-
-$counts
-function gradient 
-     180       34 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
+<pre><code>[1] -0.8623555  0.1131868  2.9203483</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> y_bar, neg_loglike_obs, <span class="at">method=</span><span class="st">"Nelder-Mead"</span>, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglike_obs_transf, <span class="at">p =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="dv">5</span>), <span class="at">Y =</span> data)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] 3.307105
-
-$value
-[1] -140.4476
-
-$counts
-function gradient 
-      22       NA 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
+<pre><code>[1] -16.605894  -9.996458   2.087049</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span> (<span class="fu">optim</span> (<span class="at">p =</span> <span class="dv">100</span>, neg_loglike_obs, <span class="at">method=</span><span class="st">"Nelder-Mead"</span>, <span class="at">n=</span><span class="fu">length</span>(y)<span class="sc">-</span>c, <span class="at">y_bar=</span> y_bar, <span class="at">c=</span>c))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="do">### Nelder-Mead</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(<span class="fu">c</span>(lp0, <span class="dv">0</span>, <span class="dv">3</span>), neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>$par
-[1] 3.305664
-
-$value
-[1] -140.4476
-
-$counts
-function gradient 
-      42       NA 
-
-$convergence
-[1] 0
-
-$message
-NULL</code></pre>
+<pre><code>[1] -0.8623197  0.1132163  2.9203325</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="dv">5</span>), neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] -0.8622804  0.1131101  2.9206253</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="do">### Conjugate gradient</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">3</span>), neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method =</span> <span class="st">"CG"</span>)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] -0.8623543  0.1131880  2.9203502</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="dv">5</span>), neg_loglike_obs_transf, <span class="at">Y =</span> data, <span class="at">method =</span> <span class="st">"CG"</span>)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] -6.090903 -9.998146  2.080878</code></pre>
 </div>
 </div>
+<p>Applied to the observed log-likelihood, these algorithms are more fragile than EM when the initial values are poorly chosen: the untransformed runs can step outside <span class="math inline">\(p \in (0,1)\)</span> and produce <code>NaN</code>, and the gradient-based methods can stall in the flat region that a distant start creates. Nelder–Mead is the most stable of the three here, at the cost of many more function evaluations.</p>
+<div id="tbl-em-vs-optim" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-em-vs-optim-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;7.3: EM compared with direct numerical maximization
+</figcaption>
+<div aria-describedby="tbl-em-vs-optim-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th>EM</th>
+<th>General optimizer on <span class="math inline">\(\ell_{\text{obs}}\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Constraints</td>
+<td>Respected automatically by the M-step</td>
+<td>Require reparameterization</td>
+</tr>
+<tr class="even">
+<td>Monotonicity</td>
+<td>Guaranteed; a decrease signals a coding error</td>
+<td>None; a bad step can be accepted</td>
+</tr>
+<tr class="odd">
+<td>Derivatives</td>
+<td>None needed</td>
+<td>Gradient helpful, Hessian better</td>
+</tr>
+<tr class="even">
+<td>Convergence rate</td>
+<td>Linear, rate set by the missing information</td>
+<td>Superlinear or quadratic near the optimum</td>
+</tr>
+<tr class="odd">
+<td>Standard errors</td>
+<td>Not produced; need Louis’ method or a bootstrap</td>
+<td>Hessian available directly</td>
+</tr>
+<tr class="even">
+<td>Behaviour from poor starts</td>
+<td>Slow but stable</td>
+<td>Can fail outright</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<p>The last row is the practical trade. EM rarely fails and rarely needs tuning, which is why it dominates in mixture and latent-variable modelling; it is also slow near the optimum and gives no standard errors, which is why a hybrid — EM to get close, then a Newton step to polish and to obtain the Hessian — is common in production code.</p>
+</section>
+</section>
+<section id="sec-poisson" class="level2" data-number="7.3">
+<h2 data-number="7.3" class="anchored" data-anchor-id="sec-poisson"><span class="header-section-number">7.3</span> Example 2: Censored Poisson Data</h2>
+<section id="truncated-distributions-in-brief" class="level3" data-number="7.3.1">
+<h3 data-number="7.3.1" class="anchored" data-anchor-id="truncated-distributions-in-brief"><span class="header-section-number">7.3.1</span> Truncated distributions in brief</h3>
+<p>Let <span class="math inline">\(X \sim f(x)\)</span> and <span class="math inline">\(Y = I(X &gt; c)\)</span>. Then <span class="math inline">\(Y \sim \text{Bern}\{P(X &gt; c)\}\)</span>, and the conditional distribution of <span class="math inline">\(X\)</span> given <span class="math inline">\(Y\)</span> is <span class="math inline">\(f\)</span> restricted to one side of <span class="math inline">\(c\)</span> and renormalized:</p>
+<p><span class="math display">\[
+f(x \mid Y = 1) = \frac{f(x)\, I(x &gt; c)}{\int_c^{\infty} f(t)\,dt},
+\qquad
+f(x \mid Y = 0) = \frac{f(x)\, I(x \le c)}{\int_{-\infty}^{c} f(t)\,dt} .
+\]</span></p>
+<p>For discrete <span class="math inline">\(X\)</span> the integrals are sums. This is exactly the distribution the E-step needs when an observation is known only to lie on one side of <span class="math inline">\(c\)</span>.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>)); cc <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(dnorm, <span class="sc">-</span><span class="fl">3.5</span>, <span class="fl">3.5</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="st">"x"</span>, <span class="at">ylab =</span> <span class="st">"density"</span>,</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>      <span class="at">main =</span> <span class="st">"f(x) with cut point c"</span>)</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(cc, <span class="fl">3.5</span>, <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="fu">polygon</span>(<span class="fu">c</span>(xs, <span class="fu">rev</span>(xs)), <span class="fu">c</span>(<span class="fu">dnorm</span>(xs), <span class="fu">rep</span>(<span class="dv">0</span>, <span class="dv">100</span>)),</span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>        <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"firebrick"</span>, <span class="fl">0.3</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="fl">3.5</span>, cc, <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a><span class="fu">polygon</span>(<span class="fu">c</span>(xs, <span class="fu">rev</span>(xs)), <span class="fu">c</span>(<span class="fu">dnorm</span>(xs), <span class="fu">rep</span>(<span class="dv">0</span>, <span class="dv">100</span>)),</span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"steelblue"</span>, <span class="fl">0.3</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> cc, <span class="at">lty =</span> <span class="dv">2</span>); <span class="fu">text</span>(cc, <span class="fl">0.38</span>, <span class="st">"c"</span>, <span class="at">pos =</span> <span class="dv">4</span>)</span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="fl">1.8</span>, <span class="fl">0.05</span>, <span class="st">"P(X &gt; c)"</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fl">0.1</span>, <span class="fu">expression</span>(<span class="fu">P</span>(X <span class="sc">&lt;=</span> c)), <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(<span class="fu">dnorm</span>(x) <span class="sc">*</span> (x <span class="sc">&gt;</span> cc) <span class="sc">/</span> <span class="fu">pnorm</span>(cc, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>), <span class="sc">-</span><span class="fl">3.5</span>, <span class="fl">3.5</span>, <span class="at">lwd =</span> <span class="dv">3</span>,</span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a>      <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">1001</span>, <span class="at">xlab =</span> <span class="st">"x"</span>, <span class="at">ylab =</span> <span class="st">"density"</span>,</span>
+<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">main =</span> <span class="st">"conditional densities"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.6</span>))</span>
+<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(<span class="fu">dnorm</span>(x) <span class="sc">*</span> (x <span class="sc">&lt;=</span> cc) <span class="sc">/</span> <span class="fu">pnorm</span>(cc), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">n =</span> <span class="dv">1001</span>)</span>
+<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> cc, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb27-18"><a href="#cb27-18" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>),</span>
+<span id="cb27-19"><a href="#cb27-19" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"f(x | Y = 0)"</span>, <span class="st">"f(x | Y = 1)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-truncation" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-truncation-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-truncation-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-truncation-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.6: A density split at a cut point, and the two renormalized conditional densities.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="data-and-likelihoods" class="level3" data-number="7.3.2">
+<h3 data-number="7.3.2" class="anchored" data-anchor-id="data-and-likelihoods"><span class="header-section-number">7.3.2</span> Data and likelihoods</h3>
+<p>Let <span class="math inline">\(y_i \overset{iid}{\sim} \text{Pois}(\lambda)\)</span> for <span class="math inline">\(i = 1, \ldots, n\)</span>. The first <span class="math inline">\(m\)</span> values are observed exactly; for <span class="math inline">\(i &gt; m\)</span> we know only that <span class="math inline">\(y_i &lt; 2\)</span>, recorded as <span class="math inline">\(x_i = I(y_i &lt; 2) = 1\)</span>.</p>
+<p><strong>Observed data</strong>: <span class="math inline">\(y_1, \ldots, y_m\)</span> together with <span class="math inline">\(x_{m+1} = \cdots = x_n = 1\)</span>. <strong>Missing</strong>: <span class="math inline">\(y_{m+1}, \ldots, y_n\)</span>.</p>
+<p><strong>Complete likelihood</strong></p>
+<p><span class="math display">\[
+\prod_{i=1}^{n} f^{\text{Pois}}(y_i \mid \lambda) \cdot \prod_{i=m+1}^{n} I(y_i &lt; 2) .
+\]</span></p>
+<p><strong>Observed likelihood</strong></p>
+<p><span class="math display">\[
+\prod_{i=1}^{m} f^{\text{Pois}}(y_i \mid \lambda) \cdot \prod_{i=m+1}^{n} P(y_i &lt; 2 \mid \lambda),
+\qquad P(y_i &lt; 2 \mid \lambda) = e^{-\lambda}(1 + \lambda) .
+\]</span></p>
+<p>Taking logarithms and dropping constants,</p>
+<p><span class="math display">\[
+\ell_{\text{obs}}(\lambda) = m \bar y_{1:m} \log \lambda - n \lambda + (n - m)\log(1 + \lambda) .
+\]</span></p>
+<p>The second factor makes the MLE nonlinear in <span class="math inline">\(\lambda\)</span>; EM sidesteps it.</p>
+</section>
+<section id="e-step" class="level3" data-number="7.3.3">
+<h3 data-number="7.3.3" class="anchored" data-anchor-id="e-step"><span class="header-section-number">7.3.3</span> E-step</h3>
+<p><span class="math display">\[
+\ell_{\text{comp}}(\lambda) = -n\lambda + (\log \lambda) \sum_{i=1}^{m} y_i
++ (\log \lambda) \underbrace{\sum_{i=m+1}^{n} y_i}_{\text{missing}}
+- \sum_{i=1}^{n} \log(y_i!) .
+\]</span></p>
+<p>For <span class="math inline">\(i &gt; m\)</span> we have <span class="math inline">\(y_i \in \{0, 1\}\)</span>, and the Poisson pmf truncated to that set given <span class="math inline">\(\lambda^{(t)}\)</span> is</p>
+<p><span class="math display">\[
+P\!\left(y_i = 0 \mid x_i = 1\right) = \frac{1}{1 + \lambda^{(t)}},
+\qquad
+P\!\left(y_i = 1 \mid x_i = 1\right) = \frac{\lambda^{(t)}}{1 + \lambda^{(t)}} ,
+\]</span></p>
+<p>so that</p>
+<p><span class="math display">\[
+\hat y^{(t)} \equiv E\!\left(y_i \mid x_i = 1, \lambda^{(t)}\right) = \frac{\lambda^{(t)}}{1 + \lambda^{(t)}} .
+\]</span></p>
+<p>Since <span class="math inline">\(y_i! = 1\)</span> for <span class="math inline">\(y_i \in \{0, 1\}\)</span>, the <span class="math inline">\(\log(y_i!)\)</span> term is a known constant and no further expectation is needed.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>)); lt <span class="ot">&lt;-</span> <span class="fl">1.5</span>; k <span class="ot">&lt;-</span> <span class="dv">0</span><span class="sc">:</span><span class="dv">6</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="fu">barplot</span>(<span class="fu">dpois</span>(k, lt), <span class="at">names.arg =</span> k,</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>        <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"firebrick"</span>, <span class="fu">rep</span>(<span class="st">"gray80"</span>, <span class="dv">5</span>)),</span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>        <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylab =</span> <span class="st">"probability"</span>,</span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="fu">bquote</span>(<span class="st">"Pois("</span> <span class="sc">*</span> lambda<span class="sc">^</span>(t) <span class="sc">==</span> .(lt) <span class="sc">*</span> <span class="st">")"</span>))</span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="fu">barplot</span>(<span class="fu">c</span>(<span class="dv">1</span>, lt) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> lt), <span class="at">names.arg =</span> <span class="dv">0</span><span class="sc">:</span><span class="dv">1</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>,</span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylab =</span> <span class="st">"probability"</span>,</span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"truncated to {0, 1}: "</span> <span class="sc">*</span> <span class="fu">P</span>(y[i]<span class="sc">*</span><span class="st">"|"</span><span class="sc">*</span>x[i] <span class="sc">==</span> <span class="dv">1</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-poisson-estep" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-poisson-estep-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-poisson-estep-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-poisson-estep-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.7: The conditional distribution of a censored count is the Poisson pmf restricted to <span class="math inline">\(\{0,1\}\)</span> and renormalized.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="m-step-and-the-em-update" class="level3" data-number="7.3.4">
+<h3 data-number="7.3.4" class="anchored" data-anchor-id="m-step-and-the-em-update"><span class="header-section-number">7.3.4</span> M-step and the EM update</h3>
+<p><span class="math display">\[
+Q\!\left(\lambda \mid \lambda^{(t)}\right)
+= -n\lambda + (\log \lambda)\left[\sum_{i=1}^{m} y_i + (n - m)\,\hat y^{(t)}\right] + C^{(t)} ,
+\]</span></p>
+<p><span class="math display">\[
+\frac{\partial Q}{\partial \lambda}
+= -n + \frac{1}{\lambda}\left[\sum_{i=1}^{m} y_i + (n - m)\,\hat y^{(t)}\right] = 0 ,
+\]</span></p>
+<p><span class="math display">\[
+\Longrightarrow \quad
+\lambda^{(t+1)} = \frac{m\, \bar y_{1:m} + (n - m)\dfrac{\lambda^{(t)}}{1 + \lambda^{(t)}}}{n} .
+\]</span></p>
+<p>The update is the ordinary Poisson MLE — the sample mean — with each censored value replaced by its conditional expectation. As warned in the overview, this works <em>only</em> because <span class="math inline">\(\ell_{\text{comp}}\)</span> is linear in the missing <span class="math inline">\(y_i\)</span>.</p>
+</section>
+<section id="implementation-1" class="level3" data-number="7.3.5">
+<h3 data-number="7.3.5" class="anchored" data-anchor-id="implementation-1"><span class="header-section-number">7.3.5</span> Implementation</h3>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="do">### observed log-likelihood, up to an additive constant</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="do">##   m    : number of exactly observed counts</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="do">##   ybar : their mean</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="do">##   ncen : number of counts known only to be &lt; 2</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>loglik_obs_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(m, ybar, ncen, lambda) {</span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>    m <span class="sc">*</span> ybar <span class="sc">*</span> <span class="fu">log</span>(lambda) <span class="sc">-</span> (m <span class="sc">+</span> ncen) <span class="sc">*</span> lambda <span class="sc">+</span> ncen <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">+</span> lambda)</span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>em_censored_poisson <span class="ot">&lt;-</span> <span class="cf">function</span>(m, ybar, ncen,</span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>                                <span class="at">lambda0 =</span> (m <span class="sc">*</span> ybar <span class="sc">+</span> ncen) <span class="sc">/</span> (m <span class="sc">+</span> ncen),</span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a>                                <span class="at">iterations =</span> <span class="dv">20</span>) {</span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iterations <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>,</span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a>                  <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"lambda"</span>, <span class="st">"log_lik"</span>)))</span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a>    lambda <span class="ot">&lt;-</span> lambda0</span>
+<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a>    out[<span class="dv">1</span>, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(lambda, <span class="fu">loglik_obs_pois</span>(m, ybar, ncen, lambda))</span>
+<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(iterations)) {</span>
+<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a>        y_mis  <span class="ot">&lt;-</span> lambda <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> lambda)                       <span class="co"># E-step</span></span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a>        lambda <span class="ot">&lt;-</span> (m <span class="sc">*</span> ybar <span class="sc">+</span> ncen <span class="sc">*</span> y_mis) <span class="sc">/</span> (m <span class="sc">+</span> ncen)       <span class="co"># M-step</span></span>
+<span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a>        out[i <span class="sc">+</span> <span class="dv">1</span>, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(lambda, <span class="fu">loglik_obs_pois</span>(m, ybar, ncen, lambda))</span>
+<span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>    out</span>
+<span id="cb29-22"><a href="#cb29-22" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">812</span>)</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>y    <span class="ot">&lt;-</span> <span class="fu">rpois</span>(<span class="dv">200</span>, <span class="dv">3</span>)</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>ncen <span class="ot">&lt;-</span> <span class="fu">sum</span>(y <span class="sc">&lt;</span> <span class="dv">2</span>)</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>m    <span class="ot">&lt;-</span> <span class="fu">length</span>(y) <span class="sc">-</span> ncen</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>ybar <span class="ot">&lt;-</span> <span class="fu">mean</span>(y[y <span class="sc">&gt;=</span> <span class="dv">2</span>])</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">m =</span> m, <span class="at">ncen =</span> ncen, <span class="at">ybar_observed =</span> ybar)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>            m          ncen ybar_observed 
+   157.000000     43.000000      3.528662 </code></pre>
+</div>
+</div>
+<p>Discarding the censored observations and averaging the rest gives an estimate clearly above the true mean of <span class="math inline">\(3\)</span>: conditioning on <span class="math inline">\(y \ge 2\)</span> removes the small counts and biases the mean upward. EM recovers them.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">em_censored_poisson</span>(m, ybar, ncen, <span class="at">lambda0 =</span> <span class="dv">100</span>, <span class="at">iterations =</span> <span class="dv">10</span>), <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>         lambda      log_lik
+ [1,] 100.00000 -17250.28553
+ [2,]   2.98287     68.31091
+ [3,]   2.93102     68.40282
+ [4,]   2.93031     68.40284
+ [5,]   2.93030     68.40284
+ [6,]   2.93030     68.40284
+ [7,]   2.93030     68.40284
+ [8,]   2.93030     68.40284
+ [9,]   2.93030     68.40284
+[10,]   2.93030     68.40284
+[11,]   2.93030     68.40284</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">em_censored_poisson</span>(m, ybar, ncen, <span class="at">lambda0 =</span> ybar, <span class="at">iterations =</span> <span class="dv">10</span>), <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>       lambda  log_lik
+ [1,] 3.52866 57.76492
+ [2,] 2.93752 68.40109
+ [3,] 2.93040 68.40284
+ [4,] 2.93030 68.40284
+ [5,] 2.93030 68.40284
+ [6,] 2.93030 68.40284
+ [7,] 2.93030 68.40284
+ [8,] 2.93030 68.40284
+ [9,] 2.93030 68.40284
+[10,] 2.93030 68.40284
+[11,] 2.93030 68.40284</code></pre>
+</div>
+</div>
+<p>Both starting values reach the same limit, and the log-likelihood increases monotonically from each. Note how slowly the run from <span class="math inline">\(\lambda^{(0)} = 100\)</span> descends at first — a single-parameter illustration of the same slow-drift behaviour seen in the mixture app.</p>
+</section>
+<section id="comparison-with-general-purpose-optimizers-1" class="level3" data-number="7.3.6">
+<h3 data-number="7.3.6" class="anchored" data-anchor-id="comparison-with-general-purpose-optimizers-1"><span class="header-section-number">7.3.6</span> Comparison with general-purpose optimizers</h3>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>neg_loglik_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(lambda, m, ybar, ncen) {</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>    <span class="sc">-</span><span class="fu">loglik_obs_pois</span>(m, ybar, ncen, lambda)</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglik_pois, <span class="at">p =</span> ybar, <span class="at">m =</span> m, <span class="at">ybar =</span> ybar, <span class="at">ncen =</span> ncen)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2.930295</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">nlm</span>(neg_loglik_pois, <span class="at">p =</span> <span class="dv">100</span>,  <span class="at">m =</span> m, <span class="at">ybar =</span> ybar, <span class="at">ncen =</span> ncen)<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2.930295</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(ybar, neg_loglik_pois, <span class="at">method =</span> <span class="st">"CG"</span>,</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">m =</span> m, <span class="at">ybar =</span> ybar, <span class="at">ncen =</span> ncen)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2.930297</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">try</span>(<span class="fu">optim</span>(<span class="dv">100</span>,  neg_loglik_pois, <span class="at">method =</span> <span class="st">"CG"</span>,</span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>          <span class="at">m =</span> m, <span class="at">ybar =</span> ybar, <span class="at">ncen =</span> ncen)<span class="sc">$</span>par)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2.930297</code></pre>
+</div>
+</div>
+<p>With one parameter and a smooth concave objective this is an easy problem for any method; the contrast with the mixture example is instructive, since there the multimodality and the constraint on <span class="math inline">\(p\)</span> were what made the general optimizers fragile.</p>
+</section>
+</section>
+<section id="more-complex-applications" class="level2" data-number="7.4">
+<h2 data-number="7.4" class="anchored" data-anchor-id="more-complex-applications"><span class="header-section-number">7.4</span> More Complex Applications</h2>
+<section id="model-based-clustering" class="level3" data-number="7.4.1">
+<h3 data-number="7.4.1" class="anchored" data-anchor-id="model-based-clustering"><span class="header-section-number">7.4.1</span> Model-based clustering</h3>
+<p><span class="math display">\[
+Z_i \sim \text{Categorical}(\pi_1, \ldots, \pi_K),
+\qquad Y_i \mid Z_i = k \sim N_d(\mu_k, \Sigma_k) .
+\]</span></p>
+<p>This is the multivariate, <span class="math inline">\(K\)</span>-component generalization of <a href="#sec-mixture" class="quarto-xref"><span>Section 7.2</span></a>. The E-step computes soft cluster memberships <span class="math inline">\(P(Z_i = k \mid y_i, \hat\theta^{(t)})\)</span>; the M-step returns weighted means, covariances and proportions. The <code>mclust</code> package implements this with a family of constrained covariance structures.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>))</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>ctr <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">3</span>), <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">5</span>))</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>Sig <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="fu">diag</span>(<span class="dv">2</span>) <span class="sc">*</span> <span class="fl">0.8</span>, <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.7</span>, <span class="fl">0.7</span>, <span class="dv">1</span>), <span class="dv">2</span>), <span class="fu">diag</span>(<span class="fu">c</span>(<span class="fl">1.2</span>, <span class="fl">0.4</span>)))</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>cols <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>, <span class="st">"forestgreen"</span>)</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>ang <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">2</span> <span class="sc">*</span> pi, <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="cn">NA</span>, <span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">7</span>), <span class="at">ylim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">8</span>),</span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(y[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(y[<span class="dv">2</span>]))</span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>  R <span class="ot">&lt;-</span> <span class="fu">chol</span>(Sig[[k]])</span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>  pts <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">120</span>), <span class="dv">60</span>) <span class="sc">%*%</span> R <span class="sc">+</span> <span class="fu">rep</span>(ctr[k, ], <span class="at">each =</span> <span class="dv">60</span>)</span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(pts, <span class="at">col =</span> <span class="fu">adjustcolor</span>(cols[k], <span class="fl">0.6</span>), <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>  ell <span class="ot">&lt;-</span> (<span class="fu">cbind</span>(<span class="fu">cos</span>(ang), <span class="fu">sin</span>(ang)) <span class="sc">*</span> <span class="fl">2.1</span>) <span class="sc">%*%</span> R <span class="sc">+</span> <span class="fu">rep</span>(ctr[k, ], <span class="at">each =</span> <span class="dv">100</span>)</span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">lines</span>(ell, <span class="at">col =</span> cols[k], <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(ctr[k, <span class="dv">1</span>], ctr[k, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">4</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> cols[k])</span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-clustering" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-clustering-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-clustering-1.png" class="img-fluid figure-img" width="576">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-clustering-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.8: Three-component multivariate normal mixture with unequal covariances.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="hidden-markov-models" class="level3" data-number="7.4.2">
+<h3 data-number="7.4.2" class="anchored" data-anchor-id="hidden-markov-models"><span class="header-section-number">7.4.2</span> Hidden Markov models</h3>
+<p>Hidden states <span class="math inline">\(h_1 \to h_2 \to \cdots \to h_n\)</span> form a Markov chain, and each observation depends only on its own state:</p>
+<p><span class="math display">\[
+P(y_{1:n} \mid h_{1:n}, \theta) = \prod_{i=1}^{n} P(y_i \mid h_i, \theta) .
+\]</span></p>
+<p>The E-step is the forward–backward algorithm, which computes <span class="math inline">\(P(h_i \mid y_{1:n}, \hat\theta^{(t)})\)</span> and <span class="math inline">\(P(h_i, h_{i+1} \mid y_{1:n}, \hat\theta^{(t)})\)</span> without enumerating all <span class="math inline">\(K^n\)</span> state sequences; the M-step produces weighted transition and emission estimates. The combination is known as the Baum–Welch algorithm, and it is the clearest example of an E-step that is itself a nontrivial computation.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>, <span class="dv">1</span>)); N <span class="ot">&lt;-</span> <span class="dv">120</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>Pm <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="fl">0.95</span>, <span class="fl">0.05</span>, <span class="fl">0.1</span>, <span class="fl">0.9</span>), <span class="dv">2</span>, <span class="at">byrow =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fu">integer</span>(N); h[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>N) h[i] <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>, <span class="dv">1</span>, <span class="at">prob =</span> Pm[h[i <span class="sc">-</span> <span class="dv">1</span>], ])</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>yy <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(N, <span class="at">mean =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">3</span>)[h])</span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(yy, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">xlab =</span> <span class="st">"i"</span>, <span class="at">ylab =</span> <span class="fu">expression</span>(y[i]))</span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>r <span class="ot">&lt;-</span> <span class="fu">rle</span>(h); e <span class="ot">&lt;-</span> <span class="fu">cumsum</span>(r<span class="sc">$</span>lengths); s <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">head</span>(e, <span class="sc">-</span><span class="dv">1</span>) <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(s <span class="sc">-</span> <span class="fl">0.5</span>, <span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">3</span>], e <span class="sc">+</span> <span class="fl">0.5</span>, <span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">4</span>],</span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>     <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>)[r<span class="sc">$</span>values], <span class="fl">0.15</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(yy, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(yy, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>)[h], <span class="at">cex =</span> <span class="fl">0.7</span>)</span>
+<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>),</span>
+<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(h[i] <span class="sc">==</span> <span class="dv">1</span>), <span class="fu">expression</span>(h[i] <span class="sc">==</span> <span class="dv">2</span>)), <span class="at">horiz =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div id="fig-hmm" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-hmm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit07_em_files/figure-html/fig-hmm-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-hmm-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.9: A two-state hidden Markov chain with normal emissions; background shading shows the hidden state.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="factor-analysis-and-the-common-pattern" class="level3" data-number="7.4.3">
+<h3 data-number="7.4.3" class="anchored" data-anchor-id="factor-analysis-and-the-common-pattern"><span class="header-section-number">7.4.3</span> Factor analysis and the common pattern</h3>
+<p><span class="math display">\[
+y_i = \Gamma x_i + \varepsilon_i,
+\qquad x_i \sim N_q(0, I) \text{ hidden},
+\qquad \varepsilon_i \sim N_d(0, \Psi) .
+\]</span></p>
+<p>The E-step uses the fact that <span class="math inline">\(x_i \mid y_i, \hat\theta^{(t)}\)</span> is normal with closed-form mean and covariance; the M-step is a regression of <span class="math inline">\(y\)</span> on the expected factors.</p>
+<p>Across all these applications the recipe is the same:</p>
+<ol type="1">
+<li>Introduce a hidden variable that makes the complete-data model tractable.</li>
+<li><strong>E-step</strong>: compute the conditional distribution of the hidden data, or just the expected sufficient statistics if <span class="math inline">\(\ell_{\text{comp}}\)</span> is linear in them.</li>
+<li><strong>M-step</strong>: compute the complete-data MLE with those expected sufficient statistics in place of the unobserved ones.</li>
+</ol>
+<p>The art is entirely in step 1. The same observed-data model often admits several choices of <span class="math inline">\(Z\)</span>, and they lead to EM algorithms with quite different convergence rates — faster when the augmentation adds little information, slower when the missing information is a large fraction of the total.</p>
+</section>
+</section>
+<section id="summary" class="level2" data-number="7.5">
+<h2 data-number="7.5" class="anchored" data-anchor-id="summary"><span class="header-section-number">7.5</span> Summary</h2>
+<ul>
+<li>EM maximizes <span class="math inline">\(\ell_{\text{obs}}\)</span> by alternating between forming <span class="math inline">\(Q(\theta \mid \hat\theta^{(t)}) = E_{Z \mid Y, \hat\theta^{(t)}}[\ell_{\text{comp}}]\)</span> and maximizing it.</li>
+<li>Every iteration weakly increases <span class="math inline">\(\ell_{\text{obs}}\)</span>. Equivalently, EM is coordinate ascent on <span class="math inline">\(F(\tilde P, \theta) = \ell_{\text{obs}}(\theta) - \mathrm{KL}(\tilde P \,\|\, P(Z \mid Y, \theta))\)</span>.</li>
+<li>When <span class="math inline">\(\ell_{\text{comp}}\)</span> is linear in sufficient statistics of <span class="math inline">\(Z\)</span>, the E-step reduces to computing their conditional expectations. Otherwise the full conditional distribution is required, and “plug in the expectation” is wrong.</li>
+<li>Convergence is linear, often slow, and only to a stationary point. Run from several starting values and compare the attained log-likelihoods.</li>
+<li>Standard errors are not a by-product. Use Louis’ identity, the SEM algorithm, a bootstrap, or a final Newton step.</li>
+</ul>
 
 
 </section>
