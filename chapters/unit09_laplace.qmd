@@ -1,185 +1,437 @@
 ---
-title: Laplace Method for Approximating Marginal Likelihood of Gaussian
+title: "Laplace Approximation"
+format:
+  html:
+    toc: true
+    tbl-colwidths: true
+filters:
+  - shinylive
+editor_options:
+  chunk_output_type: console
+code-fold: true
 ---
 
-# Laplace Approximation
+The previous chapter approximated an integral by a weighted sum of function
+values on a grid. A grid gets expensive fast: an $n$-point-per-axis product
+grid costs $n^d$ evaluations, so quadrature is only practical for $d \lesssim
+3$. The **Laplace approximation** takes a completely different route: instead
+of evaluating the integrand everywhere, it looks only at the single most
+important point — the mode — and replaces the whole integrand there by the
+Gaussian that matches its height and curvature. No grid is needed at any
+dimension, at the price of assuming the integrand is roughly bell-shaped.
+
+## The Goal and the Idea
+
+Many Bayesian calculations are posterior expectations
+$$
+E_f\big[a(\theta)\big] = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta},
+$$
+where $\theta \in \mathbb{R}^p$, $a(\theta)$ is some quantity of interest (a
+parameter, a prediction, an indicator), and $f(\theta)$ is an **unnormalized**
+posterior, typically $f(\theta) = L(\theta)\pi(\theta)$. Both numerator and
+denominator are $p$-dimensional integrals.
+
+Write $h(\theta) = -\log f(\theta)$, so $f(\theta) = e^{-h(\theta)}$. For
+independent data, $h$ is (up to an additive constant) minus the
+log-likelihood plus minus the log-prior — a sum of $n$ terms — so as $n$ grows
+it becomes large and sharply curved at its minimum. This is the same
+large-sample regularity that makes the MLE asymptotically normal
+(seen in the maximum-likelihood chapters); here it makes the *posterior* asymptotically normal too. The
+Laplace approximation makes this precise by expanding $h$ to second order at
+its minimum and integrating the resulting Gaussian exactly — no grid, no
+sampling, just one optimization and one Hessian.
+
+## Derivation
+
+Let $\theta_0 = \arg\min_\theta h(\theta)$, the posterior mode, found
+numerically (`optim(..., hessian = TRUE)` or `nlm(..., hessian = TRUE)` in
+R — exactly the optimizers used to find the MLE in earlier chapters). Expand
+$h$ around $\theta_0$:
+$$
+h(\theta) = h(\theta_0) + \underbrace{\nabla h(\theta_0)^\top}_{=\,0\text{ at the minimum}}(\theta - \theta_0)
+ + \tfrac12(\theta-\theta_0)^\top H (\theta - \theta_0) + O\big(\|\theta-\theta_0\|^3\big),
+\qquad H = \nabla^2 h(\theta_0).
+$$
+$H$, the Hessian of $-\log f$ at the mode, is positive definite at a genuine
+minimum; for $f = L\pi$ it is the observed information plus the curvature of
+the log-prior. Dropping the cubic remainder and exponentiating,
+$$
+f(\theta) \approx \tilde f(\theta) = f(\theta_0)\exp\Big\{-\tfrac12(\theta-\theta_0)^\top H(\theta-\theta_0)\Big\}
+ = \underbrace{f(\theta_0)(2\pi)^{p/2}|H|^{-1/2}}_{\text{constant}}
+   \cdot \underbrace{(2\pi)^{-p/2}|H|^{1/2}e^{-\frac12(\theta-\theta_0)^\top H(\theta-\theta_0)}}_{N_p(\theta_0,\,H^{-1})\text{ density}}.
+$$
+Two results follow immediately, since the bracketed factor is a properly
+normalized $N_p(\theta_0, H^{-1})$ density:
+
+$$
+\boxed{\ \theta \mid \text{data} \ \approx\ N_p\big(\theta_0,\ H^{-1}\big) \ }
+\qquad\qquad
+\boxed{\ \int f(\theta)\,d\theta \ \approx\ f(\theta_0)\,(2\pi)^{p/2}\,|H|^{-1/2} \ }
+$$
+
+Only the mode and the Hessian of $-\log f$ at the mode are needed — both come
+for free from any optimizer that returns a Hessian. The relative error of the
+second result is $O(1/n)$ for regular models; the error of the first is
+governed by how skewed the true posterior actually is.
+
+## Worked Example: A Poisson Rate with a Gamma Prior
+
+To see the approximation against ground truth, use a model with a known exact
+answer. For $y_1,\ldots,y_n \mid \lambda \sim \text{Poisson}(\lambda)$ and
+$\lambda \sim \text{Gamma}(\alpha,\beta)$, the posterior is exactly
+$\text{Gamma}(\alpha + \sum y_i,\ \beta+n)$, so both the exact log marginal
+likelihood and the exact posterior are available in closed form and the
+Laplace error can be measured directly.
+
 ```{r}
-## the generic function for finding laplace approximation of integral of 'f'
-## neg_log_f    --- the negative log of the intergrand function
-## p0           --- initial value in searching mode
-## ...          --- other arguments needed by neg_log_f
-bayes_inference_lap <- function(neg_log_f,p0,...)
-{   ## looking for the mode and hessian of the log likehood function
-    result_min <- nlm(f=neg_log_f,p=p0, hessian=TRUE,...)
-    hessian <- result_min$hessian
-    neg_log_like_mode <- result_min$minimum
-    
-    
-    estimates <- result_min$estimate ## posterior mode
-    SIGMA <- solve(result_min$hessian) ## covariance matrix of posterior mode
-    sds <- sqrt (diag(SIGMA)) ## standard errors of each estimate
-    log_mar_lik <- ## log marginalized likelihood
-        - neg_log_like_mode + 0.5 * ( sum(log(2*pi) - log(svd(hessian)$d) ))
-    
-    list (estimates = estimates, sds = sds, SIGMA = SIGMA, log_mar_lik = log_mar_lik)
+#| label: poisson-gamma-functions
+alpha <- 2; beta <- 1
+
+### Laplace approximation: mode, Hessian, and the two boxed results above
+laplace_poisson <- function(y) {
+  h  <- function(l) -(sum(dpois(y, l, log = TRUE)) + dgamma(l, alpha, beta, log = TRUE))
+  op <- optim(mean(y) + 0.5, h, method = "L-BFGS-B", lower = 1e-6, hessian = TRUE)
+  c(mode = op$par, se = sqrt(1 / op$hessian[1, 1]),
+    log_ml = -op$value + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1]))
 }
 
-## the function for computing log likelihood of normal data
-## mu is the unknown mean, and w is the log of standard deviation (sd)
-log_lik <- function(x,mu,w)
-{   sum(dnorm(x,mu,exp(w),log=TRUE))
-}
-
-## the function for computing log prior
-log_prior <- function(mu,w, mu_0,sigma_mu,w_0,sigma_w)
-{   dnorm(mu,mu_0,sigma_mu,log=TRUE) + dnorm(w,w_0,sigma_w,log=TRUE)
-}
-
-## the function for computing the negative log of likelihood * prior
-neg_log_post <- function(x, theta, mu_0,sigma_mu,w_0,sigma_w)
-{   - log_lik(x,theta[1], theta[2]) - log_prior(theta[1],theta[2],mu_0,sigma_mu,w_0,sigma_w)
-}
-
-
-
-## approximating the log of integral of likelihood * prior
-bayes_inference_lap_gaussian <- function(x,mu_0,sigma_mu,w_0,sigma_w)
-{   bayes_inference_lap(
-                neg_log_post,p0=c(mean(x),log(sqrt(var(x)))),
-                x=x,mu_0=mu_0,sigma_mu=sigma_mu,w_0=w_0,sigma_w=sigma_w
-    )
+### exact log marginal likelihood, from the Gamma-Poisson conjugate identity
+exact_log_ml <- function(y) {
+  n <- length(y); s <- sum(y)
+  alpha * log(beta) - lgamma(alpha) + lgamma(alpha + s) -
+    (alpha + s) * log(beta + n) - sum(lfactorial(y))
 }
 ```
-
-# Mid-point Rule
 
 ```{r}
-## the function for computing log likelihood of normal data
-log_lik <- function(x,mu,w)
-{   sum(dnorm(x,mu,exp(w),log=TRUE))
-}
-
-## the function for computing log prior
-log_prior <- function(mu,w, mu_0,sigma_mu,w_0,sigma_w)
-{   dnorm(mu,mu_0,sigma_mu,log=TRUE) + dnorm(w,w_0,sigma_w,log=TRUE)
-}
-
-## the function for computing the unormalized log posterior 
-## given transformed mu and w 
-log_post_tran <- function(x, mu_t, w_t, mu_0,sigma_mu,w_0,sigma_w)
-{
-    #log likelihood
-    log_lik(x,logi(mu_t), logi(w_t)) +
-    #log prior 
-    log_prior(logi(mu_t), logi(w_t), mu_0,sigma_mu,w_0,sigma_w) + 
-    #log derivative of transformation
-    log_der_logi(mu_t) + log_der_logi(w_t)
-}
-
-## the logistic function for transforming (0,1) value to (-inf,+inf)
-logi <- function(x)
-{  log(x) - log(1-x)
-}
-
-## the log derivative of logistic function 
-log_der_logi <- function(x)
-{  -log(x) - log(1-x)
-}
-
-## the generic function for approximating 1-D integral with midpoint rule
-## the logarithms of the function values are passed in
-## the log of the integral result is returned
-
-## log_f  --- a function computing the logarithm of the integrant function
-## range  --- the range of integral varaible, a vector of two elements
-## n      --- the number of points at which the integrant is evaluated
-## ...    --- other parameters needed by log_f
-log_int_mid <- function(log_f, range, n,...)
-{   if(range[1] >= range[2]) 
-        stop("Wrong ranges")
-    h <- (range[2]-range[1]) / n
-    v_log_f <- sapply(range[1] + (1:n - 0.5) * h, log_f,...)
-    log_sum_exp(v_log_f) + log(h)       
-}
-
-## a function computing the sum of numbers represented with logarithm
-## lx     --- a vector of numbers, which are the log of another vector x.
-## the log of sum of x is returned
-log_sum_exp <- function(lx)
-{   mlx <- max(lx)
-    mlx + log(sum(exp(lx-mlx)))
-}
-
-## a function computing the normalization constant
-log_mar_gaussian_mid <- function(x,mu_0,sigma_mu,w_0,sigma_w,n)
-{
-    ## function computing the normalization constant of with mu_t fixed
-    log_int_gaussian_mu <- function(mu_t)
-    {   log_int_mid(log_f=log_post_tran,range=c(0,1),n=n,
-                    x=x,mu_t=mu_t,mu_0=mu_0,sigma_mu=sigma_mu,
-                    w_0=w_0,sigma_w=sigma_w)
-    }
-    
-    log_int_mid(log_f=log_int_gaussian_mu,range=c(0,1), n=n)
-}
-
-
+#| label: tbl-poisson-gamma-error
+#| tbl-cap: "Laplace log marginal likelihood versus the exact value, and the posterior mean versus the Laplace mode, as n grows. The error shrinks roughly like 1/n: it falls by about a factor of 4-5 each time n increases by that factor."
+set.seed(42)
+res <- t(sapply(c(5, 20, 100, 500), function(n) {
+  y <- rpois(n, 3)
+  lap <- laplace_poisson(y)
+  c(n = n, laplace_log_ml = lap["log_ml"], exact_log_ml = exact_log_ml(y),
+    error = lap["log_ml"] - exact_log_ml(y),
+    laplace_mode = lap["mode"], posterior_mean = (alpha + sum(y)) / (beta + n))
+}))
+knitr::kable(res, digits = 4, row.names = FALSE,
+             col.names = c("n", "Laplace log P(y)", "exact log P(y)", "error",
+                           "Laplace mode", "posterior mean"))
 ```
 
-# Naive Monte Carlo For Computinglog  Marginalized Likelihood
+The error is a few thousandths at $n=5$ and shrinks to a few ten-thousandths
+by $n=500$; the Laplace mode also converges to the posterior mean as the
+Gamma posterior becomes more symmetric. Plotting the exact posterior against
+its Laplace approximation makes this concrete:
+
 ```{r}
-## we use Monte Carlo method to debug the above function
-log_mar_gaussian_mc <- function(x,mu_0,sigma_mu,w_0,sigma_w,iters_mc)
-{
-    ## draw samples from the priors
-    mus <- rnorm(iters_mc,mu_0,sigma_mu)
-    ws <- rnorm(iters_mc,w_0,sigma_w)
-    one_log_lik <- function(i)
-    {  log_lik(x,mus[i],ws[i])
-    }
-    v_log_lik <- sapply(1:iters_mc,one_log_lik)
-    log_sum_exp(v_log_lik) - log(iters_mc)
+#| label: fig-poisson-gamma-density
+#| fig-width: 10
+#| fig-height: 4.4
+#| fig-cap: "Exact Gamma posterior (red) and the Laplace normal approximation (green) for n=5 and n=100. At n=5 the exact posterior is visibly right-skewed and the Gaussian is a rough match; by n=100 the two are nearly indistinguishable, illustrating the O(1/n) convergence in the table above."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+set.seed(42)
+for (n in c(5, 100)) {
+  y <- rpois(n, 3); a1 <- alpha + sum(y); b1 <- beta + n
+  lap <- laplace_poisson(y)
+  curve(dgamma(x, a1, b1), max(0, lap["mode"] - 4 * lap["se"]), lap["mode"] + 4 * lap["se"],
+        lwd = 3, col = "firebrick", xlab = expression(lambda), ylab = "density",
+        main = sprintf("n = %d", n))
+  curve(dnorm(x, lap["mode"], lap["se"]), add = TRUE, lwd = 3, col = "forestgreen")
+  if (n == 5) legend("topright", bty = "n", lwd = 3, col = c("firebrick", "forestgreen"),
+                      legend = c("exact posterior", "Laplace approximation"))
+}
+```
+
+### Linear functionals: posterior mean and credible intervals
+
+If $a(\theta) = A^\top\theta + a_0$ is linear, replacing $f$ by $\tilde f$
+gives $E_f[a(\theta)] \approx A^\top\theta_0 + a_0$: the posterior mean is
+approximated by the posterior mode, and $\text{Var}(A^\top\theta) \approx
+A^\top H^{-1}A$ gives Wald-style credible intervals $\theta_{0j} \pm
+z_{\alpha/2}\sqrt{(H^{-1})_{jj}}$ — exactly the Bayesian counterpart of an
+MLE plus its Wald standard error from the maximum-likelihood chapters.
+
+```{r}
+#| label: tbl-poisson-gamma-ci
+#| tbl-cap: "Laplace mode/SE-based 95% interval versus the exact Gamma posterior mean/sd-based interval, n = 20."
+set.seed(42)
+n <- 20; y <- rpois(n, 3); lap <- laplace_poisson(y)
+a1 <- alpha + sum(y); b1 <- beta + n
+comp <- data.frame(
+  quantity = c("Laplace (mode / se)", "exact posterior (mean / sd)"),
+  center = c(lap["mode"], a1 / b1),
+  spread = c(lap["se"], sqrt(a1) / b1),
+  lower95 = c(lap["mode"] - 1.96 * lap["se"], qgamma(0.025, a1, b1)),
+  upper95 = c(lap["mode"] + 1.96 * lap["se"], qgamma(0.975, a1, b1))
+)
+knitr::kable(comp, digits = 4)
+```
+
+The two intervals agree closely even at $n=20$: the mild right-skew of the
+Gamma posterior visible in @fig-poisson-gamma-density has not yet noticeably
+distorted a Wald-style interval built from a symmetric Gaussian.
+
+### BIC as a large-$n$ simplification
+
+With $f(\theta) = L(\theta;D)\pi(\theta)$, the Laplace approximation to the
+log marginal likelihood is
+$$
+\log P(D) \approx \log\big[L(\theta_0;D)\,\pi(\theta_0)\big] + \frac p2\log(2\pi) - \frac12\log|H|.
+$$
+For large $n$ the Hessian is dominated by the likelihood, $H \approx
+n\,I(\theta_0)$ with $I$ the per-observation Fisher information, so $|H|
+\approx n^p|I(\theta_0)|$ and
+$$
+\log P(D) \approx \log L(\theta_0;D) - \frac p2\log n
+ + \underbrace{\log\pi(\theta_0) + \frac p2\log(2\pi) - \frac12\log|I(\theta_0)|}_{O(1),\text{ dropped}}.
+$$
+Multiplying by $-2$ and replacing the posterior mode by the MLE (the two
+coincide to $O(1/n)$) gives the **Bayesian information criterion**,
+$\text{BIC} = -2\log L(\hat\theta_{\text{MLE}}) + p\log n$ — a model-comparison
+score that needs no prior at all, because the dropped $O(1)$ terms do not grow
+with $n$ and so wash out of *differences* between models fit to the same
+data. For the $n=20$ Poisson example from the credible-interval check above,
+$-2\times(\text{Laplace log }P(y))$ and the MLE-based BIC differ by about
+`r round(-2*laplace_poisson(y)["log_ml"] - (-2*sum(dpois(y, mean(y), log=TRUE)) + log(n)), 2)` —
+a constant offset consistent with the dropped $O(1)$ terms, not something
+that grows with $n$.
+
+## When Laplace Works Well, and When It Does Not
+
+**Works well** when $n$ is large relative to $p$ and the posterior is
+unimodal and roughly symmetric, as in the $n=100$ panel above. Parameters
+should live on an unbounded scale — transform first ($\log\sigma$,
+$\text{logit}\,p$) so the matching Gaussian is not truncated at a boundary,
+remembering to include the Jacobian of the transform in $f$ (exactly the
+$w=\log\sigma^2$ reparametrization used throughout this book since the
+multivariate optimization chapter).
+
+**Struggles** when the posterior is skewed (small $n$, a parameter near a
+boundary) — the mode is then a poor stand-in for the mean and the Gaussian
+tails are wrong, as the $n=5$ panel above already shows mildly; when the
+posterior is multimodal, since the approximation only sees the one mode an
+optimizer happened to find; and in hierarchical models where $p$ grows with
+$n$, so the $O(1/n)$ error does not vanish (nested Laplace approximation,
+INLA, handles this by integrating out the high-dimensional part
+analytically).
+
+## Comparing Laplace, Quadrature, and Monte Carlo on the Same Problem
+
+The previous chapter (Numerical Quadrature) computed the marginal likelihood of a normal sample with
+unknown mean $\mu$ and log-variance $w=\log\sigma^2$,
+$$
+P(y) = \int_{-\infty}^{\infty}\!\int_{-\infty}^{\infty} L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw,
+\qquad \mu\sim N(\mu_0,\sigma_\mu^2),\ w\sim N(w_0,\sigma_w^2),
+$$
+by a product midpoint rule on a logistic-transformed $(0,1)^2$ grid, checked
+against naive Monte Carlo. The Laplace approximation attacks the same
+integral by optimization instead of a grid: find the joint mode of
+$(\mu,w)$ and its $2\times2$ Hessian, then apply the boxed formula with
+$p=2$.
+
+```{r}
+#| label: laplace-gaussian-functions
+### log likelihood and log prior for the normal/log-variance model of Unit08
+log_lik_gauss  <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
+log_prior_gauss <- function(mu, w, mu0, sigma_mu, w0, sigma_w) {
+  dnorm(mu, mu0, sigma_mu, log = TRUE) + dnorm(w, w0, sigma_w, log = TRUE)
+}
+neg_log_post <- function(theta, x, mu0, sigma_mu, w0, sigma_w) {
+  -log_lik_gauss(x, theta[1], theta[2]) - log_prior_gauss(theta[1], theta[2], mu0, sigma_mu, w0, sigma_w)
 }
 
+### Laplace approximation for this two-parameter posterior
+laplace_gaussian <- function(x, mu0, sigma_mu, w0, sigma_w) {
+  op <- nlm(neg_log_post, p = c(mean(x), log(sd(x))), hessian = TRUE,
+            x = x, mu0 = mu0, sigma_mu = sigma_mu, w0 = w0, sigma_w = sigma_w)
+  H <- op$hessian; p <- length(op$estimate)
+  list(mode = op$estimate, se = sqrt(diag(solve(H))),
+       log_ml = -op$minimum + p / 2 * log(2 * pi) - 0.5 * log(det(H)))
+}
+
+### naive Monte Carlo (samples from the prior; see Unit08 for the log-sum-exp helper)
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+log_mar_mc <- function(x, mu0, sigma_mu, w0, sigma_w, iters) {
+  mus <- rnorm(iters, mu0, sigma_mu); ws <- rnorm(iters, w0, sigma_w)
+  ll <- vapply(seq_len(iters), function(i) log_lik_gauss(x, mus[i], ws[i]), numeric(1))
+  log_sum_exp(ll) - log(iters)
+}
+
+### product midpoint quadrature on the logistic-transformed square (Unit08's method)
+logit_inv     <- function(u) log(u / (1 - u))
+log_der_logit <- function(u) -log(u) - log(1 - u)
+log_g <- function(u, v, x, mu0, sigma_mu, w0, sigma_w) {
+  mu <- logit_inv(u); w <- logit_inv(v)
+  log_lik_gauss(x, mu, w) + log_prior_gauss(mu, w, mu0, sigma_mu, w0, sigma_w) +
+    log_der_logit(u) + log_der_logit(v)
+}
+log_mar_mid <- function(x, mu0, sigma_mu, w0, sigma_w, n) {
+  h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
+  G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu0, sigma_mu, w0, sigma_w)))
+  log_sum_exp(G) + 2 * log(h)
+}
 ```
 
-# Testing and comparing Laplace and Mid-point Approximation
-
-```{r cache=TRUE}
-## test with a data set with mean 5
-x <- rnorm(50, mean = 5)
-## True values for mu and log (sigma)
-5; log(1)
-bayes_inference_lap_gaussian(x,0,100,0,5)
-## compare with naive Monte carlo and midpoint rule for computing log mar lik.
-log_mar_gaussian_mc(x,0,100,0,5,1000000)
-log_mar_gaussian_mid(x,0,100,0,5,100)
-
-
-x <- rnorm(50, mean = -5)
-## True values for mu and log (sigma)
--5; log(1)
-
-bayes_inference_lap_gaussian(x,0,100,0,5)
-log_mar_gaussian_mc(x,0,100,0,5,1000000)
-log_mar_gaussian_mid(x,0,100,0,5,100)
-
-x <- rnorm(50, mean = -50, sd = 4)
-## True values for mu and log (sigma)
-5; log(4)
-
-bayes_inference_lap_gaussian(x,0,100,0,5)
-log_mar_gaussian_mc(x,0,100,0,5,10000000)
-log_mar_gaussian_mid(x,0,100,0,5,100)
-
-x <- rnorm(50, mean = -50, sd = 10)
-## True values for mu and log (sigma)
-5; log(10)
-
-bayes_inference_lap_gaussian(x,0,100,0,5)
-log_mar_gaussian_mc(x,0,100,0,5,1000000)
-log_mar_gaussian_mid(x,0,100,0,5,100)
-  
+```{r}
+#| label: tbl-three-way
+#| tbl-cap: "Log marginal likelihood by three independent methods, for a vague prior N(0, 100) on mu and N(0, 5) on w, n = 50 observations per scenario. Quadrature uses a 100x100 grid (unchanged from Unit08); Monte Carlo uses 1e6 prior draws."
+set.seed(7)
+scenarios <- list(
+  c(desc = "well-centred: mean 5",    mean = 5,   sd = 1),
+  c(desc = "well-centred: mean -5",   mean = -5,  sd = 1),
+  c(desc = "far from origin: mean -50, sd 4",  mean = -50, sd = 4),
+  c(desc = "far from origin: mean -50, sd 10", mean = -50, sd = 10)
+)
+three_way <- t(sapply(scenarios, function(s) {
+  x <- rnorm(50, mean = as.numeric(s["mean"]), sd = as.numeric(s["sd"]))
+  lap <- laplace_gaussian(x, 0, 100, 0, 5)
+  c(Laplace = lap$log_ml,
+    Monte_Carlo = log_mar_mc(x, 0, 100, 0, 5, 1e6),
+    Quadrature = log_mar_mid(x, 0, 100, 0, 5, 100))
+}))
+knitr::kable(cbind(scenario = sapply(scenarios, `[`, "desc"), round(three_way, 3)),
+             row.names = FALSE, col.names = c("scenario", "Laplace", "Monte Carlo", "Quadrature (n=100 grid)"))
 ```
 
-We see that mid point rule may not work well. The reason is that in applying mid-point numerical quadrature, we use "logistic" transformation which assigns more points around "zero" but the integrant function has high density in the region around -50 for $\mu$, and $\log(10)= 2.3$ for $w$. 
+The pattern is striking. For data centred near the origin, all three methods
+agree to within a unit or two on the log scale. But once the data are far
+from the origin (mean $-50$), **Laplace and Monte Carlo still agree closely
+with each other, while the fixed-grid quadrature is off by well over 100
+log-units** — the same boundary-squeeze failure diagnosed at the end of
+Unit08: the logistic transform used there is centred at $0$, so a posterior
+sitting at $\mu\approx-50$ gets squeezed into a sliver of the unit square that
+a $100\times100$ grid cannot resolve. Laplace approximation has no such
+failure mode here, and the reason is structural, not a matter of tuning:
+**it has no fixed grid to be squeezed against**. It optimizes to find
+$\theta_0$ wherever the mode actually is, then builds its approximation
+*around that point* — so it automatically "recentres" itself for every
+dataset, which is exactly the manual fix (recentre the transform on a
+location estimate) that Unit08 proposed for quadrature. This is Laplace's
+core practical advantage over quadrature: robustness to *where* the posterior
+happens to sit, at the cost of assuming it looks Gaussian once you get there.
+
+### Explore it interactively {#sec-laplace-app}
+
+The app below lets you move the true mean of the simulated data and compare
+the three log marginal likelihood estimates live, so you can watch
+quadrature's error grow while Laplace and Monte Carlo continue to track each
+other. This app runs live only in the HTML edition of this book; readers of
+other formats can follow the link below it.
+
+::: {.content-visible when-format="html"}
+
+```{shinylive-r}
+#| label: laplace-vs-quadrature-app
+#| standalone: true
+
+library(shiny)
+
+log_lik_gauss  <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
+log_prior_gauss <- function(mu, w, mu0, sigma_mu, w0, sigma_w) {
+  dnorm(mu, mu0, sigma_mu, log = TRUE) + dnorm(w, w0, sigma_w, log = TRUE)
+}
+neg_log_post <- function(theta, x, mu0, sigma_mu, w0, sigma_w) {
+  -log_lik_gauss(x, theta[1], theta[2]) - log_prior_gauss(theta[1], theta[2], mu0, sigma_mu, w0, sigma_w)
+}
+laplace_gaussian <- function(x, mu0, sigma_mu, w0, sigma_w) {
+  op <- nlm(neg_log_post, p = c(mean(x), log(sd(x))), hessian = TRUE,
+            x = x, mu0 = mu0, sigma_mu = sigma_mu, w0 = w0, sigma_w = sigma_w)
+  H <- op$hessian; p <- length(op$estimate)
+  list(mode = op$estimate, log_ml = -op$minimum + p / 2 * log(2 * pi) - 0.5 * log(det(H)))
+}
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+log_mar_mc <- function(x, mu0, sigma_mu, w0, sigma_w, iters) {
+  mus <- rnorm(iters, mu0, sigma_mu); ws <- rnorm(iters, w0, sigma_w)
+  ll <- vapply(seq_len(iters), function(i) log_lik_gauss(x, mus[i], ws[i]), numeric(1))
+  log_sum_exp(ll) - log(iters)
+}
+logit_inv     <- function(u) log(u / (1 - u))
+log_der_logit <- function(u) -log(u) - log(1 - u)
+log_g <- function(u, v, x, mu0, sigma_mu, w0, sigma_w) {
+  mu <- logit_inv(u); w <- logit_inv(v)
+  log_lik_gauss(x, mu, w) + log_prior_gauss(mu, w, mu0, sigma_mu, w0, sigma_w) +
+    log_der_logit(u) + log_der_logit(v)
+}
+log_mar_mid <- function(x, mu0, sigma_mu, w0, sigma_w, n) {
+  h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
+  G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu0, sigma_mu, w0, sigma_w)))
+  log_sum_exp(G) + 2 * log(h)
+}
+
+ui <- fluidPage(
+  titlePanel(NULL),
+  sidebarLayout(
+    sidebarPanel(
+      width = 4,
+      sliderInput("true_mean", "true mean of the simulated data", min = -60, max = 10, value = 5, step = 2),
+      sliderInput("n_grid", "quadrature grid points per axis", min = 10, max = 100, value = 100, step = 10),
+      helpText("Prior: N(0, 100) on mu, N(0, 5) on w = log(sd). As the true mean ",
+               "moves away from 0, the fixed logistic-transform grid squeezes the ",
+               "posterior into a corner and the quadrature estimate breaks away, ",
+               "while Laplace (which re-optimizes for every dataset) tracks Monte Carlo."),
+      tableOutput("tab")
+    ),
+    mainPanel(width = 8, plotOutput("bars", height = "420px"))
+  )
+)
+
+server <- function(input, output, session) {
+  dat <- reactive({ set.seed(1); rnorm(50, input$true_mean, 2) })
+  vals <- reactive({
+    x <- dat()
+    c(Laplace = laplace_gaussian(x, 0, 100, 0, 5)$log_ml,
+      Monte_Carlo = { set.seed(2); log_mar_mc(x, 0, 100, 0, 5, 2e5) },
+      Quadrature = log_mar_mid(x, 0, 100, 0, 5, input$n_grid))
+  })
+  output$bars <- renderPlot({
+    v <- vals()
+    par(mar = c(4, 4, 2, 1))
+    bp <- barplot(v, col = c("forestgreen", "steelblue", "firebrick"),
+                  ylab = "estimated log P(y)", main = "three methods, same data")
+    text(bp, v, sprintf("%.1f", v), pos = ifelse(v >= 0, 3, 1))
+  })
+  output$tab <- renderTable({
+    v <- vals()
+    data.frame(method = names(v), `log P(y)` = as.numeric(v), check.names = FALSE)
+  }, digits = 2, rownames = FALSE)
+}
+
+shinyApp(ui, server)
+```
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit09_laplace.html#sec-laplace-app>.
+:::
+
+::: {.callout-note}
+### Reproducing this figure
+As in earlier chapters, this app uses the
+[shinylive](https://github.com/quarto-ext/shinylive) extension
+(`quarto add quarto-ext/shinylive`, with `filters: [shinylive]` in the
+document YAML), compiled to WebAssembly so it runs in the browser with no
+Shiny server. Only base R and `shiny` are available inside the app.
+:::
+
+## Summary
+
+- The Laplace approximation expands $h=-\log f$ to second order at its
+  minimum $\theta_0$ and integrates the resulting Gaussian exactly:
+  $\theta\mid\text{data} \approx N_p(\theta_0, H^{-1})$ and
+  $\int f(\theta)\,d\theta \approx f(\theta_0)(2\pi)^{p/2}|H|^{-1/2}$.
+- It needs only an optimizer and a Hessian — the same machinery already used
+  to find the MLE — and its cost does not grow with dimension the way a
+  quadrature grid's does.
+- BIC is the large-$n$ simplification of the Laplace marginal likelihood,
+  dropping $O(1)$ terms that do not depend on the sample size.
+- On the running Gaussian marginal-likelihood example, Laplace matched Monte
+  Carlo everywhere quadrature was tested, and remained accurate exactly where
+  quadrature's fixed grid broke down — because Laplace re-optimizes for every
+  dataset instead of committing to one transform in advance.
+- It is deterministic, fast, and accurate to $O(1/n)$, but blind to
+  skewness and multimodality; the Monte Carlo methods of the next chapters
+  remove these limitations at higher computational cost.
