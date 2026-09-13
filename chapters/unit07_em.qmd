@@ -500,7 +500,7 @@ readers of other formats can follow the link below it.
 ```{shinylive-r}
 #| label: em-mixture-app
 #| standalone: true
-#| viewerHeight: 800
+#| viewerHeight: 1650
 
 library(shiny)
 
@@ -555,39 +555,52 @@ datasets <- list(
 )
 
 ### ---------- UI ---------------------------------------------------------------
+### the shinylive iframe is often narrower than Bootstrap 3's 768px "sm"
+### breakpoint, so the sidebar and plots stack full-width instead of sitting
+### side by side; viewerHeight below is sized for that stacked layout.
+
+### a numericInput with its label to the left of the box instead of above it
+### (label placed inline via CSS lives in the body, not tags$head(), since
+### shinylive drops <style>/<script> tags injected through tags$head()).
+labeled_numeric_css <- "
+  .labeled-numeric { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .labeled-numeric > label { margin: 0; white-space: nowrap; }
+  .labeled-numeric > .form-group { margin-bottom: 0; flex: 1; min-width: 0; }
+"
+labeled_numeric <- function(inputId, label, value, ...) {
+    div(class = "labeled-numeric",
+        tags$label(label, `for` = inputId),
+        numericInput(inputId, label = NULL, value = value, ...))
+}
+
 ui <- fluidPage(
+    tags$style(HTML(labeled_numeric_css)),
     sidebarLayout(
         sidebarPanel(
-            width = 4,
+            width = 5,
             h5("Data"),
             selectInput("dataset", NULL, choices = names(datasets)),
-            sliderInput("n", "sample size", 50, 400, 200, step = 50),
+            labeled_numeric("n", "sample size", value = 200, min = 20, step = 50),
             actionButton("newdata", "Regenerate data", width = "100%"),
             tags$hr(),
             h5("Starting value"),
             selectInput("preset", NULL, choices = names(presets),
                         selected = "far outside the data: (0.5, -10, 5)"),
-            fluidRow(
-                column(4, numericInput("p0",   "p",       0.5, min = 0.01,
-                                       max = 0.99, step = 0.05)),
-                column(4, numericInput("mu10", "mu1",   -10,   step = 0.5)),
-                column(4, numericInput("mu00", "mu0",     5,   step = 0.5))
-            ),
-            helpText("Selecting a preset fills the three boxes. The boxes are ",
-                     "always live: edit them to use your own values."),
+
+            labeled_numeric("p0",   "p",       0.5, min = 0.01, max = 0.99, step = 0.05),
+            labeled_numeric("mu10", "mu1",   -10,   step = 0.5),
+            labeled_numeric("mu00", "mu0",     5,   step = 0.5),
             tags$hr(),
-            sliderInput("maxit", "iterations to run", 5, 60, 30, step = 5),
+            labeled_numeric("maxit", "iterations to run", value = 30, min = 1, step = 5),
             h5(textOutput("stepLabel", inline = TRUE)),
             fluidRow(
                 column(4, actionButton("prv",  "\u25c0 Prev", width = "100%")),
                 column(4, actionButton("nxt",  "Next \u25b6", width = "100%")),
                 column(4, actionButton("play", "Play",         width = "100%"))
-            ),
-            tags$br(),
-            tableOutput("tab")
+            )
         ),
         mainPanel(
-            width = 8,
+            width = 7,
             plotOutput("fit",   height = "400px"),
             plotOutput("trace", height = "260px")
         )
@@ -601,6 +614,7 @@ server <- function(input, output, session) {
     observeEvent(input$newdata, seed(seed() + 1))
 
     Y <- reactive({
+        req(input$n)
         s <- datasets[[input$dataset]]
         set.seed(seed())
         Z <- rbinom(input$n, 1, s[1])
@@ -678,7 +692,10 @@ server <- function(input, output, session) {
         c(p, input$mu10, input$mu00)
     })
 
-    path <- reactive(em_path(theta0(), Y(), input$maxit))
+    path <- reactive({
+        req(input$maxit)
+        em_path(theta0(), Y(), input$maxit)
+    })
 
     output$fit <- renderPlot({
         y <- Y(); P <- path()
