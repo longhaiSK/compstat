@@ -1,181 +1,804 @@
 ---
-title: Midpoint Rule Approximating Marginal Likelihood of Gaussian
+title: "Numerical Quadrature"
+format:
+  html:
+    toc: true
+    tbl-colwidths: true
+filters:
+  - shinylive
 editor_options:
   chunk_output_type: console
+code-fold: true
 ---
 
 ```{r}
-library ("metRology")
+#| label: setup
+#| message: false
+library(metRology)
 ```
 
-# Using Midpoint Rule to Compute Marginal Likelihood of t distribution
+The previous two chapters found the mode of a log-likelihood or log-posterior
+by optimization. Many Bayesian calculations instead need an *area*: a tail
+probability, a posterior expectation, or the normalizing constant of a
+posterior density. This chapter develops **numerical quadrature** — approximating
+an integral by a weighted sum of function values at a finite set of points —
+and applies it to the central example of the rest of the book, the marginal
+likelihood of a Bayesian model. The next chapter (Laplace's method) revisits
+the same example with a method based on the mode instead of a grid.
+
+## The Problem and Transformations
+
+### The general setup
+
+The goal is to approximate
+$$
+A = \int_a^b f(x)\,dx
+$$
+for finite $a,b$ by evaluating $f$ at $n$ points $x_1,\ldots,x_n$ and forming a
+weighted sum
+$$
+\tilde A_n = \sum_{i=1}^n w_i\, f(x_i).
+$$
+The quadrature rules below differ only in how the points and weights are
+chosen. Typical statistical uses are probabilities $P(a < X < b)$,
+expectations $E[h(X)]$, and normalizing constants such as the marginal
+likelihood $P(y) = \int L(\theta)\pi(\theta)\,d\theta$ in Bayesian inference.
+
+### Infinite ranges: the logistic transformation
+
+A grid needs a finite interval, so when the natural range of integration is
+$(-\infty,\infty)$ we first change variables. The logistic function maps
+$x \in (-\infty,\infty)$ to $y \in (0,1)$,
+$$
+y = \frac{1}{1+e^{-x}}, \qquad x = t(y) = \log\frac{y}{1-y}, \qquad
+t'(y) = \frac{1}{y(1-y)},
+$$
+and the standard change-of-variables identity gives
+$$
+\int_{-\infty}^{\infty} f(x)\,dx
+ = \int_0^1 f\big(t(y)\big)\,t'(y)\,dy
+ = \int_0^1 g(y)\,dy, \qquad
+g(y) = \frac{f\big(\log\frac{y}{1-y}\big)}{y(1-y)}.
+$$
+Any quadrature rule for a finite interval now applies to $g$ on $(0,1)$. Two
+consequences matter later in the chapter:
+
+- Points equally spaced in $y$ correspond to points in $x$ that are dense
+  near $x=0$ and increasingly sparse in the tails — the grid automatically
+  concentrates effort where the logistic curve is steep.
+- The factor $1/\{y(1-y)\}$ blows up at $y=0$ and $y=1$, so $g$ is typically
+  undefined at the endpoints even when $f$ is perfectly well behaved. This is
+  the reason the midpoint rule, which never evaluates the integrand at the
+  endpoints of a panel, is the natural choice here.
+
+For a half-line $(0,\infty)$ the same idea applies with $x = -\log(1-y)$ or
+$x = y/(1-y)$ in place of the logistic map.
 
 ```{r}
-## the function for computing log likelihood of normal data
-log_lik <- function(x,mu,w,df=Inf)
-{   sum(dt.scaled(x,df,mu,exp(w),log=TRUE))
+#| label: fig-logistic-transform
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Equally spaced points in $y$ (red ticks, right panel) map to unequally
+#|   spaced points in $x$ (red ticks, middle panel). The two shaded areas are equal:
+#|   the transform changes where we look, not the value of the integral."
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+
+curve(1 / (1 + exp(-x)), -6, 6, lwd = 3, xlab = "x", ylab = "y",
+      main = expression(y == 1 / (1 + e^-x)))
+ys <- seq(0.05, 0.95, by = 0.1)
+xs <- log(ys / (1 - ys))
+segments(xs, 0, xs, ys, lty = 3, col = "gray50")
+segments(-6, ys, xs, ys, lty = 3, col = "gray50")
+points(xs, ys, pch = 19, col = "firebrick")
+
+f <- function(x) 0.6 * dnorm(x, -1, 1) + 0.4 * dnorm(x, 2, 1.5)
+curve(f, -6, 6, lwd = 3, xlab = "x", ylab = "f(x)", main = "original integrand")
+xs2 <- seq(-6, 6, length.out = 400)
+polygon(c(xs2, rev(xs2)), c(f(xs2), rep(0, 400)), col = adjustcolor("firebrick", 0.3), border = NA)
+rug(xs, col = "firebrick", lwd = 2)
+
+g <- function(y) f(log(y / (1 - y))) / (y * (1 - y))
+curve(g, 0.001, 0.999, lwd = 3, n = 501, xlab = "y", ylab = "g(y)",
+      main = "transformed integrand on (0, 1)")
+ys2 <- seq(0.001, 0.999, length.out = 400)
+polygon(c(ys2, rev(ys2)), c(g(ys2), rep(0, 400)), col = adjustcolor("steelblue", 0.3), border = NA)
+rug(ys, col = "firebrick", lwd = 2)
+```
+
+### Probabilities as a special case
+
+For $X$ with density $\varphi$, e.g. $\varphi(x) = \frac{1}{\sqrt{2\pi}}e^{-x^2/2}$,
+$$
+P(a < X < b) = \int_a^b \varphi(x)\,dx = \int_{-\infty}^{\infty} \varphi^{(c)}(x)\,dx,
+\qquad \varphi^{(c)}(x) = \varphi(x)\,I(a < x < b).
+$$
+Either integrate $\varphi$ directly over the finite interval $[a,b]$, or
+integrate the *truncated* function $\varphi^{(c)}$ over the whole line, letting
+the indicator do the cutting. The second view is the more useful one: the same
+machinery — transform to $(0,1)$, apply a quadrature rule — computes
+$P(X \in S)$ for an arbitrary set $S$ and, more generally, $E[h(X)] = \int
+h(x)\varphi(x)\,dx$ for an arbitrary $h$.
+
+## Quadrature Rules on a Finite Interval
+
+All three rules below partition $[a,b]$ into $n$ panels of width $h_n =
+(b-a)/n$ and differ only in how $f$ is approximated *within* each panel.
+
+### Midpoint rule
+
+Approximate $f$ on each panel by its value at the panel's midpoint (a constant,
+i.e. a rectangle):
+$$
+\tilde A_n = h_n \sum_{i=1}^n f\!\Big(a + \big(i - \tfrac12\big)h_n\Big).
+$$
+For smooth $f$ the error is $A - \tilde A_n = \dfrac{(b-a)h_n^2}{24}f''(\xi) =
+O(h_n^2)$ for some $\xi \in (a,b)$. The rule never evaluates $f$ at the panel
+edges, so in particular it never touches $a$ or $b$ — convenient when $f$ is
+singular or undefined at the endpoints, exactly the situation created by the
+logistic transform above.
+
+### Trapezoidal rule
+
+Approximate $f$ on $[x_{i-1},x_i]$ by the straight line through the two
+endpoint values, so each panel contributes a trapezoid,
+$\tfrac12[f(x_{i-1})+f(x_i)](x_i-x_{i-1})$. Summing over panels, interior
+points are shared by two neighbouring panels and each contributes once
+(not twice) to the total:
+$$
+\tilde A_n = \tfrac12 h_n\big[f(a) + f(b)\big] + h_n \sum_{i=1}^{n-1} f(a+ih_n).
+$$
+The error is $A - \tilde A_n = -\dfrac{(b-a)h_n^2}{12}f''(\xi) = O(h_n^2)$ —
+the same order as the midpoint rule, but with twice the constant and the
+opposite sign. It is exact for linear $f$.
+
+### Simpson's rule
+
+Take $n = 2m$ even. On each *pair* of panels $[x_0,x_1]$ with $x_1-x_0=2h_n$,
+replace $f$ by the quadratic through the two endpoints and the midpoint;
+integrating that quadratic exactly gives
+$$
+\int_{x_0}^{x_1} f(x)\,dx \approx \frac{x_1-x_0}{6}
+\Big[f(x_0) + 4f\big(\tfrac{x_0+x_1}{2}\big) + f(x_1)\Big].
+$$
+Summing over the $m$ panel-pairs, with each even interior point shared by two
+pairs,
+$$
+\tilde A_{2m} = \frac{h_n}{3}\left[f(a) + f(b)
+ + 4\sum_{i=1}^{m} f\big(a+(2i-1)h_n\big)
+ + 2\sum_{i=1}^{m-1} f\big(a+2ih_n\big)\right].
+$$
+The error is $A - \tilde A_{2m} = -\dfrac{(b-a)h_n^4}{180}f^{(4)}(\xi) =
+O(h_n^4)$, two orders faster than the other two rules, and Simpson's rule is
+exact for cubics. It can also be written as a weighted average of the other
+two rules on the same panel pair: $\text{Simpson} = \tfrac23\,\text{midpoint} +
+\tfrac13\,\text{trapezoid}$.
+
+@tbl-rules-compared summarizes the three rules.
+
+| Rule | Approximates $f$ on a panel by | Uses endpoints? | Error | Exact for |
+|:---|:---|:---:|:---:|:---|
+| Midpoint | constant at panel midpoint | no | $O(h_n^2)$ | linear |
+| Trapezoidal | line through panel endpoints | yes | $O(h_n^2)$ | linear |
+| Simpson | quadratic through 3 points (2 panels) | yes | $O(h_n^4)$ | cubic |
+
+: The three quadrature rules compared {#tbl-rules-compared}
+
+### Implementation and accuracy
+
+All three rules are one line of vectorized R each — no explicit loop over
+panels is needed:
+
+```{r}
+#| label: rules-implementation
+midpoint  <- function(f, a, b, n) {
+    h <- (b - a) / n
+    h * sum(f(a + (seq_len(n) - 0.5) * h))
+}
+trapezoid <- function(f, a, b, n) {
+    h <- (b - a) / n
+    x <- a + (0:n) * h
+    h * (sum(f(x)) - 0.5 * (f(a) + f(b)))
+}
+simpson   <- function(f, a, b, n) {
+    stopifnot(n %% 2 == 0)
+    h <- (b - a) / n
+    x <- a + (0:n) * h
+    h / 3 * sum(f(x) * c(1, rep(c(4, 2), n / 2 - 1), 4, 1))
+}
+```
+
+We check all three against a case with a known answer, $P(0.5 < Z < 2)$ for
+$Z \sim N(0,1)$:
+
+```{r}
+#| label: tbl-rules-accuracy
+#| tbl-cap: "Error of each rule with only $n=10$ panels, relative to `pnorm`."
+exact <- pnorm(2) - pnorm(0.5)
+errs <- sapply(list(midpoint = midpoint, trapezoid = trapezoid, simpson = simpson),
+               function(rule) rule(dnorm, 0.5, 2, 10) - exact)
+knitr::kable(t(errs), digits = 10, row.names = FALSE)
+```
+
+With only 10 panels, Simpson's rule is already accurate to about $10^{-7}$,
+several orders of magnitude better than the other two.
+
+```{r}
+#| label: fig-convergence
+#| fig-width: 7.5
+#| fig-height: 4.2
+#| fig-cap: "Absolute error versus number of panels, log-log scale. The slopes
+#|   are the exponents of $1/n$: $-2$ for midpoint and trapezoid, $-4$ for
+#|   Simpson, until floating-point rounding error dominates near $10^{-15}$."
+ns  <- 2^(1:9)
+err <- sapply(list(midpoint, trapezoid, simpson),
+              function(rule) sapply(ns, function(n) abs(rule(dnorm, 0.5, 2, n) - exact)))
+matplot(ns, err, type = "b", log = "xy", pch = 19, lty = 1, lwd = 2,
+        col = c("steelblue", "firebrick", "forestgreen"),
+        xlab = "number of panels n", ylab = "absolute error")
+legend("bottomleft", bty = "n", lwd = 2, pch = 19,
+       col = c("steelblue", "firebrick", "forestgreen"),
+       legend = c("midpoint, slope -2", "trapezoid, slope -2", "Simpson, slope -4"))
+```
+
+For a smooth, unimodal integrand like a normal density, Simpson's rule
+dominates. The rest of this chapter nonetheless uses the **midpoint rule**,
+because the application of interest — Bayesian marginal likelihood after a
+logistic transform — produces an integrand that is undefined exactly at the
+endpoints $0$ and $1$, which only the midpoint rule avoids evaluating.
+
+## Application: The Marginal Likelihood
+
+### Setup
+
+With likelihood $L(\theta) = \prod_{i=1}^n P(y_i \mid \theta)$ and prior
+$\pi(\theta)$, Bayes' rule is
+$$
+P(\theta \mid y) = \frac{L(\theta)\pi(\theta)}{P(y)}, \qquad
+P(y) = \int L(\theta)\pi(\theta)\,d\theta = E_\pi[L(\theta)].
+$$
+$P(y)$, the **marginal likelihood** (the likelihood averaged over the prior),
+is the normalizing constant of the posterior and the basis of Bayes factors
+for comparing models. It has no closed form outside conjugate settings, so we
+approximate it by quadrature. Because it depends on the *whole* prior — not
+just where the likelihood happens to be large — its value is far more
+sensitive to prior choice than a posterior mean is, as the next figure shows.
+
+```{r}
+#| label: fig-prior-sensitivity
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "The same likelihood (red) combined with three priors (blue).
+#|   $P(y)$ is the area under $L(\\theta)\\pi(\\theta)$ (shaded), computed
+#|   here by `integrate` for a single parameter as a sanity check."
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+L <- function(t) dnorm(t, 2, 1)
+priors <- list(c(2, 1.5, "prior near likelihood"),
+               c(-5, 1, "prior far away"),
+               c(0, 10, "vague prior N(0, 100)"))
+for (pr in priors) {
+    m <- as.numeric(pr[1]); s <- as.numeric(pr[2])
+    pi_fn <- function(t) dnorm(t, m, s)
+    ml <- integrate(function(t) L(t) * pi_fn(t), -Inf, Inf)$value
+    curve(L, -9, 8, lwd = 3, col = "firebrick", ylim = c(0, 0.42),
+          xlab = expression(theta), ylab = "",
+          main = sprintf("%s\nP(y) = %.4f", pr[3], ml))
+    curve(pi_fn, add = TRUE, lwd = 3, col = "steelblue")
+    ts <- seq(-9, 8, length.out = 300)
+    polygon(c(ts, rev(ts)), c(L(ts) * pi_fn(ts), rep(0, 300)),
+            col = adjustcolor("gray30", 0.4), border = NA)
+}
+```
+
+A prior centred where the likelihood is large gives a much bigger marginal
+likelihood than one that is far away or merely diffuse — which is exactly why
+$P(y)$ is useful for comparing models, and why we must be able to compute it
+even when the parameter is multivariate and there is no `integrate`.
+
+### A two-parameter example: mean and variance unknown
+
+Let $y_1,\ldots,y_n \mid \mu, \sigma \overset{iid}{\sim} t_\nu(\mu,\sigma)$, a
+location-scale $t$ distribution with $\nu$ degrees of freedom (the special
+case $\nu=\infty$ is the normal). Reparametrize the scale as $w = \log \sigma$
+so that both parameters range over $(-\infty,\infty)$, and put independent
+normal priors on them:
+$$
+\mu \sim N(\mu_0, \sigma_\mu^2), \qquad w \sim N(w_0, \sigma_w^2).
+$$
+The marginal likelihood is the two-dimensional integral
+$$
+P(y) = \int_{-\infty}^{\infty}\!\int_{-\infty}^{\infty}
+ L(\mu, w)\,\pi(\mu, w)\, d\mu\, dw,
+\qquad L(\mu,w) = \prod_{i=1}^n t_\nu\!\big(y_i;\ \mu,\ e^w\big),
+$$
+which has no closed form because the normal prior on $w$ is not conjugate to
+the likelihood. We handle it with a **product midpoint rule**: apply the
+logistic transform to each of $\mu$ and $w$ separately,
+$$
+\mu = \log\frac{u}{1-u}, \qquad w = \log\frac{v}{1-v}, \qquad
+d\mu\,dw = \frac{du\,dv}{u(1-u)\,v(1-v)},
+$$
+giving
+$$
+P(y) = \int_0^1\!\int_0^1 g(u,v)\,du\,dv, \qquad
+g(u,v) = \frac{L(\mu(u),w(v))\,\pi(\mu(u),w(v))}{u(1-u)\,v(1-v)},
+$$
+and evaluate $g$ on an $n \times n$ grid $u_j = (j-\tfrac12)h$, $v_k =
+(k-\tfrac12)h$ with $h=1/n$:
+$$
+P(y) \approx h^2 \sum_{j=1}^n \sum_{k=1}^n g(u_j, v_k).
+$$
+The midpoint rule again earns its place here: $1/\{u(1-u)v(1-v)\} \to \infty$
+at the boundary of the square, and the midpoint grid never touches it.
+
+### Computing on the log scale
+
+$L(\theta)$ is a product of $n$ densities and underflows to exactly $0$ in
+floating point for even moderate $n$, so every calculation below is carried
+out on the log scale, and sums of exponentials are combined with
+**log-sum-exp**:
+$$
+\log \sum_i e^{\ell_i} = M + \log \sum_i e^{\ell_i - M}, \qquad M = \max_i \ell_i.
+$$
+Subtracting the maximum before exponentiating makes the largest term exactly
+$e^0=1$, so nothing overflows; terms far below $M$ underflow harmlessly to
+zero instead of corrupting the sum.
+
+```{r}
+#| label: log-sum-exp
+log_sum_exp <- function(lx) {
+    m <- max(lx)
+    m + log(sum(exp(lx - m)))
+}
+```
+
+### An efficient implementation
+
+The functions below compute $\log g(u,v)$ on the whole grid at once with
+`outer()`, rather than looping in R or nesting two calls to a generic 1-D
+integrator (the nested approach used in earlier drafts of this material is
+correct but re-evaluates the logistic transform and re-dispatches a function
+call $n^2$ times through two layers of `sapply`; building the grid directly
+is both clearer and several times faster for the grid sizes used here).
+
+```{r}
+#| label: marlik-functions
+### logistic link and its log-derivative, both vectorized
+logit_inv     <- function(u) log(u / (1 - u))
+log_der_logit <- function(u) -log(u) - log(1 - u)
+
+### log likelihood of a location-scale t sample (df = Inf is the normal)
+log_lik <- function(x, mu, w, df = Inf) sum(dt.scaled(x, df, mu, exp(w), log = TRUE))
+
+### log joint prior on (mu, w)
+log_prior <- function(mu, w, mu_0, sigma_mu, w_0, sigma_w) {
+    dnorm(mu, mu_0, sigma_mu, log = TRUE) + dnorm(w, w_0, sigma_w, log = TRUE)
 }
 
-## the function for computing log prior
-log_prior <- function(mu,w, mu_0,sigma_mu,w_0,sigma_w)
-{   dnorm(mu,mu_0,sigma_mu,log=TRUE) + dnorm(w,w_0,sigma_w,log=TRUE)
+### log of the transformed integrand g(u, v) at one grid point
+log_g <- function(u, v, x, mu_0, sigma_mu, w_0, sigma_w, df = Inf) {
+    mu <- logit_inv(u); w <- logit_inv(v)
+    log_lik(x, mu, w, df) + log_prior(mu, w, mu_0, sigma_mu, w_0, sigma_w) +
+        log_der_logit(u) + log_der_logit(v)
 }
 
-## the function for computing the unormalized log posterior 
-## given transformed mu and w 
-log_post_tran <- function(x, mu_t, w_t, mu_0,sigma_mu,w_0,sigma_w, df=Inf)
-{
-    #log likelihood
-    log_lik(x,logi(mu_t), logi(w_t),df) +
-    #log prior 
-    log_prior(logi(mu_t), logi(w_t), mu_0,sigma_mu,w_0,sigma_w) + 
-    #log derivative of transformation
-    log_der_logi(mu_t) + log_der_logi(w_t)
+### log marginal likelihood by the product midpoint rule on an n x n grid
+log_marlik_mid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n, df = Inf) {
+    h <- 1 / n
+    grid <- (seq_len(n) - 0.5) * h
+    G <- outer(grid, grid, Vectorize(function(u, v)
+        log_g(u, v, x, mu_0, sigma_mu, w_0, sigma_w, df)))
+    log_sum_exp(G) + 2 * log(h)
 }
 
-## the logistic function for transforming (0,1) value to (-inf,+inf)
-logi <- function(x)
-{  log(x) - log(1-x)
-}
-
-## the log derivative of logistic function 
-log_der_logi <- function(x)
-{  -log(x) - log(1-x)
-}
-
-## the generic function for approximating 1-D integral with midpoint rule
-## the logarithms of the function values are passed in
-## the log of the integral result is returned
-
-## log_f  --- a function computing the logarithm of the integrant function
-## range  --- the range of integral varaible, a vector of two elements
-## n      --- the number of points at which the integrant is evaluated
-## ...    --- other parameters needed by log_f
-log_int_mid <- function(log_f, range, n,...)
-{   if(range[1] >= range[2]) 
-        stop("Wrong ranges")
-    h <- (range[2]-range[1]) / n
-    v_log_f <- sapply(range[1] + (1:n - 0.5) * h, log_f,...)
-    log_sum_exp(v_log_f) + log(h)       
-}
-
-## a function computing the sum of numbers represented with logarithm
-## lx     --- a vector of numbers, which are the log of another vector x.
-## the log of sum of x is returned
-log_sum_exp <- function(lx)
-{   mlx <- max(lx)
-    mlx + log(sum(exp(lx-mlx)))
-}
-
-## a function computing the normalization constant
-log_marlik_mid <- function(x,mu_0,sigma_mu,w_0,sigma_w, n, df=Inf)
-{
-    ## function computing the normalization constant of with mu_t fixed
-    log_int_gaussian_mu <- function(mu_t)
-    {   log_int_mid(log_f=log_post_tran,range=c(0,1),n=n,
-                    x=x,mu_t=mu_t,mu_0=mu_0,sigma_mu=sigma_mu,
-                    w_0=w_0,sigma_w=sigma_w, df=df)
-    }
-    
-    log_int_mid(log_f=log_int_gaussian_mu,range=c(0,1), n=n)
-}
-
-## we use Monte Carlo method to debug the above function
-log_marlik_mc <- function(x,mu_0,sigma_mu,w_0,sigma_w,iters_mc, df=Inf)
-{
-    ## draw samples from the priors
-    mus <- rnorm(iters_mc,mu_0,sigma_mu)
-    ws <- rnorm(iters_mc,w_0,sigma_w)
-    one_log_lik <- function(i)
-    {  log_lik(x,mus[i],ws[i], df)
-    }
-    v_log_lik <- sapply(1:iters_mc,one_log_lik)
+### log marginal likelihood by naive Monte Carlo (for validating the above)
+log_marlik_mc <- function(x, mu_0, sigma_mu, w_0, sigma_w, iters_mc, df = Inf) {
+    mus <- rnorm(iters_mc, mu_0, sigma_mu)
+    ws  <- rnorm(iters_mc, w_0, sigma_w)
+    v_log_lik <- vapply(seq_len(iters_mc), function(i) log_lik(x, mus[i], ws[i], df), numeric(1))
     log_sum_exp(v_log_lik) - log(iters_mc)
 }
 ```
-# Test with simulated datasets
 
-## Checking the accuracy of numerical quadrature
+`log_marlik_mc` draws $\theta$ from the prior and averages the likelihood —
+a direct Monte Carlo estimate of $E_\pi[L(\theta)]$ — and serves purely as an
+independent check on the quadrature answer, since it makes no use of a grid
+or a transformation and so cannot share their failure modes.
+
+### Visualizing the grid and the integrand
+
 ```{r}
-x <- rt.scaled(50, mean=2, sd = 2, df=2)
-log_marlik_mid(x,0,10,0,10,100)
-log_marlik_mc(x,0,10,0,10,100000)
+#| label: fig-grid
+#| fig-width: 10
+#| fig-height: 4.4
+#| fig-cap: "Left: the posterior $L(\\mu,w)\\pi(\\mu,w)$ on its natural scale.
+#|   Right: the transformed integrand $g(u,v)$ on the unit square, with the
+#|   midpoint grid at $n=20$ overlaid. Equal probability mass under the two
+#|   surfaces corresponds to equal volume, even though the shapes differ."
+set.seed(1)
+y <- rnorm(20, 1, 2)
+n <- 20; h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
+G  <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, y, 0, 5, 0, 2)))
+
+mg <- seq(-6, 6, length.out = 80); wg <- seq(-3, 4, length.out = 80)
+Gm <- outer(mg, wg, Vectorize(function(m, w) log_lik(y, m, w) + log_prior(m, w, 0, 5, 0, 2)))
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+contour(mg, wg, exp(Gm - max(Gm)), nlevels = 8,
+        xlab = expression(mu), ylab = expression(w == log~sigma^2),
+        main = expression(L(mu, w)~pi(mu, w)))
+image(grid, grid, exp(G - max(G)), col = hcl.colors(30, "YlOrRd", rev = TRUE),
+      xlab = "u", ylab = "v", main = "g(u, v) with midpoint grid")
+abline(v = seq(0, 1, by = h), h = seq(0, 1, by = h), col = adjustcolor("gray30", 0.4))
+points(expand.grid(grid, grid), pch = ".", cex = 1.5)
 ```
 
-Another test
+### Checking the quadrature against Monte Carlo
+
 ```{r}
-x <- rt.scaled(100, mean=2, sd = 2, df=Inf)
-log_marlik_mid(x,0,10,0,10,100)
-log_marlik_mc(x,0,10,0,10,100000)
+#| label: tbl-quad-vs-mc
+#| tbl-cap: "Estimated log marginal likelihood: product midpoint rule versus naive Monte Carlo, for two simulated data sets."
+set.seed(2)
+x1 <- rt.scaled(50, mean = 2, sd = 2, df = 2)
+x2 <- rt.scaled(100, mean = 2, sd = 2, df = Inf)
 
-## looking at the convergence
+comparison <- data.frame(
+    dataset = c("n=50, t (df=2) data", "n=100, normal data"),
+    midpoint_n100 = c(log_marlik_mid(x1, 0, 10, 0, 10, 100),
+                       log_marlik_mid(x2, 0, 10, 0, 10, 100)),
+    monte_carlo   = c(log_marlik_mc(x1, 0, 10, 0, 10, 1e5),
+                       log_marlik_mc(x2, 0, 10, 0, 10, 1e5))
+)
+knitr::kable(comparison, digits = 4)
+```
 
-for(i in seq(10,90,by=10))
-{ cat("n = ",i,",")
-    cat(" Estimated Log Marginal Likelihood =", 
-        log_marlik_mid(x,0,10,0,10,i),"\n")
+The two independent methods agree to well within a tenth of a log-unit, which
+is reassuring: they share no code path, so agreement is evidence that neither
+the grid nor the Monte Carlo sample is too coarse for this posterior.
+
+### Convergence as the grid is refined
+
+```{r}
+#| label: tbl-quad-convergence
+#| tbl-cap: "Estimated log marginal likelihood as the number of grid points per axis increases, for the $n=100$ normal-data example. By $n=40$ per axis the estimate has stabilized to the precision shown."
+ns_grid <- seq(10, 90, by = 10)
+est <- vapply(ns_grid, function(k) log_marlik_mid(x2, 0, 10, 0, 10, k), numeric(1))
+knitr::kable(data.frame(`grid points per axis` = ns_grid, `log P(y)` = est,
+                         check.names = FALSE), digits = 4)
+```
+
+### Comparing priors
+
+Holding the data fixed, the marginal likelihood falls as the prior on $\mu$
+either narrows around the wrong value or spreads out indefinitely:
+
+```{r}
+#| label: tbl-compare-priors
+#| tbl-cap: "Log marginal likelihood for data centred at 0, under priors on mu with the stated mean and standard deviation (w-prior fixed at N(0,1))."
+set.seed(3)
+x <- rnorm(100)
+prior_grid <- expand.grid(mu_0 = c(0, -5), sigma_mu = c(0.01, 0.1, 1, 10, 100, 1000))
+prior_grid$log_P_y <- mapply(function(m, s) log_marlik_mid(x, m, s, 0, 1, 100),
+                              prior_grid$mu_0, prior_grid$sigma_mu)
+knitr::kable(prior_grid, digits = 2,
+             col.names = c("prior mean $\\mu_0$", "prior sd $\\sigma_\\mu$", "log P(y)"))
+```
+
+With $\mu_0 = 0$ (the right neighbourhood for data centred at $0$), the
+marginal likelihood is highest for a moderately informative prior and
+degrades slowly as the prior widens. With $\mu_0 = -5$ (the wrong
+neighbourhood), a *narrow* prior is actively harmful — it insists on a
+region the data reject — while a wide prior recovers because it eventually
+puts enough mass back near the truth. This is the general shape of Bayesian
+model comparison: strong, correct priors win; strong, wrong priors lose;
+vague priors are safe but not optimal.
+
+### Comparing models for the data
+
+The marginal likelihood also compares different likelihoods for the same
+data — here, whether $\nu$ (the degrees of freedom of the $t$ model) matches
+how the data were actually generated:
+
+```{r}
+#| label: tbl-compare-models
+#| tbl-cap: "Log marginal likelihood under four values of the t-model degrees of freedom nu, fit to data simulated from a Gaussian and from a heavy-tailed t(df=2)."
+dfs <- c(Inf, 2, 1, 0.5)
+set.seed(4)
+x_normal <- rt.scaled(100, mean = 2, sd = 2, df = Inf)
+x_heavy  <- rt.scaled(100, mean = 2, sd = 2, df = 2)
+model_compare <- data.frame(
+    df_fitted        = dfs,
+    normal_data       = vapply(dfs, function(d) log_marlik_mid(x_normal, 0, 10, 0, 10, 100, df = d), numeric(1)),
+    heavy_tailed_data = vapply(dfs, function(d) log_marlik_mid(x_heavy,  0, 10, 0, 10, 100, df = d), numeric(1))
+)
+knitr::kable(model_compare, digits = 3,
+             col.names = c("fitted df", "data simulated as normal", "data simulated as t(df=2)"))
+```
+
+Each column favours the $\nu$ that actually generated it: normal data are
+best explained by $\nu=\infty$, and $t(\text{df}=2)$ data are best explained by
+$\nu=2$, with the wrong tail weight costing several log-likelihood units
+either way. As the earlier prior comparison showed, the prior also shifts
+these numbers — but the *ranking* of the correct model over the incorrect
+ones survives even under a badly misspecified prior on $(\mu,w)$, which is
+why marginal likelihoods remain useful for model comparison despite their
+prior-sensitivity.
+
+## Difficulties of Numerical Quadrature
+
+### Peaked integrands can be missed by a fixed grid
+
+A grid of fixed width $h_n$ can straddle a narrow spike without ever landing a
+point near its peak, badly under- or over-estimating the area it represents.
+
+```{r}
+#| label: fig-peaked
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Same rule, same 8-panel grid: the wide density (left) integrates
+#|   almost exactly, while the narrow spike (right) is nearly invisible to
+#|   the grid because no panel midpoint falls near its mode."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+a <- -3; b <- 3; n_panels <- 8; h <- (b - a) / n_panels
+xm <- a + (seq_len(n_panels) - 0.5) * h
+for (s in c(1, 0.03)) {
+    f <- function(x) dnorm(x, 0.2, s)
+    curve(f, a, b, n = 2001, lwd = 3, xlab = "x", ylab = "f(x)",
+          main = sprintf("sd = %g: midpoint = %.3f (exact = 1)", s, h * sum(f(xm))))
+    rect(xm - h / 2, 0, xm + h / 2, f(xm), col = adjustcolor("steelblue", 0.3), border = "steelblue")
+    points(xm, f(xm), pch = 19, col = "steelblue")
+}
+```
+
+This is exactly the situation a Bayesian posterior creates as $n$ grows: its
+width shrinks like $O(1/\sqrt n)$, so a grid tuned for $n=10$ observations can
+become useless for $n=10{,}000$. The usual remedy is to find the mode first
+(e.g. by the optimization methods of the previous two chapters), then centre
+and scale the grid around it — which is also the starting point for the
+Laplace approximation in the next chapter.
+
+### Transformed integrands can be squeezed against the boundary
+
+The logistic transform has its own failure mode: if $\theta$'s posterior sits
+at a large $|\theta|$, it gets squeezed against $y=0$ or $y=1$. For
+$\theta \approx 50$, $y = 1/(1+e^{-50}) \approx 1 - 2\times 10^{-22}$ — the
+entire posterior mass occupies a sliver of $(0,1)$ far too thin for any
+practical uniform grid to resolve.
+
+```{r}
+#| label: fig-boundary-squeeze
+#| fig-width: 10
+#| fig-height: 3.8
+#| fig-cap: "A posterior located at theta=8 already occupies a visibly
+#|   asymmetric region after the logistic transform (right); the grid lines
+#|   (n=20) are far more informative on the left than the right."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+f <- function(x) dnorm(x, 8, 1)
+curve(f, -2, 12, lwd = 3, xlab = expression(theta), ylab = "",
+      main = expression("posterior at" ~ theta == 8))
+g <- function(y) f(log(y / (1 - y))) / (y * (1 - y))
+curve(g, 0.001, 0.9999, n = 5001, lwd = 3, xlab = "y", ylab = "",
+      main = "after logistic transform")
+abline(v = seq(0.025, 0.975, by = 0.05), col = adjustcolor("steelblue", 0.6), lty = 3)
+```
+
+We already met the extreme version of this problem at the start of this
+chapter's development: with data simulated far from where the untransformed
+grid was designed to look, the midpoint rule and Monte Carlo disagree badly.
+
+```{r}
+#| label: tbl-quad-failure
+#| tbl-cap: "Quadrature failure when the posterior is squeezed against the boundary: data centred at 50, but the logistic transform (with no recentring) puts almost the whole posterior mass within about 1e-20 of y = 1."
+set.seed(5)
+x_far <- rt.scaled(100, mean = 50, sd = 2, df = Inf)
+knitr::kable(data.frame(
+    method = c("midpoint (n = 100)", "Monte Carlo (n = 10,000)"),
+    log_P_y = c(log_marlik_mid(x_far, 0, 100, 0, 100, 100),
+                log_marlik_mc(x_far, 0, 100, 0, 100, 1e4))
+), digits = 3)
+```
+
+The two estimates disagree by many orders of magnitude on the log scale — the
+grid is simply not looking where the posterior mass is. The general remedy is
+the same as for the peaked-integrand problem: **recentre the transform** on a
+preliminary location estimate $\hat\theta$ (e.g. the MLE), using
+$y = 1/(1 + e^{-(\theta-\hat\theta)/s})$ for a suitable scale $s$, so that the
+bulk of the posterior maps back to the middle of $(0,1)$ where the grid is
+dense.
+
+### Explore it interactively
+
+The app below lets you move the true mean of the simulated data and watch the
+midpoint-rule estimate diverge from the Monte Carlo baseline as the posterior
+is pushed toward the boundary of the transformed square, and shows the
+$g(u,v)$ heat map so you can see the mass leaving the grid.
+
+```{shinylive-r}
+#| label: quadrature-failure-app
+#| standalone: true
+#| viewerHeight: 620
+
+library(shiny)
+
+logit_inv     <- function(u) log(u / (1 - u))
+log_der_logit <- function(u) -log(u) - log(1 - u)
+log_lik   <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
+log_prior <- function(mu, w, mu_0, sigma_mu, w_0, sigma_w) {
+    dnorm(mu, mu_0, sigma_mu, log = TRUE) + dnorm(w, w_0, sigma_w, log = TRUE)
+}
+log_g <- function(u, v, x, mu_0, sigma_mu, w_0, sigma_w) {
+    mu <- logit_inv(u); w <- logit_inv(v)
+    log_lik(x, mu, w) + log_prior(mu, w, mu_0, sigma_mu, w_0, sigma_w) +
+        log_der_logit(u) + log_der_logit(v)
+}
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+log_marlik_mid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n) {
+    h <- 1 / n
+    grid <- (seq_len(n) - 0.5) * h
+    G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu_0, sigma_mu, w_0, sigma_w)))
+    list(log_ml = log_sum_exp(G) + 2 * log(h), grid = grid, G = G)
+}
+log_marlik_mc <- function(x, mu_0, sigma_mu, w_0, sigma_w, iters_mc) {
+    mus <- rnorm(iters_mc, mu_0, sigma_mu)
+    ws  <- rnorm(iters_mc, w_0, sigma_w)
+    v_log_lik <- vapply(seq_len(iters_mc), function(i) log_lik(x, mus[i], ws[i]), numeric(1))
+    log_sum_exp(v_log_lik) - log(iters_mc)
 }
 
+ui <- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            sliderInput("true_mean", "true mean of the simulated data",
+                        min = 0, max = 60, value = 0, step = 2),
+            sliderInput("n_grid", "grid points per axis (midpoint rule)",
+                        min = 10, max = 60, value = 20, step = 5),
+            helpText("The prior on mu is N(0, 100), i.e. it is not recentred ",
+                     "on the data. As the true mean moves past about 15-20, the ",
+                     "posterior for mu is squeezed against y = 1 after the ",
+                     "logistic transform, and the midpoint estimate breaks away ",
+                     "from the Monte Carlo baseline."),
+            tableOutput("tab")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("heat", height = "320px"),
+            plotOutput("compare", height = "260px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    dat <- reactive({
+        set.seed(1)
+        rnorm(60, input$true_mean, 2)
+    })
+
+    fit <- reactive({
+        log_marlik_mid(dat(), 0, 100, 0, 100, input$n_grid)
+    })
+
+    mc <- reactive({
+        set.seed(2)
+        log_marlik_mc(dat(), 0, 100, 0, 100, 20000)
+    })
+
+    output$heat <- renderPlot({
+        f <- fit()
+        par(mar = c(4, 4, 2, 1))
+        image(f$grid, f$grid, exp(f$G - max(f$G)),
+              col = hcl.colors(30, "YlOrRd", rev = TRUE),
+              xlab = "u", ylab = "v",
+              main = "g(u, v) on the unit square: where is the mass?")
+    })
+
+    output$compare <- renderPlot({
+        par(mar = c(4, 4, 1, 1))
+        vals <- c(midpoint = fit()$log_ml, monte_carlo = mc())
+        bp <- barplot(vals, col = c("steelblue", "firebrick"),
+                      ylab = "estimated log P(y)",
+                      ylim = range(vals) + c(-1, 1) * 0.15 * diff(range(vals) + 1e-6))
+        text(bp, vals, sprintf("%.2f", vals), pos = 3)
+    })
+
+    output$tab <- renderTable({
+        data.frame(method = c("midpoint rule", "Monte Carlo"),
+                   `log P(y)` = c(fit()$log_ml, mc()), check.names = FALSE)
+    }, digits = 3, rownames = FALSE)
+}
+
+shinyApp(ui, server)
 ```
 
-## Comparing log marginal likelihoods of different models
+::: {.callout-note}
+### Reproducing this figure
+The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
+extension, which compiles the app to WebAssembly so it runs in the reader's
+browser with no Shiny server. Install it once per project with
 
-### Comparing Priors
+```bash
+quarto add quarto-ext/shinylive
+```
+
+and add `filters: [shinylive]` to the document or project YAML. Only packages
+available in webR may be used inside the app, so the code above is restricted
+to base R and `shiny`.
+:::
+
+### The curse of dimensionality
+
+A product grid with $n$ points per axis needs $n^d$ evaluations in $d$
+dimensions:
+
+| $d$ | $n=20$ | $n=50$ |
+|---:|---:|---:|
+| 1 | 20 | 50 |
+| 2 | 400 | 2,500 |
+| 5 | $3.2\times10^6$ | $3.1\times10^8$ |
+| 10 | $1.0\times10^{13}$ | $9.8\times10^{16}$ |
+
+: Grid size grows exponentially with dimension {#tbl-curse}
+
+Meanwhile the posterior occupies only a tiny, often tilted, region inside that
+grid — most evaluations are wasted on points where $L(\theta)\pi(\theta)
+\approx 0$ — and the error of a product rule, expressed in terms of the total
+number of evaluations $N=n^d$, degrades to $O(N^{-2/d})$.
+
 ```{r}
-x <- rnorm(100)
+#| label: fig-curse
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Left: a correlated 2-D posterior inside a 12x12 grid; only the
+#|   highlighted points carry non-negligible mass. Right: evaluations needed
+#|   for a 20-point-per-axis grid as dimension increases."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+S <- matrix(c(1, 0.85, 0.85, 1), 2) * 0.15
+Si <- solve(S)
+grd <- seq(-3, 3, length.out = 150)
+Z <- outer(grd, grd, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Si %*% c(a, b))))
+contour(grd, grd, Z, nlevels = 6, xlab = expression(theta[1]), ylab = expression(theta[2]),
+        main = "posterior inside a 12 x 12 grid", drawlabels = FALSE, col = "firebrick", lwd = 2)
+gr <- seq(-3, 3, length.out = 13)
+abline(v = gr, h = gr, col = adjustcolor("gray30", 0.5))
+pts <- expand.grid(gr, gr)
+points(pts, pch = 19, cex = 0.5)
+inside <- apply(pts, 1, function(p) exp(-0.5 * p %*% Si %*% p)) > 0.01
+points(pts[inside, ], pch = 19, col = "firebrick", cex = 0.9)
+mtext(sprintf("%d of %d grid points carry non-negligible mass", sum(inside), nrow(pts)),
+      side = 1, line = 2.6, cex = 0.85)
+
+plot(1:20, sapply(1:20, function(d) 20^d), log = "y", type = "b", pch = 19,
+     xlab = "dimension d", ylab = "evaluations with 20 points per axis")
+abline(h = 1e12, lty = 2)
+text(3, 3e12, "one trillion", adj = 0, cex = 0.9)
 ```
 
-When the mean of the prior is reasonable
-```{r}
-log_marlik_mid(x,mu_0=0,sigma_mu=0.1,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=0,sigma_mu=0.01,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=0,sigma_mu=1,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=0,sigma_mu=10,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=0,sigma_mu=100,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=0,sigma_mu=1000,w_0=0,sigma_w=1,100)
-```
+**Conclusion.** Quadrature is a reliable, cheap tool for $d \lesssim 3$, and it
+is what the rest of this book uses whenever a low-dimensional integral needs
+checking against another method. Beyond that, Monte Carlo methods — whose
+error is $O(N^{-1/2})$ *regardless of dimension* — take over, at the cost of
+losing the very fast convergence rates of Simpson's rule; this trade-off
+motivates the sampling methods developed from the next few chapters onward.
 
-When the mean of the prior is unreasonable
+## Summary
 
-```{r}
-log_marlik_mid(x,mu_0=-5,sigma_mu=0.1,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=-5,sigma_mu=1,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=-5,sigma_mu=10,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=-5,sigma_mu=100,w_0=0,sigma_w=1,100)
-log_marlik_mid(x,mu_0=-5,sigma_mu=1000,w_0=0,sigma_w=1,100)
-
-
-```
-### Comparing Models for Data
-**Data from Normal**
-```{r}
-x <- rt.scaled(100, mean=2, sd = 2, df=Inf)
-log_marlik_mid(x,0,10,0,10,100, df = Inf)
-log_marlik_mid(x,0,10,0,10,100, df = 2)
-log_marlik_mid(x,0,10,0,10,100, df = 1)
-log_marlik_mid(x,0,10,0,10,100, df = 0.5)
-log_marlik_mid(x,0,0.1,0,10,100, df = Inf) # if prior is too narrow
-log_marlik_mid(x,0,100,0,100,100, df = Inf) # if prior is too diffuse
-log_marlik_mid(x,0,1000,0,1000,100, df = Inf) # if prior is too diffuse
-```
-
-**Data from t**
-```{r}
-x <- rt.scaled(100, mean=2, sd = 2, df=2)
-log_marlik_mid(x,0,10,0,10,100, df = Inf)
-log_marlik_mid(x,0,10,0,10,100, df = 2)
-log_marlik_mid(x,0,0.1,0,10,100, df =2) # if prior is too narrow
-log_marlik_mid(x,0,100,0,100,100, df = 2) # if prior is too diffuse
-log_marlik_mid(x,0,1000,0,1000,100, df = 2) # if prior is too diffuse
-```
-We see that although the prior impacts marginal likelihood, the error in mis-specification in data model can be still detected. 
-
-### A Case when numerical quadrature fails
-
-```{r}
-x <- rt.scaled(100, mean=50, sd = 2, df=Inf)
-log_marlik_mid(x,0,100,0,100,100, df = Inf)
-log_marlik_mc(x,0,100,0,100,10000, df = Inf)
-
-```
-What has gone wrong? The inverse-logistic transformation maps most points between (0,1) to the region around 0.5. But the likelihood function has its mode around 50!
+- Quadrature approximates $\int_a^b f\,dx$ by a weighted sum of $f$ at grid
+  points; infinite ranges are handled by a change of variable such as the
+  logistic transform, always carrying along the Jacobian $t'(y)$.
+- The midpoint and trapezoidal rules have $O(h_n^2)$ error; Simpson's rule has
+  $O(h_n^4)$. The midpoint rule's extra virtue — never evaluating the
+  integrand at a panel edge — matters whenever the transformed integrand is
+  singular at the boundary, as it is here.
+- The marginal likelihood $P(y) = \int L(\theta)\pi(\theta)\,d\theta$ is the
+  key statistical use case in this book: always compute it on the log scale
+  with log-sum-exp, and validate a quadrature answer against an independent
+  Monte Carlo estimate.
+- Quadrature fails when the integrand is peaked relative to the grid, or when
+  a transform squeezes the mass of interest into a region the grid cannot
+  resolve; both problems are cured by locating the mass first (optimization)
+  and centring the grid or transform on it — the idea taken up systematically
+  by the Laplace approximation in the next chapter.
+- Product grids cost $n^d$ evaluations, so quadrature is practical only for
+  small $d$; higher-dimensional problems require Monte Carlo methods.
