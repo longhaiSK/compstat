@@ -1,0 +1,605 @@
+---
+title: "Importance Sampling"
+format:
+  html:
+    toc: true
+    tbl-colwidths: true
+filters:
+  - shinylive
+editor_options:
+  chunk_output_type: console
+code-fold: true
+---
+
+```{r}
+#| label: setup
+#| message: false
+library(ars)
+```
+
+Rejection sampling turns draws from an envelope $g \ge f$ into exact draws from
+$f$, but every rejected proposal is wasted, and in the tails of a poor
+envelope almost every proposal is rejected. **Importance sampling** keeps
+every proposal instead of discarding most of them: draw from an easier
+function $g$ and attach a *weight* to each draw that corrects for sampling
+from the wrong distribution. The price is that the resulting sample is no
+longer an exact iid sample from $f$ — it is a *weighted* sample — but nothing
+is ever thrown away, and no envelope condition $g \ge f$ is required.
+
+## The Reweighting Idea
+
+### The goal
+
+As in the last two chapters, $f(\theta)$ is an **unnormalized** function of
+interest — typically $f(\theta) = L(\theta)\pi(\theta)$ for a likelihood $L$
+and prior $\pi$ — and we want two kinds of integral:
+$$
+A = E_f\big[a(\theta)\big] = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta},
+\qquad\qquad
+C_f = \int f(\theta)\,d\theta,
+$$
+a posterior expectation and a normalizing constant (the marginal likelihood
+when $f = L\pi$). Plain Monte Carlo needs draws from $f/C_f$, which we
+generally cannot produce.
+
+Suppose instead we can draw from another function $g(\theta)$ (also possibly
+unnormalized, with $C_g = \int g(\theta)\,d\theta$). Wherever $f$ puts mass,
+$g$ must too:
+$$
+\{\theta : g(\theta) > 0\} \ \supseteq\ \{\theta : f(\theta) > 0\}.
+$$
+Unlike rejection sampling, $g$ need **not** dominate $f$ everywhere — there is
+no requirement $g \ge f$. This is what makes importance sampling applicable
+in situations where no usable envelope exists.
+
+### Two estimators
+
+Define the **importance weight** $w(\theta) = f(\theta)/g(\theta)$. For any
+$a$,
+$$
+E_f\big[a(\theta)\big]
+= \int a(\theta)\,\frac{f(\theta)}{C_f}\,d\theta
+= \frac{C_g}{C_f}\, E_g\big[a(\theta)\,w(\theta)\big],
+$$
+and taking $a \equiv 1$ gives $C_f/C_g = E_g[w(\theta)]$. Combining the two,
+$$
+E_f\big[a(\theta)\big] = \frac{E_g\big[a(\theta)\,w(\theta)\big]}{E_g\big[w(\theta)\big]}.
+$$
+Draw $\theta_1,\ldots,\theta_S \overset{iid}{\sim} g/C_g$ and compute
+$w_s = w(\theta_s)$. Two estimators follow directly:
+
+- **Ratio of normalizing constants**: $\widehat{C_f/C_g} = \frac1S\sum_s w_s$,
+  unbiased for $C_f/C_g$; if $g$ is already a normalized density ($C_g=1$)
+  this estimates $C_f$ itself.
+- **Self-normalized expectation**: $\hat A = \sum_{s=1}^S a(\theta_s)\,\tilde w_s$,
+  with normalized weights $\tilde w_s = w_s / \sum_j w_j$ summing to $1$. This
+  turns the proposal sample into a *weighted sample from $f$*: any unknown
+  constants in $f$ and $g$ cancel in the ratio, so $\hat A$ needs only $f$ and
+  $g$ up to a proportionality constant. It is a ratio of two averages and so
+  is biased with bias $O(1/S)$, but consistent.
+
+### Effective sample size
+
+$\hat A$ is a weighted average of $a(\theta_s)$: draws where $f \gg g$ count
+more, draws where $f \ll g$ count less. How many *equally weighted* draws is
+the weighted sample worth?
+$$
+S_{\text{eff}} = \frac{1}{\displaystyle\sum_{s=1}^S \tilde w_s^2}.
+$$
+If the weights are all equal, $\tilde w_s = 1/S$ and $S_{\text{eff}} =
+1/(S \cdot 1/S^2) = S$: the proposal is shaped just like the target, and every
+draw counts fully. If one weight dominates all the others, $\tilde w_s
+\approx 1$ for that draw and $S_{\text{eff}} \approx 1$: only one draw is
+doing any work. A variance heuristic makes this precise:
+$\text{Var}_g(\hat A) \approx \text{Var}_f(a)/S_{\text{eff}}$, the same form as
+for an iid sample of size $S_{\text{eff}}$ from $f$ itself.
+
+The catch, central to this chapter, is that $S_{\text{eff}}$ is computed
+**only from the weights actually observed**. A proposal that never visits the
+part of $\theta$-space where $f$ and $g$ disagree most will report a
+reassuring $S_{\text{eff}}$ while being badly wrong — this is exactly the
+subject of the "bad stories" below.
+
+```{r}
+#| label: ess-helpers
+### effective sample size from raw (possibly unnormalized) weights
+ess <- function(w) sum(w)^2 / sum(w^2)
+### numerically stable log(sum(exp(lx)))
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+### effective sample size computed from LOG weights (avoids under/overflow)
+log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
+```
+
+## A Good Story: Estimating a Normal Tail Probability
+
+### From plain Monte Carlo to importance sampling
+
+For $X \sim N(0,1)$, take $f(x) = \varphi(x)\,I(a<x<b)$, the standard normal
+density truncated to $[a,b]$, so that $C_f = P(a<X<b)$. Plain Monte Carlo
+draws $X_i \sim N(0,1)$ and averages the indicator $I(a<X_i<b)$; this wastes
+every draw that lands outside $[a,b]$; for a proposal $g$ supported on $[a,b]$
+itself, every draw contributes.
+
+The simplest such $g$ is uniform on $[a,b]$: $g(x) = I(a\le x\le b)/(b-a)$, so
+$w(x) = (b-a)\varphi(x)$ and $\widehat{C_f} = (b-a)\cdot\frac1S\sum_s
+\varphi(x_s)$ — the *Monte Carlo* version of the midpoint rule from the
+quadrature chapter: a random grid instead of an equally spaced one, evaluating
+the same weighted sum.
+
+```{r}
+#| label: tbl-tail-good
+#| tbl-cap: "Mean squared error of the truncated-probability estimate over 1000 replications, for a moderate and a rare event, S = 100 draws per replication."
+est_normprob_mc   <- function(A, S) { X <- rnorm(S); mean((X > A[1]) & (X < A[2])) }
+est_normprob_imps <- function(A, S) { X <- runif(S, A[1], A[2]); mean(dnorm(X)) * (A[2] - A[1]) }
+
+set.seed(1)
+cases <- list(c(-2, 2), c(5, 6))
+mse_tbl <- do.call(rbind, lapply(cases, function(A) {
+    tp <- pnorm(A[2]) - pnorm(A[1])
+    mc  <- replicate(1000, est_normprob_mc(A, 100))
+    imp <- replicate(1000, est_normprob_imps(A, 100))
+    data.frame(interval = sprintf("(%g, %g)", A[1], A[2]),
+               true_prob = formatC(tp, format = "e", digits = 3),
+               mse_mc = formatC(mean((mc - tp)^2), format = "e", digits = 3),
+               mse_importance = formatC(mean((imp - tp)^2), format = "e", digits = 3))
+}))
+knitr::kable(mse_tbl, align = c("l", "r", "r", "r"))
+```
+
+For the moderate interval $(-2,2)$ both methods work; for the rarer event
+$(5,6)$, where plain Monte Carlo almost never lands an observation inside the
+interval, the importance-sampling error is many orders of magnitude smaller
+— the uniform proposal *guarantees* every draw falls in $[a,b]$.
+
+### An underflowing tail probability
+
+Push the interval further out, to $A = (50,100)$. Now even $\varphi(50)$
+itself underflows to exactly $0$ in double precision (its log is about
+$-1251$, far below the smallest representable log), so every calculation must
+be carried out on the log scale.
+
+```{r}
+#| label: exact-far-tail
+a <- 50; b <- 100
+log_minus_exp <- function(la, lb) la + log1p(-exp(lb - la))
+log_exact <- log_minus_exp(pnorm(-a, log = TRUE), pnorm(-b, log = TRUE))
+log_exact
+```
+
+### Matching the proposal to the tail: a better envelope
+
+A uniform proposal on $(50,100)$ still works in principle, but $\varphi$ decays
+so fast across the interval that the weights vary enormously: nearly all of
+the probability mass under $\varphi$ restricted to $(50,100)$ sits within a
+sliver near $x=50$, so a uniform draw almost never lands where the weight is
+large. A **shifted exponential** proposal with rate $\lambda \approx a$
+matches that decay and keeps the weights nearly constant:
+$$
+g(x) = \frac{\lambda e^{-\lambda(x-a)}}{1-e^{-\lambda(b-a)}}\,I(a\le x\le b).
+$$
+
+```{r}
+#| label: tbl-tail-proposals
+#| tbl-cap: "Two proposals for the same rare event, S = 10,000 draws: log-scale weights avoid the underflow that would occur if densities were multiplied directly."
+S <- 1e4; lam <- a
+x_u <- runif(S, a, b);  lw_u <- log(b - a) + dnorm(x_u, log = TRUE)
+u_e <- runif(S); x_e <- a - log(1 - u_e * (1 - exp(-lam * (b - a)))) / lam        # inverse cdf
+lg_e <- log(lam) - lam * (x_e - a) - log1p(-exp(-lam * (b - a)))
+lw_e <- dnorm(x_e, log = TRUE) - lg_e
+
+tail_tbl <- data.frame(
+    proposal   = c("uniform on (a, b)", "shifted exponential"),
+    log_C_f    = c(log_sum_exp(lw_u) - log(S), log_sum_exp(lw_e) - log(S)),
+    S_eff      = c(log_ess(lw_u), log_ess(lw_e))
+)
+knitr::kable(tail_tbl, digits = c(0, 4, 1))
+```
+
+Both proposals give a log-probability close to `r round(log_exact, 3)`, but
+their effective sample sizes are worlds apart: the exponential proposal keeps
+essentially all `r S` draws informative, while the uniform proposal's
+effective sample size collapses because almost all of its weight concentrates
+on the handful of draws nearest $a$. Shaping $g$ like $f$ is not just
+elegant — it is what makes the computation efficient.
+
+## Two Bad Stories: When Reweighting Fails Silently
+
+$S_{\text{eff}}$ diagnoses only *one* kind of failure: weights that vary
+wildly among the draws actually observed. It says nothing about mass that $g$
+never visits at all, and a badly wrong estimate can carry a perfectly healthy
+$S_{\text{eff}}$.
+
+### A proposal that misses a mode
+
+Let $f(\theta) = \tfrac12\varphi(\theta+5) + \tfrac12\varphi(\theta-5)$ (a
+50/50 mixture, so $C_f=1$ and $E_f(\theta)=0$) and $g(\theta) = \varphi(\theta+5)$.
+Both are positive everywhere, so the support requirement holds. But $g$ places
+essentially all of its mass near $\theta=-5$ and, for $\theta$ near $-5$,
+$$
+w(\theta) = \tfrac12 + \tfrac12\,\frac{\varphi(\theta-5)}{\varphi(\theta+5)}
+= \tfrac12 + \tfrac12\, e^{10\theta} \ \approx\ \tfrac12,
+$$
+so every weight the sampler actually sees looks almost identical.
+
+```{r}
+#| label: fig-missed-mode
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Left: target f (mixture of two normals) and proposal g (only the left component). Right: normalized weights look almost flat — S_eff is close to S — even though the estimate is badly wrong."
+set.seed(2)
+S <- 5000
+f_mix <- function(t) 0.5 * dnorm(t + 5) + 0.5 * dnorm(t - 5)
+g_mix <- function(t) dnorm(t + 5)
+th <- rnorm(S, -5)
+w  <- f_mix(th) / g_mix(th)
+wt <- w / sum(w)
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+curve(f_mix, -9, 9, lwd = 3, col = "firebrick", xlab = expression(theta), ylab = "",
+      main = "target f and proposal g", ylim = c(0, 0.42))
+curve(g_mix, add = TRUE, lwd = 3, col = "steelblue")
+rug(th[1:300], col = adjustcolor("steelblue", 0.5))
+legend("topright", bty = "n", lwd = 3, col = c("firebrick", "steelblue"), legend = c("f", "g"))
+hist(wt * S, breaks = 40, col = "gray85", border = "white", xlab = expression(S * tilde(w)[s]),
+     main = sprintf("weights: S_eff = %.0f of %d", ess(w), S))
+```
+
+```{r}
+#| label: tbl-missed-mode
+#| tbl-cap: "Missed-mode failure: the effective sample size looks fine, but both quantities of interest are far from the truth."
+missed_mode_tbl <- data.frame(
+    quantity = c("C_f / C_g (true 1)", "E_f[theta] (true 0)", "S_eff (of S = 5000)"),
+    estimate = c(mean(w), sum(th * wt), ess(w))
+)
+knitr::kable(missed_mode_tbl, digits = 3)
+```
+
+The estimate of $C_f/C_g$ comes out near `r round(mean(w), 2)` instead of $1$,
+and $E_f[\theta]$ near `r round(sum(th * wt), 2)` instead of $0$ — both wrong
+by a wide margin — while $S_{\text{eff}}$ reports essentially the full sample
+size. The draws that would reveal the problem, near $\theta=+5$, have
+probability under $g$ of order $\Phi(-10) \approx 10^{-23}$: they simply never
+appear, at any practical $S$.
+
+### A proposal narrower than the target's support
+
+The same failure in its starkest form: $f(\theta) = I(0\le\theta\le2)$,
+$g(\theta) = I(0\le\theta\le1)$. The true ratio is $C_f/C_g = 2$, but every
+draw from $g$ lands in $(0,1)$, where $w(\theta)=f(\theta)/g(\theta)=1$
+identically.
+
+```{r}
+#| label: tbl-support-violation
+#| tbl-cap: "Estimated C_f / C_g (true value 2) as the sample size grows: no amount of additional sampling helps, because g never visits (1, 2]."
+set.seed(3)
+f_indicator <- function(x) as.numeric(x >= 0 & x <= 2)   # f = I(0 <= theta <= 2)
+g_indicator <- function(x) as.numeric(x >= 0 & x <= 1)   # g = I(0 <= theta <= 1)
+support_tbl <- data.frame(
+    S = c(1e2, 1e3, 1e4, 1e5),
+    estimate = sapply(c(1e2, 1e3, 1e4, 1e5), function(S) {
+        th <- runif(S, 0, 1)                              # draws from g
+        mean(f_indicator(th) / g_indicator(th))            # weight is 1 for every draw
+    })
+)
+knitr::kable(support_tbl, digits = c(0, 3))
+```
+
+The estimate sits at $1$ regardless of $S$: this is a bias that more sampling
+cannot fix, because it comes from where $g$ looks, not from how much it looks
+there. The reverse situation — $g$ wider than $f$ — is harmless: draws outside
+$\text{supp}(f)$ simply receive weight $0$ and are correctly down-weighted.
+Together with the missed-mode example, the lesson is that $S_{\text{eff}}$
+alone cannot certify a good proposal; the proposal must be checked against
+what is actually known about where $f$ puts its mass.
+
+### Explore it interactively {#sec-importance-app}
+
+The app below reproduces the missed-mode example with an adjustable proposal:
+move its mean and spread and watch the effective sample size stay high while
+the estimated mean drifts away from the true value of $0$ whenever the
+proposal fails to reach both components of the target. This app runs live
+only in the HTML edition of this book; readers of other formats can follow
+the link below it.
+
+::: {.content-visible when-format="html"}
+
+```{shinylive-r}
+#| label: missed-mode-app
+#| standalone: true
+#| viewerHeight: 800
+
+library(shiny)
+
+f_mix <- function(t) 0.5 * dnorm(t + 5) + 0.5 * dnorm(t - 5)
+ess   <- function(w) sum(w)^2 / sum(w^2)
+
+ui <- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            sliderInput("mean_g", "proposal mean", min = -9, max = 9, value = -5, step = 0.5),
+            sliderInput("sd_g", "proposal sd", min = 0.5, max = 8, value = 1, step = 0.5),
+            helpText("Target f is a 50/50 mixture of N(-5, 1) and N(5, 1), so the ",
+                     "truth is C_f/C_g = 1 and E_f(theta) = 0 when g integrates to 1. ",
+                     "A narrow proposal centred on one mode gives a deceptively healthy ",
+                     "S_eff while both estimates are wrong; only a proposal wide enough ",
+                     "or centred between the modes recovers the truth."),
+            tableOutput("tab")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("curves", height = "260px"),
+            plotOutput("weights", height = "260px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    draws <- reactive({
+        set.seed(1)
+        th <- rnorm(5000, input$mean_g, input$sd_g)
+        w  <- f_mix(th) / dnorm(th, input$mean_g, input$sd_g)
+        list(th = th, w = w)
+    })
+
+    output$curves <- renderPlot({
+        d <- draws()
+        par(mar = c(4, 4, 2, 1))
+        curve(f_mix, -12, 12, lwd = 3, col = "firebrick", xlab = expression(theta), ylab = "",
+              main = "target f and proposal g", ylim = c(0, 0.45))
+        curve(dnorm(x, input$mean_g, input$sd_g), add = TRUE, lwd = 3, col = "steelblue")
+        rug(d$th[1:300], col = adjustcolor("steelblue", 0.5))
+    })
+
+    output$weights <- renderPlot({
+        d <- draws(); wt <- d$w / sum(d$w)
+        par(mar = c(4, 4, 2, 1))
+        hist(wt * length(d$w), breaks = 40, col = "gray85", border = "white",
+             xlab = expression(S * tilde(w)[s]),
+             main = sprintf("S_eff = %.0f of %d", ess(d$w), length(d$w)))
+    })
+
+    output$tab <- renderTable({
+        d <- draws(); wt <- d$w / sum(d$w)
+        data.frame(quantity = c("C_f / C_g (true 1)", "E_f[theta] (true 0)", "S_eff (of 5000)"),
+                   estimate = c(mean(d$w), sum(d$th * wt), ess(d$w)))
+    }, digits = 3, rownames = FALSE)
+}
+
+shinyApp(ui, server)
+```
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit11_importance_sampling.html#sec-importance-app>.
+:::
+
+::: {.callout-note}
+### Reproducing this figure
+See the callout in [Numerical Quadrature](unit09_integral.qmd) for how to
+install the `shinylive` extension used above.
+:::
+
+## Estimating a Truncated-Normal Expectation
+
+Return to a truncated $N(0,1)$ on $[l,u]$, and estimate $E\big[a(X)\mid l<X<u\big]$
+for $a(x)=x^2$. Two competing samplers:
+
+- **Importance sampling** with $g(x) = I(l\le x\le u)/(u-l)$ (uniform), giving
+  $w(x) = \varphi(x)$ up to the constant $(u-l)$ that cancels in the
+  self-normalized estimator.
+- **Rejection sampling** via adaptive rejection sampling (`ars` package,
+  applicable because $\log\varphi$ is concave), producing exact iid draws.
+
+```{r}
+#| label: tnorm-functions
+### importance-sampling estimate of E[a(X) | l < X < u], X ~ N(0,1)
+est_tnorm_imps <- function(a_fn, l, u, S) {
+    X <- runif(S, l, u)
+    W <- dnorm(X)
+    ahat <- sum(a_fn(X) * W) / sum(W)
+    attr(ahat, "ess") <- ess(W)
+    ahat
+}
+
+### exact draws via adaptive rejection sampling (log phi is concave)
+sample_tnorm_ars <- function(n, l, u) {
+    logf   <- function(x) dnorm(x, log = TRUE)
+    fprima <- function(x) -x
+    ars(n, f = logf, fprima = fprima, x = c(l, (l + u) / 2, u),
+        lb = TRUE, ub = TRUE, xlb = l, xub = u)
+}
+```
+
+The original version of `sample_tnorm_ars` always drew exactly $10{,}000$
+points regardless of the requested `n`; the version above respects `n`, which
+matters for the timing comparison next.
+
+```{r}
+#| label: tbl-tnorm-compare
+#| tbl-cap: "Importance sampling versus adaptive rejection sampling for E[X^2 | l < X < u], averaged over 100 replications at S = 1000 draws each. Both recover the midpoint-rule reference to the precision shown; timings are milliseconds per replication."
+a_fn <- function(x) x^2
+midpoint_ref <- function(l, u, n = 100000) {
+    h <- (u - l) / n; xm <- l + (seq_len(n) - 0.5) * h
+    sum(a_fn(xm) * dnorm(xm)) * h / (pnorm(u) - pnorm(l))
+}
+
+intervals <- list(c(1, 2), c(-1, 1))
+tnorm_tbl <- do.call(rbind, lapply(intervals, function(iv) {
+    l <- iv[1]; u <- iv[2]; ref <- midpoint_ref(l, u)
+    t_imps <- system.time(EA_imps <- replicate(100, est_tnorm_imps(a_fn, l, u, 1000)))
+    t_rej  <- system.time(EA_rej  <- replicate(100, mean(a_fn(sample_tnorm_ars(1000, l, u)))))
+    data.frame(interval = sprintf("(%g, %g)", l, u), reference = ref,
+               mean_imps = mean(EA_imps), mse_imps = mean((EA_imps - ref)^2),
+               ms_imps = 1000 * t_imps[["elapsed"]] / 100,
+               mean_rej = mean(EA_rej), mse_rej = mean((EA_rej - ref)^2),
+               ms_rej = 1000 * t_rej[["elapsed"]] / 100)
+}))
+knitr::kable(tnorm_tbl, digits = c(0, 4, 4, 6, 2, 4, 6, 2))
+```
+
+Both estimators are unbiased for this smooth, bounded target and agree with
+the midpoint-rule reference; importance sampling is markedly faster here
+because it needs no accept/reject loop or envelope construction, at the cost
+of returning a *weighted* rather than an exact sample.
+
+## Application: Marginal Likelihood via Importance Sampling
+
+### Setup
+
+The [quadrature](unit09_integral.qmd) and Laplace-approximation chapters
+compute the marginal likelihood $P(y) = \int L(\theta)\pi(\theta)\,d\theta$ of
+the same conjugate-free Gaussian model — unknown mean $\mu$ and
+$w=\log\sigma^2$, independent normal priors — by a product grid and by a
+mode-and-Hessian approximation, respectively. Importance sampling offers a
+third route, and one that comes with a built-in accuracy diagnostic
+($S_{\text{eff}}$) that neither of the other two methods provides directly.
+
+Take $g(\mu,w)$ to be the **Gaussian approximation to the posterior**
+obtained by a Laplace fit: locate the posterior mode $(\hat\mu,\hat w)$ by
+optimization, take $g = N_2\big((\hat\mu,\hat w),\, H^{-1}\big)$ for $H$ the
+Hessian of $-\log[L\pi]$ at the mode, and importance-sample from $g$ with
+$f = L\pi$:
+$$
+\widehat{P(y)} = \frac{1}{S}\sum_{s=1}^S w_s, \qquad
+w_s = \frac{L(\theta_s)\pi(\theta_s)}{g(\theta_s)}, \qquad \theta_s \sim g.
+$$
+Because $g$ is shaped like the posterior near its mode, this is a "good
+story" proposal by construction — in sharp contrast to sampling directly from
+the (typically much wider, uninformative) prior, which is exactly the
+`log_marlik_mc` function used elsewhere in this book as a naive-Monte-Carlo
+check: it is importance sampling with $g = \pi$, and its weights are just the
+likelihood values $L(\theta_s)$.
+
+### An efficient implementation
+
+```{r}
+#| label: marlik-functions
+log_lik   <- function(x, mu, w) sum(dnorm(x, mu, exp(w / 2), log = TRUE))
+log_prior <- function(mu, w, mu_0, sigma_mu, w_0, sigma_w) {
+    dnorm(mu, mu_0, sigma_mu, log = TRUE) + dnorm(w, w_0, sigma_w, log = TRUE)
+}
+neg_log_post <- function(theta, x, mu_0, sigma_mu, w_0, sigma_w) {
+    -log_lik(x, theta[1], theta[2]) -
+        log_prior(theta[1], theta[2], mu_0, sigma_mu, w_0, sigma_w)
+}
+
+### log density of N(mu, A^{-1}) at every column of a 2 x S matrix of points at once,
+### replacing a per-point apply() call with one vectorized quadratic form
+log_dmvnorm_batch <- function(Theta, mu, A) {
+    Tc <- Theta - mu
+    quad <- colSums((A %*% Tc) * Tc)
+    0.5 * (-nrow(Theta) * log(2 * pi) + sum(log(svd(A)$d)) - quad)
+}
+
+### log marginal likelihood by importance sampling from a Laplace-shaped Gaussian
+log_marlik_imps <- function(x, mu_0, sigma_mu, w_0, sigma_w, S) {
+    fit <- nlm(neg_log_post, c(mean(x), log(stats::var(x))), hessian = TRUE,
+               x = x, mu_0 = mu_0, sigma_mu = sigma_mu, w_0 = w_0, sigma_w = sigma_w)
+    mu_hat <- fit$estimate; H <- fit$hessian
+    L <- t(chol(solve(H)))                        # Sigma = H^{-1} = L L'
+    Theta <- L %*% matrix(rnorm(2 * S), 2, S) + mu_hat
+
+    log_g <- log_dmvnorm_batch(Theta, mu_hat, H)
+    log_f <- -apply(Theta, 2, neg_log_post, x = x, mu_0 = mu_0, sigma_mu = sigma_mu,
+                     w_0 = w_0, sigma_w = sigma_w)
+    lw <- log_f - log_g
+    structure(log_sum_exp(lw) - log(S), ess = log_ess(lw))
+}
+
+### log marginal likelihood by naive Monte Carlo from the prior (g = pi): a
+### second, independent importance-sampling estimator with an unfavourable g
+log_marlik_prior <- function(x, mu_0, sigma_mu, w_0, sigma_w, S) {
+    mus <- rnorm(S, mu_0, sigma_mu); ws <- rnorm(S, w_0, sigma_w)
+    lw <- vapply(seq_len(S), function(i) log_lik(x, mus[i], ws[i]), numeric(1))
+    structure(log_sum_exp(lw) - log(S), ess = log_ess(lw))
+}
+```
+
+Replacing the two `apply()` calls used in earlier drafts of this code — one
+for the proposal log-density, one for the log-posterior — with a single
+vectorized quadratic form (`log_dmvnorm_batch`) removes $S$ separate R
+function calls for the proposal evaluation; only the data-dependent
+log-likelihood still needs one call per draw, since it sums over the $n$
+observations for each $\theta_s$ separately.
+
+### Checking accuracy
+
+```{r}
+#| label: tbl-marlik-check
+#| tbl-cap: "Log marginal likelihood by importance sampling (Laplace-shaped proposal, S = 200) across 500 replications, for two simulated data sets."
+set.seed(4)
+x_small <- rnorm(10);  x_large <- rnorm(200)
+
+check_tbl <- do.call(rbind, lapply(list(n10 = x_small, n200 = x_large), function(x) {
+    reps <- replicate(500, log_marlik_imps(x, 0, 5, 0, 5, 200), simplify = FALSE)
+    vals <- vapply(reps, as.numeric, numeric(1))
+    esss <- vapply(reps, attr, numeric(1), which = "ess")
+    data.frame(mean_log_ml = mean(vals), sd_log_ml = sd(vals), mean_ess = mean(esss))
+}))
+check_tbl <- cbind(dataset = c("n = 10", "n = 200"), check_tbl)
+knitr::kable(check_tbl, digits = 4)
+```
+
+The Monte Carlo standard deviation across replications is small relative to
+the estimate itself, and the effective sample size stays close to the nominal
+$S=200$ in both cases — evidence that the Laplace-shaped proposal tracks the
+posterior well even though it is, after all, only a second-order
+approximation to it.
+
+### Why the proposal matters: Laplace-shaped versus prior sampling
+
+The prior is a valid proposal for the same target — every posterior draw is
+also a prior draw with positive density — so `log_marlik_prior` is a
+legitimate importance-sampling estimator too. But the prior is far more
+diffuse than the posterior, especially once $n$ is not tiny, so it is a much
+poorer match to $f = L\pi$.
+
+```{r}
+#| label: tbl-marlik-ess-vs-n
+#| tbl-cap: "Effective sample size (of S = 500 draws) for the Laplace-shaped proposal versus prior sampling, as the sample size n of the simulated data grows. Both target the same posterior for (mu, w)."
+set.seed(5)
+ns <- c(5, 20, 100, 400)
+ess_tbl <- do.call(rbind, lapply(ns, function(n) {
+    x <- rnorm(n)
+    data.frame(n = n,
+               ess_laplace_proposal = attr(log_marlik_imps(x, 0, 5, 0, 5, 500), "ess"),
+               ess_prior_sampling   = attr(log_marlik_prior(x, 0, 5, 0, 5, 500), "ess"))
+}))
+knitr::kable(ess_tbl, digits = c(0, 1, 1))
+```
+
+As $n$ grows the posterior sharpens around the truth while the prior does
+not, so prior sampling's effective sample size deteriorates steadily; the
+Laplace-shaped proposal, which re-centers and re-scales itself around the
+posterior mode for every data set, keeps pace. This is the marginal-likelihood
+instance of the same lesson as the missed-mode example above: a fixed,
+data-independent proposal becomes an increasingly bad match to a target that
+concentrates as more data arrive, and only a proposal that adapts to the
+target avoids the resulting collapse in efficiency.
+
+## Summary
+
+- Importance sampling reweights draws from a proposal $g$ by
+  $w(\theta) = f(\theta)/g(\theta)$ instead of accepting or rejecting them,
+  using $\widehat{C_f/C_g} = \frac1S\sum_s w_s$ and the self-normalized
+  $\hat A = \sum_s a(\theta_s)\tilde w_s$; only the support condition
+  $\{g>0\}\supseteq\{f>0\}$ is required, not an envelope $g \ge f$.
+- A good proposal shaped like the target on its support gives near-constant
+  weights and $S_{\text{eff}} \approx S$ (the tail-probability and
+  Laplace-proposal examples).
+- A proposal that misses a mode or part of the support fails **silently**: the
+  observed weights can look perfectly healthy while both $C_f/C_g$ and
+  $E_f[a]$ are badly wrong, and no amount of extra sampling fixes it.
+  $S_{\text{eff}}$ diagnoses only the noisy failure (wildly varying observed
+  weights), never the silent one.
+- For the marginal likelihood, a proposal built from a Laplace approximation
+  at the posterior mode remains efficient as the data accumulate and the
+  posterior sharpens, while a fixed, data-independent proposal such as the
+  prior does not — reinforcing why the mode-finding methods from earlier
+  chapters remain useful even once we turn to sampling-based methods.
