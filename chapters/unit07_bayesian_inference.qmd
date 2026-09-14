@@ -1,0 +1,666 @@
+---
+title: "Bayesian Inference"
+format:
+  html:
+    toc: true
+    tbl-colwidths: true
+filters:
+  - shinylive
+editor_options:
+  chunk_output_type: console
+code-fold: true
+---
+
+The last three chapters found a single best-fitting parameter value — the
+MLE — by optimization: gradient methods and Newton's method for a smooth
+log-likelihood, EM when part of the data is missing. Bayesian inference asks
+a different question: not just *where* is the best $\theta$, but how
+uncertain are we about it, given whatever we already believed before seeing
+the data? The answer is a full distribution over $\theta$, not a point, and
+extracting anything useful from that distribution — a mean, a probability, a
+prediction — is almost always a matter of computing an integral or an
+optimization. That is why Bayesian inference sets the agenda for the rest of
+this book: numerical quadrature, Laplace's method, rejection sampling,
+importance sampling, and Markov chain Monte Carlo are all, at bottom,
+different strategies for computing with a posterior distribution that has no
+closed form.
+
+## The Bayesian Framework
+
+Bayesian inference treats the unknown parameter $\theta$ itself as a random
+variable and proceeds in four steps:
+
+1. **Specify a prior** $\pi(\theta)$ — what is known or believed about
+   $\theta$ before seeing any data.
+2. **Specify a probability model for the data**, $P(y_1,\ldots,y_n\mid\theta)$,
+   exactly the sampling model used to build a likelihood in the MLE chapters.
+3. **Find the posterior** by Bayes' rule,
+$$
+P(\theta\mid y_{1:n}) = \frac{P(y_{1:n}\mid\theta)\,\pi(\theta)}
+{\displaystyle\int P(y_{1:n}\mid\theta)\,\pi(\theta)\,d\theta}.
+$$
+4. **Interpret the posterior**: summarize $\theta$, make predictions.
+
+Writing $L(\theta) = P(y_{1:n}\mid\theta)$ for the likelihood and
+$f(\theta) = L(\theta)\pi(\theta)$ for the **unnormalized posterior** — the
+notation used throughout the rest of this book — step 3 becomes
+$$
+P(\theta\mid y_{1:n}) = \frac{f(\theta)}{P(y_{1:n})}, \qquad
+P(y_{1:n}) = \int f(\theta)\,d\theta.
+$$
+$P(y_{1:n})$, the **marginal likelihood**, is the likelihood averaged over
+the prior rather than maximized over $\theta$; it does not depend on
+$\theta$, so it plays no role in *shaping* the posterior, but it is usually
+the hardest single quantity in the whole framework to compute — it is a
+$p$-dimensional integral with no generic closed form, and it is the running
+example of the next three chapters (numerical quadrature, Laplace
+approximation, and the Monte Carlo methods after that).
+
+```{r}
+#| label: fig-prior-likelihood-posterior
+#| fig-width: 10
+#| fig-height: 4.6
+#| fig-cap: "Left: a flat-ish prior $\\pi(\\theta)$ (dashed) and a likelihood
+#|   $L(\\theta)$ (solid) that is much more concentrated — the data are far
+#|   more informative than the prior here. Right: the posterior
+#|   $\\propto L(\\theta)\\pi(\\theta)$, essentially the (renormalized)
+#|   likelihood since the prior is so flat over the region where $L$ has
+#|   mass. Shaded tails cut off $\\alpha/2$ of the posterior probability each,
+#|   giving a $(1-\\alpha)$ credible interval $(\\theta_{\\alpha/2},\\theta_{1-\\alpha/2})$."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+L <- function(t) dnorm(t, 3, 1); pri <- function(t) dnorm(t, 2, 4) * 2.5
+curve(L, -2, 8, lwd = 3, col = "firebrick", xlab = expression(theta), ylab = "", yaxt = "n",
+      main = "prior and likelihood", ylim = c(0, 0.45))
+curve(pri, add = TRUE, lwd = 3, col = "gray40", lty = 2)
+legend("topleft", bty = "n", lwd = 3, lty = c(2, 1), col = c("gray40", "firebrick"),
+       legend = c(expression(pi(theta)), expression(L(theta))))
+post <- function(t) L(t) * pri(t); Z <- integrate(post, -10, 15)$value
+pd <- function(t) post(t) / Z
+curve(pd, -2, 8, lwd = 3, col = "steelblue", xlab = expression(theta), ylab = "", yaxt = "n",
+      main = expression("posterior" %prop% L(theta) * pi(theta)), ylim = c(0, 0.45))
+tt <- seq(-2, 8, length.out = 1000); cdf <- cumsum(pd(tt)) * diff(tt)[1]
+q <- c(tt[which.min(abs(cdf - 0.025))], tt[which.min(abs(cdf - 0.975))])
+for (side in 1:2) { xs <- if (side == 1) seq(-2, q[1], length.out = 100) else seq(q[2], 8, length.out = 100)
+  polygon(c(xs, rev(xs)), c(pd(xs), rep(0, 100)), col = adjustcolor("steelblue", 0.35), border = NA) }
+abline(v = q, lty = 3); text(q, 0.42, c(expression(theta[alpha/2]), expression(theta[1-alpha/2])))
+text(q[1] - 0.5, 0.05, expression(alpha/2)); text(q[2] + 0.5, 0.05, expression(alpha/2))
+```
+
+## Summarizing the Posterior
+
+### Point estimates from loss functions
+
+A single number for $\theta$ is a decision, and a principled way to make a
+decision is to minimize expected loss. Given a loss function
+$L(\theta,\hat\theta)$ measuring the cost of reporting $\hat\theta$ when the
+truth is $\theta$, the **Bayes estimate** minimizes the *posterior expected*
+loss,
+$$
+\hat\theta = \arg\min_{\hat\theta}\; E\big[L(\theta,\hat\theta)\mid y_{1:n}\big]
+= \arg\min_{\hat\theta} \int L(\theta,\hat\theta)\,P(\theta\mid y_{1:n})\,d\theta.
+$$
+Three standard losses give three familiar summaries:
+
+|Loss $L(\theta,\hat\theta)$|Bayes estimate $\hat\theta$|
+|:---|:---|
+|$(\theta-\hat\theta)^2$ (squared error)|posterior mean $E(\theta\mid y_{1:n})$|
+|$\lvert\theta-\hat\theta\rvert$ (absolute error)|posterior median|
+|$I(\theta\ne\hat\theta)$ (0–1 loss)|posterior mode (MAP)|
+
+**Interval estimates** go one step further: a $(1-\alpha)$ **credible
+interval** $(\theta_{\alpha/2},\theta_{1-\alpha/2})$ contains $\theta$ with
+posterior probability $1-\alpha$ — a direct probability statement about
+$\theta$ itself, unlike a frequentist confidence interval, whose
+$1-\alpha$ coverage is a statement about the *procedure* across repeated
+samples, not about $\theta$ given the data actually observed.
+
+Every entry in that table is either an integral (a mean, a median, a
+probability) or an optimization (the mode) over the posterior. This is the
+sense in which Bayesian inference is inherently computational: even the most
+basic summaries require operations that, outside of conjugate models like
+the two worked below, have no closed form.
+
+### Posterior prediction
+
+Often the real target is not $\theta$ itself but a future observation. The
+**posterior predictive distribution** of $y_{n+1}$ is
+$$
+P(y_{n+1}\mid y_{1:n}) = \frac{\int P(y_{n+1},y_{1:n}\mid\theta)\,\pi(\theta)\,d\theta}
+{\int P(y_{1:n}\mid\theta)\,\pi(\theta)\,d\theta}.
+$$
+If $y_1,\ldots,y_n,y_{n+1}$ are conditionally independent given $\theta$ —
+the usual iid-sampling assumption — the joint density factors and this
+simplifies to
+$$
+P(y_{n+1}\mid y_{1:n}) = \int P(y_{n+1}\mid\theta)\,P(\theta\mid y_{1:n})\,d\theta,
+$$
+an *average* of the sampling density over the posterior, rather than the
+sampling density evaluated at one plug-in estimate $\hat\theta$. Given
+posterior draws $\theta_1,\ldots,\theta_J\sim P(\theta\mid y_{1:n})$ (the
+subject of the Monte Carlo chapters later in the book),
+$$
+P(y_{n+1}\mid y_{1:n}) \approx \frac1J\sum_{j=1}^J P(y_{n+1}\mid\theta_j).
+$$
+Because it mixes over the whole posterior instead of conditioning on a
+single $\hat\theta$, the predictive distribution is necessarily wider than
+any individual $P(y_{n+1}\mid\theta_j)$: it carries both the sampling
+variability *and* the remaining uncertainty about $\theta$. The Poisson–Gamma
+example below makes this concrete with a closed-form predictive distribution
+that is visibly overdispersed relative to a plug-in Poisson.
+
+```{r}
+#| label: fig-predictive
+#| fig-width: 9
+#| fig-height: 4.4
+#| fig-cap: "Red: the sampling density $P(y_{n+1}\\mid\\theta_j)$ for ten
+#|   posterior draws $\\theta_j\\sim N(3, 0.8^2)$. Black: their average, the
+#|   posterior predictive density $P(y_{n+1}\\mid y_{1:n})$. The predictive
+#|   is visibly wider than any single red curve — it inherits both the
+#|   spread of $P(y_{n+1}\\mid\\theta)$ and the spread of the $\\theta_j$."
+par(mar = c(4, 4, 1, 1)); J <- 10; th <- rnorm(J, 3, 0.8)
+curve(dnorm(x, th[1]), -2, 8, col = adjustcolor("firebrick", 0.6), lwd = 1.5, ylim = c(0, 0.42),
+      xlab = expression(y[n+1]), ylab = "density")
+for (j in 2:J) curve(dnorm(x, th[j]), add = TRUE, col = adjustcolor("firebrick", 0.6), lwd = 1.5)
+curve(sapply(x, function(v) mean(dnorm(v, th))), add = TRUE, lwd = 4)
+legend("topright", bty = "n", lwd = c(1.5, 4), col = c("firebrick", "black"),
+       legend = c(expression(P(y[n+1]*"|"*theta[j])), expression(P(y[n+1]*"|"*y[1:n]))))
+```
+
+## Example: Bernoulli Data with a Beta Prior
+
+### Prior
+
+Let $y_1,\ldots,y_n\mid\theta \overset{iid}{\sim}\text{Bern}(\theta)$, with
+$\theta\in(0,1)$ a success probability, and give $\theta$ a
+$\text{Beta}(\alpha_1,\alpha_0)$ prior, $\alpha_1,\alpha_0>0$ given:
+$$
+\pi(\theta) = \frac{\Gamma(\alpha_0+\alpha_1)}{\Gamma(\alpha_0)\Gamma(\alpha_1)}\,
+\theta^{\alpha_1-1}(1-\theta)^{\alpha_0-1}, \qquad 0<\theta<1,
+$$
+$$
+E(\theta) = \frac{\alpha_1}{\alpha_0+\alpha_1}, \qquad
+V(\theta) = \frac{\alpha_0\alpha_1}{(\alpha_0+\alpha_1)^2(\alpha_0+\alpha_1+1)}.
+$$
+The parameters have a direct reading as *pseudo-data*: $\alpha_1$ behaves
+like a prior count of successes, $\alpha_0$ a prior count of failures, and
+$\alpha_0+\alpha_1$ a prior "sample size" — the more of it, the more
+concentrated $\pi(\theta)$ is around $\alpha_1/(\alpha_0+\alpha_1)$, exactly
+as a real sample of that size would concentrate a Bernoulli proportion.
+$\text{Beta}(1,1)$ is $\text{Unif}(0,1)$, a genuinely flat prior; small
+$\alpha$'s (e.g. $\text{Beta}(0.5,0.5)$) give a U-shaped prior that expects
+$\theta$ near $0$ or $1$; large, unequal $\alpha$'s concentrate the prior
+away from $\tfrac12$.
+
+```{r}
+#| label: fig-beta-priors
+#| fig-width: 9
+#| fig-height: 4.8
+#| fig-cap: "Six Beta priors spanning flat, U-shaped, and concentrated shapes.
+#|   Beta(1,1) is uniform; Beta(0.5,0.5) is U-shaped, favouring $\\theta$ near
+#|   the boundaries; Beta(2,5) and Beta(30,10) are increasingly concentrated,
+#|   at $\\theta\\approx2/7$ and $\\theta\\approx0.75$ respectively."
+par(mar = c(4, 4, 1, 1))
+pars <- list(c(1, 1), c(2, 1), c(0.5, 0.5), c(2, 5), c(10, 10), c(30, 10))
+cols <- c("black", "firebrick", "darkorange", "forestgreen", "steelblue", "purple")
+plot(NA, xlim = c(0, 1), ylim = c(0, 6), xlab = expression(theta), ylab = expression(pi(theta)))
+for (k in seq_along(pars)) curve(dbeta(x, pars[[k]][1], pars[[k]][2]), add = TRUE, lwd = 3, col = cols[k], n = 501)
+legend("top", bty = "n", lwd = 3, col = cols, ncol = 3,
+       legend = sapply(pars, function(p) sprintf("Beta(%g, %g)", p[1], p[2])))
+```
+
+### Likelihood and posterior
+
+With $P(y_i\mid\theta) = \theta^{y_i}(1-\theta)^{1-y_i}$ and
+$\mathbf y = (y_1,\ldots,y_n)$, the likelihood depends on the data only
+through the total number of successes:
+$$
+L(\theta) = \prod_{i=1}^n \theta^{y_i}(1-\theta)^{1-y_i} = \theta^{n_1}(1-\theta)^{n_0},
+\qquad n_1 = \sum_i y_i,\ \ n_0 = n - n_1.
+$$
+Multiplying by the prior and collecting powers of $\theta$ and $1-\theta$,
+$$
+f(\theta) = \pi(\theta)L(\theta) \;\propto\; \theta^{\alpha_1-1}(1-\theta)^{\alpha_0-1}\cdot\theta^{n_1}(1-\theta)^{n_0}
+= \theta^{(\alpha_1+n_1)-1}(1-\theta)^{(\alpha_0+n_0)-1}.
+$$
+This unnormalized posterior is, up to the constant $P(\mathbf y)$, exactly
+the Beta kernel with updated parameters $\alpha_1' = \alpha_1+n_1$,
+$\alpha_0' = \alpha_0+n_0$ — and since a Beta density is the *only*
+normalized distribution with that kernel,
+$$
+\theta\mid\mathbf y \sim \text{Beta}(\alpha_1+n_1,\ \alpha_0+n_0)
+$$
+follows immediately, with no integration needed. This is what it means for
+the Beta prior to be **conjugate** to the Bernoulli likelihood: updating the
+prior to the posterior is nothing but arithmetic on the two parameters,
+$\alpha_1 \to \alpha_1+n_1$, $\alpha_0\to\alpha_0+n_0$, and the marginal
+likelihood $P(\mathbf y)$ never has to be computed explicitly, because
+matching the two Beta kernels pins down the normalizing constant for free.
+Few models have this property; it is a stroke of algebraic luck rather than
+a general feature of Bayesian inference, which is exactly why the rest of
+this book is needed.
+
+### Posterior summaries
+
+The pseudo-data reading of $\alpha_1,\alpha_0$ carries through to the
+posterior mean, which is an exact weighted average of the prior mean and the
+MLE $\hat\theta_{\text{MLE}} = n_1/n$:
+$$
+E(\theta\mid\mathbf y) = \frac{\alpha_1+n_1}{\alpha_0+\alpha_1+n}
+= \underbrace{\frac{\alpha_0+\alpha_1}{\alpha_0+\alpha_1+n}}_{w}\cdot\frac{\alpha_1}{\alpha_0+\alpha_1}
++ (1-w)\cdot\hat\theta_{\text{MLE}}.
+$$
+The weight $w$ on the prior mean is the prior's pseudo-sample-size relative
+to the total (prior plus real) sample size; as $n\to\infty$, $w\to0$ and the
+posterior mean converges to the MLE regardless of the prior. The posterior
+variance,
+$$
+V(\theta\mid\mathbf y) = \frac{(\alpha_1+n_1)(\alpha_0+n_0)}{(n+\alpha_0+\alpha_1)^2(n+\alpha_0+\alpha_1+1)} = O\!\left(\frac1n\right),
+$$
+shrinks at the same $1/n$ rate as the sampling variance of the MLE,
+$\hat\theta_{\text{MLE}}\,\dot\sim\,N\big(\theta_0,\,1/(nI(\theta_0))\big)$
+from the MLE chapters — for large $n$ the two approaches to uncertainty
+agree, with the prior's influence vanishing.
+
+**Worked numbers.** Take a near-flat $\text{Beta}(1,1)$ prior and $n=10$
+trials with $y=7$ successes:
+
+```{r}
+#| label: bb-example
+a1 <- 1; a0 <- 1                 # Beta(1, 1): uniform prior
+n_bb <- 10; y_bb <- 7            # 7 successes out of 10 trials
+post_a1 <- a1 + y_bb; post_a0 <- a0 + (n_bb - y_bb)
+bb_mean <- post_a1 / (post_a1 + post_a0)
+bb_mode <- (post_a1 - 1) / (post_a1 + post_a0 - 2)
+bb_sd   <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
+bb_ci   <- qbeta(c(0.025, 0.975), post_a1, post_a0)
+```
+
+```{r}
+#| label: tbl-bb-summary
+#| tbl-cap: "Posterior summaries, Beta(1,1) prior with n = 10, y = 7."
+knitr::kable(data.frame(
+  quantity = c("prior mean", "MLE ($y/n$)", "posterior distribution",
+               "posterior mean", "posterior mode", "posterior sd", "95% credible interval"),
+  value = c(sprintf("%.3f", a1 / (a1 + a0)), sprintf("%.3f", y_bb / n_bb),
+            sprintf("Beta(%d, %d)", post_a1, post_a0),
+            sprintf("%.3f", bb_mean), sprintf("%.3f", bb_mode), sprintf("%.3f", bb_sd),
+            sprintf("(%.3f, %.3f)", bb_ci[1], bb_ci[2]))
+), col.names = c("quantity", "value"))
+```
+
+With a uniform prior the posterior mean $0.667$ sits between the prior mean
+$0.5$ and the MLE $0.7$, pulled almost all the way to the MLE because the
+prior carries only $\alpha_0+\alpha_1=2$ pseudo-observations against $10$
+real ones. The 95% credible interval, $(0.390, 0.891)$, is read directly off
+the Beta CDF (`qbeta`) — no simulation, no quadrature, because conjugacy
+already handed over the exact posterior family.
+
+```{r}
+#| label: fig-beta-posterior-narrowing
+#| fig-width: 9
+#| fig-height: 4.6
+#| fig-cap: "Prior Beta(2,2) (dashed) and posteriors after $n=10,50,200$
+#|   observations with $\\bar y=0.7$ held fixed. The posterior narrows at
+#|   rate $1/\\sqrt n$ and moves onto the MLE as $n$ grows, exactly the
+#|   $w\\to0$ argument above made visible."
+par(mar = c(4, 4, 1, 1)); a1p <- 2; a0p <- 2; ybar <- 0.7
+ns <- c(10, 50, 200); cols <- c("firebrick", "darkorange", "steelblue")
+plot(NA, xlim = c(0, 1), ylim = c(0, 13), xlab = expression(theta), ylab = "density")
+curve(dbeta(x, a1p, a0p), add = TRUE, lwd = 3, lty = 2, col = "gray40")
+for (k in seq_along(ns)) curve(dbeta(x, a1p + ns[k] * ybar, a0p + ns[k] * (1 - ybar)), add = TRUE, lwd = 3, col = cols[k])
+abline(v = ybar, lty = 3)
+legend("topleft", bty = "n", lwd = 3, lty = c(2, 1, 1, 1), col = c("gray40", cols),
+       legend = c("prior Beta(2, 2)", paste0("posterior, n = ", ns)))
+text(ybar, 12.5, expression(hat(theta)[MLE]), pos = 4)
+```
+
+### Posterior predictive
+
+For a new $y_{n+1}\mid\theta\sim\text{Bern}(\theta)$, the general predictive
+formula from earlier in this chapter simplifies beautifully in the
+conjugate case, because $E(\theta\mid\mathbf y)$ *is* the predictive success
+probability:
+$$
+P(y_{n+1}=1\mid\mathbf y) = \int \theta\, P(\theta\mid\mathbf y)\,d\theta = E(\theta\mid\mathbf y)
+= \frac{\alpha_1+n_1}{\alpha_0+\alpha_1+n}.
+$$
+With the worked numbers above, $P(y_{11}=1\mid\mathbf y) = 0.667$ — the same
+number as the posterior mean, but now read as a probability for one more
+coin flip rather than a belief about $\theta$. This exact equality
+($E(\theta\mid\mathbf y)$ doing double duty as both a point estimate of
+$\theta$ and the predictive probability of success) is special to Bernoulli
+data; the Poisson–Gamma example next shows a case where the predictive
+distribution is a genuinely different, wider distribution than the plug-in
+sampling model.
+
+## Example: Poisson Data with a Gamma Prior
+
+### Prior
+
+Now let $y_1,\ldots,y_n\mid\lambda \overset{iid}{\sim}\text{Poisson}(\lambda)$,
+$\lambda>0$ a rate, with a $\text{Gamma}(\alpha,\beta)$ prior (shape
+$\alpha$, rate $\beta$),
+$$
+\pi(\lambda) = \frac{\beta^\alpha}{\Gamma(\alpha)}\lambda^{\alpha-1}e^{-\beta\lambda}, \qquad \lambda>0,
+\qquad E(\lambda) = \frac{\alpha}{\beta}, \qquad V(\lambda) = \frac{\alpha}{\beta^2}.
+$$
+The pseudo-data reading again applies, with the two parameters playing
+different roles than in the Beta case: $\alpha$ behaves like a prior total
+count and $\beta$ like a prior total *exposure* (a number of pseudo
+time-units or pseudo-observations already seen with rate $\lambda$), so
+$\alpha/\beta$ is a prior average rate — the same "counts per exposure"
+structure as $\hat\lambda_{\text{MLE}} = \sum y_i / n$, with $\beta$ playing
+the role $n$ plays in the likelihood.
+
+### Likelihood and posterior
+
+With $P(y_i\mid\lambda) = \lambda^{y_i}e^{-\lambda}/y_i!$, the likelihood
+depends on the data only through the total count $S=\sum_i y_i$:
+$$
+L(\lambda) = \prod_{i=1}^n \frac{\lambda^{y_i}e^{-\lambda}}{y_i!}
+= \frac{\lambda^{S}e^{-n\lambda}}{\prod_i y_i!}, \qquad S = \sum_{i=1}^n y_i.
+$$
+Multiplying by the prior and collecting powers of $\lambda$ and $e^{-\lambda}$,
+$$
+f(\lambda) = \pi(\lambda)L(\lambda) \;\propto\; \lambda^{\alpha-1}e^{-\beta\lambda}\cdot\lambda^{S}e^{-n\lambda}
+= \lambda^{(\alpha+S)-1}e^{-(\beta+n)\lambda},
+$$
+the kernel of a $\text{Gamma}(\alpha+S,\ \beta+n)$ density. The Gamma prior
+is therefore **conjugate** to the Poisson likelihood, exactly as Beta was to
+Bernoulli, and by the same argument (matching a recognizable kernel pins
+down the normalizing constant automatically):
+$$
+\lambda\mid\mathbf y \sim \text{Gamma}(\alpha+S,\ \beta+n).
+$$
+The posterior mean has precisely the weighted-average structure seen in the
+Bernoulli case, with $\beta$ now playing the role $\alpha_0+\alpha_1$ played
+there:
+$$
+E(\lambda\mid\mathbf y) = \frac{\alpha+S}{\beta+n}
+= \underbrace{\frac{\beta}{\beta+n}}_{w}\cdot\frac{\alpha}{\beta}
++ (1-w)\cdot\underbrace{\frac{S}{n}}_{\hat\lambda_{\text{MLE}}},
+$$
+a weighted average of the prior mean and the MLE, with prior weight
+$w=\beta/(\beta+n)\to0$ as $n\to\infty$ — the same shrinkage story as
+Beta–Bernoulli, now driven by $\beta$ (prior pseudo-exposure) instead of
+$\alpha_0+\alpha_1$ (prior pseudo-sample-size).
+
+### The marginal likelihood in closed form
+
+Because conjugacy gives the *whole* posterior in closed form, it also gives
+the marginal likelihood $P(\mathbf y)=\int f(\lambda)\,d\lambda$ in closed
+form, by integrating the unnormalized Gamma kernel directly against its own
+normalizing constant:
+$$
+P(\mathbf y) = \left(\prod_{i=1}^n \frac1{y_i!}\right)\frac{\beta^\alpha}{\Gamma(\alpha)}
+\int_0^\infty \lambda^{(\alpha+S)-1}e^{-(\beta+n)\lambda}\,d\lambda
+= \left(\prod_{i=1}^n \frac1{y_i!}\right)\frac{\beta^\alpha\,\Gamma(\alpha+S)}{\Gamma(\alpha)\,(\beta+n)^{\alpha+S}},
+$$
+using $\int_0^\infty \lambda^{k-1}e^{-c\lambda}\,d\lambda = \Gamma(k)/c^k$.
+On the log scale,
+$$
+\log P(\mathbf y) = \alpha\log\beta - \log\Gamma(\alpha) + \log\Gamma(\alpha+S)
+- (\alpha+S)\log(\beta+n) - \sum_{i=1}^n \log(y_i!).
+$$
+This exact Gamma–Poisson conjugate identity is what makes the Poisson-rate
+model a useful *test case* for approximate methods: the Laplace
+approximation chapter later in this book applies its mode-and-curvature
+approximation to this same model and checks the result against precisely
+this formula, since here — unlike in most applications — the truth is known.
+
+### Worked numbers
+
+Take $\text{Gamma}(2,1)$ as the prior (prior mean $2$, i.e. a mild belief
+that the rate is around $2$, with pseudo-exposure $\beta=1$) and $n=8$
+simulated counts from a true rate of $3$:
+
+```{r}
+#| label: pg-example
+alpha <- 2; beta <- 1                       # Gamma(2, 1) prior
+set.seed(42)
+n_pg <- 8; y_pg <- rpois(n_pg, 3)           # 8 counts from a true rate of 3
+S_pg <- sum(y_pg)
+post_alpha <- alpha + S_pg; post_beta <- beta + n_pg
+pg_mean <- post_alpha / post_beta
+pg_sd   <- sqrt(post_alpha) / post_beta
+pg_ci   <- qgamma(c(0.025, 0.975), post_alpha, post_beta)
+```
+
+```{r}
+#| label: tbl-pg-summary
+#| tbl-cap: "Posterior summaries, Gamma(2,1) prior, n = 8 Poisson counts."
+knitr::kable(data.frame(
+  quantity = c("data $y_{1:8}$", "sum $S$", "prior mean", "MLE ($S/n$)",
+               "posterior distribution", "posterior mean", "posterior sd", "95% credible interval"),
+  value = c(paste(y_pg, collapse = ", "), as.character(S_pg),
+            sprintf("%.3f", alpha / beta), sprintf("%.3f", S_pg / n_pg),
+            sprintf("Gamma(%d, %d)", post_alpha, post_beta),
+            sprintf("%.3f", pg_mean), sprintf("%.3f", pg_sd),
+            sprintf("(%.3f, %.3f)", pg_ci[1], pg_ci[2]))
+), col.names = c("quantity", "value"))
+```
+
+The MLE, $29/8=3.625$, and the prior mean, $2$, are pulled toward each other
+by the posterior mean $3.444$ — mostly toward the MLE, since the prior's
+pseudo-exposure $\beta=1$ is small next to the real $n=8$. Compare this to
+the true generating rate of $3$: both the MLE and the posterior mean
+overshoot it here (this particular simulated sample happened to run a bit
+high), and the 95% credible interval $(2.340, 4.759)$ still comfortably
+covers it.
+
+### Posterior predictive: a genuinely overdispersed case
+
+For a new count $y_{n+1}\mid\lambda\sim\text{Poisson}(\lambda)$, integrating
+the Poisson sampling density against the $\text{Gamma}(\alpha+S,\beta+n)$
+posterior gives a **Negative Binomial** predictive distribution,
+$$
+P(y_{n+1}\mid\mathbf y) = \int_0^\infty \frac{\lambda^{y_{n+1}}e^{-\lambda}}{y_{n+1}!}\,
+\frac{(\beta+n)^{\alpha+S}}{\Gamma(\alpha+S)}\lambda^{(\alpha+S)-1}e^{-(\beta+n)\lambda}\,d\lambda
+= \text{NegBin}\!\left(\text{size}=\alpha+S,\ \ p=\frac{\beta+n}{\beta+n+1}\right),
+$$
+by the same Gamma-integral identity used for the marginal likelihood above.
+Its mean matches the posterior mean of $\lambda$ exactly (as it must, by the
+tower property), but its variance is *larger* than that of a plug-in
+Poisson at the posterior mean rate:
+$$
+E(y_{n+1}\mid\mathbf y) = \frac{\alpha+S}{\beta+n}, \qquad
+V(y_{n+1}\mid\mathbf y) = \frac{\alpha+S}{\beta+n}\left(1+\frac1{\beta+n}\right)
+= E(y_{n+1}\mid\mathbf y)\cdot\Big(1+\tfrac{1}{\beta+n}\Big).
+$$
+A plug-in Poisson at $\lambda=E(\lambda\mid\mathbf y)$ would have variance
+*equal* to its mean — the extra factor $1+1/(\beta+n)$ is entirely the
+posterior uncertainty about $\lambda$ leaking into the prediction, exactly
+the "wider than any single $P(y_{n+1}\mid\theta_j)$" phenomenon from the
+general framework above, now with an explicit formula for *how much* wider.
+With the worked numbers, $\beta+n=9$, so the predictive variance is $11.1\%$
+larger than a plug-in Poisson's — small here because $n$ is already large
+relative to the prior, but the gap widens as $n$ shrinks or the prior gets
+vaguer (smaller $\beta$).
+
+```{r}
+#| label: fig-pg-predictive-dispersion
+#| fig-width: 9
+#| fig-height: 4.4
+#| fig-cap: "Posterior predictive $P(y_{n+1}\\mid\\mathbf y)$ (Negative
+#|   Binomial, red) against a plug-in Poisson at the posterior mean rate
+#|   (gray). Same mean, but the predictive has heavier tails: the two bars
+#|   noticeably diverge above $y_{n+1}=7$, and $V(y_{n+1}\\mid\\mathbf y)$
+#|   exceeds the plug-in variance by the factor $1+1/(\\beta+n)=1.111$
+#|   derived above."
+ks <- 0:12
+nb_prob <- post_beta / (post_beta + 1)
+pred_nb     <- dnbinom(ks, size = post_alpha, prob = nb_prob)
+pred_plugin <- dpois(ks, pg_mean)
+par(mar = c(4, 4, 1, 1))
+barplot(rbind(pred_nb, pred_plugin), beside = TRUE, col = c("firebrick", "gray60"),
+        names.arg = ks, xlab = expression(y[n+1]), ylab = expression(P(y[n+1])))
+legend("topright", bty = "n", fill = c("firebrick", "gray60"),
+       legend = c("posterior predictive (Negative Binomial)", "plug-in Poisson at posterior mean"))
+```
+
+## Explore it interactively {#sec-bayes-explorer}
+
+The app below lets you adjust the prior, sample size, and observed data for
+either conjugate model and watch prior and posterior move together, along
+with the posterior summary table computed above. This app runs live only in
+the HTML edition of this book; readers of other formats can follow the link
+below it.
+
+::: {.content-visible when-format="html"}
+
+```{shinylive-r}
+#| label: bayes-explorer-app
+#| standalone: true
+
+library(shiny)
+
+ui <- fluidPage(
+  titlePanel(NULL),
+  sidebarLayout(
+    sidebarPanel(
+      width = 4,
+      selectInput("model", "Model",
+                  choices = c("Bernoulli - Beta" = "bb", "Poisson - Gamma" = "pg")),
+      conditionalPanel(
+        "input.model == 'bb'",
+        numericInput("a1", "prior alpha1 (successes)", value = 1, min = 0.1, step = 0.5),
+        numericInput("a0", "prior alpha0 (failures)", value = 1, min = 0.1, step = 0.5),
+        numericInput("n_bb", "n (trials)", value = 10, min = 1, step = 1),
+        numericInput("y_bb", "y (successes observed)", value = 7, min = 0, step = 1)
+      ),
+      conditionalPanel(
+        "input.model == 'pg'",
+        numericInput("alpha", "prior alpha (shape)", value = 2, min = 0.1, step = 0.5),
+        numericInput("beta", "prior beta (rate)", value = 1, min = 0.1, step = 0.5),
+        numericInput("n_pg", "n (observations)", value = 8, min = 1, step = 1),
+        numericInput("S_pg", "sum of counts", value = 29, min = 0, step = 1)
+      ),
+      helpText("Dashed = prior, solid = posterior. The dotted vertical line ",
+               "is the MLE (y/n for Bernoulli, S/n for Poisson).")
+    ),
+    mainPanel(
+      width = 8,
+      plotOutput("densplot", height = "380px"),
+      tableOutput("summtab")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+
+  output$densplot <- renderPlot({
+    par(mar = c(4, 4, 2, 1))
+    if (input$model == "bb") {
+      a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- input$y_bb
+      post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
+      xs <- seq(0, 1, length.out = 500)
+      ylim <- c(0, max(dbeta(xs, a1, a0), dbeta(xs, post_a1, post_a0)) * 1.1)
+      curve(dbeta(x, a1, a0), 0, 1, lwd = 2, lty = 2, col = "gray40",
+            xlab = expression(theta), ylab = "density", ylim = ylim)
+      curve(dbeta(x, post_a1, post_a0), add = TRUE, lwd = 3, col = "steelblue")
+      abline(v = y / n, lty = 3)
+      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "steelblue"),
+             legend = c("prior", "posterior"))
+    } else {
+      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
+      post_alpha <- alpha + S; post_beta <- beta + n
+      hi <- max(qgamma(0.999, alpha, beta), qgamma(0.999, post_alpha, post_beta))
+      xs <- seq(0, hi, length.out = 500)
+      ylim <- c(0, max(dgamma(xs, alpha, beta), dgamma(xs, post_alpha, post_beta)) * 1.1)
+      curve(dgamma(x, alpha, beta), 0, hi, lwd = 2, lty = 2, col = "gray40",
+            xlab = expression(lambda), ylab = "density", ylim = ylim)
+      curve(dgamma(x, post_alpha, post_beta), add = TRUE, lwd = 3, col = "firebrick")
+      abline(v = S / n, lty = 3)
+      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "firebrick"),
+             legend = c("prior", "posterior"))
+    }
+  })
+
+  output$summtab <- renderTable({
+    if (input$model == "bb") {
+      a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- input$y_bb
+      post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
+      data.frame(
+        quantity = c("prior mean", "MLE (y/n)", "posterior mean", "posterior sd", "95% credible interval"),
+        value = c(sprintf("%.3f", a1 / (a1 + a0)),
+                  sprintf("%.3f", y / n),
+                  sprintf("%.3f", post_a1 / (post_a1 + post_a0)),
+                  sprintf("%.3f", sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))),
+                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0))))
+    } else {
+      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
+      post_alpha <- alpha + S; post_beta <- beta + n
+      data.frame(
+        quantity = c("prior mean", "MLE (S/n)", "posterior mean", "posterior sd", "95% credible interval"),
+        value = c(sprintf("%.3f", alpha / beta),
+                  sprintf("%.3f", S / n),
+                  sprintf("%.3f", post_alpha / post_beta),
+                  sprintf("%.3f", sqrt(post_alpha) / post_beta),
+                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta))))
+    }
+  }, colnames = FALSE, striped = TRUE)
+}
+
+shinyApp(ui, server)
+```
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit07_bayesian_inference.html#sec-bayes-explorer>.
+:::
+
+## Where Computation Enters
+
+For the Beta–Bernoulli and Gamma–Poisson models, everything above is
+closed-form: the posterior, its mean and variance, credible intervals, and
+even the marginal likelihood and predictive distribution. Conjugacy is a
+special convenience, restricted to a handful of prior/likelihood pairings;
+for a general model, the same quantities require genuine numerical work:
+
+|Quantity|Requires|
+|:---|:---|
+|Normalizing constant $P(\mathbf y) = \int L(\theta)\pi(\theta)\,d\theta$|integration over $\theta$|
+|Posterior mean, variance, probabilities|integration over $\theta$|
+|Posterior mode|optimization|
+|Posterior predictive $\int P(y_{n+1}\mid\theta)P(\theta\mid\mathbf y)\,d\theta$|integration over $\theta$|
+|Credible intervals|posterior quantiles|
+
+The strategy depends on the dimension of $\theta$. For **one-dimensional**
+$\theta$, a deterministic grid of evaluation points — **numerical
+quadrature**, the next chapter — is cheap and accurate, and **Laplace's
+method** (the chapter after that) offers a grid-free alternative built from
+just the posterior mode and its curvature, at the cost of assuming the
+posterior is roughly bell-shaped. For **multi-dimensional** $\theta$, a grid
+becomes exponentially expensive, and the standard approach is Monte Carlo:
+approximate every integral by an average over posterior draws
+$\theta_1,\ldots,\theta_J\sim P(\theta\mid\mathbf y)$, as prediction already
+did above. Producing those draws — by **rejection sampling**, **importance
+sampling**, and finally **Markov chain Monte Carlo** — is the subject of the
+remaining chapters of this book.
+
+## Summary
+
+- Bayesian inference treats $\theta$ as random, combines a prior $\pi(\theta)$
+  with a likelihood $L(\theta)$ via Bayes' rule, and reports a *distribution*
+  $P(\theta\mid\mathbf y)\propto f(\theta)=L(\theta)\pi(\theta)$ rather than a
+  single point estimate.
+- Every standard summary — posterior mean/median/mode, credible intervals,
+  predictive distributions — is an integral or an optimization over that
+  posterior, which is why Bayesian inference is a computational subject.
+- The Beta–Bernoulli and Gamma–Poisson pairs are **conjugate**: the
+  posterior is available in closed form (Beta and Gamma respectively), the
+  posterior mean is an exact weighted average of the prior mean and the MLE
+  with the prior's pseudo-sample-size as weight, and the marginal likelihood
+  and predictive distribution are closed-form too (Negative Binomial for
+  Gamma–Poisson) — no integration needed anywhere.
+- The Gamma–Poisson predictive distribution is visibly overdispersed
+  relative to a plug-in Poisson at the posterior mean rate, by an exact
+  factor $1+1/(\beta+n)$: real posterior uncertainty about $\theta$ widens
+  predictions, a general feature the closed form makes precise here.
+- Conjugacy is the exception, not the rule. The rest of this book develops
+  general-purpose tools for the same four computations — quadrature,
+  Laplace approximation, rejection sampling, importance sampling, and MCMC —
+  for models where no such algebraic shortcut exists.
