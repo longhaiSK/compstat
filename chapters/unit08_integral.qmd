@@ -519,32 +519,46 @@ prior-sensitivity.
 ## Difficulties of Numerical Quadrature
 
 
-### Transformed integrands can be squeezed against the boundary
+### When the grid misses the posterior's mode {#sec-missed-mode}
 
-The logistic transform has its own failure mode: if $\theta$'s posterior sits
-at a large $|\theta|$, it gets squeezed against $y=0$ or $y=1$. For
-$\theta \approx 50$, $y = 1/(1+e^{-50}) \approx 1 - 2\times 10^{-22}$ — the
-entire posterior mass occupies a sliver of $(0,1)$ far too thin for any
-practical uniform grid to resolve.
-
-### Explore the squeeze interactively {#sec-boundary-squeeze-app}
-
-The app below is the normal-model example made interactive: type in $\mu$,
-the location the data pull the likelihood toward (sigma fixed at 1), and
-drag the slider to change how many grid points sit in $u$ over $[0.1, 0.9]$.
-Watch how the grey points — perfectly uniform in $u$, linked to the logistic
-curve and dropped onto $z(\mu)=\pi(\mu)L(\mu)$ — stay clustered near the
-origin no matter how many of them there are, while $\mu$ alone controls
-whether they land anywhere near the posterior mass. This app runs live only
-in the HTML edition of this book; readers of other formats can follow the
-link below it.
+The app models a single unknown mean $\mu$. The likelihood
+$L(\mu) = N\big(\hat\mu;\,\mu,\,1/n_{\text{eff}}\big)$ treats $\hat\mu$ — the
+box you can type into — as the sample mean of $n_{\text{eff}}$ observations
+from $N(\mu,1)$; the prior is $\pi(\mu) = N(\mu; 0, 5^2)$. The marginal
+likelihood is
+$$
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
+$$
+Because this is a normal-normal conjugate pair, $P(y)$ has a closed form —
+but the app instead gets it by numerical integration, shown as the "true"
+value in the legend. To approximate $P(y)$ with a finite quadrature rule,
+apply the same logistic transform used throughout this chapter,
+$u = 1/(1+e^{-\mu})$, so that $d\mu = du/\{u(1-u)\}$ and
+$$
+P(y) = \int_0^1 \frac{z\big(\mathrm{logit}(u)\big)}{u(1-u)}\,du.
+$$
+The midpoint rule with $n$ points $u_i = (i-\tfrac12)/n$ turns this into a sum
+of value-times-Jacobian terms,
+$$
+P(y) \approx \frac1n \sum_{i=1}^n \frac{z(\mu_i)}{u_i(1-u_i)},
+\qquad \mu_i = \mathrm{logit}(u_i),
+$$
+and that sum is exactly what the picture shows: drag the slider to change
+$n$, and each grey point is one term of it — placed at $\mu_i$ by the guide
+lines through the logistic curve, then dropped onto $z(\mu)$ to reveal the
+$z(\mu_i)$ factor it contributes, before being scaled by the Jacobian
+$1/\{u_i(1-u_i)\}$. Move $\mu$ away from $0$ and every term lands where
+$z(\mu)\approx 0$, however many points you add — which is why the quadrature
+estimate in the legend drifts far from the true value. This app runs live
+only in the HTML edition of this book; readers of other formats can follow
+the link below it.
 
 ::: {.content-visible when-format="html"}
 
 ```{shinylive-r}
 #| label: boundary-squeeze-app
 #| standalone: true
-#| viewerHeight: 700
+#| viewerHeight: 600
 
 library(shiny)
 
@@ -554,12 +568,14 @@ ui <- fluidPage(
         sidebarPanel(
             width = 4,
             numericInput("mu_hat", "mu (data location)", value = 8, step = 1),
-            sliderInput("n_pts", "number of grid points in u (over 0.1 to 0.9)",
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
                         min = 2, max = 25, value = 9, step = 1),
-            helpText("The grid is uniform in u over [0.1, 0.9]; each point's ",
-                     "mu is recovered as logit(u). Try mu = 0 first (the grid ",
-                     "sits right under the mass), then move mu up to 8 or 20 ",
-                     "and watch every point miss it, however many you add.")
+            helpText("The grid is a midpoint rule, uniform in u over (0, 1); ",
+                     "each point's mu is recovered as logit(u). Try mu = 0 ",
+                     "first (the grid sits right under the mass, and the two ",
+                     "legend numbers agree closely), then move mu up to 8 or ",
+                     "20: the quadrature estimate drifts far from the true ",
+                     "value however many grid points you add.")
         ),
         mainPanel(
             width = 8,
@@ -576,14 +592,25 @@ server <- function(input, output, session) {
         prior <- function(mu) dnorm(mu, 0, 5)
         z     <- function(mu) L(mu) * prior(mu)
 
+        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### this z(mu) is a normal-normal conjugate kernel, so the true log
+        ### marginal likelihood is available directly by numerical integration
         log_marlik <- log(integrate(z, -Inf, Inf)$value)
 
         lo <- min(-8, input$mu_hat - 6)
         hi <- max(14, input$mu_hat + 6)
         mu_grid <- seq(lo, hi, length.out = 500)
 
-        u_pts  <- seq(0.1, 0.9, length.out = input$n_pts)
+        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
         mu_pts <- log(u_pts / (1 - u_pts))          # mu = logit(u)
+
+        ### the midpoint-rule quadrature estimate actually built from this grid:
+        ### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du
+        log_z    <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, 5, log = TRUE)
+        h        <- 1 / input$n_pts
+        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log(u_pts * (1 - u_pts))) + log(h)
 
         par(mar = c(4, 4, 2, 4))
         plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
@@ -604,10 +631,11 @@ server <- function(input, output, session) {
         segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
         points(mu_pts, u_pts, pch = 19, col = "gray30")
 
-        legend("topleft", bty = "n", lwd = c(3, 3, NA), col = c("firebrick", "steelblue", NA),
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
                legend = c(expression(z(mu) == pi(mu) * L(mu)),
                           expression(u == 1 / (1 + e^-mu)),
-                          as.expression(bquote(log~P(y) == .(round(log_marlik, 3))))))
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
     })
 }
 
@@ -619,181 +647,43 @@ shinyApp(ui, server)
 ::: {.content-visible unless-format="html"}
 This section contains a live, in-browser Shiny app that only runs in the HTML
 edition of this book. View it at
-<https://longhaisk.github.io/compstat/chapters/unit08_integral.html#sec-boundary-squeeze-app>.
+<https://longhaisk.github.io/compstat/chapters/unit08_integral.html#sec-missed-mode>.
 :::
 
-::: {.callout-note}
-### Reproducing this figure
-The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
-extension, which compiles the app to WebAssembly so it runs in the reader's
-browser with no Shiny server. Install it once per project with
+### The same failure in the full two-parameter model
 
-```bash
-quarto add quarto-ext/shinylive
-```
-
-and add `filters: [shinylive]` to the document or project YAML. Only packages
-available in webR may be used inside the app, so the code above is restricted
-to base R and `shiny`.
-:::
-
-We already met the extreme version of this problem at the start of this
-chapter's development: with data simulated far from where the untransformed
-grid was designed to look, the midpoint rule and Monte Carlo disagree badly.
+The app fixes $\sigma$ to isolate the mechanism, but the product midpoint
+rule over $(\mu, w)$ introduced earlier in this chapter — `log_marlik_mid` —
+fails the same way once both the mean and the variance are unknown, and
+`log_marlik_mc` again serves as the independent check. @tbl-mode-far-away
+compares the two for data centred at $\mu=-5$ and at $\mu=-20$ (both with
+$\sigma=2$, $n=100$), against a prior on $\mu$ centred at $0$ with
+$\sigma_\mu=10$ — reasonably vague, but not recentred on either dataset.
 
 ```{r}
-#| label: tbl-quad-failure
-#| tbl-cap: "Quadrature failure when the posterior is squeezed against the boundary: data centred at 50, but the logistic transform (with no recentring) puts almost the whole posterior mass within about 1e-20 of y = 1."
-set.seed(5)
-x_far <- rt.scaled(100, mean = 50, sd = 2, df = Inf)
-knitr::kable(data.frame(
-    method = c("midpoint (n = 100)", "Monte Carlo (n = 10,000)"),
-    log_P_y = c(log_marlik_mid(x_far, 0, 100, 0, 100, 100),
-                log_marlik_mc(x_far, 0, 100, 0, 100, 1e4))
-), digits = 3)
-```
+#| label: tbl-mode-far-away
+#| tbl-cap: "Log marginal likelihood for data centred at mu = -5 and mu = -20 (sigma = 2, n = 100), prior mu_0 = 0, sigma_mu = 10, w_0 = 0, sigma_w = 10: the product midpoint rule (n = 100 points per axis) against a naive Monte Carlo run of 100,000 draws from the prior."
+set.seed(6)
+x_m5  <- rnorm(100, -5, 2)
+x_m20 <- rnorm(100, -20, 2)
 
-The two estimates disagree by many orders of magnitude on the log scale — the
-grid is simply not looking where the posterior mass is. The general remedy is
-the same as for the peaked-integrand problem: **recentre the transform** on a
-preliminary location estimate $\hat\theta$ (e.g. the MLE), using
-$y = 1/(1 + e^{-(\theta-\hat\theta)/s})$ for a suitable scale $s$, so that the
-bulk of the posterior maps back to the middle of $(0,1)$ where the grid is
-dense.
-
-### Explore it interactively {#sec-quadrature-app}
-
-The app below lets you move the true mean of the simulated data and watch the
-midpoint-rule estimate diverge from the Monte Carlo baseline as the posterior
-is pushed toward the boundary of the transformed square, and shows the
-$g(u,v)$ heat map so you can see the mass leaving the grid. This app runs
-live only in the HTML edition of this book; readers of other formats can
-follow the link below it.
-
-::: {.content-visible when-format="html"}
-
-```{shinylive-r}
-#| label: quadrature-failure-app
-#| standalone: true
-#| viewerHeight: 800
-
-library(shiny)
-
-logit_inv     <- function(u) log(u / (1 - u))
-log_der_logit <- function(u) -log(u) - log(1 - u)
-log_lik   <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
-log_prior <- function(mu, w, mu_0, sigma_mu, w_0, sigma_w) {
-    dnorm(mu, mu_0, sigma_mu, log = TRUE) + dnorm(w, w_0, sigma_w, log = TRUE)
-}
-log_g <- function(u, v, x, mu_0, sigma_mu, w_0, sigma_w) {
-    mu <- logit_inv(u); w <- logit_inv(v)
-    log_lik(x, mu, w) + log_prior(mu, w, mu_0, sigma_mu, w_0, sigma_w) +
-        log_der_logit(u) + log_der_logit(v)
-}
-log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-
-log_marlik_mid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n) {
-    h <- 1 / n
-    grid <- (seq_len(n) - 0.5) * h
-    G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu_0, sigma_mu, w_0, sigma_w)))
-    list(log_ml = log_sum_exp(G) + 2 * log(h), grid = grid, G = G)
-}
-log_marlik_mc <- function(x, mu_0, sigma_mu, w_0, sigma_w, iters_mc) {
-    mus <- rnorm(iters_mc, mu_0, sigma_mu)
-    ws  <- rnorm(iters_mc, w_0, sigma_w)
-    v_log_lik <- vapply(seq_len(iters_mc), function(i) log_lik(x, mus[i], ws[i]), numeric(1))
-    log_sum_exp(v_log_lik) - log(iters_mc)
-}
-
-ui <- fluidPage(
-    titlePanel(NULL),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            sliderInput("true_mean", "true mean of the simulated data",
-                        min = 0, max = 60, value = 0, step = 2),
-            sliderInput("n_grid", "grid points per axis (midpoint rule)",
-                        min = 10, max = 60, value = 20, step = 5),
-            helpText("The prior on mu is N(0, 100), i.e. it is not recentred ",
-                     "on the data. As the true mean moves past about 15-20, the ",
-                     "posterior for mu is squeezed against y = 1 after the ",
-                     "logistic transform, and the midpoint estimate breaks away ",
-                     "from the Monte Carlo baseline."),
-            tableOutput("tab")
-        ),
-        mainPanel(
-            width = 8,
-            plotOutput("heat", height = "320px"),
-            plotOutput("compare", height = "260px")
-        )
-    )
+mode_far_tbl <- data.frame(
+    data        = c("mu = -5", "mu = -20"),
+    midpoint    = c(log_marlik_mid(x_m5,  0, 10, 0, 10, 100),
+                     log_marlik_mid(x_m20, 0, 10, 0, 10, 100)),
+    monte_carlo = c(log_marlik_mc(x_m5,  0, 10, 0, 10, 1e5),
+                     log_marlik_mc(x_m20, 0, 10, 0, 10, 1e5))
 )
-
-server <- function(input, output, session) {
-
-    dat <- reactive({
-        set.seed(1)
-        rnorm(60, input$true_mean, 2)
-    })
-
-    fit <- reactive({
-        log_marlik_mid(dat(), 0, 100, 0, 100, input$n_grid)
-    })
-
-    mc <- reactive({
-        set.seed(2)
-        log_marlik_mc(dat(), 0, 100, 0, 100, 20000)
-    })
-
-    output$heat <- renderPlot({
-        f <- fit()
-        par(mar = c(4, 4, 2, 1))
-        image(f$grid, f$grid, exp(f$G - max(f$G)),
-              col = hcl.colors(30, "YlOrRd", rev = TRUE),
-              xlab = "u", ylab = "v",
-              main = "g(u, v) on the unit square: where is the mass?")
-    })
-
-    output$compare <- renderPlot({
-        par(mar = c(4, 4, 1, 1))
-        vals <- c(midpoint = fit()$log_ml, monte_carlo = mc())
-        bp <- barplot(vals, col = c("steelblue", "firebrick"),
-                      ylab = "estimated log P(y)",
-                      ylim = range(vals) + c(-1, 1) * 0.15 * diff(range(vals) + 1e-6))
-        text(bp, vals, sprintf("%.2f", vals), pos = 3)
-    })
-
-    output$tab <- renderTable({
-        data.frame(method = c("midpoint rule", "Monte Carlo"),
-                   `log P(y)` = c(fit()$log_ml, mc()), check.names = FALSE)
-    }, digits = 3, rownames = FALSE)
-}
-
-shinyApp(ui, server)
+knitr::kable(mode_far_tbl, digits = 3,
+             col.names = c("data", "midpoint (n = 100/axis)", "Monte Carlo (N = 1e5)"))
 ```
 
-:::
-
-::: {.content-visible unless-format="html"}
-This section contains a live, in-browser Shiny app that only runs in the HTML
-edition of this book. View it at
-<https://longhaisk.github.io/compstat/chapters/unit08_integral.html#sec-quadrature-app>.
-:::
-
-::: {.callout-note}
-### Reproducing this figure
-The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
-extension, which compiles the app to WebAssembly so it runs in the reader's
-browser with no Shiny server. Install it once per project with
-
-```bash
-quarto add quarto-ext/shinylive
-```
-
-and add `filters: [shinylive]` to the document or project YAML. Only packages
-available in webR may be used inside the app, so the code above is restricted
-to base R and `shiny`.
-:::
+At $\mu=-5$ the two methods should still be close, since the logistic grid
+still has some points in the region the posterior occupies; at $\mu=-20$ the
+posterior for $\mu$ has been pushed close enough to the boundary of the
+transformed square that the midpoint estimate can disagree with the Monte
+Carlo answer by a large margin on the log scale — the two-dimensional analogue
+of exactly what the app above shows in one dimension.
 
 ### The curse of dimensionality
 

@@ -298,8 +298,8 @@ window.Quarto = {
   </ul></li>
   <li><a href="#difficulties-of-numerical-quadrature" id="toc-difficulties-of-numerical-quadrature" class="nav-link" data-scroll-target="#difficulties-of-numerical-quadrature"><span class="header-section-number">8.4</span> Difficulties of Numerical Quadrature</a>
   <ul>
-  <li><a href="#transformed-integrands-can-be-squeezed-against-the-boundary" id="toc-transformed-integrands-can-be-squeezed-against-the-boundary" class="nav-link" data-scroll-target="#transformed-integrands-can-be-squeezed-against-the-boundary"><span class="header-section-number">8.4.1</span> Transformed integrands can be squeezed against the boundary</a></li>
-  <li><a href="#sec-quadrature-app" id="toc-sec-quadrature-app" class="nav-link" data-scroll-target="#sec-quadrature-app"><span class="header-section-number">8.4.2</span> Explore it interactively</a></li>
+  <li><a href="#sec-missed-mode" id="toc-sec-missed-mode" class="nav-link" data-scroll-target="#sec-missed-mode"><span class="header-section-number">8.4.1</span> When the grid misses the posterior’s mode</a></li>
+  <li><a href="#the-same-failure-in-the-full-two-parameter-model" id="toc-the-same-failure-in-the-full-two-parameter-model" class="nav-link" data-scroll-target="#the-same-failure-in-the-full-two-parameter-model"><span class="header-section-number">8.4.2</span> The same failure in the full two-parameter model</a></li>
   <li><a href="#the-curse-of-dimensionality" id="toc-the-curse-of-dimensionality" class="nav-link" data-scroll-target="#the-curse-of-dimensionality"><span class="header-section-number">8.4.3</span> The curse of dimensionality</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">8.5</span> Summary</a></li>
@@ -1012,96 +1012,149 @@ Table&nbsp;8.6: Log marginal likelihood under four values of the t-model degrees
 </section>
 <section id="difficulties-of-numerical-quadrature" class="level2" data-number="8.4">
 <h2 data-number="8.4" class="anchored" data-anchor-id="difficulties-of-numerical-quadrature"><span class="header-section-number">8.4</span> Difficulties of Numerical Quadrature</h2>
-<section id="transformed-integrands-can-be-squeezed-against-the-boundary" class="level3" data-number="8.4.1">
-<h3 data-number="8.4.1" class="anchored" data-anchor-id="transformed-integrands-can-be-squeezed-against-the-boundary"><span class="header-section-number">8.4.1</span> Transformed integrands can be squeezed against the boundary</h3>
-<p>The logistic transform has its own failure mode: if <span class="math inline">\(\theta\)</span>’s posterior sits at a large <span class="math inline">\(|\theta|\)</span>, it gets squeezed against <span class="math inline">\(y=0\)</span> or <span class="math inline">\(y=1\)</span>. For <span class="math inline">\(\theta \approx 50\)</span>, <span class="math inline">\(y = 1/(1+e^{-50}) \approx 1 - 2\times 10^{-22}\)</span> — the entire posterior mass occupies a sliver of <span class="math inline">\((0,1)\)</span> far too thin for any practical uniform grid to resolve.</p>
+<section id="sec-missed-mode" class="level3" data-number="8.4.1">
+<h3 data-number="8.4.1" class="anchored" data-anchor-id="sec-missed-mode"><span class="header-section-number">8.4.1</span> When the grid misses the posterior’s mode</h3>
+<p>The app models a single unknown mean <span class="math inline">\(\mu\)</span>. The likelihood <span class="math inline">\(L(\mu) = N\big(\hat\mu;\,\mu,\,1/n_{\text{eff}}\big)\)</span> treats <span class="math inline">\(\hat\mu\)</span> — the box you can type into — as the sample mean of <span class="math inline">\(n_{\text{eff}}\)</span> observations from <span class="math inline">\(N(\mu,1)\)</span>; the prior is <span class="math inline">\(\pi(\mu) = N(\mu; 0, 5^2)\)</span>. The marginal likelihood is <span class="math display">\[
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
+\]</span> Because this is a normal-normal conjugate pair, <span class="math inline">\(P(y)\)</span> has a closed form — but the app instead gets it by numerical integration, shown as the “true” value in the legend. To approximate <span class="math inline">\(P(y)\)</span> with a finite quadrature rule, apply the same logistic transform used throughout this chapter, <span class="math inline">\(u = 1/(1+e^{-\mu})\)</span>, so that <span class="math inline">\(d\mu = du/\{u(1-u)\}\)</span> and <span class="math display">\[
+P(y) = \int_0^1 \frac{z\big(\mathrm{logit}(u)\big)}{u(1-u)}\,du.
+\]</span> The midpoint rule with <span class="math inline">\(n\)</span> points <span class="math inline">\(u_i = (i-\tfrac12)/n\)</span> turns this into a sum of value-times-Jacobian terms, <span class="math display">\[
+P(y) \approx \frac1n \sum_{i=1}^n \frac{z(\mu_i)}{u_i(1-u_i)},
+\qquad \mu_i = \mathrm{logit}(u_i),
+\]</span> and that sum is exactly what the picture shows: drag the slider to change <span class="math inline">\(n\)</span>, and each grey point is one term of it — placed at <span class="math inline">\(\mu_i\)</span> by the guide lines through the logistic curve, then dropped onto <span class="math inline">\(z(\mu)\)</span> to reveal the <span class="math inline">\(z(\mu_i)\)</span> factor it contributes, before being scaled by the Jacobian <span class="math inline">\(1/\{u_i(1-u_i)\}\)</span>. Move <span class="math inline">\(\mu\)</span> away from <span class="math inline">\(0\)</span> and every term lands where <span class="math inline">\(z(\mu)\approx 0\)</span>, however many points you add — which is why the quadrature estimate in the legend drifts far from the true value. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
+<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
+#|   shinylive does not work in self-contained HTML documents.
+#|   Please set `embed-resources: false` in your metadata.
+#| label: boundary-squeeze-app
+#| standalone: true
+#| viewerHeight: 600
+
+library(shiny)
+
+ui &lt;- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is a midpoint rule, uniform in u over (0, 1); ",
+                     "each point's mu is recovered as logit(u). Try mu = 0 ",
+                     "first (the grid sits right under the mass, and the two ",
+                     "legend numbers agree closely), then move mu up to 8 or ",
+                     "20: the quadrature estimate drifts far from the true ",
+                     "value however many grid points you add.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server &lt;- function(input, output, session) {
+
+    output$squeeze &lt;- renderPlot({
+        n_eff &lt;- 3                                  # likelihood as if 3 obs, sigma = 1
+        L     &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior &lt;- function(mu) dnorm(mu, 0, 5)
+        z     &lt;- function(mu) L(mu) * prior(mu)
+
+        log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### this z(mu) is a normal-normal conjugate kernel, so the true log
+        ### marginal likelihood is available directly by numerical integration
+        log_marlik &lt;- log(integrate(z, -Inf, Inf)$value)
+
+        lo &lt;- min(-8, input$mu_hat - 6)
+        hi &lt;- max(14, input$mu_hat + 6)
+        mu_grid &lt;- seq(lo, hi, length.out = 500)
+
+        u_pts  &lt;- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
+        mu_pts &lt;- log(u_pts / (1 - u_pts))          # mu = logit(u)
+
+        ### the midpoint-rule quadrature estimate actually built from this grid:
+        ### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du
+        log_z    &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, 5, log = TRUE)
+        h        &lt;- 1 / input$n_pts
+        log_marlik_quad &lt;- log_sum_exp(log_z(mu_pts) - log(u_pts * (1 - u_pts))) + log(h)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, plogis(mu_grid), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == 1 / (1 + e^-mu)), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col &lt;- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == 1 / (1 + e^-mu)),
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
+    })
+}
+
+shinyApp(ui, server)</code></pre>
+</section>
+<section id="the-same-failure-in-the-full-two-parameter-model" class="level3" data-number="8.4.2">
+<h3 data-number="8.4.2" class="anchored" data-anchor-id="the-same-failure-in-the-full-two-parameter-model"><span class="header-section-number">8.4.2</span> The same failure in the full two-parameter model</h3>
+<p>The app fixes <span class="math inline">\(\sigma\)</span> to isolate the mechanism, but the product midpoint rule over <span class="math inline">\((\mu, w)\)</span> introduced earlier in this chapter — <code>log_marlik_mid</code> — fails the same way once both the mean and the variance are unknown, and <code>log_marlik_mc</code> again serves as the independent check. <a href="#tbl-mode-far-away" class="quarto-xref">Table&nbsp;<span>8.7</span></a> compares the two for data centred at <span class="math inline">\(\mu=-5\)</span> and at <span class="math inline">\(\mu=-20\)</span> (both with <span class="math inline">\(\sigma=2\)</span>, <span class="math inline">\(n=100\)</span>), against a prior on <span class="math inline">\(\mu\)</span> centred at <span class="math inline">\(0\)</span> with <span class="math inline">\(\sigma_\mu=10\)</span> — reasonably vague, but not recentred on either dataset.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>mu_hat <span class="ot">&lt;-</span> <span class="dv">8</span>; n_eff <span class="ot">&lt;-</span> <span class="dv">3</span>                        <span class="co"># likelihood as if 3 obs, sigma = 1, sample mean 8</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>L     <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff))</span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>prior <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, <span class="dv">5</span>)</span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>z     <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">L</span>(mu) <span class="sc">*</span> <span class="fu">prior</span>(mu)</span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>log_marlik <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">integrate</span>(z, <span class="sc">-</span><span class="cn">Inf</span>, <span class="cn">Inf</span>)<span class="sc">$</span>value)   <span class="co"># the true target, for comparison</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>mu_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">8</span>, <span class="dv">14</span>, <span class="at">length.out =</span> <span class="dv">500</span>)</span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>u_pts  <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.1</span>, <span class="fl">0.9</span>, <span class="at">by =</span> <span class="fl">0.1</span>)</span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>mu_pts <span class="ot">&lt;-</span> <span class="fu">log</span>(u_pts <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u_pts))             <span class="co"># mu = logit(u)</span></span>
-<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">4</span>))</span>
-<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(mu_grid, <span class="fu">z</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>,</span>
-<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(mu), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)))</span>
-<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a><span class="fu">polygon</span>(<span class="fu">c</span>(mu_grid, <span class="fu">rev</span>(mu_grid)), <span class="fu">c</span>(<span class="fu">z</span>(mu_grid), <span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">length</span>(mu_grid))),</span>
-<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>        <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"firebrick"</span>, <span class="fl">0.15</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a><span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, <span class="fu">z</span>(mu_pts), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">lwd =</span> <span class="fl">1.5</span>)</span>
-<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(mu_pts, <span class="fu">z</span>(mu_pts), <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">new =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(mu_grid, <span class="fu">plogis</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
-<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>     <span class="at">axes =</span> <span class="cn">FALSE</span>, <span class="at">xlab =</span> <span class="st">""</span>, <span class="at">ylab =</span> <span class="st">""</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>))</span>
-<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a><span class="fu">axis</span>(<span class="dv">4</span>, <span class="at">col.axis =</span> <span class="st">"steelblue"</span>, <span class="at">col.ticks =</span> <span class="st">"steelblue"</span>)</span>
-<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a><span class="fu">mtext</span>(<span class="fu">expression</span>(u <span class="sc">==</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> e<span class="sc">^-</span>mu)), <span class="at">side =</span> <span class="dv">4</span>, <span class="at">line =</span> <span class="fl">2.5</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
-<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a><span class="do">### light guide lines linking mu (bottom axis) and u (right axis) via the curve</span></span>
-<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a>guide_col <span class="ot">&lt;-</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.6</span>)</span>
-<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a><span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a><span class="fu">segments</span>(mu_pts, u_pts, <span class="fu">max</span>(mu_grid), u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(mu_pts, u_pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">3</span>, <span class="cn">NA</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>, <span class="cn">NA</span>),</span>
-<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)),</span>
-<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">expression</span>(u <span class="sc">==</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> e<span class="sc">^-</span>mu)),</span>
-<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">as.expression</span>(<span class="fu">bquote</span>(log<span class="sc">~</span><span class="fu">P</span>(y) <span class="sc">==</span> .(<span class="fu">round</span>(log_marlik, <span class="dv">3</span>))))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">6</span>)</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>x_m5  <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">100</span>, <span class="sc">-</span><span class="dv">5</span>, <span class="dv">2</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>x_m20 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">100</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="dv">2</span>)</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>mode_far_tbl <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">data        =</span> <span class="fu">c</span>(<span class="st">"mu = -5"</span>, <span class="st">"mu = -20"</span>),</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">midpoint    =</span> <span class="fu">c</span>(<span class="fu">log_marlik_mid</span>(x_m5,  <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">100</span>),</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>                     <span class="fu">log_marlik_mid</span>(x_m20, <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">100</span>)),</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">monte_carlo =</span> <span class="fu">c</span>(<span class="fu">log_marlik_mc</span>(x_m5,  <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">0</span>, <span class="dv">10</span>, <span class="fl">1e5</span>),</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>                     <span class="fu">log_marlik_mc</span>(x_m20, <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">0</span>, <span class="dv">10</span>, <span class="fl">1e5</span>))</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(mode_far_tbl, <span class="at">digits =</span> <span class="dv">3</span>,</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"data"</span>, <span class="st">"midpoint (n = 100/axis)"</span>, <span class="st">"Monte Carlo (N = 1e5)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output-display">
-<div id="fig-boundary-squeeze" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-boundary-squeeze-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit08_integral_files/figure-html/fig-boundary-squeeze-1.png" class="img-fluid figure-img" width="768">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-boundary-squeeze-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.5: Normal model, sigma fixed at 1: the unnormalized posterior <span class="math inline">\(z(\mu)=\pi(\mu)L(\mu)\)</span> (firebrick, left axis) against the logistic curve <span class="math inline">\(u=1/(1+e^{-\mu})\)</span> (steelblue, right axis) on a shared <span class="math inline">\(\mu\)</span>-axis. The grey points are <span class="math inline">\(\mu = \mathrm{logit}(u)\)</span> for <span class="math inline">\(u=0.1,0.2,\ldots,0.9\)</span> — a perfectly uniform grid in <span class="math inline">\(u\)</span> — linked to the logistic curve by light guide lines, and dropped vertically onto <span class="math inline">\(z(\mu)\)</span>: every one of them lands where <span class="math inline">\(z(\mu)\approx 0\)</span>, far from where the posterior mass actually sits, even though the true log marginal likelihood (legend) is perfectly well defined.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-<p>We already met the extreme version of this problem at the start of this chapter’s development: with data simulated far from where the untransformed grid was designed to look, the midpoint rule and Monte Carlo disagree badly.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">5</span>)</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>x_far <span class="ot">&lt;-</span> <span class="fu">rt.scaled</span>(<span class="dv">100</span>, <span class="at">mean =</span> <span class="dv">50</span>, <span class="at">sd =</span> <span class="dv">2</span>, <span class="at">df =</span> <span class="cn">Inf</span>)</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"midpoint (n = 100)"</span>, <span class="st">"Monte Carlo (n = 10,000)"</span>),</span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">log_P_y =</span> <span class="fu">c</span>(<span class="fu">log_marlik_mid</span>(x_far, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">100</span>),</span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>                <span class="fu">log_marlik_mc</span>(x_far, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">0</span>, <span class="dv">100</span>, <span class="fl">1e4</span>))</span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>), <span class="at">digits =</span> <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div id="tbl-quad-failure" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<div id="tbl-mode-far-away" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
-<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-quad-failure-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;8.7: Quadrature failure when the posterior is squeezed against the boundary: data centred at 50, but the logistic transform (with no recentring) puts almost the whole posterior mass within about 1e-20 of y = 1.
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-mode-far-away-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;8.7: Log marginal likelihood for data centred at mu = -5 and mu = -20 (sigma = 2, n = 100), prior mu_0 = 0, sigma_mu = 10, w_0 = 0, sigma_w = 10: the product midpoint rule (n = 100 points per axis) against a naive Monte Carlo run of 100,000 draws from the prior.
 </figcaption>
-<div aria-describedby="tbl-quad-failure-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div aria-describedby="tbl-mode-far-away-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
 <thead>
 <tr class="header">
-<th style="text-align: left;">method</th>
-<th style="text-align: right;">log_P_y</th>
+<th style="text-align: left;">data</th>
+<th style="text-align: right;">midpoint (n = 100/axis)</th>
+<th style="text-align: right;">Monte Carlo (N = 1e5)</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">midpoint (n = 100)</td>
-<td style="text-align: right;">-535.484</td>
+<td style="text-align: left;">mu = -5</td>
+<td style="text-align: right;">-222.488</td>
+<td style="text-align: right;">-222.673</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Monte Carlo (n = 10,000)</td>
-<td style="text-align: right;">-251.749</td>
+<td style="text-align: left;">mu = -20</td>
+<td style="text-align: right;">-420.335</td>
+<td style="text-align: right;">-213.503</td>
 </tr>
 </tbody>
 </table>
@@ -1110,126 +1163,7 @@ Table&nbsp;8.7: Quadrature failure when the posterior is squeezed against the bo
 </figure>
 </div>
 </div>
-<p>The two estimates disagree by many orders of magnitude on the log scale — the grid is simply not looking where the posterior mass is. The general remedy is the same as for the peaked-integrand problem: <strong>recentre the transform</strong> on a preliminary location estimate <span class="math inline">\(\hat\theta\)</span> (e.g.&nbsp;the MLE), using <span class="math inline">\(y = 1/(1 + e^{-(\theta-\hat\theta)/s})\)</span> for a suitable scale <span class="math inline">\(s\)</span>, so that the bulk of the posterior maps back to the middle of <span class="math inline">\((0,1)\)</span> where the grid is dense.</p>
-</section>
-<section id="sec-quadrature-app" class="level3" data-number="8.4.2">
-<h3 data-number="8.4.2" class="anchored" data-anchor-id="sec-quadrature-app"><span class="header-section-number">8.4.2</span> Explore it interactively</h3>
-<p>The app below lets you move the true mean of the simulated data and watch the midpoint-rule estimate diverge from the Monte Carlo baseline as the posterior is pushed toward the boundary of the transformed square, and shows the <span class="math inline">\(g(u,v)\)</span> heat map so you can see the mass leaving the grid. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: quadrature-failure-app
-#| standalone: true
-#| viewerHeight: 800
-
-library(shiny)
-
-logit_inv     &lt;- function(u) log(u / (1 - u))
-log_der_logit &lt;- function(u) -log(u) - log(1 - u)
-log_lik   &lt;- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
-log_prior &lt;- function(mu, w, mu_0, sigma_mu, w_0, sigma_w) {
-    dnorm(mu, mu_0, sigma_mu, log = TRUE) + dnorm(w, w_0, sigma_w, log = TRUE)
-}
-log_g &lt;- function(u, v, x, mu_0, sigma_mu, w_0, sigma_w) {
-    mu &lt;- logit_inv(u); w &lt;- logit_inv(v)
-    log_lik(x, mu, w) + log_prior(mu, w, mu_0, sigma_mu, w_0, sigma_w) +
-        log_der_logit(u) + log_der_logit(v)
-}
-log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
-
-log_marlik_mid &lt;- function(x, mu_0, sigma_mu, w_0, sigma_w, n) {
-    h &lt;- 1 / n
-    grid &lt;- (seq_len(n) - 0.5) * h
-    G &lt;- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu_0, sigma_mu, w_0, sigma_w)))
-    list(log_ml = log_sum_exp(G) + 2 * log(h), grid = grid, G = G)
-}
-log_marlik_mc &lt;- function(x, mu_0, sigma_mu, w_0, sigma_w, iters_mc) {
-    mus &lt;- rnorm(iters_mc, mu_0, sigma_mu)
-    ws  &lt;- rnorm(iters_mc, w_0, sigma_w)
-    v_log_lik &lt;- vapply(seq_len(iters_mc), function(i) log_lik(x, mus[i], ws[i]), numeric(1))
-    log_sum_exp(v_log_lik) - log(iters_mc)
-}
-
-ui &lt;- fluidPage(
-    titlePanel(NULL),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            sliderInput("true_mean", "true mean of the simulated data",
-                        min = 0, max = 60, value = 0, step = 2),
-            sliderInput("n_grid", "grid points per axis (midpoint rule)",
-                        min = 10, max = 60, value = 20, step = 5),
-            helpText("The prior on mu is N(0, 100), i.e. it is not recentred ",
-                     "on the data. As the true mean moves past about 15-20, the ",
-                     "posterior for mu is squeezed against y = 1 after the ",
-                     "logistic transform, and the midpoint estimate breaks away ",
-                     "from the Monte Carlo baseline."),
-            tableOutput("tab")
-        ),
-        mainPanel(
-            width = 8,
-            plotOutput("heat", height = "320px"),
-            plotOutput("compare", height = "260px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    dat &lt;- reactive({
-        set.seed(1)
-        rnorm(60, input$true_mean, 2)
-    })
-
-    fit &lt;- reactive({
-        log_marlik_mid(dat(), 0, 100, 0, 100, input$n_grid)
-    })
-
-    mc &lt;- reactive({
-        set.seed(2)
-        log_marlik_mc(dat(), 0, 100, 0, 100, 20000)
-    })
-
-    output$heat &lt;- renderPlot({
-        f &lt;- fit()
-        par(mar = c(4, 4, 2, 1))
-        image(f$grid, f$grid, exp(f$G - max(f$G)),
-              col = hcl.colors(30, "YlOrRd", rev = TRUE),
-              xlab = "u", ylab = "v",
-              main = "g(u, v) on the unit square: where is the mass?")
-    })
-
-    output$compare &lt;- renderPlot({
-        par(mar = c(4, 4, 1, 1))
-        vals &lt;- c(midpoint = fit()$log_ml, monte_carlo = mc())
-        bp &lt;- barplot(vals, col = c("steelblue", "firebrick"),
-                      ylab = "estimated log P(y)",
-                      ylim = range(vals) + c(-1, 1) * 0.15 * diff(range(vals) + 1e-6))
-        text(bp, vals, sprintf("%.2f", vals), pos = 3)
-    })
-
-    output$tab &lt;- renderTable({
-        data.frame(method = c("midpoint rule", "Monte Carlo"),
-                   `log P(y)` = c(fit()$log_ml, mc()), check.names = FALSE)
-    }, digits = 3, rownames = FALSE)
-}
-
-shinyApp(ui, server)</code></pre>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Reproducing this figure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>The chunk above uses the <a href="https://github.com/quarto-ext/shinylive">shinylive</a> extension, which compiles the app to WebAssembly so it runs in the reader’s browser with no Shiny server. Install it once per project with</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">quarto</span> add quarto-ext/shinylive</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>and add <code>filters: [shinylive]</code> to the document or project YAML. Only packages available in webR may be used inside the app, so the code above is restricted to base R and <code>shiny</code>.</p>
-</div>
-</div>
+<p>At <span class="math inline">\(\mu=-5\)</span> the two methods should still be close, since the logistic grid still has some points in the region the posterior occupies; at <span class="math inline">\(\mu=-20\)</span> the posterior for <span class="math inline">\(\mu\)</span> has been pushed close enough to the boundary of the transformed square that the midpoint estimate can disagree with the Monte Carlo answer by a large margin on the log scale — the two-dimensional analogue of exactly what the app above shows in one dimension.</p>
 </section>
 <section id="the-curse-of-dimensionality" class="level3" data-number="8.4.3">
 <h3 data-number="8.4.3" class="anchored" data-anchor-id="the-curse-of-dimensionality"><span class="header-section-number">8.4.3</span> The curse of dimensionality</h3>
@@ -1279,26 +1213,26 @@ Table&nbsp;8.8: Grid size grows exponentially with dimension
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>S <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.85</span>, <span class="fl">0.85</span>, <span class="dv">1</span>), <span class="dv">2</span>) <span class="sc">*</span> <span class="fl">0.15</span></span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>Si <span class="ot">&lt;-</span> <span class="fu">solve</span>(S)</span>
-<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>grd <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">3</span>, <span class="at">length.out =</span> <span class="dv">150</span>)</span>
-<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>Z <span class="ot">&lt;-</span> <span class="fu">outer</span>(grd, grd, <span class="fu">Vectorize</span>(<span class="cf">function</span>(a, b) <span class="fu">exp</span>(<span class="sc">-</span><span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">c</span>(a, b) <span class="sc">%*%</span> Si <span class="sc">%*%</span> <span class="fu">c</span>(a, b))))</span>
-<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="fu">contour</span>(grd, grd, Z, <span class="at">nlevels =</span> <span class="dv">6</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(theta[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(theta[<span class="dv">2</span>]),</span>
-<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="st">"posterior inside a 12 x 12 grid"</span>, <span class="at">drawlabels =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">3</span>, <span class="at">length.out =</span> <span class="dv">13</span>)</span>
-<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> gr, <span class="at">h =</span> gr, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray30"</span>, <span class="fl">0.5</span>))</span>
-<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>pts <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(gr, gr)</span>
-<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.5</span>)</span>
-<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>inside <span class="ot">&lt;-</span> <span class="fu">apply</span>(pts, <span class="dv">1</span>, <span class="cf">function</span>(p) <span class="fu">exp</span>(<span class="sc">-</span><span class="fl">0.5</span> <span class="sc">*</span> p <span class="sc">%*%</span> Si <span class="sc">%*%</span> p)) <span class="sc">&gt;</span> <span class="fl">0.01</span></span>
-<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(pts[inside, ], <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
-<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"%d of %d grid points carry non-negligible mass"</span>, <span class="fu">sum</span>(inside), <span class="fu">nrow</span>(pts)),</span>
-<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">side =</span> <span class="dv">1</span>, <span class="at">line =</span> <span class="fl">2.6</span>, <span class="at">cex =</span> <span class="fl">0.85</span>)</span>
-<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">20</span>, <span class="fu">sapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">20</span>, <span class="cf">function</span>(d) <span class="dv">20</span><span class="sc">^</span>d), <span class="at">log =</span> <span class="st">"y"</span>, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>,</span>
-<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="st">"dimension d"</span>, <span class="at">ylab =</span> <span class="st">"evaluations with 20 points per axis"</span>)</span>
-<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> <span class="fl">1e12</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
-<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="dv">3</span>, <span class="fl">3e12</span>, <span class="st">"one trillion"</span>, <span class="at">adj =</span> <span class="dv">0</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>S <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.85</span>, <span class="fl">0.85</span>, <span class="dv">1</span>), <span class="dv">2</span>) <span class="sc">*</span> <span class="fl">0.15</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>Si <span class="ot">&lt;-</span> <span class="fu">solve</span>(S)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>grd <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">3</span>, <span class="at">length.out =</span> <span class="dv">150</span>)</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>Z <span class="ot">&lt;-</span> <span class="fu">outer</span>(grd, grd, <span class="fu">Vectorize</span>(<span class="cf">function</span>(a, b) <span class="fu">exp</span>(<span class="sc">-</span><span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">c</span>(a, b) <span class="sc">%*%</span> Si <span class="sc">%*%</span> <span class="fu">c</span>(a, b))))</span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="fu">contour</span>(grd, grd, Z, <span class="at">nlevels =</span> <span class="dv">6</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(theta[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(theta[<span class="dv">2</span>]),</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="st">"posterior inside a 12 x 12 grid"</span>, <span class="at">drawlabels =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>gr <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">3</span>, <span class="dv">3</span>, <span class="at">length.out =</span> <span class="dv">13</span>)</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> gr, <span class="at">h =</span> gr, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray30"</span>, <span class="fl">0.5</span>))</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>pts <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(gr, gr)</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.5</span>)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>inside <span class="ot">&lt;-</span> <span class="fu">apply</span>(pts, <span class="dv">1</span>, <span class="cf">function</span>(p) <span class="fu">exp</span>(<span class="sc">-</span><span class="fl">0.5</span> <span class="sc">*</span> p <span class="sc">%*%</span> Si <span class="sc">%*%</span> p)) <span class="sc">&gt;</span> <span class="fl">0.01</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(pts[inside, ], <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a><span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"%d of %d grid points carry non-negligible mass"</span>, <span class="fu">sum</span>(inside), <span class="fu">nrow</span>(pts)),</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>      <span class="at">side =</span> <span class="dv">1</span>, <span class="at">line =</span> <span class="fl">2.6</span>, <span class="at">cex =</span> <span class="fl">0.85</span>)</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">20</span>, <span class="fu">sapply</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">20</span>, <span class="cf">function</span>(d) <span class="dv">20</span><span class="sc">^</span>d), <span class="at">log =</span> <span class="st">"y"</span>, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>,</span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="st">"dimension d"</span>, <span class="at">ylab =</span> <span class="st">"evaluations with 20 points per axis"</span>)</span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> <span class="fl">1e12</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="dv">3</span>, <span class="fl">3e12</span>, <span class="st">"one trillion"</span>, <span class="at">adj =</span> <span class="dv">0</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-curse" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -1307,7 +1241,7 @@ Table&nbsp;8.8: Grid size grows exponentially with dimension
 <img src="unit08_integral_files/figure-html/fig-curse-1.png" class="img-fluid figure-img" width="960">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-curse-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.6: Left: a correlated 2-D posterior inside a 12x12 grid; only the highlighted points carry non-negligible mass. Right: evaluations needed for a 20-point-per-axis grid as dimension increases.
+Figure&nbsp;8.5: Left: a correlated 2-D posterior inside a 12x12 grid; only the highlighted points carry non-negligible mass. Right: evaluations needed for a 20-point-per-axis grid as dimension increases.
 </figcaption>
 </figure>
 </div>
