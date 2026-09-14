@@ -218,146 +218,139 @@ analytically).
 
 ## Comparing Laplace, Quadrature, and Monte Carlo on the Same Problem
 
-The previous chapter (Numerical Quadrature) computed the marginal likelihood of a normal sample with
-unknown mean $\mu$ and log-variance $w=\log\sigma^2$,
+To compare the three methods on an apples-to-apples problem, reuse the
+single-parameter example from the end of Unit 08: a single unknown mean
+$\mu$, with likelihood
 $$
-P(y) = \int_{-\infty}^{\infty}\!\int_{-\infty}^{\infty} L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw,
-\qquad \mu\sim N(\mu_0,\sigma_\mu^2),\ w\sim N(w_0,\sigma_w^2),
+L(\mu) = N\big(\hat\mu;\,\mu,\,1/n_{\text{eff}}\big),
 $$
-by a product midpoint rule on a logistic-transformed $(0,1)^2$ grid, checked
-against naive Monte Carlo. The Laplace approximation attacks the same
-integral by optimization instead of a grid: find the joint mode of
-$(\mu,w)$ and its $2\times2$ Hessian, then apply the boxed formula with
-$p=2$.
+treating $\hat\mu$ as the sample mean of $n_{\text{eff}}$ observations from
+$N(\mu,1)$, under a prior $\pi(\mu) = N(\mu;0,5^2)$. The marginal likelihood
+is
+$$
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
+$$
+Because this is a normal-normal conjugate pair, $P(y)$ has a closed form, so
+a genuine **true** value is available for comparison — computed here by
+numerical integration, exactly as in Unit08, rather than by writing out the
+closed-form expression. **Laplace** attacks the integral by optimization
+instead of a grid: find the mode of $z(\mu)$ and the second derivative of
+$-\log z$ there, then apply the boxed formula with $p=1$. **Quadrature**
+attacks it with the logistic-transform midpoint rule from Unit08. **Monte
+Carlo with $\pi$** attacks it by drawing $\mu$ directly from the prior and
+averaging the likelihood — the same naive estimator used throughout Unit08.
 
 ```{r}
-#| label: laplace-gaussian-functions
-### log likelihood and log prior for the normal/log-variance model of Unit08
-log_lik_gauss  <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
-log_prior_gauss <- function(mu, w, mu0, sigma_mu, w0, sigma_w) {
-  dnorm(mu, mu0, sigma_mu, log = TRUE) + dnorm(w, w0, sigma_w, log = TRUE)
-}
-neg_log_post <- function(theta, x, mu0, sigma_mu, w0, sigma_w) {
-  -log_lik_gauss(x, theta[1], theta[2]) - log_prior_gauss(theta[1], theta[2], mu0, sigma_mu, w0, sigma_w)
+#| label: laplace-mu-functions
+n_eff <- 3; sigma_prior <- 5                   # same setup as the Unit08 app
+
+### true value: exact up to numerical-integration error, since z is a
+### normal-normal conjugate kernel
+log_mar_true_mu <- function(mu_hat) {
+  z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff)) * dnorm(mu, 0, sigma_prior)
+  log(integrate(z, -Inf, Inf)$value)
 }
 
-### Laplace approximation for this two-parameter posterior
-laplace_gaussian <- function(x, mu0, sigma_mu, w0, sigma_w) {
-  op <- nlm(neg_log_post, p = c(mean(x), log(sd(x))), hessian = TRUE,
-            x = x, mu0 = mu0, sigma_mu = sigma_mu, w0 = w0, sigma_w = sigma_w)
-  H <- op$hessian; p <- length(op$estimate)
-  list(mode = op$estimate, se = sqrt(diag(solve(H))),
-       log_ml = -op$minimum + p / 2 * log(2 * pi) - 0.5 * log(det(H)))
+### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()
+laplace_mu <- function(mu_hat) {
+  h  <- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                          dnorm(mu, 0, sigma_prior, log = TRUE))
+  op <- nlm(h, p = mu_hat, hessian = TRUE)
+  c(mode = op$estimate, log_ml = -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1]))
 }
 
-### naive Monte Carlo (samples from the prior; see Unit08 for the log-sum-exp helper)
+### naive Monte Carlo: draw mu from the prior, average the likelihood
 log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-log_mar_mc <- function(x, mu0, sigma_mu, w0, sigma_w, iters) {
-  mus <- rnorm(iters, mu0, sigma_mu); ws <- rnorm(iters, w0, sigma_w)
-  ll <- vapply(seq_len(iters), function(i) log_lik_gauss(x, mus[i], ws[i]), numeric(1))
-  log_sum_exp(ll) - log(iters)
+log_mar_mc_mu <- function(mu_hat, iters) {
+  mus <- rnorm(iters, 0, sigma_prior)
+  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_eff), log = TRUE)) - log(iters)
 }
 
-### product midpoint quadrature on the logistic-transformed square (Unit08's method)
-logit_inv     <- function(u) log(u / (1 - u))
-log_der_logit <- function(u) -log(u) - log(1 - u)
-log_g <- function(u, v, x, mu0, sigma_mu, w0, sigma_w) {
-  mu <- logit_inv(u); w <- logit_inv(v)
-  log_lik_gauss(x, mu, w) + log_prior_gauss(mu, w, mu0, sigma_mu, w0, sigma_w) +
-    log_der_logit(u) + log_der_logit(v)
-}
-log_mar_mid <- function(x, mu0, sigma_mu, w0, sigma_w, n) {
-  h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
-  G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu0, sigma_mu, w0, sigma_w)))
-  log_sum_exp(G) + 2 * log(h)
+### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08
+log_mar_mid_mu <- function(mu_hat, n) {
+  h  <- 1 / n
+  u  <- (seq_len(n) - 0.5) * h
+  mu <- log(u / (1 - u))
+  log_z <- dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
+  log_sum_exp(log_z) + log(h)
 }
 ```
 
 ```{r}
 #| label: tbl-three-way
-#| tbl-cap: "Log marginal likelihood by three independent methods, for a vague prior N(0, 100) on mu and N(0, 5) on w, n = 50 observations per scenario. Quadrature uses a 100x100 grid (unchanged from Unit08); Monte Carlo uses 1e6 prior draws."
+#| tbl-cap: "Log marginal likelihood by four methods, for data locations mu_hat = 0, -5, -20 (n_eff = 3, sigma = 1, prior N(0, 5^2) on mu). Quadrature uses a 100-point midpoint grid; Monte Carlo uses 1e6 prior draws; both are unchanged from Unit08's app."
 set.seed(7)
-scenarios <- list(
-  c(desc = "well-centred: mean 5",    mean = 5,   sd = 1),
-  c(desc = "well-centred: mean -5",   mean = -5,  sd = 1),
-  c(desc = "far from origin: mean -50, sd 4",  mean = -50, sd = 4),
-  c(desc = "far from origin: mean -50, sd 10", mean = -50, sd = 10)
-)
-three_way <- t(sapply(scenarios, function(s) {
-  x <- rnorm(50, mean = as.numeric(s["mean"]), sd = as.numeric(s["sd"]))
-  lap <- laplace_gaussian(x, 0, 100, 0, 5)
-  c(Laplace = lap$log_ml,
-    Monte_Carlo = log_mar_mc(x, 0, 100, 0, 5, 1e6),
-    Quadrature = log_mar_mid(x, 0, 100, 0, 5, 100))
+mu_hats <- c(0, -5, -20)
+three_way <- t(sapply(mu_hats, function(m) {
+  c(True = log_mar_true_mu(m),
+    Laplace = laplace_mu(m)["log_ml"],
+    Monte_Carlo_pi = log_mar_mc_mu(m, 1e6),
+    Quadrature = log_mar_mid_mu(m, 100))
 }))
-knitr::kable(cbind(scenario = sapply(scenarios, `[`, "desc"), round(three_way, 3)),
-             row.names = FALSE, col.names = c("scenario", "Laplace", "Monte Carlo", "Quadrature (n=100 grid)"))
+knitr::kable(cbind(`mu` = mu_hats, round(three_way, 3)), row.names = FALSE,
+             col.names = c("mu", "True", "Laplace", "Monte Carlo (pi)", "Quadrature (n=100)"))
 ```
 
-The pattern is striking. For data centred near the origin, all three methods
-agree to within a unit or two on the log scale. But once the data are far
-from the origin (mean $-50$), **Laplace and Monte Carlo still agree closely
-with each other, while the fixed-grid quadrature is off by well over 100
-log-units** — the same boundary-squeeze failure diagnosed at the end of
-Unit08: the logistic transform used there is centred at $0$, so a posterior
-sitting at $\mu\approx-50$ gets squeezed into a sliver of the unit square that
-a $100\times100$ grid cannot resolve. Laplace approximation has no such
-failure mode here, and the reason is structural, not a matter of tuning:
-**it has no fixed grid to be squeezed against**. It optimizes to find
-$\theta_0$ wherever the mode actually is, then builds its approximation
-*around that point* — so it automatically "recentres" itself for every
-dataset, which is exactly the manual fix (recentre the transform on a
-location estimate) that Unit08 proposed for quadrature. This is Laplace's
-core practical advantage over quadrature: robustness to *where* the posterior
-happens to sit, at the cost of assuming it looks Gaussian once you get there.
+At $\mu=0$ the posterior sits right where both the logistic grid and the
+prior put their effort, so all four numbers should agree closely. As $\mu$
+moves to $-5$ and then $-20$, the fixed grid — centred at $0$ by
+construction — squeezes the posterior into an ever-thinner sliver of the
+unit interval, and quadrature is the first to break away from the true
+value, exactly the failure diagnosed at the end of Unit08. Naive Monte Carlo
+is built on the same fragile assumption in a different guise: it needs prior
+draws *near* $\mu$ to contribute any likelihood at all, so once $\mu$ is
+several prior standard deviations from $0$, a fixed budget of draws from
+$\pi$ can also become too sparse there to be trusted, even though nothing
+about the Monte Carlo estimator's derivation assumed $\mu$ would be small.
+Laplace has neither failure mode: it optimizes to find the mode wherever it
+actually is and builds its approximation *around that point*, so it
+automatically "recentres" itself for every $\mu$ — the same fix Unit08
+proposed by hand for quadrature, done here for free by the optimizer.
 
 ### Explore it interactively {#sec-laplace-app}
 
-The app below lets you move the true mean of the simulated data and compare
-the three log marginal likelihood estimates live, so you can watch
-quadrature's error grow while Laplace and Monte Carlo continue to track each
-other. This app runs live only in the HTML edition of this book; readers of
-other formats can follow the link below it.
+The app below lets you type in $\hat\mu$ and drag the quadrature grid size,
+then compare all four log marginal likelihood estimates live: watch the
+quadrature bar break away from the true value as $\hat\mu$ moves from $0$,
+however many grid points you give it, and Laplace track the truth throughout
+because it always re-centres on the mode. This app runs live only in the
+HTML edition of this book; readers of other formats can follow the link
+below it.
 
 ::: {.content-visible when-format="html"}
 
 ```{shinylive-r}
 #| label: laplace-vs-quadrature-app
 #| standalone: true
-#| viewerHeight: 800
+#| viewerHeight: 700
 
 library(shiny)
 
-log_lik_gauss  <- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
-log_prior_gauss <- function(mu, w, mu0, sigma_mu, w0, sigma_w) {
-  dnorm(mu, mu0, sigma_mu, log = TRUE) + dnorm(w, w0, sigma_w, log = TRUE)
+n_eff <- 3; sigma_prior <- 5
+
+log_mar_true_mu <- function(mu_hat) {
+  z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff)) * dnorm(mu, 0, sigma_prior)
+  log(integrate(z, -Inf, Inf)$value)
 }
-neg_log_post <- function(theta, x, mu0, sigma_mu, w0, sigma_w) {
-  -log_lik_gauss(x, theta[1], theta[2]) - log_prior_gauss(theta[1], theta[2], mu0, sigma_mu, w0, sigma_w)
-}
-laplace_gaussian <- function(x, mu0, sigma_mu, w0, sigma_w) {
-  op <- nlm(neg_log_post, p = c(mean(x), log(sd(x))), hessian = TRUE,
-            x = x, mu0 = mu0, sigma_mu = sigma_mu, w0 = w0, sigma_w = sigma_w)
-  H <- op$hessian; p <- length(op$estimate)
-  list(mode = op$estimate, log_ml = -op$minimum + p / 2 * log(2 * pi) - 0.5 * log(det(H)))
+laplace_mu <- function(mu_hat) {
+  h  <- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                          dnorm(mu, 0, sigma_prior, log = TRUE))
+  op <- nlm(h, p = mu_hat, hessian = TRUE)
+  -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1])
 }
 log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-log_mar_mc <- function(x, mu0, sigma_mu, w0, sigma_w, iters) {
-  mus <- rnorm(iters, mu0, sigma_mu); ws <- rnorm(iters, w0, sigma_w)
-  ll <- vapply(seq_len(iters), function(i) log_lik_gauss(x, mus[i], ws[i]), numeric(1))
-  log_sum_exp(ll) - log(iters)
+log_mar_mc_mu <- function(mu_hat, iters) {
+  mus <- rnorm(iters, 0, sigma_prior)
+  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_eff), log = TRUE)) - log(iters)
 }
-logit_inv     <- function(u) log(u / (1 - u))
-log_der_logit <- function(u) -log(u) - log(1 - u)
-log_g <- function(u, v, x, mu0, sigma_mu, w0, sigma_w) {
-  mu <- logit_inv(u); w <- logit_inv(v)
-  log_lik_gauss(x, mu, w) + log_prior_gauss(mu, w, mu0, sigma_mu, w0, sigma_w) +
-    log_der_logit(u) + log_der_logit(v)
-}
-log_mar_mid <- function(x, mu0, sigma_mu, w0, sigma_w, n) {
-  h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
-  G <- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu0, sigma_mu, w0, sigma_w)))
-  log_sum_exp(G) + 2 * log(h)
+log_mar_mid_mu <- function(mu_hat, n) {
+  h  <- 1 / n
+  u  <- (seq_len(n) - 0.5) * h
+  mu <- log(u / (1 - u))
+  log_z <- dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
+  log_sum_exp(log_z) + log(h)
 }
 
 ui <- fluidPage(
@@ -365,12 +358,13 @@ ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       width = 4,
-      sliderInput("true_mean", "true mean of the simulated data", min = -60, max = 10, value = 5, step = 2),
-      sliderInput("n_grid", "quadrature grid points per axis", min = 10, max = 100, value = 100, step = 10),
-      helpText("Prior: N(0, 100) on mu, N(0, 5) on w = log(sd). As the true mean ",
-               "moves away from 0, the fixed logistic-transform grid squeezes the ",
-               "posterior into a corner and the quadrature estimate breaks away, ",
-               "while Laplace (which re-optimizes for every dataset) tracks Monte Carlo."),
+      numericInput("mu_hat", "mu_hat (data location)", value = 0, step = 1),
+      sliderInput("n_grid", "quadrature grid points", min = 2, max = 100, value = 20, step = 2),
+      helpText("Likelihood: N(mu_hat; mu, 1/n_eff) with n_eff = 3, sigma = 1. ",
+               "Prior: N(0, 5^2) on mu. As mu_hat moves away from 0, the fixed ",
+               "logistic-transform grid squeezes the posterior into a corner and ",
+               "quadrature breaks away, however many grid points you add; Laplace ",
+               "re-optimizes for every mu_hat and keeps tracking the truth."),
       tableOutput("tab")
     ),
     mainPanel(width = 8, plotOutput("bars", height = "420px"))
@@ -378,18 +372,18 @@ ui <- fluidPage(
 )
 
 server <- function(input, output, session) {
-  dat <- reactive({ set.seed(1); rnorm(50, input$true_mean, 2) })
   vals <- reactive({
-    x <- dat()
-    c(Laplace = laplace_gaussian(x, 0, 100, 0, 5)$log_ml,
-      Monte_Carlo = { set.seed(2); log_mar_mc(x, 0, 100, 0, 5, 2e5) },
-      Quadrature = log_mar_mid(x, 0, 100, 0, 5, input$n_grid))
+    mh <- input$mu_hat
+    c(True = log_mar_true_mu(mh),
+      Laplace = laplace_mu(mh),
+      Monte_Carlo_pi = { set.seed(2); log_mar_mc_mu(mh, 2e5) },
+      Quadrature = log_mar_mid_mu(mh, input$n_grid))
   })
   output$bars <- renderPlot({
     v <- vals()
     par(mar = c(4, 4, 2, 1))
-    bp <- barplot(v, col = c("forestgreen", "steelblue", "firebrick"),
-                  ylab = "estimated log P(y)", main = "three methods, same data")
+    bp <- barplot(v, col = c("gray40", "forestgreen", "steelblue", "firebrick"),
+                  ylab = "estimated log P(y)", main = "four methods, same mu_hat")
     text(bp, v, sprintf("%.1f", v), pos = ifelse(v >= 0, 3, 1))
   })
   output$tab <- renderTable({
@@ -409,14 +403,182 @@ edition of this book. View it at
 <https://longhaisk.github.io/compstat/chapters/unit09_laplace.html#sec-laplace-app>.
 :::
 
-::: {.callout-note}
-### Reproducing this figure
-As in earlier chapters, this app uses the
-[shinylive](https://github.com/quarto-ext/shinylive) extension
-(`quarto add quarto-ext/shinylive`, with `filters: [shinylive]` in the
-document YAML), compiled to WebAssembly so it runs in the browser with no
-Shiny server. Only base R and `shiny` are available inside the app.
+### Laplace quadrature: recentring the grid on the Laplace approximation {#sec-laplace-transform-app}
+
+Unit08's grid squeezed because its logistic transform $u=1/(1+e^{-\mu})$ is
+centred at $\mu=0$ no matter where the data actually put the posterior.
+Laplace already computed a much better centre and scale — the mode
+$\hat\mu_L$ and standard deviation $s_L=1/\sqrt{H}$ of its Gaussian
+approximation — so use *those* to build the transform instead. Using an
+optimizer's mode and curvature to relocate and rescale a quadrature grid this
+way is exactly the idea behind **adaptive Gauss-Hermite quadrature**, the
+standard tool for one- or few-dimensional random effects in generalized
+linear mixed models (e.g. `lme4::glmer`'s `nAGQ` argument): it combines a
+Laplace-style mode-finding step with quadrature nodes built around that
+mode, rather than nodes fixed in advance. What follows is the same idea in
+miniature, with a plain midpoint rule standing in for the Hermite nodes and
+weights that real adaptive Gauss-Hermite quadrature would use:
+$$
+u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad
+\mu = t(u) = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad
+\frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right),
+$$
+the CDF and density of $N(\hat\mu_L, s_L^2)$ in place of the logistic
+function and its derivative. The midpoint rule on this grid estimates
+$$
+P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L},
+\qquad \mu_i = t(u_i),\ u_i = \big(i-\tfrac12\big)/n,
+$$
+which is just the earlier formula with the logistic Jacobian
+$1/\{u(1-u)\}$ replaced by $1/\phi\big((\mu-\hat\mu_L)/s_L\big)\cdot s_L$.
+Because $u_i$ is now uniform in *Laplace-normalized* space rather than raw
+$\mu$-space, the grid automatically concentrates where Laplace says the mass
+is — wherever $\hat\mu$ moves it. The app below is Unit08's app with exactly
+this one substitution; try the same values of $\hat\mu$ that broke the
+logistic-grid version and watch the quadrature bar stay glued to the true
+value instead. This app runs live only in the HTML edition of this book;
+readers of other formats can follow the link below it.
+
+::: {.content-visible when-format="html"}
+
+```{shinylive-r}
+#| label: laplace-transform-app
+#| standalone: true
+#| viewerHeight: 700
+
+library(shiny)
+
+ui <- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu_hat (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is a midpoint rule, uniform in u = Phi((mu - ",
+                     "mode_L)/se_L), where mode_L and se_L come from the ",
+                     "Laplace approximation recomputed for the current ",
+                     "mu_hat. Try mu_hat = 8 or 20 (values that broke the ",
+                     "plain logistic grid in the earlier app) and watch the ",
+                     "quadrature estimate stay close to the true value.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    output$squeeze <- renderPlot({
+        n_eff <- 3; sigma_prior <- 5
+        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior <- function(mu) dnorm(mu, 0, sigma_prior)
+        z     <- function(mu) L(mu) * prior(mu)
+
+        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### true value, exactly as in the Unit08 / earlier Unit09 apps
+        log_marlik <- log(integrate(z, -Inf, Inf)$value)
+
+        ### Laplace approximation for THIS mu_hat: mode and se define the transform
+        h_neg <- function(mu) -(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                                   dnorm(mu, 0, sigma_prior, log = TRUE))
+        op       <- nlm(h_neg, p = input$mu_hat, hessian = TRUE)
+        lap_mode <- op$estimate
+        lap_se   <- 1 / sqrt(op$hessian[1, 1])
+
+        lo <- min(-8, input$mu_hat - 6)
+        hi <- max(14, input$mu_hat + 6)
+        mu_grid <- seq(lo, hi, length.out = 500)
+
+        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
+        mu_pts <- qnorm(u_pts, lap_mode, lap_se)                # mu = Laplace-CDF^{-1}(u)
+
+        ### quadrature estimate built from this Laplace-shaped grid
+        log_z           <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        h_step          <- 1 / input$n_pts
+        log_jac         <- dnorm(mu_pts, lap_mode, lap_se, log = TRUE)   # log du/dmu
+        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log_jac) + log(h_step)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, pnorm(mu_grid, lap_mode, lap_se), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == Phi((mu - hat(mu)[L]) / s[L])), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col <- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
+    })
+}
+
+shinyApp(ui, server)
+```
+
 :::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit09_laplace.html#sec-laplace-transform-app>.
+:::
+
+Because $z(\mu)$ in this particular model is itself an exact Gaussian kernel
+in $\mu$ (a normal likelihood times a normal prior), the Laplace mode and
+curvature it supplies are not approximate at all — they are the *exact*
+posterior mean and variance. The Laplace-shaped transform therefore makes
+the transformed integrand almost perfectly flat, and even a handful of grid
+points recovers the true value to several decimals, regardless of
+$\hat\mu$. With a genuinely non-Gaussian posterior the fix would be only
+approximate rather than exact, but it would still relocate the grid to
+where Laplace *thinks* the mass is instead of leaving it fixed at $\mu=0$ —
+which is precisely the manual "recentre the transform on a location
+estimate" remedy Unit08 proposed, now automated by reusing this chapter's
+own machinery.
+
+Stepping back, this recentred midpoint rule (and, more precisely, adaptive
+Gauss-Hermite quadrature itself) is a **non-random** version of importance
+sampling. Recall the general quadrature form from Unit08,
+$\tilde A_n = \sum_i w_i f(x_i)$, and the importance-sampling identity from
+later in this book,
+$$
+\int f(\theta)\,d\theta \approx \frac1n\sum_{i=1}^n \frac{f(\theta_i)}{g(\theta_i)},
+\qquad \theta_i \sim g(\theta) \text{ i.i.d.},
+$$
+for a proposal $g$. Both are weighted sums of $f$ at a set of points; the
+only difference is *how the points are chosen*. Importance sampling draws
+$\theta_i$ **at random** from $g$ and weights each by $1/\{n\,g(\theta_i)\}$;
+Gauss-Hermite and our Laplace-recentred midpoint rule use *exactly the same
+weight formula*, but place $\theta_i$ **deterministically** instead — spaced
+evenly in $u=G(\theta)$, the CDF of $g$, rather than drawn from it. Choosing
+$g$ to be the Laplace approximation, as
+this section did, is exactly choosing a *good proposal* in the
+importance-sampling sense: one shaped and centred like the target, so that
+$f/g$ is nearly constant and few points suffice. A deterministic grid pays
+for this with the curse of dimensionality (Unit08's closing point — a
+product grid needs $n^d$ points); genuine random sampling from $g$ escapes
+that curse, at the cost of Monte Carlo noise instead of quadrature error —
+which is exactly the trade-off explored in full starting with the next
+chapter.
 
 ## Summary
 
@@ -429,10 +591,11 @@ Shiny server. Only base R and `shiny` are available inside the app.
   quadrature grid's does.
 - BIC is the large-$n$ simplification of the Laplace marginal likelihood,
   dropping $O(1)$ terms that do not depend on the sample size.
-- On the running Gaussian marginal-likelihood example, Laplace matched Monte
-  Carlo everywhere quadrature was tested, and remained accurate exactly where
-  quadrature's fixed grid broke down — because Laplace re-optimizes for every
-  dataset instead of committing to one transform in advance.
+- On the running Gaussian marginal-likelihood example, Laplace tracked the
+  true value everywhere it was tested, including where quadrature's fixed
+  grid broke down and even where naive Monte Carlo's fixed proposal started
+  to run short of relevant draws — because Laplace re-optimizes for every
+  dataset instead of committing to one grid or one proposal in advance.
 - It is deterministic, fast, and accurate to $O(1/n)$, but blind to
   skewness and multimodality; the Monte Carlo methods of the next chapters
   remove these limitations at higher computational cost.

@@ -232,7 +232,7 @@ window.Quarto = {
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/unit07_em.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The EM Algorithm</span></span></a>
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">EM Algorithms</span></span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -282,6 +282,7 @@ window.Quarto = {
   <li><a href="#comparing-laplace-quadrature-and-monte-carlo-on-the-same-problem" id="toc-comparing-laplace-quadrature-and-monte-carlo-on-the-same-problem" class="nav-link" data-scroll-target="#comparing-laplace-quadrature-and-monte-carlo-on-the-same-problem"><span class="header-section-number">9.5</span> Comparing Laplace, Quadrature, and Monte Carlo on the Same Problem</a>
   <ul>
   <li><a href="#sec-laplace-app" id="toc-sec-laplace-app" class="nav-link" data-scroll-target="#sec-laplace-app"><span class="header-section-number">9.5.1</span> Explore it interactively</a></li>
+  <li><a href="#sec-laplace-transform-app" id="toc-sec-laplace-transform-app" class="nav-link" data-scroll-target="#sec-laplace-transform-app"><span class="header-section-number">9.5.2</span> Laplace quadrature: recentring the grid on the Laplace approximation</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">9.6</span> Summary</a></li>
   </ul>
@@ -570,120 +571,101 @@ n\,I(\theta_0)\)</span> with <span class="math inline">\(I\)</span> the per-obse
 </section>
 <section id="comparing-laplace-quadrature-and-monte-carlo-on-the-same-problem" class="level2" data-number="9.5">
 <h2 data-number="9.5" class="anchored" data-anchor-id="comparing-laplace-quadrature-and-monte-carlo-on-the-same-problem"><span class="header-section-number">9.5</span> Comparing Laplace, Quadrature, and Monte Carlo on the Same Problem</h2>
-<p>The previous chapter (Numerical Quadrature) computed the marginal likelihood of a normal sample with unknown mean <span class="math inline">\(\mu\)</span> and log-variance <span class="math inline">\(w=\log\sigma^2\)</span>, <span class="math display">\[
-P(y) = \int_{-\infty}^{\infty}\!\int_{-\infty}^{\infty} L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw,
-\qquad \mu\sim N(\mu_0,\sigma_\mu^2),\ w\sim N(w_0,\sigma_w^2),
-\]</span> by a product midpoint rule on a logistic-transformed <span class="math inline">\((0,1)^2\)</span> grid, checked against naive Monte Carlo. The Laplace approximation attacks the same integral by optimization instead of a grid: find the joint mode of <span class="math inline">\((\mu,w)\)</span> and its <span class="math inline">\(2\times2\)</span> Hessian, then apply the boxed formula with <span class="math inline">\(p=2\)</span>.</p>
+<p>To compare the three methods on an apples-to-apples problem, reuse the single-parameter example from the end of Unit 08: a single unknown mean <span class="math inline">\(\mu\)</span>, with likelihood <span class="math display">\[
+L(\mu) = N\big(\hat\mu;\,\mu,\,1/n_{\text{eff}}\big),
+\]</span> treating <span class="math inline">\(\hat\mu\)</span> as the sample mean of <span class="math inline">\(n_{\text{eff}}\)</span> observations from <span class="math inline">\(N(\mu,1)\)</span>, under a prior <span class="math inline">\(\pi(\mu) = N(\mu;0,5^2)\)</span>. The marginal likelihood is <span class="math display">\[
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
+\]</span> Because this is a normal-normal conjugate pair, <span class="math inline">\(P(y)\)</span> has a closed form, so a genuine <strong>true</strong> value is available for comparison — computed here by numerical integration, exactly as in Unit08, rather than by writing out the closed-form expression. <strong>Laplace</strong> attacks the integral by optimization instead of a grid: find the mode of <span class="math inline">\(z(\mu)\)</span> and the second derivative of <span class="math inline">\(-\log z\)</span> there, then apply the boxed formula with <span class="math inline">\(p=1\)</span>. <strong>Quadrature</strong> attacks it with the logistic-transform midpoint rule from Unit08. <strong>Monte Carlo with <span class="math inline">\(\pi\)</span></strong> attacks it by drawing <span class="math inline">\(\mu\)</span> directly from the prior and averaging the likelihood — the same naive estimator used throughout Unit08.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log likelihood and log prior for the normal/log-variance model of Unit08</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>log_lik_gauss  <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu, w) <span class="fu">sum</span>(<span class="fu">dnorm</span>(x, mu, <span class="fu">exp</span>(w), <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>log_prior_gauss <span class="ot">&lt;-</span> <span class="cf">function</span>(mu, w, mu0, sigma_mu, w0, sigma_w) {</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">dnorm</span>(mu, mu0, sigma_mu, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">dnorm</span>(w, w0, sigma_w, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>neg_log_post <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, x, mu0, sigma_mu, w0, sigma_w) {</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="sc">-</span><span class="fu">log_lik_gauss</span>(x, theta[<span class="dv">1</span>], theta[<span class="dv">2</span>]) <span class="sc">-</span> <span class="fu">log_prior_gauss</span>(theta[<span class="dv">1</span>], theta[<span class="dv">2</span>], mu0, sigma_mu, w0, sigma_w)</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>n_eff <span class="ot">&lt;-</span> <span class="dv">3</span>; sigma_prior <span class="ot">&lt;-</span> <span class="dv">5</span>                   <span class="co"># same setup as the Unit08 app</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="do">### true value: exact up to numerical-integration error, since z is a</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="do">### normal-normal conjugate kernel</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>log_mar_true_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  z <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff)) <span class="sc">*</span> <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log</span>(<span class="fu">integrate</span>(z, <span class="sc">-</span><span class="cn">Inf</span>, <span class="cn">Inf</span>)<span class="sc">$</span>value)</span>
 <span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="do">### Laplace approximation for this two-parameter posterior</span></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>laplace_gaussian <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu0, sigma_mu, w0, sigma_w) {</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(neg_log_post, <span class="at">p =</span> <span class="fu">c</span>(<span class="fu">mean</span>(x), <span class="fu">log</span>(<span class="fu">sd</span>(x))), <span class="at">hessian =</span> <span class="cn">TRUE</span>,</span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>            <span class="at">x =</span> x, <span class="at">mu0 =</span> mu0, <span class="at">sigma_mu =</span> sigma_mu, <span class="at">w0 =</span> w0, <span class="at">sigma_w =</span> sigma_w)</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  H <span class="ot">&lt;-</span> op<span class="sc">$</span>hessian; p <span class="ot">&lt;-</span> <span class="fu">length</span>(op<span class="sc">$</span>estimate)</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">mode =</span> op<span class="sc">$</span>estimate, <span class="at">se =</span> <span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">solve</span>(H))),</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>       <span class="at">log_ml =</span> <span class="sc">-</span>op<span class="sc">$</span>minimum <span class="sc">+</span> p <span class="sc">/</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi) <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="fu">det</span>(H)))</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="do">### naive Monte Carlo (samples from the prior; see Unit08 for the log-sum-exp helper)</span></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>log_mar_mc <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu0, sigma_mu, w0, sigma_w, iters) {</span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  mus <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(iters, mu0, sigma_mu); ws <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(iters, w0, sigma_w)</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>  ll <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_len</span>(iters), <span class="cf">function</span>(i) <span class="fu">log_lik_gauss</span>(x, mus[i], ws[i]), <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(ll) <span class="sc">-</span> <span class="fu">log</span>(iters)</span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a><span class="do">### product midpoint quadrature on the logistic-transformed square (Unit08's method)</span></span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>logit_inv     <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(u <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>log_der_logit <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="sc">-</span><span class="fu">log</span>(u) <span class="sc">-</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> u)</span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>log_g <span class="ot">&lt;-</span> <span class="cf">function</span>(u, v, x, mu0, sigma_mu, w0, sigma_w) {</span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>  mu <span class="ot">&lt;-</span> <span class="fu">logit_inv</span>(u); w <span class="ot">&lt;-</span> <span class="fu">logit_inv</span>(v)</span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_lik_gauss</span>(x, mu, w) <span class="sc">+</span> <span class="fu">log_prior_gauss</span>(mu, w, mu0, sigma_mu, w0, sigma_w) <span class="sc">+</span></span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    <span class="fu">log_der_logit</span>(u) <span class="sc">+</span> <span class="fu">log_der_logit</span>(v)</span>
-<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>log_mar_mid <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu0, sigma_mu, w0, sigma_w, n) {</span>
-<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>  h <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n; grid <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
-<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>  G <span class="ot">&lt;-</span> <span class="fu">outer</span>(grid, grid, <span class="fu">Vectorize</span>(<span class="cf">function</span>(u, v) <span class="fu">log_g</span>(u, v, x, mu0, sigma_mu, w0, sigma_w)))</span>
-<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(G) <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">log</span>(h)</span>
-<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="do">### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>laplace_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="sc">-</span>(<span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(h, <span class="at">p =</span> mu_hat, <span class="at">hessian =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">mode =</span> op<span class="sc">$</span>estimate, <span class="at">log_ml =</span> <span class="sc">-</span>op<span class="sc">$</span>minimum <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi) <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(op<span class="sc">$</span>hessian[<span class="dv">1</span>, <span class="dv">1</span>]))</span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="do">### naive Monte Carlo: draw mu from the prior, average the likelihood</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>log_mar_mc_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, iters) {</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  mus <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(iters, <span class="dv">0</span>, sigma_prior)</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(<span class="fu">dnorm</span>(mu_hat, mus, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">-</span> <span class="fu">log</span>(iters)</span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="do">### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>log_mar_mid_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, n) {</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>  u  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  mu <span class="ot">&lt;-</span> <span class="fu">log</span>(u <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  log_z <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log</span>(u <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(log_z) <span class="sc">+</span> <span class="fu">log</span>(h)</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">7</span>)</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>scenarios <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">desc =</span> <span class="st">"well-centred: mean 5"</span>,    <span class="at">mean =</span> <span class="dv">5</span>,   <span class="at">sd =</span> <span class="dv">1</span>),</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">desc =</span> <span class="st">"well-centred: mean -5"</span>,   <span class="at">mean =</span> <span class="sc">-</span><span class="dv">5</span>,  <span class="at">sd =</span> <span class="dv">1</span>),</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">desc =</span> <span class="st">"far from origin: mean -50, sd 4"</span>,  <span class="at">mean =</span> <span class="sc">-</span><span class="dv">50</span>, <span class="at">sd =</span> <span class="dv">4</span>),</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">desc =</span> <span class="st">"far from origin: mean -50, sd 10"</span>, <span class="at">mean =</span> <span class="sc">-</span><span class="dv">50</span>, <span class="at">sd =</span> <span class="dv">10</span>)</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>three_way <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(scenarios, <span class="cf">function</span>(s) {</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="at">mean =</span> <span class="fu">as.numeric</span>(s[<span class="st">"mean"</span>]), <span class="at">sd =</span> <span class="fu">as.numeric</span>(s[<span class="st">"sd"</span>]))</span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  lap <span class="ot">&lt;-</span> <span class="fu">laplace_gaussian</span>(x, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">0</span>, <span class="dv">5</span>)</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">Laplace =</span> lap<span class="sc">$</span>log_ml,</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">Monte_Carlo =</span> <span class="fu">log_mar_mc</span>(x, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">0</span>, <span class="dv">5</span>, <span class="fl">1e6</span>),</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">Quadrature =</span> <span class="fu">log_mar_mid</span>(x, <span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">0</span>, <span class="dv">5</span>, <span class="dv">100</span>))</span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>}))</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">cbind</span>(<span class="at">scenario =</span> <span class="fu">sapply</span>(scenarios, <span class="st">`</span><span class="at">[</span><span class="st">`</span>, <span class="st">"desc"</span>), <span class="fu">round</span>(three_way, <span class="dv">3</span>)),</span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>             <span class="at">row.names =</span> <span class="cn">FALSE</span>, <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"scenario"</span>, <span class="st">"Laplace"</span>, <span class="st">"Monte Carlo"</span>, <span class="st">"Quadrature (n=100 grid)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>mu_hats <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">5</span>, <span class="sc">-</span><span class="dv">20</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>three_way <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(mu_hats, <span class="cf">function</span>(m) {</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">True =</span> <span class="fu">log_mar_true_mu</span>(m),</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">Laplace =</span> <span class="fu">laplace_mu</span>(m)[<span class="st">"log_ml"</span>],</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">Monte_Carlo_pi =</span> <span class="fu">log_mar_mc_mu</span>(m, <span class="fl">1e6</span>),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">Quadrature =</span> <span class="fu">log_mar_mid_mu</span>(m, <span class="dv">100</span>))</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>}))</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">cbind</span>(<span class="st">`</span><span class="at">mu</span><span class="st">`</span> <span class="ot">=</span> mu_hats, <span class="fu">round</span>(three_way, <span class="dv">3</span>)), <span class="at">row.names =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"True"</span>, <span class="st">"Laplace"</span>, <span class="st">"Monte Carlo (pi)"</span>, <span class="st">"Quadrature (n=100)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-three-way" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-three-way-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;9.3: Log marginal likelihood by three independent methods, for a vague prior N(0, 100) on mu and N(0, 5) on w, n = 50 observations per scenario. Quadrature uses a 100x100 grid (unchanged from Unit08); Monte Carlo uses 1e6 prior draws.
+Table&nbsp;9.3: Log marginal likelihood by four methods, for data locations mu_hat = 0, -5, -20 (n_eff = 3, sigma = 1, prior N(0, 5^2) on mu). Quadrature uses a 100-point midpoint grid; Monte Carlo uses 1e6 prior draws; both are unchanged from Unit08’s app.
 </figcaption>
 <div aria-describedby="tbl-three-way-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 42%">
-<col style="width: 11%">
-<col style="width: 15%">
-<col style="width: 30%">
-</colgroup>
 <thead>
 <tr class="header">
-<th style="text-align: left;">scenario</th>
-<th style="text-align: left;">Laplace</th>
-<th style="text-align: left;">Monte Carlo</th>
-<th style="text-align: left;">Quadrature (n=100 grid)</th>
+<th style="text-align: right;">mu</th>
+<th style="text-align: right;">True</th>
+<th style="text-align: right;">Laplace</th>
+<th style="text-align: right;">Monte Carlo (pi)</th>
+<th style="text-align: right;">Quadrature (n=100)</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">well-centred: mean 5</td>
-<td style="text-align: left;">-81.378</td>
-<td style="text-align: left;">-81.502</td>
-<td style="text-align: left;">-79.713</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.537</td>
+<td style="text-align: right;">-2.535</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">well-centred: mean -5</td>
-<td style="text-align: left;">-84.421</td>
-<td style="text-align: left;">-84.26</td>
-<td style="text-align: left;">-85.081</td>
+<td style="text-align: right;">-5</td>
+<td style="text-align: right;">-3.028</td>
+<td style="text-align: right;">-3.028</td>
+<td style="text-align: right;">-3.027</td>
+<td style="text-align: right;">-2.707</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">far from origin: mean -50, sd 4</td>
-<td style="text-align: left;">-141.175</td>
-<td style="text-align: left;">-141.065</td>
-<td style="text-align: left;">-271.232</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">far from origin: mean -50, sd 10</td>
-<td style="text-align: left;">-191.395</td>
-<td style="text-align: left;">-191.377</td>
-<td style="text-align: left;">-271.311</td>
+<td style="text-align: right;">-20</td>
+<td style="text-align: right;">-50.734</td>
+<td style="text-align: right;">-10.430</td>
+<td style="text-align: right;">-10.626</td>
+<td style="text-align: right;">-327.191</td>
 </tr>
 </tbody>
 </table>
@@ -692,49 +674,43 @@ Table&nbsp;9.3: Log marginal likelihood by three independent methods, for a vagu
 </figure>
 </div>
 </div>
-<p>The pattern is striking. For data centred near the origin, all three methods agree to within a unit or two on the log scale. But once the data are far from the origin (mean <span class="math inline">\(-50\)</span>), <strong>Laplace and Monte Carlo still agree closely with each other, while the fixed-grid quadrature is off by well over 100 log-units</strong> — the same boundary-squeeze failure diagnosed at the end of Unit08: the logistic transform used there is centred at <span class="math inline">\(0\)</span>, so a posterior sitting at <span class="math inline">\(\mu\approx-50\)</span> gets squeezed into a sliver of the unit square that a <span class="math inline">\(100\times100\)</span> grid cannot resolve. Laplace approximation has no such failure mode here, and the reason is structural, not a matter of tuning: <strong>it has no fixed grid to be squeezed against</strong>. It optimizes to find <span class="math inline">\(\theta_0\)</span> wherever the mode actually is, then builds its approximation <em>around that point</em> — so it automatically “recentres” itself for every dataset, which is exactly the manual fix (recentre the transform on a location estimate) that Unit08 proposed for quadrature. This is Laplace’s core practical advantage over quadrature: robustness to <em>where</em> the posterior happens to sit, at the cost of assuming it looks Gaussian once you get there.</p>
+<p>At <span class="math inline">\(\mu=0\)</span> the posterior sits right where both the logistic grid and the prior put their effort, so all four numbers should agree closely. As <span class="math inline">\(\mu\)</span> moves to <span class="math inline">\(-5\)</span> and then <span class="math inline">\(-20\)</span>, the fixed grid — centred at <span class="math inline">\(0\)</span> by construction — squeezes the posterior into an ever-thinner sliver of the unit interval, and quadrature is the first to break away from the true value, exactly the failure diagnosed at the end of Unit08. Naive Monte Carlo is built on the same fragile assumption in a different guise: it needs prior draws <em>near</em> <span class="math inline">\(\mu\)</span> to contribute any likelihood at all, so once <span class="math inline">\(\mu\)</span> is several prior standard deviations from <span class="math inline">\(0\)</span>, a fixed budget of draws from <span class="math inline">\(\pi\)</span> can also become too sparse there to be trusted, even though nothing about the Monte Carlo estimator’s derivation assumed <span class="math inline">\(\mu\)</span> would be small. Laplace has neither failure mode: it optimizes to find the mode wherever it actually is and builds its approximation <em>around that point</em>, so it automatically “recentres” itself for every <span class="math inline">\(\mu\)</span> — the same fix Unit08 proposed by hand for quadrature, done here for free by the optimizer.</p>
 <section id="sec-laplace-app" class="level3" data-number="9.5.1">
 <h3 data-number="9.5.1" class="anchored" data-anchor-id="sec-laplace-app"><span class="header-section-number">9.5.1</span> Explore it interactively</h3>
-<p>The app below lets you move the true mean of the simulated data and compare the three log marginal likelihood estimates live, so you can watch quadrature’s error grow while Laplace and Monte Carlo continue to track each other. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
+<p>The app below lets you type in <span class="math inline">\(\hat\mu\)</span> and drag the quadrature grid size, then compare all four log marginal likelihood estimates live: watch the quadrature bar break away from the true value as <span class="math inline">\(\hat\mu\)</span> moves from <span class="math inline">\(0\)</span>, however many grid points you give it, and Laplace track the truth throughout because it always re-centres on the mode. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
 <pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
 #|   shinylive does not work in self-contained HTML documents.
 #|   Please set `embed-resources: false` in your metadata.
 #| label: laplace-vs-quadrature-app
 #| standalone: true
-#| viewerHeight: 800
+#| viewerHeight: 700
 
 library(shiny)
 
-log_lik_gauss  &lt;- function(x, mu, w) sum(dnorm(x, mu, exp(w), log = TRUE))
-log_prior_gauss &lt;- function(mu, w, mu0, sigma_mu, w0, sigma_w) {
-  dnorm(mu, mu0, sigma_mu, log = TRUE) + dnorm(w, w0, sigma_w, log = TRUE)
+n_eff &lt;- 3; sigma_prior &lt;- 5
+
+log_mar_true_mu &lt;- function(mu_hat) {
+  z &lt;- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff)) * dnorm(mu, 0, sigma_prior)
+  log(integrate(z, -Inf, Inf)$value)
 }
-neg_log_post &lt;- function(theta, x, mu0, sigma_mu, w0, sigma_w) {
-  -log_lik_gauss(x, theta[1], theta[2]) - log_prior_gauss(theta[1], theta[2], mu0, sigma_mu, w0, sigma_w)
-}
-laplace_gaussian &lt;- function(x, mu0, sigma_mu, w0, sigma_w) {
-  op &lt;- nlm(neg_log_post, p = c(mean(x), log(sd(x))), hessian = TRUE,
-            x = x, mu0 = mu0, sigma_mu = sigma_mu, w0 = w0, sigma_w = sigma_w)
-  H &lt;- op$hessian; p &lt;- length(op$estimate)
-  list(mode = op$estimate, log_ml = -op$minimum + p / 2 * log(2 * pi) - 0.5 * log(det(H)))
+laplace_mu &lt;- function(mu_hat) {
+  h  &lt;- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                          dnorm(mu, 0, sigma_prior, log = TRUE))
+  op &lt;- nlm(h, p = mu_hat, hessian = TRUE)
+  -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1])
 }
 log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
-log_mar_mc &lt;- function(x, mu0, sigma_mu, w0, sigma_w, iters) {
-  mus &lt;- rnorm(iters, mu0, sigma_mu); ws &lt;- rnorm(iters, w0, sigma_w)
-  ll &lt;- vapply(seq_len(iters), function(i) log_lik_gauss(x, mus[i], ws[i]), numeric(1))
-  log_sum_exp(ll) - log(iters)
+log_mar_mc_mu &lt;- function(mu_hat, iters) {
+  mus &lt;- rnorm(iters, 0, sigma_prior)
+  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_eff), log = TRUE)) - log(iters)
 }
-logit_inv     &lt;- function(u) log(u / (1 - u))
-log_der_logit &lt;- function(u) -log(u) - log(1 - u)
-log_g &lt;- function(u, v, x, mu0, sigma_mu, w0, sigma_w) {
-  mu &lt;- logit_inv(u); w &lt;- logit_inv(v)
-  log_lik_gauss(x, mu, w) + log_prior_gauss(mu, w, mu0, sigma_mu, w0, sigma_w) +
-    log_der_logit(u) + log_der_logit(v)
-}
-log_mar_mid &lt;- function(x, mu0, sigma_mu, w0, sigma_w, n) {
-  h &lt;- 1 / n; grid &lt;- (seq_len(n) - 0.5) * h
-  G &lt;- outer(grid, grid, Vectorize(function(u, v) log_g(u, v, x, mu0, sigma_mu, w0, sigma_w)))
-  log_sum_exp(G) + 2 * log(h)
+log_mar_mid_mu &lt;- function(mu_hat, n) {
+  h  &lt;- 1 / n
+  u  &lt;- (seq_len(n) - 0.5) * h
+  mu &lt;- log(u / (1 - u))
+  log_z &lt;- dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
+  log_sum_exp(log_z) + log(h)
 }
 
 ui &lt;- fluidPage(
@@ -742,12 +718,13 @@ ui &lt;- fluidPage(
   sidebarLayout(
     sidebarPanel(
       width = 4,
-      sliderInput("true_mean", "true mean of the simulated data", min = -60, max = 10, value = 5, step = 2),
-      sliderInput("n_grid", "quadrature grid points per axis", min = 10, max = 100, value = 100, step = 10),
-      helpText("Prior: N(0, 100) on mu, N(0, 5) on w = log(sd). As the true mean ",
-               "moves away from 0, the fixed logistic-transform grid squeezes the ",
-               "posterior into a corner and the quadrature estimate breaks away, ",
-               "while Laplace (which re-optimizes for every dataset) tracks Monte Carlo."),
+      numericInput("mu_hat", "mu_hat (data location)", value = 0, step = 1),
+      sliderInput("n_grid", "quadrature grid points", min = 2, max = 100, value = 20, step = 2),
+      helpText("Likelihood: N(mu_hat; mu, 1/n_eff) with n_eff = 3, sigma = 1. ",
+               "Prior: N(0, 5^2) on mu. As mu_hat moves away from 0, the fixed ",
+               "logistic-transform grid squeezes the posterior into a corner and ",
+               "quadrature breaks away, however many grid points you add; Laplace ",
+               "re-optimizes for every mu_hat and keeps tracking the truth."),
       tableOutput("tab")
     ),
     mainPanel(width = 8, plotOutput("bars", height = "420px"))
@@ -755,18 +732,18 @@ ui &lt;- fluidPage(
 )
 
 server &lt;- function(input, output, session) {
-  dat &lt;- reactive({ set.seed(1); rnorm(50, input$true_mean, 2) })
   vals &lt;- reactive({
-    x &lt;- dat()
-    c(Laplace = laplace_gaussian(x, 0, 100, 0, 5)$log_ml,
-      Monte_Carlo = { set.seed(2); log_mar_mc(x, 0, 100, 0, 5, 2e5) },
-      Quadrature = log_mar_mid(x, 0, 100, 0, 5, input$n_grid))
+    mh &lt;- input$mu_hat
+    c(True = log_mar_true_mu(mh),
+      Laplace = laplace_mu(mh),
+      Monte_Carlo_pi = { set.seed(2); log_mar_mc_mu(mh, 2e5) },
+      Quadrature = log_mar_mid_mu(mh, input$n_grid))
   })
   output$bars &lt;- renderPlot({
     v &lt;- vals()
     par(mar = c(4, 4, 2, 1))
-    bp &lt;- barplot(v, col = c("forestgreen", "steelblue", "firebrick"),
-                  ylab = "estimated log P(y)", main = "three methods, same data")
+    bp &lt;- barplot(v, col = c("gray40", "forestgreen", "steelblue", "firebrick"),
+                  ylab = "estimated log P(y)", main = "four methods, same mu_hat")
     text(bp, v, sprintf("%.1f", v), pos = ifelse(v &gt;= 0, 3, 1))
   })
   output$tab &lt;- renderTable({
@@ -776,19 +753,111 @@ server &lt;- function(input, output, session) {
 }
 
 shinyApp(ui, server)</code></pre>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Reproducing this figure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>As in earlier chapters, this app uses the <a href="https://github.com/quarto-ext/shinylive">shinylive</a> extension (<code>quarto add quarto-ext/shinylive</code>, with <code>filters: [shinylive]</code> in the document YAML), compiled to WebAssembly so it runs in the browser with no Shiny server. Only base R and <code>shiny</code> are available inside the app.</p>
-</div>
-</div>
+</section>
+<section id="sec-laplace-transform-app" class="level3" data-number="9.5.2">
+<h3 data-number="9.5.2" class="anchored" data-anchor-id="sec-laplace-transform-app"><span class="header-section-number">9.5.2</span> Laplace quadrature: recentring the grid on the Laplace approximation</h3>
+<p>Unit08’s grid squeezed because its logistic transform <span class="math inline">\(u=1/(1+e^{-\mu})\)</span> is centred at <span class="math inline">\(\mu=0\)</span> no matter where the data actually put the posterior. Laplace already computed a much better centre and scale — the mode <span class="math inline">\(\hat\mu_L\)</span> and standard deviation <span class="math inline">\(s_L=1/\sqrt{H}\)</span> of its Gaussian approximation — so use <em>those</em> to build the transform instead. Using an optimizer’s mode and curvature to relocate and rescale a quadrature grid this way is exactly the idea behind <strong>adaptive Gauss-Hermite quadrature</strong>, the standard tool for one- or few-dimensional random effects in generalized linear mixed models (e.g.&nbsp;<code>lme4::glmer</code>’s <code>nAGQ</code> argument): it combines a Laplace-style mode-finding step with quadrature nodes built around that mode, rather than nodes fixed in advance. What follows is the same idea in miniature, with a plain midpoint rule standing in for the Hermite nodes and weights that real adaptive Gauss-Hermite quadrature would use: <span class="math display">\[
+u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad
+\mu = t(u) = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad
+\frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right),
+\]</span> the CDF and density of <span class="math inline">\(N(\hat\mu_L, s_L^2)\)</span> in place of the logistic function and its derivative. The midpoint rule on this grid estimates <span class="math display">\[
+P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L},
+\qquad \mu_i = t(u_i),\ u_i = \big(i-\tfrac12\big)/n,
+\]</span> which is just the earlier formula with the logistic Jacobian <span class="math inline">\(1/\{u(1-u)\}\)</span> replaced by <span class="math inline">\(1/\phi\big((\mu-\hat\mu_L)/s_L\big)\cdot s_L\)</span>. Because <span class="math inline">\(u_i\)</span> is now uniform in <em>Laplace-normalized</em> space rather than raw <span class="math inline">\(\mu\)</span>-space, the grid automatically concentrates where Laplace says the mass is — wherever <span class="math inline">\(\hat\mu\)</span> moves it. The app below is Unit08’s app with exactly this one substitution; try the same values of <span class="math inline">\(\hat\mu\)</span> that broke the logistic-grid version and watch the quadrature bar stay glued to the true value instead. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
+<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
+#|   shinylive does not work in self-contained HTML documents.
+#|   Please set `embed-resources: false` in your metadata.
+#| label: laplace-transform-app
+#| standalone: true
+#| viewerHeight: 700
+
+library(shiny)
+
+ui &lt;- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu_hat (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is a midpoint rule, uniform in u = Phi((mu - ",
+                     "mode_L)/se_L), where mode_L and se_L come from the ",
+                     "Laplace approximation recomputed for the current ",
+                     "mu_hat. Try mu_hat = 8 or 20 (values that broke the ",
+                     "plain logistic grid in the earlier app) and watch the ",
+                     "quadrature estimate stay close to the true value.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server &lt;- function(input, output, session) {
+
+    output$squeeze &lt;- renderPlot({
+        n_eff &lt;- 3; sigma_prior &lt;- 5
+        L     &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior &lt;- function(mu) dnorm(mu, 0, sigma_prior)
+        z     &lt;- function(mu) L(mu) * prior(mu)
+
+        log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### true value, exactly as in the Unit08 / earlier Unit09 apps
+        log_marlik &lt;- log(integrate(z, -Inf, Inf)$value)
+
+        ### Laplace approximation for THIS mu_hat: mode and se define the transform
+        h_neg &lt;- function(mu) -(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                                   dnorm(mu, 0, sigma_prior, log = TRUE))
+        op       &lt;- nlm(h_neg, p = input$mu_hat, hessian = TRUE)
+        lap_mode &lt;- op$estimate
+        lap_se   &lt;- 1 / sqrt(op$hessian[1, 1])
+
+        lo &lt;- min(-8, input$mu_hat - 6)
+        hi &lt;- max(14, input$mu_hat + 6)
+        mu_grid &lt;- seq(lo, hi, length.out = 500)
+
+        u_pts  &lt;- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
+        mu_pts &lt;- qnorm(u_pts, lap_mode, lap_se)                # mu = Laplace-CDF^{-1}(u)
+
+        ### quadrature estimate built from this Laplace-shaped grid
+        log_z           &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        h_step          &lt;- 1 / input$n_pts
+        log_jac         &lt;- dnorm(mu_pts, lap_mode, lap_se, log = TRUE)   # log du/dmu
+        log_marlik_quad &lt;- log_sum_exp(log_z(mu_pts) - log_jac) + log(h_step)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, pnorm(mu_grid, lap_mode, lap_se), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == Phi((mu - hat(mu)[L]) / s[L])), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col &lt;- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
+    })
+}
+
+shinyApp(ui, server)</code></pre>
+<p>Because <span class="math inline">\(z(\mu)\)</span> in this particular model is itself an exact Gaussian kernel in <span class="math inline">\(\mu\)</span> (a normal likelihood times a normal prior), the Laplace mode and curvature it supplies are not approximate at all — they are the <em>exact</em> posterior mean and variance. The Laplace-shaped transform therefore makes the transformed integrand almost perfectly flat, and even a handful of grid points recovers the true value to several decimals, regardless of <span class="math inline">\(\hat\mu\)</span>. With a genuinely non-Gaussian posterior the fix would be only approximate rather than exact, but it would still relocate the grid to where Laplace <em>thinks</em> the mass is instead of leaving it fixed at <span class="math inline">\(\mu=0\)</span> — which is precisely the manual “recentre the transform on a location estimate” remedy Unit08 proposed, now automated by reusing this chapter’s own machinery.</p>
 </section>
 </section>
 <section id="summary" class="level2" data-number="9.6">
@@ -797,7 +866,7 @@ shinyApp(ui, server)</code></pre>
 <li>The Laplace approximation expands <span class="math inline">\(h=-\log f\)</span> to second order at its minimum <span class="math inline">\(\theta_0\)</span> and integrates the resulting Gaussian exactly: <span class="math inline">\(\theta\mid\text{data} \approx N_p(\theta_0, H^{-1})\)</span> and <span class="math inline">\(\int f(\theta)\,d\theta \approx f(\theta_0)(2\pi)^{p/2}|H|^{-1/2}\)</span>.</li>
 <li>It needs only an optimizer and a Hessian — the same machinery already used to find the MLE — and its cost does not grow with dimension the way a quadrature grid’s does.</li>
 <li>BIC is the large-<span class="math inline">\(n\)</span> simplification of the Laplace marginal likelihood, dropping <span class="math inline">\(O(1)\)</span> terms that do not depend on the sample size.</li>
-<li>On the running Gaussian marginal-likelihood example, Laplace matched Monte Carlo everywhere quadrature was tested, and remained accurate exactly where quadrature’s fixed grid broke down — because Laplace re-optimizes for every dataset instead of committing to one transform in advance.</li>
+<li>On the running Gaussian marginal-likelihood example, Laplace tracked the true value everywhere it was tested, including where quadrature’s fixed grid broke down and even where naive Monte Carlo’s fixed proposal started to run short of relevant draws — because Laplace re-optimizes for every dataset instead of committing to one grid or one proposal in advance.</li>
 <li>It is deterministic, fast, and accurate to <span class="math inline">\(O(1/n)\)</span>, but blind to skewness and multimodality; the Monte Carlo methods of the next chapters remove these limitations at higher computational cost.</li>
 </ul>
 
