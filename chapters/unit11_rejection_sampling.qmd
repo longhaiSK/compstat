@@ -109,7 +109,7 @@ legend("topright", bty = "n", pch = c(19, 4), col = c("firebrick", "gray40"),
        legend = c(sprintf("accepted (%d)", sum(acc)), sprintf("rejected (%d)", sum(!acc))))
 ```
 
-## Example: Sampling a Normal from a Laplace Envelope
+## Example 1: Sampling a Normal from a Laplace Envelope
 
 The figure above already uses a concrete, closed-form example worth stating
 in full, because it is simple enough to check every claim exactly. The target
@@ -248,7 +248,7 @@ in the document or project YAML). Only base R and `shiny` are available
 inside the app.
 :::
 
-## Example: Sampling a Gamma Distribution
+## Example 2: Sampling a Gamma Distribution
 
 The Laplace envelope above was designed to match a normal target. A
 different target needs a different envelope. Here is one built for
@@ -370,11 +370,14 @@ envelopes that stay tight across a much wider range of $\alpha$; see Marsaglia
 The app below shows the target $f(x)=\text{Gamma}(\alpha,1)$ density against
 the Cauchy-based envelope $g(x)=\exp(\texttt{log\_g\_gamma}(x,\alpha))$ as
 $\alpha$ is dragged (left), and a histogram of 2000 fresh rejection-sampled
-draws against the true density (right) — proof that the sampler is exact
-whenever the envelope is valid, and visibly wrong once $\alpha$ drops below
-$2$ and the target pokes through the envelope, as in
-@tbl-envelope-threshold. This app runs live only in the HTML edition of this
-book; readers of other formats can follow the link below it.
+draws against the true density (right) — an exact match whenever the
+envelope is valid. Drag $\alpha$ below $2$ and the target pokes through the
+envelope, as in @tbl-envelope-threshold; the crossing is a modest one for
+this particular envelope, so the histogram only dips slightly short of the
+curve in the affected region rather than breaking outright, but the sampler
+is no longer drawing from the exact target. This app runs live only in the
+HTML edition of this book; readers of other formats can follow the link
+below it.
 
 ::: {.content-visible when-format="html"}
 
@@ -398,8 +401,9 @@ ui <- fluidPage(
             sliderInput("alpha", "shape alpha (target: Gamma(alpha, 1))",
                         min = 1.1, max = 8, value = 3, step = 0.05),
             helpText("The envelope is only valid (g >= f everywhere) for ",
-                     "alpha > 2. Drag alpha below 2 to see the histogram of ",
-                     "draws stop matching the true density."),
+                     "alpha > 2. Below alpha = 2 the target pokes through ",
+                     "the envelope near the mode, and the histogram falls ",
+                     "slightly short of the true density there."),
             actionButton("resample", "draw new sample")
         ),
         mainPanel(
@@ -506,11 +510,20 @@ derivative are required (a derivative-free variant uses secants in place of
 tangents). The `ars` package implements this for any user-supplied
 log-concave `f`.
 
-### Example: Truncated Normal
+### Example 3: Truncated Normal
 
-The normal density is log-concave, so `ars` applies directly to a normal
-truncated to $[l, u]$ — useful whenever a parameter has a hard bound (a
-variance, a probability, a physically constrained rate).
+The standard normal is log-concave ($\log f(x) = -x^2/2$ is concave), and
+truncating to $[l, u]$ only shrinks the domain — it cannot break concavity —
+so a truncated normal is log-concave too, and `ars` applies to it directly.
+This makes it a clean test case for comparing ARS against the most obvious
+alternative: sample the *untruncated* $N(0,1)$ and throw away anything
+outside $[l, u]$. That naive sampler is itself a (trivial) rejection
+sampler, with envelope $g$ equal to the untruncated normal, so it is exactly
+correct — but its acceptance rate is just $P(l<Z<u)$, which collapses to
+essentially $0$ once $[l, u]$ sits out in the tail. ARS has no such
+weakness: its hull is built from the *truncated* target from the start, so
+it never proposes a point outside $[l, u]$ in the first place, and its
+acceptance rate stays high regardless of where the window sits.
 
 ```{r}
 #| label: ars-fns
@@ -562,17 +575,275 @@ never from the untruncated normal.
 #| label: fig-ars
 #| fig-width: 10
 #| fig-height: 3.6
-#| fig-cap: "Histograms of adaptive-rejection-sampled draws in three
-#|   increasingly extreme truncation windows: ars has no trouble with
-#|   any of them."
+#| fig-cap: "Histograms of adaptive-rejection-sampled draws against the true
+#|   truncated-normal density (red), in three increasingly extreme
+#|   truncation windows: ars matches the target exactly regardless of where
+#|   the window sits, only the cost per draw changes (@tbl-ars-timing)."
+### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
+### difference underflows to 0 for windows far out in either tail
+log_pnorm_diff <- function(lb, ub) {
+    if (ub <= 0) {
+        log_pu <- pnorm(ub, log.p = TRUE); log_pl <- pnorm(lb, log.p = TRUE)
+        log_pu + log1p(-exp(log_pl - log_pu))
+    } else if (lb >= 0) {
+        log_su <- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
+        log_sl <- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
+        log_sl + log1p(-exp(log_su - log_sl))
+    } else {
+        log(pnorm(ub) - pnorm(lb))
+    }
+}
+tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
 par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
 set.seed(5)
 for (w in windows) {
     x <- sample_tnorm_ars(n, w[1], w[2])
-    hist(x, breaks = 25, col = "steelblue", border = "white",
+    hist(x, breaks = 25, freq = FALSE, col = "steelblue", border = "white",
          main = sprintf("[%g, %g]", w[1], w[2]), xlab = "x")
+    curve(tnorm_density(x, w[1], w[2]), add = TRUE, lwd = 3, col = "firebrick", n = 300)
+    if (identical(w, windows[[1]])) {
+        legend("topright", bty = "n", lwd = 3, col = "firebrick", cex = 0.8,
+               legend = "true density")
+    }
 }
 ```
+
+### Animation for Illustrating ARS {#sec-ars-app}
+
+The `ars` package above is a black box: it returns samples but not the
+sequence of hulls it built along the way. The app below reimplements the
+same idea directly — start with a few tangent lines to $\log f$, sample from
+the piecewise-exponential envelope they define, and whenever a candidate is
+*rejected*, add it as a new tangent point and rebuild the hull — one
+candidate at a time, so every step of the mechanism is visible. **Next**
+advances a single candidate; **Play** advances automatically. The top panel
+shows $\log f$ against the current hull (in log scale the hull is exactly
+piecewise-*linear*, since it is built from tangent lines), marking the most
+recent candidate as accepted (green dot) or rejected (black x, becoming a
+new tangent point). The bottom panel is a histogram of the accepted draws so
+far against the true truncated normal density. Controls: the target sample
+size, and the truncation limits $[l, u]$ (changing the limits restarts the
+run). This app runs live only in the HTML edition of this book; readers of
+other formats can follow the link below it.
+
+::: {.content-visible when-format="html"}
+
+```{shinylive-r}
+#| label: ars-hull-app
+#| standalone: true
+#| viewerHeight: 800
+
+library(shiny)
+
+h <- function(x) -x^2 / 2          # log unnormalized N(0,1) density
+hprime <- function(x) -x
+
+build_hull <- function(xs, lb, ub) {
+    xs <- sort(xs)
+    hx <- h(xs); hpx <- hprime(xs)
+    k <- length(xs)
+    z <- numeric(k + 1); z[1] <- lb; z[k + 1] <- ub
+    if (k > 1) for (i in 1:(k - 1)) {
+        z[i + 1] <- (hx[i + 1] - hx[i] - xs[i + 1] * hpx[i + 1] + xs[i] * hpx[i]) /
+            (hpx[i] - hpx[i + 1])
+    }
+    list(x = xs, hx = hx, hp = hpx, z = z)
+}
+
+### area under the exponential of a single tangent-line piece, between its breakpoints
+piece_area <- function(hull, j) {
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+    if (abs(b) < 1e-10) exp(val_lo) * (hi - lo) else (exp(val_hi) - exp(val_lo)) / b
+}
+
+### draw one point from the piecewise-exponential envelope: pick a piece
+### proportional to its area, then invert its (exponential) CDF within it
+sample_hull <- function(hull) {
+    k <- length(hull$x)
+    areas <- vapply(seq_len(k), function(j) piece_area(hull, j), numeric(1))
+    areas[!is.finite(areas) | areas < 0] <- 0
+    j <- sample.int(k, 1, prob = areas)
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    U <- runif(1)
+    if (abs(b) < 1e-10) {
+        x <- lo + U * (hi - lo)
+    } else {
+        val_lo <- a + b * (lo - xj)
+        target <- exp(val_lo) + b * U * areas[j]
+        x <- xj + (log(target) - a) / b
+    }
+    list(x = x, logg = a + b * (x - xj))
+}
+
+### piecewise-linear hull value (log scale) at a vector of x's
+hull_val <- function(hull, xgrid) {
+    j <- findInterval(xgrid, hull$z, rightmost.closed = TRUE)
+    j <- pmax(1, pmin(j, length(hull$x)))
+    hull$hx[j] + hull$hp[j] * (xgrid - hull$x[j])
+}
+
+init_hull <- function(lb, ub) {
+    x_init <- sort(unique(pmin(pmax(c(lb + 0.25 * (ub - lb), (lb + ub) / 2,
+                                       ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
+    build_hull(x_init, lb, ub)
+}
+
+ui <- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 3,
+            numericInput("n", "sample size (target)", value = 200, min = 1, step = 10),
+            numericInput("l", "lower limit l", value = -2, step = 0.1),
+            numericInput("u", "upper limit u", value = 2, step = 0.1),
+            fluidRow(
+                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
+                column(6, actionButton("next_step", "Next ↷", width = "100%"))
+            ),
+            br(),
+            actionButton("restart", "↺ Restart", width = "100%"),
+            helpText("Each step draws one candidate from the current hull. ",
+                     "Accepted points (green) join the histogram; rejected ",
+                     "points (black x) become new tangent lines, tightening ",
+                     "the hull. Changing the limits restarts the run."),
+            textOutput("status")
+        ),
+        mainPanel(
+            width = 9,
+            plotOutput("panels", height = "620px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    rv <- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
+                          lb = -2, ub = 2, done = FALSE, playing = FALSE,
+                          last_x = NULL, last_accept = NA)
+
+    reset_run <- function() {
+        lb <- if (!is.null(input$l) && !is.na(input$l)) input$l else -2
+        ub <- if (!is.null(input$u) && !is.na(input$u)) input$u else 2
+        if (ub - lb < 0.05) ub <- lb + 0.05      # guard against a degenerate window
+        rv$hull <- init_hull(lb, ub)
+        rv$samples <- numeric(0)
+        rv$tries <- 0
+        rv$lb <- lb; rv$ub <- ub
+        rv$target_n <- if (!is.null(input$n) && !is.na(input$n) && input$n >= 1) input$n else 200
+        rv$done <- FALSE
+        rv$playing <- FALSE
+        rv$last_x <- NULL; rv$last_accept <- NA
+        updateActionButton(session, "play_pause", label = "▶ Play")
+    }
+    isolate(reset_run())
+
+    do_step <- function() {
+        if (rv$done) return(invisible(NULL))
+        draw <- sample_hull(rv$hull)
+        x <- draw$x; logg <- draw$logg; logf <- h(x)
+        rv$tries <- rv$tries + 1
+        accept <- log(runif(1)) < logf - logg
+        rv$last_x <- x; rv$last_accept <- accept
+        if (accept) {
+            rv$samples <- c(rv$samples, x)
+        } else {
+            rv$hull <- build_hull(sort(c(rv$hull$x, x)), rv$lb, rv$ub)
+        }
+        if (length(rv$samples) >= rv$target_n) {
+            rv$done <- TRUE
+            rv$playing <- FALSE
+            updateActionButton(session, "play_pause", label = "▶ Play")
+        }
+    }
+
+    observeEvent(input$l, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$u, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$restart, { reset_run() })
+
+    observeEvent(input$n, {
+        req(input$n)
+        rv$target_n <- input$n
+        if (length(rv$samples) < rv$target_n) rv$done <- FALSE
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$play_pause, {
+        if (rv$done) return()
+        rv$playing <- !rv$playing
+        updateActionButton(session, "play_pause",
+                            label = if (rv$playing) "⏸ Pause" else "▶ Play")
+    })
+
+    observeEvent(input$next_step, {
+        rv$playing <- FALSE
+        updateActionButton(session, "play_pause", label = "▶ Play")
+        do_step()
+    })
+
+    ### auto-advance one step every 120ms while playing
+    observe({
+        if (isTRUE(rv$playing) && !rv$done) {
+            invalidateLater(120, session)
+            isolate(do_step())
+        }
+    })
+
+    output$status <- renderText({
+        sprintf("%d / %d samples accepted  |  %d proposals so far  |  %d tangent points",
+                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
+    })
+
+    output$panels <- renderPlot({
+        hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
+        xg <- seq(lb, ub, length.out = 400)
+        hull_log <- hull_val(hull, xg); target_log <- h(xg)
+
+        par(mfrow = c(2, 1), mar = c(4, 4, 3, 1))
+
+        plot(xg, hull_log, type = "l", lwd = 2, col = "steelblue",
+             ylim = range(c(hull_log, target_log)), xlab = "x",
+             ylab = "log density (unnormalized)",
+             main = sprintf("log target vs. hull (%d tangent points)", length(hull$x)))
+        lines(xg, target_log, lwd = 2, col = "firebrick")
+        points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
+        abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
+        if (!is.null(rv$last_x)) {
+            points(rv$last_x, h(rv$last_x), pch = if (rv$last_accept) 19 else 4,
+                   col = if (rv$last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
+        }
+        legend("bottomleft", bty = "n", cex = 0.85,
+               lwd = c(2, 2, NA, NA), pch = c(NA, NA, 19, 4),
+               col = c("steelblue", "firebrick", "forestgreen", "black"),
+               legend = c("log hull", "log target", "last: accepted", "last: rejected"))
+
+        if (length(rv$samples) == 0) {
+            plot(0, 0, type = "n", xlim = c(lb, ub), ylim = c(0, 1), xlab = "x", ylab = "",
+                 main = "no samples accepted yet")
+        } else {
+            breaks <- seq(lb, ub, length.out = 31)
+            hist(rv$samples, breaks = breaks, freq = FALSE, col = "steelblue", border = "white",
+                 xlim = c(lb, ub), xlab = "x",
+                 main = sprintf("%d / %d samples%s", length(rv$samples), rv$target_n,
+                                 if (rv$done) "  (done)" else ""))
+            curve(dnorm(x) / (pnorm(ub) - pnorm(lb)), add = TRUE, lwd = 3, col = "firebrick", n = 300)
+            legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
+        }
+    })
+}
+
+shinyApp(ui, server)
+```
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit10_rejection_sampling.html#sec-ars-app>.
+:::
 
 ## Summary
 
