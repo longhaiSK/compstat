@@ -299,7 +299,7 @@ window.Quarto = {
   <li><a href="#log-concavity-and-the-tangent-hull" id="toc-log-concavity-and-the-tangent-hull" class="nav-link" data-scroll-target="#log-concavity-and-the-tangent-hull"><span class="header-section-number">11.4.1</span> Log-concavity and the tangent hull</a></li>
   <li><a href="#the-adaptive-algorithm" id="toc-the-adaptive-algorithm" class="nav-link" data-scroll-target="#the-adaptive-algorithm"><span class="header-section-number">11.4.2</span> The adaptive algorithm</a></li>
   <li><a href="#example-3-truncated-normal" id="toc-example-3-truncated-normal" class="nav-link" data-scroll-target="#example-3-truncated-normal"><span class="header-section-number">11.4.3</span> Example 3: Truncated Normal</a></li>
-  <li><a href="#sec-ars-app" id="toc-sec-ars-app" class="nav-link" data-scroll-target="#sec-ars-app"><span class="header-section-number">11.4.4</span> Trying it interactively: stepping through the hull tightening</a></li>
+  <li><a href="#sec-ars-app" id="toc-sec-ars-app" class="nav-link" data-scroll-target="#sec-ars-app"><span class="header-section-number">11.4.4</span> Animation for Illustrating ARS</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">11.5</span> Summary</a></li>
   </ul>
@@ -886,7 +886,7 @@ shinyApp(ui, server)</code></pre>
 </section>
 <section id="example-3-truncated-normal" class="level3" data-number="11.4.3">
 <h3 data-number="11.4.3" class="anchored" data-anchor-id="example-3-truncated-normal"><span class="header-section-number">11.4.3</span> Example 3: Truncated Normal</h3>
-<p>The normal density is log-concave, so <code>ars</code> applies directly to a normal truncated to <span class="math inline">\([l, u]\)</span> — useful whenever a parameter has a hard bound (a variance, a probability, a physically constrained rate).</p>
+<p>The standard normal is log-concave (<span class="math inline">\(\log f(x) = -x^2/2\)</span> is concave), and truncating to <span class="math inline">\([l, u]\)</span> only shrinks the domain — it cannot break concavity — so a truncated normal is log-concave too, and <code>ars</code> applies to it directly. This makes it a clean test case for comparing ARS against the most obvious alternative: sample the <em>untruncated</em> <span class="math inline">\(N(0,1)\)</span> and throw away anything outside <span class="math inline">\([l, u]\)</span>. That naive sampler is itself a (trivial) rejection sampler, with envelope <span class="math inline">\(g\)</span> equal to the untruncated normal, so it is exactly correct — but its acceptance rate is just <span class="math inline">\(P(l&lt;Z&lt;u)\)</span>, which collapses to essentially <span class="math inline">\(0\)</span> once <span class="math inline">\([l, u]\)</span> sits out in the tail. ARS has no such weakness: its hull is built from the <em>truncated</em> target from the start, so it never proposes a point outside <span class="math inline">\([l, u]\)</span> in the first place, and its acceptance rate stays high regardless of where the window sits.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -970,13 +970,34 @@ Table&nbsp;11.3: Adaptive rejection sampling (ars) vs naive rejection sampling f
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">5</span>)</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> windows) {</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> <span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>])</span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hist</span>(x, <span class="at">breaks =</span> <span class="dv">25</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>         <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"[%g, %g]"</span>, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">xlab =</span> <span class="st">"x"</span>)</span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="do">### difference underflows to 0 for windows far out in either tail</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>log_pnorm_diff <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">log.p =</span> <span class="cn">TRUE</span>); log_pl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_pl <span class="sc">-</span> log_pu))</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>        log_su <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_su <span class="sc">-</span> log_sl))</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(<span class="fu">pnorm</span>(ub) <span class="sc">-</span> <span class="fu">pnorm</span>(lb))</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>tnorm_density <span class="ot">&lt;-</span> <span class="cf">function</span>(x, lb, ub) <span class="fu">exp</span>(<span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">5</span>)</span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> windows) {</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> <span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>])</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hist</span>(x, <span class="at">breaks =</span> <span class="dv">25</span>, <span class="at">freq =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>         <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"[%g, %g]"</span>, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">xlab =</span> <span class="st">"x"</span>)</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">curve</span>(<span class="fu">tnorm_density</span>(x, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">300</span>)</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">identical</span>(w, windows[[<span class="dv">1</span>]])) {</span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>,</span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="st">"true density"</span>)</span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-ars" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -985,7 +1006,7 @@ Table&nbsp;11.3: Adaptive rejection sampling (ars) vs naive rejection sampling f
 <img src="unit11_rejection_sampling_files/figure-html/fig-ars-1.png" class="img-fluid figure-img" width="960">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ars-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;11.3: Histograms of adaptive-rejection-sampled draws in three increasingly extreme truncation windows: ars has no trouble with any of them.
+Figure&nbsp;11.3: Histograms of adaptive-rejection-sampled draws against the true truncated-normal density (red), in three increasingly extreme truncation windows: ars matches the target exactly regardless of where the window sits, only the cost per draw changes (<a href="#tbl-ars-timing" class="quarto-xref">Table&nbsp;<span>11.3</span></a>).
 </figcaption>
 </figure>
 </div>
@@ -993,7 +1014,7 @@ Figure&nbsp;11.3: Histograms of adaptive-rejection-sampled draws in three increa
 </div>
 </section>
 <section id="sec-ars-app" class="level3" data-number="11.4.4">
-<h3 data-number="11.4.4" class="anchored" data-anchor-id="sec-ars-app"><span class="header-section-number">11.4.4</span> Trying it interactively: stepping through the hull tightening</h3>
+<h3 data-number="11.4.4" class="anchored" data-anchor-id="sec-ars-app"><span class="header-section-number">11.4.4</span> Animation for Illustrating ARS</h3>
 <p>The <code>ars</code> package above is a black box: it returns samples but not the sequence of hulls it built along the way. The app below reimplements the same idea directly — start with a few tangent lines to <span class="math inline">\(\log f\)</span>, sample from the piecewise-exponential envelope they define, and whenever a candidate is <em>rejected</em>, add it as a new tangent point and rebuild the hull — one candidate at a time, so every step of the mechanism is visible. <strong>Next</strong> advances a single candidate; <strong>Play</strong> advances automatically. The top panel shows <span class="math inline">\(\log f\)</span> against the current hull (in log scale the hull is exactly piecewise-<em>linear</em>, since it is built from tangent lines), marking the most recent candidate as accepted (green dot) or rejected (black x, becoming a new tangent point). The bottom panel is a histogram of the accepted draws so far against the true truncated normal density. Controls: the target sample size, and the truncation limits <span class="math inline">\([l, u]\)</span> (changing the limits restarts the run). This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
 <pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
 #|   shinylive does not work in self-contained HTML documents.
@@ -1019,32 +1040,41 @@ build_hull &lt;- function(xs, lb, ub) {
     list(x = xs, hx = hx, hp = hpx, z = z)
 }
 
-### area under the exponential of a single tangent-line piece, between its breakpoints
-piece_area &lt;- function(hull, j) {
+### log-area under the exponential of a single tangent-line piece, between its
+### breakpoints -- computed entirely in log space so it stays finite even far
+### out in the tail, where exp(hull value) itself would underflow to exactly 0
+log_piece_area &lt;- function(hull, j) {
     a &lt;- hull$hx[j]; b &lt;- hull$hp[j]; xj &lt;- hull$x[j]
     lo &lt;- hull$z[j]; hi &lt;- hull$z[j + 1]
     val_lo &lt;- a + b * (lo - xj); val_hi &lt;- a + b * (hi - xj)
-    if (abs(b) &lt; 1e-10) exp(val_lo) * (hi - lo) else (exp(val_hi) - exp(val_lo)) / b
+    if (abs(b) &lt; 1e-10) return(val_lo + log(hi - lo))
+    m &lt;- max(val_lo, val_hi); d &lt;- min(val_lo, val_hi)
+    m + log1p(-exp(d - m)) - log(abs(b))
 }
 
 ### draw one point from the piecewise-exponential envelope: pick a piece
-### proportional to its area, then invert its (exponential) CDF within it
+### proportional to its area, then invert its (exponential) CDF within it --
+### both steps done on the log scale for the same underflow-safety reason
 sample_hull &lt;- function(hull) {
     k &lt;- length(hull$x)
-    areas &lt;- vapply(seq_len(k), function(j) piece_area(hull, j), numeric(1))
-    areas[!is.finite(areas) | areas &lt; 0] &lt;- 0
+    log_areas &lt;- vapply(seq_len(k), function(j) log_piece_area(hull, j), numeric(1))
+    log_areas[!is.finite(log_areas)] &lt;- -Inf
+    areas &lt;- exp(log_areas - max(log_areas))    # relative areas, safely in (0, 1]
     j &lt;- sample.int(k, 1, prob = areas)
     a &lt;- hull$hx[j]; b &lt;- hull$hp[j]; xj &lt;- hull$x[j]
     lo &lt;- hull$z[j]; hi &lt;- hull$z[j + 1]
     U &lt;- runif(1)
     if (abs(b) &lt; 1e-10) {
         x &lt;- lo + U * (hi - lo)
+        logg &lt;- a
     } else {
-        val_lo &lt;- a + b * (lo - xj)
-        target &lt;- exp(val_lo) + b * U * areas[j]
-        x &lt;- xj + (log(target) - a) / b
+        val_lo &lt;- a + b * (lo - xj); val_hi &lt;- a + b * (hi - xj)
+        m &lt;- max(val_lo, val_hi)
+        val_x &lt;- m + log((1 - U) * exp(val_lo - m) + U * exp(val_hi - m))
+        x &lt;- xj + (val_x - a) / b
+        logg &lt;- val_x
     }
-    list(x = x, logg = a + b * (x - xj))
+    list(x = x, logg = logg)
 }
 
 ### piecewise-linear hull value (log scale) at a vector of x's
@@ -1059,6 +1089,34 @@ init_hull &lt;- function(lb, ub) {
                                        ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
     build_hull(x_init, lb, ub)
 }
+
+### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
+### where "mode" is the peak of the density *within* the truncation window --
+### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
+### window is then entirely on one side of the peak, so the density is
+### monotonic and highest right at that edge). A wide window far out in the
+### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
+### mostly-flat, uninformative sliver near that one edge.
+smart_xlim &lt;- function(lb, ub) {
+    m &lt;- if (lb &gt;= 0) lb else if (ub &lt;= 0) ub else 0
+    c(max(lb, m - 2), min(ub, m + 2))
+}
+
+### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
+### difference underflows to 0 for windows far out in either tail
+log_pnorm_diff &lt;- function(lb, ub) {
+    if (ub &lt;= 0) {
+        log_pu &lt;- pnorm(ub, log.p = TRUE); log_pl &lt;- pnorm(lb, log.p = TRUE)
+        log_pu + log1p(-exp(log_pl - log_pu))
+    } else if (lb &gt;= 0) {
+        log_su &lt;- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
+        log_sl &lt;- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
+        log_sl + log1p(-exp(log_su - log_sl))
+    } else {
+        log(pnorm(ub) - pnorm(lb))
+    }
+}
+tnorm_density &lt;- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
 
 ui &lt;- fluidPage(
     titlePanel(NULL),
@@ -1166,7 +1224,8 @@ server &lt;- function(input, output, session) {
 
     output$panels &lt;- renderPlot({
         hull &lt;- rv$hull; lb &lt;- rv$lb; ub &lt;- rv$ub
-        xg &lt;- seq(lb, ub, length.out = 400)
+        dl &lt;- smart_xlim(lb, ub)
+        xg &lt;- seq(dl[1], dl[2], length.out = 400)
         hull_log &lt;- hull_val(hull, xg); target_log &lt;- h(xg)
 
         par(mfrow = c(2, 1), mar = c(4, 4, 3, 1))
@@ -1178,25 +1237,30 @@ server &lt;- function(input, output, session) {
         lines(xg, target_log, lwd = 2, col = "firebrick")
         points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
         abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
+        abline(v = c(lb, ub), col = "darkorange", lty = 2)
         if (!is.null(rv$last_x)) {
             points(rv$last_x, h(rv$last_x), pch = if (rv$last_accept) 19 else 4,
                    col = if (rv$last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
         }
         legend("bottomleft", bty = "n", cex = 0.85,
-               lwd = c(2, 2, NA, NA), pch = c(NA, NA, 19, 4),
-               col = c("steelblue", "firebrick", "forestgreen", "black"),
-               legend = c("log hull", "log target", "last: accepted", "last: rejected"))
+               lwd = c(2, 2, 1, NA, NA), lty = c(1, 1, 2, NA, NA), pch = c(NA, NA, NA, 19, 4),
+               col = c("steelblue", "firebrick", "darkorange", "forestgreen", "black"),
+               legend = c("log hull", "log target", "truncation limits", "last: accepted", "last: rejected"))
 
         if (length(rv$samples) == 0) {
-            plot(0, 0, type = "n", xlim = c(lb, ub), ylim = c(0, 1), xlab = "x", ylab = "",
+            plot(0, 0, type = "n", xlim = dl, ylim = c(0, 1), xlab = "x", ylab = "",
                  main = "no samples accepted yet")
         } else {
-            breaks &lt;- seq(lb, ub, length.out = 31)
+            ### scale the bin count so ~30 bins fall within the *visible* view,
+            ### not the full [lb, ub] window -- otherwise a wide window (e.g.
+            ### [100, 200] zoomed to [100, 102]) puts everything in one giant bin
+            n_bins &lt;- min(5000, max(30, ceiling(30 * (ub - lb) / (dl[2] - dl[1]))))
+            breaks &lt;- seq(lb, ub, length.out = n_bins + 1)
             hist(rv$samples, breaks = breaks, freq = FALSE, col = "steelblue", border = "white",
-                 xlim = c(lb, ub), xlab = "x",
+                 xlim = dl, xlab = "x",
                  main = sprintf("%d / %d samples%s", length(rv$samples), rv$target_n,
                                  if (rv$done) "  (done)" else ""))
-            curve(dnorm(x) / (pnorm(ub) - pnorm(lb)), add = TRUE, lwd = 3, col = "firebrick", n = 300)
+            curve(tnorm_density(x, lb, ub), add = TRUE, lwd = 3, col = "firebrick", n = 300)
             legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
         }
     })

@@ -651,32 +651,41 @@ build_hull <- function(xs, lb, ub) {
     list(x = xs, hx = hx, hp = hpx, z = z)
 }
 
-### area under the exponential of a single tangent-line piece, between its breakpoints
-piece_area <- function(hull, j) {
+### log-area under the exponential of a single tangent-line piece, between its
+### breakpoints -- computed entirely in log space so it stays finite even far
+### out in the tail, where exp(hull value) itself would underflow to exactly 0
+log_piece_area <- function(hull, j) {
     a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
     lo <- hull$z[j]; hi <- hull$z[j + 1]
     val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
-    if (abs(b) < 1e-10) exp(val_lo) * (hi - lo) else (exp(val_hi) - exp(val_lo)) / b
+    if (abs(b) < 1e-10) return(val_lo + log(hi - lo))
+    m <- max(val_lo, val_hi); d <- min(val_lo, val_hi)
+    m + log1p(-exp(d - m)) - log(abs(b))
 }
 
 ### draw one point from the piecewise-exponential envelope: pick a piece
-### proportional to its area, then invert its (exponential) CDF within it
+### proportional to its area, then invert its (exponential) CDF within it --
+### both steps done on the log scale for the same underflow-safety reason
 sample_hull <- function(hull) {
     k <- length(hull$x)
-    areas <- vapply(seq_len(k), function(j) piece_area(hull, j), numeric(1))
-    areas[!is.finite(areas) | areas < 0] <- 0
+    log_areas <- vapply(seq_len(k), function(j) log_piece_area(hull, j), numeric(1))
+    log_areas[!is.finite(log_areas)] <- -Inf
+    areas <- exp(log_areas - max(log_areas))    # relative areas, safely in (0, 1]
     j <- sample.int(k, 1, prob = areas)
     a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
     lo <- hull$z[j]; hi <- hull$z[j + 1]
     U <- runif(1)
     if (abs(b) < 1e-10) {
         x <- lo + U * (hi - lo)
+        logg <- a
     } else {
-        val_lo <- a + b * (lo - xj)
-        target <- exp(val_lo) + b * U * areas[j]
-        x <- xj + (log(target) - a) / b
+        val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+        m <- max(val_lo, val_hi)
+        val_x <- m + log((1 - U) * exp(val_lo - m) + U * exp(val_hi - m))
+        x <- xj + (val_x - a) / b
+        logg <- val_x
     }
-    list(x = x, logg = a + b * (x - xj))
+    list(x = x, logg = logg)
 }
 
 ### piecewise-linear hull value (log scale) at a vector of x's
@@ -691,6 +700,34 @@ init_hull <- function(lb, ub) {
                                        ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
     build_hull(x_init, lb, ub)
 }
+
+### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
+### where "mode" is the peak of the density *within* the truncation window --
+### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
+### window is then entirely on one side of the peak, so the density is
+### monotonic and highest right at that edge). A wide window far out in the
+### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
+### mostly-flat, uninformative sliver near that one edge.
+smart_xlim <- function(lb, ub) {
+    m <- if (lb >= 0) lb else if (ub <= 0) ub else 0
+    c(max(lb, m - 2), min(ub, m + 2))
+}
+
+### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
+### difference underflows to 0 for windows far out in either tail
+log_pnorm_diff <- function(lb, ub) {
+    if (ub <= 0) {
+        log_pu <- pnorm(ub, log.p = TRUE); log_pl <- pnorm(lb, log.p = TRUE)
+        log_pu + log1p(-exp(log_pl - log_pu))
+    } else if (lb >= 0) {
+        log_su <- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
+        log_sl <- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
+        log_sl + log1p(-exp(log_su - log_sl))
+    } else {
+        log(pnorm(ub) - pnorm(lb))
+    }
+}
+tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
 
 ui <- fluidPage(
     titlePanel(NULL),
@@ -798,7 +835,8 @@ server <- function(input, output, session) {
 
     output$panels <- renderPlot({
         hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
-        xg <- seq(lb, ub, length.out = 400)
+        dl <- smart_xlim(lb, ub)
+        xg <- seq(dl[1], dl[2], length.out = 400)
         hull_log <- hull_val(hull, xg); target_log <- h(xg)
 
         par(mfrow = c(2, 1), mar = c(4, 4, 3, 1))
@@ -810,25 +848,30 @@ server <- function(input, output, session) {
         lines(xg, target_log, lwd = 2, col = "firebrick")
         points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
         abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
+        abline(v = c(lb, ub), col = "darkorange", lty = 2)
         if (!is.null(rv$last_x)) {
             points(rv$last_x, h(rv$last_x), pch = if (rv$last_accept) 19 else 4,
                    col = if (rv$last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
         }
         legend("bottomleft", bty = "n", cex = 0.85,
-               lwd = c(2, 2, NA, NA), pch = c(NA, NA, 19, 4),
-               col = c("steelblue", "firebrick", "forestgreen", "black"),
-               legend = c("log hull", "log target", "last: accepted", "last: rejected"))
+               lwd = c(2, 2, 1, NA, NA), lty = c(1, 1, 2, NA, NA), pch = c(NA, NA, NA, 19, 4),
+               col = c("steelblue", "firebrick", "darkorange", "forestgreen", "black"),
+               legend = c("log hull", "log target", "truncation limits", "last: accepted", "last: rejected"))
 
         if (length(rv$samples) == 0) {
-            plot(0, 0, type = "n", xlim = c(lb, ub), ylim = c(0, 1), xlab = "x", ylab = "",
+            plot(0, 0, type = "n", xlim = dl, ylim = c(0, 1), xlab = "x", ylab = "",
                  main = "no samples accepted yet")
         } else {
-            breaks <- seq(lb, ub, length.out = 31)
+            ### scale the bin count so ~30 bins fall within the *visible* view,
+            ### not the full [lb, ub] window -- otherwise a wide window (e.g.
+            ### [100, 200] zoomed to [100, 102]) puts everything in one giant bin
+            n_bins <- min(5000, max(30, ceiling(30 * (ub - lb) / (dl[2] - dl[1]))))
+            breaks <- seq(lb, ub, length.out = n_bins + 1)
             hist(rv$samples, breaks = breaks, freq = FALSE, col = "steelblue", border = "white",
-                 xlim = c(lb, ub), xlab = "x",
+                 xlim = dl, xlab = "x",
                  main = sprintf("%d / %d samples%s", length(rv$samples), rv$target_n,
                                  if (rv$done) "  (done)" else ""))
-            curve(dnorm(x) / (pnorm(ub) - pnorm(lb)), add = TRUE, lwd = 3, col = "firebrick", n = 300)
+            curve(tnorm_density(x, lb, ub), add = TRUE, lwd = 3, col = "firebrick", n = 300)
             legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
         }
     })
