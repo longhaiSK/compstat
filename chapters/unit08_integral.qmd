@@ -518,36 +518,6 @@ prior-sensitivity.
 
 ## Difficulties of Numerical Quadrature
 
-### Peaked integrands can be missed by a fixed grid
-
-A grid of fixed width $h_n$ can straddle a narrow spike without ever landing a
-point near its peak, badly under- or over-estimating the area it represents.
-
-```{r}
-#| label: fig-peaked
-#| fig-width: 10
-#| fig-height: 4.2
-#| fig-cap: "Same rule, same 8-panel grid: the wide density (left) integrates
-#|   almost exactly, while the narrow spike (right) is nearly invisible to
-#|   the grid because no panel midpoint falls near its mode."
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-a <- -3; b <- 3; n_panels <- 8; h <- (b - a) / n_panels
-xm <- a + (seq_len(n_panels) - 0.5) * h
-for (s in c(1, 0.03)) {
-    f <- function(x) dnorm(x, 0.2, s)
-    curve(f, a, b, n = 2001, lwd = 3, xlab = "x", ylab = "f(x)",
-          main = sprintf("sd = %g: midpoint = %.3f (exact = 1)", s, h * sum(f(xm))))
-    rect(xm - h / 2, 0, xm + h / 2, f(xm), col = adjustcolor("steelblue", 0.3), border = "steelblue")
-    points(xm, f(xm), pch = 19, col = "steelblue")
-}
-```
-
-This is exactly the situation a Bayesian posterior creates as $n$ grows: its
-width shrinks like $O(1/\sqrt n)$, so a grid tuned for $n=10$ observations can
-become useless for $n=10{,}000$. The usual remedy is to find the mode first
-(e.g. by the optimization methods of the previous two chapters), then centre
-and scale the grid around it — which is also the starting point for the
-Laplace approximation in the next chapter.
 
 ### Transformed integrands can be squeezed against the boundary
 
@@ -557,42 +527,115 @@ $\theta \approx 50$, $y = 1/(1+e^{-50}) \approx 1 - 2\times 10^{-22}$ — the
 entire posterior mass occupies a sliver of $(0,1)$ far too thin for any
 practical uniform grid to resolve.
 
-```{r}
-#| label: fig-boundary-squeeze
-#| fig-width: 8
-#| fig-height: 4.5
-#| fig-cap: "The posterior at theta=8 (sd 1), on one set of axes: the bottom
-#|   axis is $y\\in(0,1)$, the matching top axis is the original
-#|   $\\theta=\\mathrm{logit}(y)$. Dashed is the integrand simply relabeled
-#|   in $y$ (no Jacobian); solid is $g(y)$, the integrand quadrature actually
-#|   sees once the Jacobian is included. Both are squeezed into a sliver
-#|   near $y=1$; the grey ticks are a uniform 20-point midpoint grid in $y$,
-#|   showing how few of them land anywhere near the mass."
-mu    <- 8
-f     <- function(x) dnorm(x, mu, 1)
-t_inv <- function(y) log(y / (1 - y))          # theta = logit(y)
-g     <- function(y) f(t_inv(y)) / (y * (1 - y))
+### Explore the squeeze interactively {#sec-boundary-squeeze-app}
 
-ys  <- seq(1e-4, 1 - 1e-4, length.out = 2001)
-f_y <- f(t_inv(ys)); f_y <- f_y / max(f_y)     # peak-normalized for comparability
-g_y <- g(ys);        g_y <- g_y / max(g_y)
+The app below is the normal-model example made interactive: type in $\mu$,
+the location the data pull the likelihood toward (sigma fixed at 1), and
+drag the slider to change how many grid points sit in $u$ over $[0.1, 0.9]$.
+Watch how the grey points — perfectly uniform in $u$, linked to the logistic
+curve and dropped onto $z(\mu)=\pi(\mu)L(\mu)$ — stay clustered near the
+origin no matter how many of them there are, while $\mu$ alone controls
+whether they land anywhere near the posterior mass. This app runs live only
+in the HTML edition of this book; readers of other formats can follow the
+link below it.
 
-par(mar = c(4, 4, 4, 1))
-plot(ys, g_y, type = "l", lwd = 3, col = "steelblue", xlab = "y",
-     ylab = "integrand (peak-normalized)", ylim = c(0, 1.05))
-lines(ys, f_y, lwd = 3, lty = 2, col = "firebrick")
+::: {.content-visible when-format="html"}
 
-x_ticks <- c(-5, -2, 0, 2, 5, 8, 10)
-axis(3, at = plogis(x_ticks), labels = x_ticks)
-mtext(expression(theta == logit(y)), side = 3, line = 2.3)
+```{shinylive-r}
+#| label: boundary-squeeze-app
+#| standalone: true
+#| viewerHeight: 700
 
-n <- 20; h <- 1 / n
-rug((seq_len(n) - 0.5) * h, col = adjustcolor("gray30", 0.7), lwd = 2)
+library(shiny)
 
-legend("topleft", bty = "n", lwd = 3, lty = c(2, 1), col = c("firebrick", "steelblue"),
-       legend = c("original integrand, relabeled in y (no Jacobian)",
-                  "g(y): what quadrature actually integrates"))
+ui <- fluidPage(
+    titlePanel(NULL),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0.1 to 0.9)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is uniform in u over [0.1, 0.9]; each point's ",
+                     "mu is recovered as logit(u). Try mu = 0 first (the grid ",
+                     "sits right under the mass), then move mu up to 8 or 20 ",
+                     "and watch every point miss it, however many you add.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    output$squeeze <- renderPlot({
+        n_eff <- 3                                  # likelihood as if 3 obs, sigma = 1
+        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior <- function(mu) dnorm(mu, 0, 5)
+        z     <- function(mu) L(mu) * prior(mu)
+
+        log_marlik <- log(integrate(z, -Inf, Inf)$value)
+
+        lo <- min(-8, input$mu_hat - 6)
+        hi <- max(14, input$mu_hat + 6)
+        mu_grid <- seq(lo, hi, length.out = 500)
+
+        u_pts  <- seq(0.1, 0.9, length.out = input$n_pts)
+        mu_pts <- log(u_pts / (1 - u_pts))          # mu = logit(u)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, plogis(mu_grid), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == 1 / (1 + e^-mu)), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col <- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA), col = c("firebrick", "steelblue", NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == 1 / (1 + e^-mu)),
+                          as.expression(bquote(log~P(y) == .(round(log_marlik, 3))))))
+    })
+}
+
+shinyApp(ui, server)
 ```
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit08_integral.html#sec-boundary-squeeze-app>.
+:::
+
+::: {.callout-note}
+### Reproducing this figure
+The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
+extension, which compiles the app to WebAssembly so it runs in the reader's
+browser with no Shiny server. Install it once per project with
+
+```bash
+quarto add quarto-ext/shinylive
+```
+
+and add `filters: [shinylive]` to the document or project YAML. Only packages
+available in webR may be used inside the app, so the code above is restricted
+to base R and `shiny`.
+:::
 
 We already met the extreme version of this problem at the start of this
 chapter's development: with data simulated far from where the untransformed
