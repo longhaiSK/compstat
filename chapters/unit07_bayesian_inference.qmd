@@ -1,5 +1,5 @@
 ---
-title: "Bayesian Inference"
+title: "Introduction to Bayesian Inference"
 format:
   html:
     toc: true
@@ -118,7 +118,7 @@ Every entry in that table is either an integral (a mean, a median, a
 probability) or an optimization (the mode) over the posterior. This is the
 sense in which Bayesian inference is inherently computational: even the most
 basic summaries require operations that, outside of conjugate models like
-the two worked below, have no closed form.
+the three worked below, have no closed form.
 
 ### Posterior prediction
 
@@ -261,30 +261,82 @@ $\hat\theta_{\text{MLE}}\,\dot\sim\,N\big(\theta_0,\,1/(nI(\theta_0))\big)$
 from the MLE chapters — for large $n$ the two approaches to uncertainty
 agree, with the prior's influence vanishing.
 
-**Worked numbers.** Take a near-flat $\text{Beta}(1,1)$ prior and $n=10$
-trials with $y=7$ successes:
+### The marginal likelihood in closed form
+
+Because conjugacy gives the *whole* posterior in closed form, it also gives
+the marginal likelihood $P(\mathbf y)=\int_0^1 f(\theta)\,d\theta$ in closed
+form, by integrating the unnormalized Beta kernel directly against its own
+normalizing constant:
+$$
+P(\mathbf y) = \frac{\Gamma(\alpha_0+\alpha_1)}{\Gamma(\alpha_0)\Gamma(\alpha_1)}
+\int_0^1 \theta^{(\alpha_1+n_1)-1}(1-\theta)^{(\alpha_0+n_0)-1}\,d\theta
+= \frac{\Gamma(\alpha_0+\alpha_1)}{\Gamma(\alpha_0)\Gamma(\alpha_1)}\cdot
+\frac{\Gamma(\alpha_1+n_1)\,\Gamma(\alpha_0+n_0)}{\Gamma(\alpha_0+\alpha_1+n)},
+$$
+using $\int_0^1\theta^{a-1}(1-\theta)^{b-1}\,d\theta = B(a,b) =
+\Gamma(a)\Gamma(b)/\Gamma(a+b)$. On the log scale, with
+$\log B(a,b)=\log\Gamma(a)+\log\Gamma(b)-\log\Gamma(a+b)$,
+$$
+\log P(\mathbf y) = \log B(\alpha_1+n_1,\ \alpha_0+n_0) - \log B(\alpha_1,\ \alpha_0).
+$$
+This exact Beta–Bernoulli conjugate identity is the same trick used for
+Gamma–Poisson and Normal–Normal below: matching a recognizable kernel
+against its own normalizing constant hands over $P(\mathbf y)$ for free,
+with no numerical integration anywhere.
+
+### Posterior predictive, in closed form
+
+For a new $y_{n+1}\mid\theta\sim\text{Bern}(\theta)$, the general predictive
+formula from earlier in this chapter simplifies beautifully in the
+conjugate case, because $E(\theta\mid\mathbf y)$ *is* the predictive success
+probability:
+$$
+P(y_{n+1}=1\mid\mathbf y) = \int_0^1 \theta\, P(\theta\mid\mathbf y)\,d\theta = E(\theta\mid\mathbf y),
+\qquad y_{n+1}\mid\mathbf y \sim \text{Bern}\big(E(\theta\mid\mathbf y)\big).
+$$
+This exact equality ($E(\theta\mid\mathbf y)$ doing double duty as both a
+point estimate of $\theta$ and the predictive probability of success) is
+special to Bernoulli data; the Poisson–Gamma and Normal–Normal examples
+below give predictive distributions that are genuinely wider than their
+plug-in sampling models.
+
+### Worked numbers: the complete inference output
+
+Take a near-flat $\text{Beta}(1,1)$ prior and $n=10$ trials with $y=7$
+successes. The table below collects everything derived above — marginal
+likelihood, posterior, its mean/sd and credible interval, and the
+predictive distribution — in one place, and the same five quantities are
+computed the same way for the Gamma–Poisson and Normal–Normal examples that
+follow:
 
 ```{r}
 #| label: bb-example
 a1 <- 1; a0 <- 1                 # Beta(1, 1): uniform prior
 n_bb <- 10; y_bb <- 7            # 7 successes out of 10 trials
 post_a1 <- a1 + y_bb; post_a0 <- a0 + (n_bb - y_bb)
+bb_logmarg <- lbeta(post_a1, post_a0) - lbeta(a1, a0)   # log P(y), exact
 bb_mean <- post_a1 / (post_a1 + post_a0)
-bb_mode <- (post_a1 - 1) / (post_a1 + post_a0 - 2)
 bb_sd   <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
 bb_ci   <- qbeta(c(0.025, 0.975), post_a1, post_a0)
+bb_pred_mean <- bb_mean                        # predictive: Bernoulli(bb_mean)
+bb_pred_sd   <- sqrt(bb_pred_mean * (1 - bb_pred_mean))
 ```
 
 ```{r}
 #| label: tbl-bb-summary
-#| tbl-cap: "Posterior summaries, Beta(1,1) prior with n = 10, y = 7."
+#| tbl-cap: "Complete inference output, Beta(1,1) prior with n = 10, y = 7."
 knitr::kable(data.frame(
-  quantity = c("prior mean", "MLE ($y/n$)", "posterior distribution",
-               "posterior mean", "posterior mode", "posterior sd", "95% credible interval"),
+  quantity = c("prior mean", "MLE ($y/n$)", "log marginal likelihood",
+               "posterior distribution", "posterior mean", "posterior sd",
+               "95% credible interval", "predictive distribution",
+               "predictive mean", "predictive sd"),
   value = c(sprintf("%.3f", a1 / (a1 + a0)), sprintf("%.3f", y_bb / n_bb),
+            sprintf("%.3f", bb_logmarg),
             sprintf("Beta(%d, %d)", post_a1, post_a0),
-            sprintf("%.3f", bb_mean), sprintf("%.3f", bb_mode), sprintf("%.3f", bb_sd),
-            sprintf("(%.3f, %.3f)", bb_ci[1], bb_ci[2]))
+            sprintf("%.3f", bb_mean), sprintf("%.3f", bb_sd),
+            sprintf("(%.3f, %.3f)", bb_ci[1], bb_ci[2]),
+            sprintf("Bernoulli(%.3f)", bb_pred_mean),
+            sprintf("%.3f", bb_pred_mean), sprintf("%.3f", bb_pred_sd))
 ), col.names = c("quantity", "value"))
 ```
 
@@ -293,7 +345,10 @@ $0.5$ and the MLE $0.7$, pulled almost all the way to the MLE because the
 prior carries only $\alpha_0+\alpha_1=2$ pseudo-observations against $10$
 real ones. The 95% credible interval, $(0.390, 0.891)$, is read directly off
 the Beta CDF (`qbeta`) — no simulation, no quadrature, because conjugacy
-already handed over the exact posterior family.
+already handed over the exact posterior family. The predictive distribution
+$\text{Bern}(0.667)$ has the same mean as the posterior but a nonzero sd
+($0.471$), because even a Bernoulli outcome is uncertain even once $\theta$
+is known exactly.
 
 ```{r}
 #| label: fig-beta-posterior-narrowing
@@ -313,25 +368,6 @@ legend("topleft", bty = "n", lwd = 3, lty = c(2, 1, 1, 1), col = c("gray40", col
        legend = c("prior Beta(2, 2)", paste0("posterior, n = ", ns)))
 text(ybar, 12.5, expression(hat(theta)[MLE]), pos = 4)
 ```
-
-### Posterior predictive
-
-For a new $y_{n+1}\mid\theta\sim\text{Bern}(\theta)$, the general predictive
-formula from earlier in this chapter simplifies beautifully in the
-conjugate case, because $E(\theta\mid\mathbf y)$ *is* the predictive success
-probability:
-$$
-P(y_{n+1}=1\mid\mathbf y) = \int \theta\, P(\theta\mid\mathbf y)\,d\theta = E(\theta\mid\mathbf y)
-= \frac{\alpha_1+n_1}{\alpha_0+\alpha_1+n}.
-$$
-With the worked numbers above, $P(y_{11}=1\mid\mathbf y) = 0.667$ — the same
-number as the posterior mean, but now read as a probability for one more
-coin flip rather than a belief about $\theta$. This exact equality
-($E(\theta\mid\mathbf y)$ doing double duty as both a point estimate of
-$\theta$ and the predictive probability of success) is special to Bernoulli
-data; the Poisson–Gamma example next shows a case where the predictive
-distribution is a genuinely different, wider distribution than the plug-in
-sampling model.
 
 ## Example: Poisson Data with a Gamma Prior
 
@@ -408,47 +444,7 @@ approximation chapter later in this book applies its mode-and-curvature
 approximation to this same model and checks the result against precisely
 this formula, since here — unlike in most applications — the truth is known.
 
-### Worked numbers
-
-Take $\text{Gamma}(2,1)$ as the prior (prior mean $2$, i.e. a mild belief
-that the rate is around $2$, with pseudo-exposure $\beta=1$) and $n=8$
-simulated counts from a true rate of $3$:
-
-```{r}
-#| label: pg-example
-alpha <- 2; beta <- 1                       # Gamma(2, 1) prior
-set.seed(42)
-n_pg <- 8; y_pg <- rpois(n_pg, 3)           # 8 counts from a true rate of 3
-S_pg <- sum(y_pg)
-post_alpha <- alpha + S_pg; post_beta <- beta + n_pg
-pg_mean <- post_alpha / post_beta
-pg_sd   <- sqrt(post_alpha) / post_beta
-pg_ci   <- qgamma(c(0.025, 0.975), post_alpha, post_beta)
-```
-
-```{r}
-#| label: tbl-pg-summary
-#| tbl-cap: "Posterior summaries, Gamma(2,1) prior, n = 8 Poisson counts."
-knitr::kable(data.frame(
-  quantity = c("data $y_{1:8}$", "sum $S$", "prior mean", "MLE ($S/n$)",
-               "posterior distribution", "posterior mean", "posterior sd", "95% credible interval"),
-  value = c(paste(y_pg, collapse = ", "), as.character(S_pg),
-            sprintf("%.3f", alpha / beta), sprintf("%.3f", S_pg / n_pg),
-            sprintf("Gamma(%d, %d)", post_alpha, post_beta),
-            sprintf("%.3f", pg_mean), sprintf("%.3f", pg_sd),
-            sprintf("(%.3f, %.3f)", pg_ci[1], pg_ci[2]))
-), col.names = c("quantity", "value"))
-```
-
-The MLE, $29/8=3.625$, and the prior mean, $2$, are pulled toward each other
-by the posterior mean $3.444$ — mostly toward the MLE, since the prior's
-pseudo-exposure $\beta=1$ is small next to the real $n=8$. Compare this to
-the true generating rate of $3$: both the MLE and the posterior mean
-overshoot it here (this particular simulated sample happened to run a bit
-high), and the 95% credible interval $(2.340, 4.759)$ still comfortably
-covers it.
-
-### Posterior predictive: a genuinely overdispersed case
+### Posterior predictive, in closed form
 
 For a new count $y_{n+1}\mid\lambda\sim\text{Poisson}(\lambda)$, integrating
 the Poisson sampling density against the $\text{Gamma}(\alpha+S,\beta+n)$
@@ -472,10 +468,68 @@ A plug-in Poisson at $\lambda=E(\lambda\mid\mathbf y)$ would have variance
 posterior uncertainty about $\lambda$ leaking into the prediction, exactly
 the "wider than any single $P(y_{n+1}\mid\theta_j)$" phenomenon from the
 general framework above, now with an explicit formula for *how much* wider.
-With the worked numbers, $\beta+n=9$, so the predictive variance is $11.1\%$
-larger than a plug-in Poisson's — small here because $n$ is already large
-relative to the prior, but the gap widens as $n$ shrinks or the prior gets
-vaguer (smaller $\beta$).
+
+### Worked numbers: the complete inference output
+
+Take $\text{Gamma}(2,1)$ as the prior (prior mean $2$, i.e. a mild belief
+that the rate is around $2$, with pseudo-exposure $\beta=1$) and $n=8$
+simulated counts from a true rate of $3$. The table collects the same five
+quantities as the Beta–Bernoulli table above — marginal likelihood,
+posterior, its mean/sd and credible interval, and the predictive
+distribution:
+
+```{r}
+#| label: pg-example
+alpha <- 2; beta <- 1                       # Gamma(2, 1) prior
+set.seed(42)
+n_pg <- 8; y_pg <- rpois(n_pg, 3)           # 8 counts from a true rate of 3
+S_pg <- sum(y_pg)
+post_alpha <- alpha + S_pg; post_beta <- beta + n_pg
+pg_logmarg <- alpha * log(beta) - lgamma(alpha) + lgamma(post_alpha) -
+  post_alpha * log(post_beta) - sum(lgamma(y_pg + 1))     # log P(y), exact
+pg_mean <- post_alpha / post_beta
+pg_sd   <- sqrt(post_alpha) / post_beta
+pg_ci   <- qgamma(c(0.025, 0.975), post_alpha, post_beta)
+pg_nb_prob   <- post_beta / (post_beta + 1)    # predictive: NegBin(post_alpha, pg_nb_prob)
+pg_pred_mean <- pg_mean
+pg_pred_sd   <- sqrt(pg_mean * (1 + 1 / post_beta))
+```
+
+```{r}
+#| label: tbl-pg-summary
+#| tbl-cap: "Complete inference output, Gamma(2,1) prior, n = 8 Poisson counts."
+knitr::kable(data.frame(
+  quantity = c("data $y_{1:8}$", "sum $S$", "prior mean", "MLE ($S/n$)",
+               "log marginal likelihood", "posterior distribution",
+               "posterior mean", "posterior sd", "95% credible interval",
+               "predictive distribution", "predictive mean", "predictive sd"),
+  value = c(paste(y_pg, collapse = ", "), as.character(S_pg),
+            sprintf("%.3f", alpha / beta), sprintf("%.3f", S_pg / n_pg),
+            sprintf("%.3f", pg_logmarg),
+            sprintf("Gamma(%d, %d)", post_alpha, post_beta),
+            sprintf("%.3f", pg_mean), sprintf("%.3f", pg_sd),
+            sprintf("(%.3f, %.3f)", pg_ci[1], pg_ci[2]),
+            sprintf("NegBin(%d, %.3f)", post_alpha, pg_nb_prob),
+            sprintf("%.3f", pg_pred_mean), sprintf("%.3f", pg_pred_sd))
+), col.names = c("quantity", "value"))
+```
+
+The MLE, $29/8=3.625$, and the prior mean, $2$, are pulled toward each other
+by the posterior mean $3.444$ — mostly toward the MLE, since the prior's
+pseudo-exposure $\beta=1$ is small next to the real $n=8$. Compare this to
+the true generating rate of $3$: both the MLE and the posterior mean
+overshoot it here (this particular simulated sample happened to run a bit
+high), and the 95% credible interval $(2.340, 4.759)$ still comfortably
+covers it. With $\beta+n=9$, the predictive sd $1.957$ exceeds the plug-in
+Poisson sd $\sqrt{3.444}=1.856$ by the factor $\sqrt{1+1/9}$ — the same
+overdispersion story made numeric.
+
+### Overdispersion, visualized
+
+The gap is small here because $n$ is already large relative to the prior,
+but it widens as $n$ shrinks or the prior gets vaguer (smaller $\beta$). The
+figure below makes the same point on the density scale: the predictive has
+visibly heavier tails than a plug-in Poisson with the same mean.
 
 ```{r}
 #| label: fig-pg-predictive-dispersion
@@ -498,19 +552,184 @@ legend("topright", bty = "n", fill = c("firebrick", "gray60"),
        legend = c("posterior predictive (Negative Binomial)", "plug-in Poisson at posterior mean"))
 ```
 
+## Example: Normal Data with a Normal Prior (Known Variance)
+
+### Prior
+
+Now let $y_1,\ldots,y_n\mid\mu \overset{iid}{\sim} N(\mu,\sigma^2)$, with
+$\sigma^2$ **known/fixed** and only the mean $\mu\in\mathbb R$ unknown. Give
+$\mu$ a Normal prior, parametrized through a prior pseudo-sample-size
+$\kappa_0>0$ so that it lines up with the pseudo-data reading used in the two
+examples above:
+$$
+\pi(\mu) = N\!\Big(\mu_0,\ \frac{\sigma^2}{\kappa_0}\Big), \qquad
+E(\mu) = \mu_0, \qquad V(\mu) = \frac{\sigma^2}{\kappa_0}.
+$$
+$\mu_0$ is the prior guess for $\mu$, and $\kappa_0$ counts how many
+pseudo-observations (each with the known variance $\sigma^2$) that guess is
+worth: large $\kappa_0$ means a confident, concentrated prior; $\kappa_0\to0$
+recovers a flat, uninformative prior on $\mu$.
+
+### Likelihood and posterior
+
+With $P(y_i\mid\mu) = (2\pi\sigma^2)^{-1/2}\exp\{-(y_i-\mu)^2/(2\sigma^2)\}$,
+the likelihood depends on the data only through the sample mean
+$\bar y = \frac1n\sum_i y_i$:
+$$
+L(\mu) \;\propto\; \exp\left\{-\frac1{2\sigma^2}\sum_{i=1}^n(y_i-\mu)^2\right\}
+\;\propto\; \exp\left\{-\frac{n(\mu-\bar y)^2}{2\sigma^2}\right\}.
+$$
+Multiplying by the prior and completing the square in $\mu$,
+$$
+f(\mu) = \pi(\mu)L(\mu) \;\propto\;
+\exp\left\{-\frac{(\mu-\mu_0)^2}{2\sigma^2/\kappa_0} - \frac{n(\mu-\bar y)^2}{2\sigma^2}\right\}
+\;\propto\; \exp\left\{-\frac{(\mu-\mu_n)^2}{2\sigma^2/\kappa_n}\right\},
+$$
+the kernel of a Normal density with
+$$
+\kappa_n = \kappa_0+n, \qquad \mu_n = \frac{\kappa_0\mu_0+n\bar y}{\kappa_0+n}.
+$$
+The Normal prior is therefore **conjugate** to the Normal likelihood (known
+variance), exactly as Beta was to Bernoulli and Gamma to Poisson:
+$$
+\mu\mid\mathbf y \sim N\!\Big(\mu_n,\ \frac{\sigma^2}{\kappa_n}\Big).
+$$
+As in the other two models, the posterior mean is a pseudo-sample-size
+weighted average of the prior mean and the MLE $\hat\mu_{\text{MLE}}=\bar y$,
+$$
+\mu_n = \underbrace{\frac{\kappa_0}{\kappa_0+n}}_{w}\cdot\mu_0 + (1-w)\cdot\bar y,
+$$
+with prior weight $w=\kappa_0/(\kappa_0+n)\to0$ as $n\to\infty$, and the
+posterior "pseudo-sample-sizes" simply **add**: $\kappa_n=\kappa_0+n$ —
+posterior precision (inverse variance, in units of $1/\sigma^2$) is prior
+precision plus data precision.
+
+### The marginal likelihood in closed form
+
+Because conjugacy gives the *whole* posterior in closed form, it also gives
+the marginal likelihood $P(\mathbf y)=\int f(\mu)\,d\mu$ in closed form.
+Writing the likelihood with its full normalizing constant,
+$L(\mu)=(2\pi\sigma^2)^{-n/2}\exp\{-SS/(2\sigma^2)\}\exp\{-n(\mu-\bar y)^2/(2\sigma^2)\}$
+with $SS=\sum_{i=1}^n(y_i-\bar y)^2$, and integrating the same
+Gaussian-kernel product used to find the posterior above (a standard
+Gaussian-product identity: $\int\exp\{-a(\mu-m_1)^2/2-b(\mu-m_2)^2/2\}\,d\mu
+=\sqrt{2\pi/(a+b)}\exp\{-ab(m_1-m_2)^2/(2(a+b))\}$) gives
+$$
+P(\mathbf y) = (2\pi\sigma^2)^{-n/2}\sqrt{\frac{\kappa_0}{\kappa_n}}\,
+\exp\left\{-\frac{SS}{2\sigma^2} - \frac{\kappa_0 n(\mu_0-\bar y)^2}{2\sigma^2\kappa_n}\right\}.
+$$
+On the log scale,
+$$
+\log P(\mathbf y) = -\frac n2\log(2\pi\sigma^2) + \frac12\log\frac{\kappa_0}{\kappa_n}
+- \frac{SS}{2\sigma^2} - \frac{\kappa_0 n(\mu_0-\bar y)^2}{2\sigma^2\kappa_n}.
+$$
+As in the other two models, matching the Normal kernel of $f(\mu)$ against
+its own normalizing constant hands over $P(\mathbf y)$ with no numerical
+integration.
+
+### Posterior predictive, in closed form
+
+For a new $y_{n+1}\mid\mu\sim N(\mu,\sigma^2)$, integrating the Normal
+sampling density against the $N(\mu_n,\sigma^2/\kappa_n)$ posterior — a sum
+of independent Normals — gives another Normal predictive distribution,
+$$
+y_{n+1}\mid\mathbf y \sim N\!\Big(\mu_n,\ \sigma^2\big(1+\tfrac1{\kappa_n}\big)\Big),
+$$
+with mean equal to the posterior mean of $\mu$ (as it must, by the tower
+property) and variance **larger** than the known sampling variance
+$\sigma^2$ by exactly the factor $1+1/\kappa_n$ — the same form as the
+Gamma–Poisson predictive-variance inflation above, now for a continuous
+outcome: the extra $1/\kappa_n$ is the leftover posterior uncertainty about
+$\mu$ leaking into the prediction.
+
+### Worked numbers: the complete inference output
+
+Take a weakly informative prior, $\mu_0=0$ with $\kappa_0=1$ (worth one
+pseudo-observation), known $\sigma=2$, and $n=15$ observations simulated
+from a true mean of $3$. The table collects the same five quantities as the
+Beta–Bernoulli and Gamma–Poisson tables above:
+
+```{r}
+#| label: nn-example
+sigma_nn <- 2                                  # known/fixed sigma
+mu0 <- 0; kappa0 <- 1                          # N(0, sigma^2/1) prior
+set.seed(123)
+n_nn <- 15; y_nn <- rnorm(n_nn, 3, sigma_nn)   # 15 draws from a true mean of 3
+ybar_nn <- mean(y_nn)
+SS_nn <- sum((y_nn - ybar_nn)^2)
+post_kappa <- kappa0 + n_nn
+post_mu  <- (kappa0 * mu0 + n_nn * ybar_nn) / post_kappa
+post_var <- sigma_nn^2 / post_kappa
+post_sd  <- sqrt(post_var)
+nn_ci    <- qnorm(c(0.025, 0.975), post_mu, post_sd)
+nn_logmarg <- -n_nn / 2 * log(2 * pi * sigma_nn^2) + 0.5 * log(kappa0 / post_kappa) -
+  SS_nn / (2 * sigma_nn^2) -
+  kappa0 * n_nn * (mu0 - ybar_nn)^2 / (2 * sigma_nn^2 * post_kappa)   # log P(y), exact
+pred_var <- post_var + sigma_nn^2              # predictive: N(post_mu, pred_var)
+pred_sd  <- sqrt(pred_var)
+```
+
+```{r}
+#| label: tbl-nn-summary
+#| tbl-cap: "Complete inference output, $N(0, \\sigma^2/1)$ prior with known
+#|   $\\sigma=2$, n = 15."
+knitr::kable(data.frame(
+  quantity = c("prior mean", "MLE ($\\bar y$)", "log marginal likelihood",
+               "posterior distribution", "posterior mean", "posterior sd",
+               "95% credible interval", "predictive distribution",
+               "predictive mean", "predictive sd"),
+  value = c(sprintf("%.3f", mu0), sprintf("%.3f", ybar_nn),
+            sprintf("%.3f", nn_logmarg),
+            sprintf("N(%.3f, %.3f^2)", post_mu, post_sd),
+            sprintf("%.3f", post_mu), sprintf("%.3f", post_sd),
+            sprintf("(%.3f, %.3f)", nn_ci[1], nn_ci[2]),
+            sprintf("N(%.3f, %.3f^2)", post_mu, pred_sd),
+            sprintf("%.3f", post_mu), sprintf("%.3f", pred_sd))
+), col.names = c("quantity", "value"))
+```
+
+With only $\kappa_0=1$ pseudo-observation against $n=15$ real ones, the
+posterior mean $`r sprintf("%.3f", post_mu)`$ sits almost on top of the MLE
+$\bar y=`r sprintf("%.3f", ybar_nn)`$, barely pulled toward the prior mean
+$0$ — the same shrinkage story as the two examples above, now driven by
+$\kappa_0$ instead of $\alpha_0+\alpha_1$ or $\beta$. The predictive sd
+$`r sprintf("%.3f", pred_sd)`$ exceeds the known $\sigma=2$ by the factor
+$\sqrt{1+1/\kappa_n}=\sqrt{`r sprintf("%.3f", 1 + 1 / post_kappa)`}$ derived
+above — the continuous analogue of the Gamma–Poisson overdispersion factor.
+
+### Overdispersion, visualized
+
+```{r}
+#| label: fig-nn-predictive-dispersion
+#| fig-width: 9
+#| fig-height: 4.4
+#| fig-cap: "Posterior predictive $N(\\mu_n, \\sigma^2(1+1/\\kappa_n))$ (red,
+#|   solid) against a plug-in $N(\\mu_n,\\sigma^2)$ at the posterior mean
+#|   (gray, dashed). Same mean, but the predictive is visibly wider — the
+#|   extra spread is entirely the remaining posterior uncertainty about
+#|   $\\mu$."
+par(mar = c(4, 4, 1, 1)); pred_sd <- sqrt(post_var + sigma_nn^2)
+curve(dnorm(x, post_mu, pred_sd), post_mu - 4 * pred_sd, post_mu + 4 * pred_sd,
+      lwd = 3, col = "firebrick", xlab = expression(y[n+1]), ylab = "density")
+curve(dnorm(x, post_mu, sigma_nn), add = TRUE, lwd = 3, lty = 2, col = "gray40")
+legend("topright", bty = "n", lwd = 3, lty = c(1, 2), col = c("firebrick", "gray40"),
+       legend = c("posterior predictive", "plug-in Normal at posterior mean"))
+```
+
 ## Explore it interactively {#sec-bayes-explorer}
 
 The app below lets you adjust the prior, sample size, and observed data for
-either conjugate model and watch prior and posterior move together, along
-with the posterior summary table computed above. This app runs live only in
-the HTML edition of this book; readers of other formats can follow the link
-below it.
+any of the three conjugate models and watch prior and posterior move
+together, along with the posterior summary table computed above. This app
+runs live only in the HTML edition of this book; readers of other formats
+can follow the link below it.
 
 ::: {.content-visible when-format="html"}
 
 ```{shinylive-r}
 #| label: bayes-explorer-app
 #| standalone: true
+#| viewerHeight: 600
 
 library(shiny)
 
@@ -520,7 +739,8 @@ ui <- fluidPage(
     sidebarPanel(
       width = 4,
       selectInput("model", "Model",
-                  choices = c("Bernoulli - Beta" = "bb", "Poisson - Gamma" = "pg")),
+                  choices = c("Bernoulli - Beta" = "bb", "Poisson - Gamma" = "pg",
+                              "Normal (known sigma) - Normal" = "nn")),
       conditionalPanel(
         "input.model == 'bb'",
         numericInput("a1", "prior alpha1 (successes)", value = 1, min = 0.1, step = 0.5),
@@ -535,8 +755,21 @@ ui <- fluidPage(
         numericInput("n_pg", "n (observations)", value = 8, min = 1, step = 1),
         numericInput("S_pg", "sum of counts", value = 29, min = 0, step = 1)
       ),
+      conditionalPanel(
+        "input.model == 'nn'",
+        numericInput("mu0", "prior mu0 (mean)", value = 0, step = 0.5),
+        numericInput("kappa0", "prior kappa0 (pseudo-sample-size)", value = 1, min = 0.1, step = 0.5),
+        numericInput("sigma_nn", "sigma (known)", value = 2, min = 0.1, step = 0.5),
+        numericInput("n_nn", "n (observations)", value = 15, min = 1, step = 1),
+        numericInput("ybar_nn", "sample mean y-bar", value = 3, step = 0.5)
+      ),
       helpText("Dashed = prior, solid = posterior. The dotted vertical line ",
-               "is the MLE (y/n for Bernoulli, S/n for Poisson).")
+               "is the MLE (y/n for Bernoulli, S/n for Poisson, y-bar for Normal). ",
+               "*Log marginal likelihood is exact for Bernoulli; for Poisson ",
+               "and Normal it is shown up to an additive constant that ",
+               "depends only on the individual data points (not part of the ",
+               "summary inputs here) and cancels when comparing priors for ",
+               "the same data.")
     ),
     mainPanel(
       width = 8,
@@ -561,7 +794,7 @@ server <- function(input, output, session) {
       abline(v = y / n, lty = 3)
       legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "steelblue"),
              legend = c("prior", "posterior"))
-    } else {
+    } else if (input$model == "pg") {
       alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
       post_alpha <- alpha + S; post_beta <- beta + n
       hi <- max(qgamma(0.999, alpha, beta), qgamma(0.999, post_alpha, post_beta))
@@ -573,6 +806,23 @@ server <- function(input, output, session) {
       abline(v = S / n, lty = 3)
       legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "firebrick"),
              legend = c("prior", "posterior"))
+    } else {
+      mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
+      n <- input$n_nn; ybar <- input$ybar_nn
+      post_kappa <- kappa0 + n
+      post_mu <- (kappa0 * mu0 + n * ybar) / post_kappa
+      post_sd <- sigma / sqrt(post_kappa)
+      prior_sd <- sigma / sqrt(kappa0)
+      lo <- min(mu0 - 3 * prior_sd, post_mu - 3 * post_sd)
+      hi <- max(mu0 + 3 * prior_sd, post_mu + 3 * post_sd)
+      xs <- seq(lo, hi, length.out = 500)
+      ylim <- c(0, max(dnorm(xs, mu0, prior_sd), dnorm(xs, post_mu, post_sd)) * 1.1)
+      curve(dnorm(x, mu0, prior_sd), lo, hi, lwd = 2, lty = 2, col = "gray40",
+            xlab = expression(mu), ylab = "density", ylim = ylim)
+      curve(dnorm(x, post_mu, post_sd), add = TRUE, lwd = 3, col = "darkorchid")
+      abline(v = ybar, lty = 3)
+      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "darkorchid"),
+             legend = c("prior", "posterior"))
     }
   })
 
@@ -580,23 +830,68 @@ server <- function(input, output, session) {
     if (input$model == "bb") {
       a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- input$y_bb
       post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
+      logmarg    <- lbeta(post_a1, post_a0) - lbeta(a1, a0)         # exact
+      pred_mean  <- post_a1 / (post_a1 + post_a0)
+      pred_sd    <- sqrt(pred_mean * (1 - pred_mean))
       data.frame(
-        quantity = c("prior mean", "MLE (y/n)", "posterior mean", "posterior sd", "95% credible interval"),
+        quantity = c("prior mean", "MLE (y/n)", "log marginal likelihood*",
+                     "posterior distribution", "posterior mean", "posterior sd",
+                     "95% credible interval", "predictive distribution",
+                     "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", a1 / (a1 + a0)),
                   sprintf("%.3f", y / n),
-                  sprintf("%.3f", post_a1 / (post_a1 + post_a0)),
+                  sprintf("%.3f", logmarg),
+                  sprintf("Beta(%.2f, %.2f)", post_a1, post_a0),
+                  sprintf("%.3f", pred_mean),
                   sprintf("%.3f", sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))),
-                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0))))
-    } else {
+                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0)),
+                  sprintf("Bernoulli(%.3f)", pred_mean),
+                  sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
+    } else if (input$model == "pg") {
       alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
       post_alpha <- alpha + S; post_beta <- beta + n
+      logmarg   <- alpha * log(beta) - lgamma(alpha) + lgamma(post_alpha) -
+        post_alpha * log(post_beta)                                 # up to -sum(log(y_i!))
+      nb_prob   <- post_beta / (post_beta + 1)
+      pred_mean <- post_alpha / post_beta
+      pred_sd   <- sqrt(pred_mean * (1 + 1 / post_beta))
       data.frame(
-        quantity = c("prior mean", "MLE (S/n)", "posterior mean", "posterior sd", "95% credible interval"),
+        quantity = c("prior mean", "MLE (S/n)", "log marginal likelihood*",
+                     "posterior distribution", "posterior mean", "posterior sd",
+                     "95% credible interval", "predictive distribution",
+                     "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", alpha / beta),
                   sprintf("%.3f", S / n),
-                  sprintf("%.3f", post_alpha / post_beta),
+                  sprintf("%.3f", logmarg),
+                  sprintf("Gamma(%.2f, %.2f)", post_alpha, post_beta),
+                  sprintf("%.3f", pred_mean),
                   sprintf("%.3f", sqrt(post_alpha) / post_beta),
-                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta))))
+                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta)),
+                  sprintf("NegBin(%.2f, %.3f)", post_alpha, nb_prob),
+                  sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
+    } else {
+      mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
+      n <- input$n_nn; ybar <- input$ybar_nn
+      post_kappa <- kappa0 + n
+      post_mu <- (kappa0 * mu0 + n * ybar) / post_kappa
+      post_sd <- sigma / sqrt(post_kappa)
+      logmarg <- -n / 2 * log(2 * pi * sigma^2) + 0.5 * log(kappa0 / post_kappa) -
+        kappa0 * n * (mu0 - ybar)^2 / (2 * sigma^2 * post_kappa)     # up to -SS/(2 sigma^2)
+      pred_sd <- sqrt(post_sd^2 + sigma^2)
+      data.frame(
+        quantity = c("prior mean", "MLE (y-bar)", "log marginal likelihood*",
+                     "posterior distribution", "posterior mean", "posterior sd",
+                     "95% credible interval", "predictive distribution",
+                     "predictive mean", "predictive sd"),
+        value = c(sprintf("%.3f", mu0),
+                  sprintf("%.3f", ybar),
+                  sprintf("%.3f", logmarg),
+                  sprintf("N(%.3f, %.3f^2)", post_mu, post_sd),
+                  sprintf("%.3f", post_mu),
+                  sprintf("%.3f", post_sd),
+                  sprintf("(%.3f, %.3f)", qnorm(0.025, post_mu, post_sd), qnorm(0.975, post_mu, post_sd)),
+                  sprintf("N(%.3f, %.3f^2)", post_mu, pred_sd),
+                  sprintf("%.3f", post_mu), sprintf("%.3f", pred_sd)))
     }
   }, colnames = FALSE, striped = TRUE)
 }
@@ -614,11 +909,12 @@ edition of this book. View it at
 
 ## Where Computation Enters
 
-For the Beta–Bernoulli and Gamma–Poisson models, everything above is
-closed-form: the posterior, its mean and variance, credible intervals, and
-even the marginal likelihood and predictive distribution. Conjugacy is a
-special convenience, restricted to a handful of prior/likelihood pairings;
-for a general model, the same quantities require genuine numerical work:
+For the Beta–Bernoulli, Gamma–Poisson, and Normal–Normal models, everything
+above is closed-form: the posterior, its mean and variance, credible
+intervals, and even the marginal likelihood and predictive distribution.
+Conjugacy is a special convenience, restricted to a handful of
+prior/likelihood pairings; for a general model, the same quantities require
+genuine numerical work:
 
 |Quantity|Requires|
 |:---|:---|
@@ -650,12 +946,13 @@ remaining chapters of this book.
 - Every standard summary — posterior mean/median/mode, credible intervals,
   predictive distributions — is an integral or an optimization over that
   posterior, which is why Bayesian inference is a computational subject.
-- The Beta–Bernoulli and Gamma–Poisson pairs are **conjugate**: the
-  posterior is available in closed form (Beta and Gamma respectively), the
-  posterior mean is an exact weighted average of the prior mean and the MLE
-  with the prior's pseudo-sample-size as weight, and the marginal likelihood
-  and predictive distribution are closed-form too (Negative Binomial for
-  Gamma–Poisson) — no integration needed anywhere.
+- The Beta–Bernoulli, Gamma–Poisson, and Normal–Normal (known variance)
+  pairs are **conjugate**: the posterior is available in closed form (Beta,
+  Gamma, and Normal respectively), the posterior mean is an exact weighted
+  average of the prior mean and the MLE with the prior's pseudo-sample-size
+  as weight, and the marginal likelihood and predictive distribution are
+  closed-form too (Negative Binomial for Gamma–Poisson, Normal with inflated
+  variance for Normal–Normal) — no integration needed anywhere.
 - The Gamma–Poisson predictive distribution is visibly overdispersed
   relative to a plug-in Poisson at the posterior mean rate, by an exact
   factor $1+1/(\beta+n)$: real posterior uncertainty about $\theta$ widens
