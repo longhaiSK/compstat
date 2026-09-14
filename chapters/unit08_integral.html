@@ -232,7 +232,7 @@ window.Quarto = {
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/unit07_em.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The EM Algorithm</span></span></a>
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">EM Algorithms</span></span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -294,7 +294,7 @@ window.Quarto = {
   <li><a href="#checking-the-quadrature-against-monte-carlo" id="toc-checking-the-quadrature-against-monte-carlo" class="nav-link" data-scroll-target="#checking-the-quadrature-against-monte-carlo"><span class="header-section-number">8.3.6</span> Checking the quadrature against Monte Carlo</a></li>
   <li><a href="#convergence-as-the-grid-is-refined" id="toc-convergence-as-the-grid-is-refined" class="nav-link" data-scroll-target="#convergence-as-the-grid-is-refined"><span class="header-section-number">8.3.7</span> Convergence as the grid is refined</a></li>
   <li><a href="#comparing-priors" id="toc-comparing-priors" class="nav-link" data-scroll-target="#comparing-priors"><span class="header-section-number">8.3.8</span> Comparing priors</a></li>
-  <li><a href="#comparing-models-for-the-data" id="toc-comparing-models-for-the-data" class="nav-link" data-scroll-target="#comparing-models-for-the-data"><span class="header-section-number">8.3.9</span> Comparing models for the data</a></li>
+  <li><a href="#comparing-likelihoods" id="toc-comparing-likelihoods" class="nav-link" data-scroll-target="#comparing-likelihoods"><span class="header-section-number">8.3.9</span> Comparing likelihoods</a></li>
   </ul></li>
   <li><a href="#difficulties-of-numerical-quadrature" id="toc-difficulties-of-numerical-quadrature" class="nav-link" data-scroll-target="#difficulties-of-numerical-quadrature"><span class="header-section-number">8.4</span> Difficulties of Numerical Quadrature</a>
   <ul>
@@ -887,86 +887,50 @@ Table&nbsp;8.4: Estimated log marginal likelihood as the number of grid points p
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">100</span>)</span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>prior_grid <span class="ot">&lt;-</span> <span class="fu">expand.grid</span>(<span class="at">mu_0 =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">5</span>), <span class="at">sigma_mu =</span> <span class="fu">c</span>(<span class="fl">0.01</span>, <span class="fl">0.1</span>, <span class="dv">1</span>, <span class="dv">10</span>, <span class="dv">100</span>, <span class="dv">1000</span>))</span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>prior_grid<span class="sc">$</span>log_P_y <span class="ot">&lt;-</span> <span class="fu">mapply</span>(<span class="cf">function</span>(m, s) <span class="fu">log_marlik_mid</span>(x, m, s, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">100</span>),</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>                              prior_grid<span class="sc">$</span>mu_0, prior_grid<span class="sc">$</span>sigma_mu)</span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(prior_grid, <span class="at">digits =</span> <span class="dv">2</span>,</span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"prior mean $</span><span class="sc">\\</span><span class="st">mu_0$"</span>, <span class="st">"prior sd $</span><span class="sc">\\</span><span class="st">sigma_</span><span class="sc">\\</span><span class="st">mu$"</span>, <span class="st">"log P(y)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>mu0_vals   <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">5</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>sigma_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.01</span>, <span class="fl">0.1</span>, <span class="dv">1</span>, <span class="dv">10</span>, <span class="dv">100</span>, <span class="dv">1000</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>log_P_y <span class="ot">&lt;-</span> <span class="fu">outer</span>(mu0_vals, sigma_vals,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">Vectorize</span>(<span class="cf">function</span>(m, s) <span class="fu">log_marlik_mid</span>(x, m, s, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">100</span>)))</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a><span class="fu">rownames</span>(log_P_y) <span class="ot">&lt;-</span> mu0_vals</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="fu">colnames</span>(log_P_y) <span class="ot">&lt;-</span> sigma_vals</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(log_P_y, <span class="at">digits =</span> <span class="dv">2</span>, <span class="at">align =</span> <span class="fu">rep</span>(<span class="st">"r"</span>, <span class="fu">length</span>(sigma_vals)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-compare-priors" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-compare-priors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;8.5: Log marginal likelihood for data centred at 0, under priors on mu with the stated mean and standard deviation (w-prior fixed at N(0,1)).
+Table&nbsp;8.5: Log marginal likelihood for data centred at 0: rows are the prior mean <span class="math inline">\(\mu_0\)</span>, columns the prior sd <span class="math inline">\(\sigma_\mu\)</span> (w-prior fixed at N(0,1)).
 </figcaption>
 <div aria-describedby="tbl-compare-priors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
 <thead>
 <tr class="header">
-<th style="text-align: right;">prior mean <span class="math inline">\(\mu_0\)</span></th>
-<th style="text-align: right;">prior sd <span class="math inline">\(\sigma_\mu\)</span></th>
-<th style="text-align: right;">log P(y)</th>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">0.01</th>
+<th style="text-align: right;">0.1</th>
+<th style="text-align: right;">1</th>
+<th style="text-align: right;">10</th>
+<th style="text-align: right;">100</th>
+<th style="text-align: right;">1000</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e-02</td>
+<td style="text-align: left;">0</td>
 <td style="text-align: right;">-129.39</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e-02</td>
-<td style="text-align: right;">-739.84</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e-01</td>
 <td style="text-align: right;">-128.95</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e-01</td>
-<td style="text-align: right;">-316.30</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e+00</td>
 <td style="text-align: right;">-130.97</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e+00</td>
-<td style="text-align: right;">-143.43</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e+01</td>
 <td style="text-align: right;">-133.27</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e+01</td>
-<td style="text-align: right;">-133.40</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e+02</td>
 <td style="text-align: right;">-135.57</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e+02</td>
-<td style="text-align: right;">-135.57</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">1e+03</td>
 <td style="text-align: right;">-137.88</td>
 </tr>
 <tr class="even">
-<td style="text-align: right;">-5</td>
-<td style="text-align: right;">1e+03</td>
+<td style="text-align: left;">-5</td>
+<td style="text-align: right;">-739.84</td>
+<td style="text-align: right;">-316.30</td>
+<td style="text-align: right;">-143.43</td>
+<td style="text-align: right;">-133.40</td>
+<td style="text-align: right;">-135.57</td>
 <td style="text-align: right;">-137.88</td>
 </tr>
 </tbody>
@@ -978,8 +942,8 @@ Table&nbsp;8.5: Log marginal likelihood for data centred at 0, under priors on m
 </div>
 <p>With <span class="math inline">\(\mu_0 = 0\)</span> (the right neighbourhood for data centred at <span class="math inline">\(0\)</span>), the marginal likelihood is highest for a moderately informative prior and degrades slowly as the prior widens. With <span class="math inline">\(\mu_0 = -5\)</span> (the wrong neighbourhood), a <em>narrow</em> prior is actively harmful — it insists on a region the data reject — while a wide prior recovers because it eventually puts enough mass back near the truth. This is the general shape of Bayesian model comparison: strong, correct priors win; strong, wrong priors lose; vague priors are safe but not optimal.</p>
 </section>
-<section id="comparing-models-for-the-data" class="level3" data-number="8.3.9">
-<h3 data-number="8.3.9" class="anchored" data-anchor-id="comparing-models-for-the-data"><span class="header-section-number">8.3.9</span> Comparing models for the data</h3>
+<section id="comparing-likelihoods" class="level3" data-number="8.3.9">
+<h3 data-number="8.3.9" class="anchored" data-anchor-id="comparing-likelihoods"><span class="header-section-number">8.3.9</span> Comparing likelihoods</h3>
 <p>The marginal likelihood also compares different likelihoods for the same data — here, whether <span class="math inline">\(\nu\)</span> (the degrees of freedom of the <span class="math inline">\(t\)</span> model) matches how the data were actually generated:</p>
 <div class="cell">
 <details class="code-fold">
@@ -994,7 +958,7 @@ Table&nbsp;8.5: Log marginal likelihood for data centred at 0, under priors on m
 <span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">heavy_tailed_data =</span> <span class="fu">vapply</span>(dfs, <span class="cf">function</span>(d) <span class="fu">log_marlik_mid</span>(x_heavy,  <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">0</span>, <span class="dv">10</span>, <span class="dv">100</span>, <span class="at">df =</span> d), <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
 <span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(model_compare, <span class="at">digits =</span> <span class="dv">3</span>,</span>
-<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"fitted df"</span>, <span class="st">"data simulated as normal"</span>, <span class="st">"data simulated as t(df=2)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"df of fitted model"</span>, <span class="st">"data simulated as normal"</span>, <span class="st">"data simulated as t(df=2)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-compare-models" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -1004,9 +968,14 @@ Table&nbsp;8.6: Log marginal likelihood under four values of the t-model degrees
 <div aria-describedby="tbl-compare-models-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 27%">
+<col style="width: 35%">
+<col style="width: 37%">
+</colgroup>
 <thead>
 <tr class="header">
-<th style="text-align: right;">fitted df</th>
+<th style="text-align: right;">df of fitted model</th>
 <th style="text-align: right;">data simulated as normal</th>
 <th style="text-align: right;">data simulated as t(df=2)</th>
 </tr>
@@ -1082,23 +1051,39 @@ Figure&nbsp;8.5: Same rule, same 8-panel grid: the wide density (left) integrate
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>f <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, <span class="dv">8</span>, <span class="dv">1</span>)</span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(f, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">12</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(theta), <span class="at">ylab =</span> <span class="st">""</span>,</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>      <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"posterior at"</span> <span class="sc">~</span> theta <span class="sc">==</span> <span class="dv">8</span>))</span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">f</span>(<span class="fu">log</span>(y <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> y))) <span class="sc">/</span> (y <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> y))</span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="fu">curve</span>(g, <span class="fl">0.001</span>, <span class="fl">0.9999</span>, <span class="at">n =</span> <span class="dv">5001</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">xlab =</span> <span class="st">"y"</span>, <span class="at">ylab =</span> <span class="st">""</span>,</span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">main =</span> <span class="st">"after logistic transform"</span>)</span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">seq</span>(<span class="fl">0.025</span>, <span class="fl">0.975</span>, <span class="at">by =</span> <span class="fl">0.05</span>), <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"steelblue"</span>, <span class="fl">0.6</span>), <span class="at">lty =</span> <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>mu    <span class="ot">&lt;-</span> <span class="dv">8</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>f     <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, mu, <span class="dv">1</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>t_inv <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">log</span>(y <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> y))          <span class="co"># theta = logit(y)</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>g     <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">f</span>(<span class="fu">t_inv</span>(y)) <span class="sc">/</span> (y <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> y))</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>ys  <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">1e-4</span>, <span class="dv">1</span> <span class="sc">-</span> <span class="fl">1e-4</span>, <span class="at">length.out =</span> <span class="dv">2001</span>)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>f_y <span class="ot">&lt;-</span> <span class="fu">f</span>(<span class="fu">t_inv</span>(ys)); f_y <span class="ot">&lt;-</span> f_y <span class="sc">/</span> <span class="fu">max</span>(f_y)     <span class="co"># peak-normalized for comparability</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>g_y <span class="ot">&lt;-</span> <span class="fu">g</span>(ys);        g_y <span class="ot">&lt;-</span> g_y <span class="sc">/</span> <span class="fu">max</span>(g_y)</span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">1</span>))</span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(ys, g_y, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">xlab =</span> <span class="st">"y"</span>,</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>     <span class="at">ylab =</span> <span class="st">"integrand (peak-normalized)"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.05</span>))</span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(ys, f_y, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>x_ticks <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">5</span>, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">0</span>, <span class="dv">2</span>, <span class="dv">5</span>, <span class="dv">8</span>, <span class="dv">10</span>)</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a><span class="fu">axis</span>(<span class="dv">3</span>, <span class="at">at =</span> <span class="fu">plogis</span>(x_ticks), <span class="at">labels =</span> x_ticks)</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="fu">mtext</span>(<span class="fu">expression</span>(theta <span class="sc">==</span> <span class="fu">logit</span>(y)), <span class="at">side =</span> <span class="dv">3</span>, <span class="at">line =</span> <span class="fl">2.3</span>)</span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">20</span>; h <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a><span class="fu">rug</span>((<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">*</span> h, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray30"</span>, <span class="fl">0.7</span>), <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">1</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>),</span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>       <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"original integrand, relabeled in y (no Jacobian)"</span>,</span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>                  <span class="st">"g(y): what quadrature actually integrates"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-boundary-squeeze" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-boundary-squeeze-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit08_integral_files/figure-html/fig-boundary-squeeze-1.png" class="img-fluid figure-img" width="960">
+<img src="unit08_integral_files/figure-html/fig-boundary-squeeze-1.png" class="img-fluid figure-img" width="768">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-boundary-squeeze-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;8.6: A posterior located at theta=8 already occupies a visibly asymmetric region after the logistic transform (right); the grid lines (n=20) are far more informative on the left than the right.
+Figure&nbsp;8.6: The posterior at theta=8 (sd 1), on one set of axes: the bottom axis is <span class="math inline">\(y\in(0,1)\)</span>, the matching top axis is the original <span class="math inline">\(\theta=\mathrm{logit}(y)\)</span>. Dashed is the integrand simply relabeled in <span class="math inline">\(y\)</span> (no Jacobian); solid is <span class="math inline">\(g(y)\)</span>, the integrand quadrature actually sees once the Jacobian is included. Both are squeezed into a sliver near <span class="math inline">\(y=1\)</span>; the grey ticks are a uniform 20-point midpoint grid in <span class="math inline">\(y\)</span>, showing how few of them land anywhere near the mass.
 </figcaption>
 </figure>
 </div>

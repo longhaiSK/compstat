@@ -473,30 +473,23 @@ either narrows around the wrong value or spreads out indefinitely:
 
 ```{r}
 #| label: tbl-compare-priors
-#| tbl-cap: "Log marginal likelihood for data centred at 0, under priors on mu with the stated mean and standard deviation (w-prior fixed at N(0,1))."
+#| tbl-cap: "Log marginal likelihood for data centred at 0: rows are the prior mean $\\mu_0$, columns the prior sd $\\sigma_\\mu$ (w-prior fixed at N(0,1))."
 set.seed(3)
 x <- rnorm(100)
-prior_grid <- expand.grid(mu_0 = c(0, -5), sigma_mu = c(0.01, 0.1, 1, 10, 100, 1000))
-prior_grid$log_P_y <- mapply(function(m, s) log_marlik_mid(x, m, s, 0, 1, 100),
-                              prior_grid$mu_0, prior_grid$sigma_mu)
-knitr::kable(prior_grid, digits = 2,
-             col.names = c("prior mean $\\mu_0$", "prior sd $\\sigma_\\mu$", "log P(y)"))
+mu0_vals   <- c(0, -5)
+sigma_vals <- c(0.01, 0.1, 1, 10, 100, 1000)
+log_P_y <- outer(mu0_vals, sigma_vals,
+                  Vectorize(function(m, s) log_marlik_mid(x, m, s, 0, 1, 100)))
+rownames(log_P_y) <- mu0_vals
+colnames(log_P_y) <- sigma_vals
+knitr::kable(log_P_y, digits = 2, align = rep("r", length(sigma_vals)))
 ```
 
-With $\mu_0 = 0$ (the right neighbourhood for data centred at $0$), the
-marginal likelihood is highest for a moderately informative prior and
-degrades slowly as the prior widens. With $\mu_0 = -5$ (the wrong
-neighbourhood), a *narrow* prior is actively harmful — it insists on a
-region the data reject — while a wide prior recovers because it eventually
-puts enough mass back near the truth. This is the general shape of Bayesian
-model comparison: strong, correct priors win; strong, wrong priors lose;
-vague priors are safe but not optimal.
+With $\mu_0 = 0$ (the right neighbourhood for data centred at $0$), the marginal likelihood is highest for a moderately informative prior and degrades slowly as the prior widens. With $\mu_0 = -5$ (the wrong neighbourhood), a *narrow* prior is actively harmful — it insists on a region the data reject — while a wide prior recovers because it eventually puts enough mass back near the truth. This is the general shape of Bayesian model comparison: strong, correct priors win; strong, wrong priors lose; vague priors are safe but not optimal.
 
-### Comparing models for the data
+### Comparing likelihoods
 
-The marginal likelihood also compares different likelihoods for the same
-data — here, whether $\nu$ (the degrees of freedom of the $t$ model) matches
-how the data were actually generated:
+The marginal likelihood also compares different likelihoods for the same data — here, whether $\nu$ (the degrees of freedom of the $t$ model) matches how the data were actually generated:
 
 ```{r}
 #| label: tbl-compare-models
@@ -511,7 +504,7 @@ model_compare <- data.frame(
     heavy_tailed_data = vapply(dfs, function(d) log_marlik_mid(x_heavy,  0, 10, 0, 10, 100, df = d), numeric(1))
 )
 knitr::kable(model_compare, digits = 3,
-             col.names = c("fitted df", "data simulated as normal", "data simulated as t(df=2)"))
+             col.names = c("df of fitted model", "data simulated as normal", "data simulated as t(df=2)"))
 ```
 
 Each column favours the $\nu$ that actually generated it: normal data are
@@ -566,19 +559,39 @@ practical uniform grid to resolve.
 
 ```{r}
 #| label: fig-boundary-squeeze
-#| fig-width: 10
-#| fig-height: 3.8
-#| fig-cap: "A posterior located at theta=8 already occupies a visibly
-#|   asymmetric region after the logistic transform (right); the grid lines
-#|   (n=20) are far more informative on the left than the right."
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-f <- function(x) dnorm(x, 8, 1)
-curve(f, -2, 12, lwd = 3, xlab = expression(theta), ylab = "",
-      main = expression("posterior at" ~ theta == 8))
-g <- function(y) f(log(y / (1 - y))) / (y * (1 - y))
-curve(g, 0.001, 0.9999, n = 5001, lwd = 3, xlab = "y", ylab = "",
-      main = "after logistic transform")
-abline(v = seq(0.025, 0.975, by = 0.05), col = adjustcolor("steelblue", 0.6), lty = 3)
+#| fig-width: 8
+#| fig-height: 4.5
+#| fig-cap: "The posterior at theta=8 (sd 1), on one set of axes: the bottom
+#|   axis is $y\\in(0,1)$, the matching top axis is the original
+#|   $\\theta=\\mathrm{logit}(y)$. Dashed is the integrand simply relabeled
+#|   in $y$ (no Jacobian); solid is $g(y)$, the integrand quadrature actually
+#|   sees once the Jacobian is included. Both are squeezed into a sliver
+#|   near $y=1$; the grey ticks are a uniform 20-point midpoint grid in $y$,
+#|   showing how few of them land anywhere near the mass."
+mu    <- 8
+f     <- function(x) dnorm(x, mu, 1)
+t_inv <- function(y) log(y / (1 - y))          # theta = logit(y)
+g     <- function(y) f(t_inv(y)) / (y * (1 - y))
+
+ys  <- seq(1e-4, 1 - 1e-4, length.out = 2001)
+f_y <- f(t_inv(ys)); f_y <- f_y / max(f_y)     # peak-normalized for comparability
+g_y <- g(ys);        g_y <- g_y / max(g_y)
+
+par(mar = c(4, 4, 4, 1))
+plot(ys, g_y, type = "l", lwd = 3, col = "steelblue", xlab = "y",
+     ylab = "integrand (peak-normalized)", ylim = c(0, 1.05))
+lines(ys, f_y, lwd = 3, lty = 2, col = "firebrick")
+
+x_ticks <- c(-5, -2, 0, 2, 5, 8, 10)
+axis(3, at = plogis(x_ticks), labels = x_ticks)
+mtext(expression(theta == logit(y)), side = 3, line = 2.3)
+
+n <- 20; h <- 1 / n
+rug((seq_len(n) - 0.5) * h, col = adjustcolor("gray30", 0.7), lwd = 2)
+
+legend("topleft", bty = "n", lwd = 3, lty = c(2, 1), col = c("firebrick", "steelblue"),
+       legend = c("original integrand, relabeled in y (no Jacobian)",
+                  "g(y): what quadrature actually integrates"))
 ```
 
 We already met the extreme version of this problem at the start of this
