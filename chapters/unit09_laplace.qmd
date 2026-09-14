@@ -197,7 +197,7 @@ $-2\times(\text{Laplace log }P(y))$ and the MLE-based BIC differ by about
 a constant offset consistent with the dropped $O(1)$ terms, not something
 that grows with $n$.
 
-## When Laplace Works Well, and When It Does Not
+### When Laplace Works Well, and When It Does Not
 
 **Works well** when $n$ is large relative to $p$ and the posterior is
 unimodal and roughly symmetric, as in the $n=100$ panel above. Parameters
@@ -216,7 +216,7 @@ $n$, so the $O(1/n)$ error does not vanish (nested Laplace approximation,
 INLA, handles this by integrating out the high-dimensional part
 analytically).
 
-## Comparing Laplace, Quadrature, and Monte Carlo on the Same Problem
+## Example: Comparing Laplace, Quadrature, and Monte Carlo on Computing Marginal Likelihood
 
 To compare the three methods on an apples-to-apples problem, reuse the
 single-parameter example from the end of Unit 08: a single unknown mean
@@ -308,136 +308,23 @@ actually is and builds its approximation *around that point*, so it
 automatically "recentres" itself for every $\mu$ — the same fix Unit08
 proposed by hand for quadrature, done here for free by the optimizer.
 
-### Explore it interactively {#sec-laplace-app}
+## Adaptive Gauss–Hermite Quadrature {#sec-laplace-transform-app}
 
-The app below lets you type in $\hat\mu$ and drag the quadrature grid size,
-then compare all four log marginal likelihood estimates live: watch the
-quadrature bar break away from the true value as $\hat\mu$ moves from $0$,
-however many grid points you give it, and Laplace track the truth throughout
-because it always re-centres on the mode. This app runs live only in the
-HTML edition of this book; readers of other formats can follow the link
-below it.
+A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. **Adaptive Gauss-Hermite quadrature (AGHQ)** solves this by relocating and rescaling the quadrature grid using the Laplace approximation's mode ($\hat\mu_L$) and standard deviation ($s_L=1/\sqrt{H}$). 
 
-::: {.content-visible when-format="html"}
+Think of it as a smart, localized search grid: instead of laying a massive grid over the entire parameter space, AGHQ finds the peak of the posterior (the mode), measures its exact curvature (the Hessian), and places a custom-scaled grid directly over that localized area.
 
-```{shinylive-r}
-#| label: laplace-vs-quadrature-app
-#| standalone: true
-#| viewerHeight: 700
-
-library(shiny)
-
-n_eff <- 3; sigma_prior <- 5
-
-log_mar_true_mu <- function(mu_hat) {
-  z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff)) * dnorm(mu, 0, sigma_prior)
-  log(integrate(z, -Inf, Inf)$value)
-}
-laplace_mu <- function(mu_hat) {
-  h  <- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                          dnorm(mu, 0, sigma_prior, log = TRUE))
-  op <- nlm(h, p = mu_hat, hessian = TRUE)
-  -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1])
-}
-log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-log_mar_mc_mu <- function(mu_hat, iters) {
-  mus <- rnorm(iters, 0, sigma_prior)
-  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_eff), log = TRUE)) - log(iters)
-}
-log_mar_mid_mu <- function(mu_hat, n) {
-  h  <- 1 / n
-  u  <- (seq_len(n) - 0.5) * h
-  mu <- log(u / (1 - u))
-  log_z <- dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
-  log_sum_exp(log_z) + log(h)
-}
-
-ui <- fluidPage(
-  titlePanel(NULL),
-  sidebarLayout(
-    sidebarPanel(
-      width = 4,
-      numericInput("mu_hat", "mu_hat (data location)", value = 0, step = 1),
-      sliderInput("n_grid", "quadrature grid points", min = 2, max = 100, value = 20, step = 2),
-      helpText("Likelihood: N(mu_hat; mu, 1/n_eff) with n_eff = 3, sigma = 1. ",
-               "Prior: N(0, 5^2) on mu. As mu_hat moves away from 0, the fixed ",
-               "logistic-transform grid squeezes the posterior into a corner and ",
-               "quadrature breaks away, however many grid points you add; Laplace ",
-               "re-optimizes for every mu_hat and keeps tracking the truth."),
-      tableOutput("tab")
-    ),
-    mainPanel(width = 8, plotOutput("bars", height = "420px"))
-  )
-)
-
-server <- function(input, output, session) {
-  vals <- reactive({
-    mh <- input$mu_hat
-    c(True = log_mar_true_mu(mh),
-      Laplace = laplace_mu(mh),
-      Monte_Carlo_pi = { set.seed(2); log_mar_mc_mu(mh, 2e5) },
-      Quadrature = log_mar_mid_mu(mh, input$n_grid))
-  })
-  output$bars <- renderPlot({
-    v <- vals()
-    par(mar = c(4, 4, 2, 1))
-    bp <- barplot(v, col = c("gray40", "forestgreen", "steelblue", "firebrick"),
-                  ylab = "estimated log P(y)", main = "four methods, same mu_hat")
-    text(bp, v, sprintf("%.1f", v), pos = ifelse(v >= 0, 3, 1))
-  })
-  output$tab <- renderTable({
-    v <- vals()
-    data.frame(method = names(v), `log P(y)` = as.numeric(v), check.names = FALSE)
-  }, digits = 2, rownames = FALSE)
-}
-
-shinyApp(ui, server)
-```
-
-:::
-
-::: {.content-visible unless-format="html"}
-This section contains a live, in-browser Shiny app that only runs in the HTML
-edition of this book. View it at
-<https://longhaisk.github.io/compstat/chapters/unit09_laplace.html#sec-laplace-app>.
-:::
-
-### Laplace quadrature: recentring the grid on the Laplace approximation {#sec-laplace-transform-app}
-
-Unit08's grid squeezed because its logistic transform $u=1/(1+e^{-\mu})$ is
-centred at $\mu=0$ no matter where the data actually put the posterior.
-Laplace already computed a much better centre and scale — the mode
-$\hat\mu_L$ and standard deviation $s_L=1/\sqrt{H}$ of its Gaussian
-approximation — so use *those* to build the transform instead. Using an
-optimizer's mode and curvature to relocate and rescale a quadrature grid this
-way is exactly the idea behind **adaptive Gauss-Hermite quadrature**, the
-standard tool for one- or few-dimensional random effects in generalized
-linear mixed models (e.g. `lme4::glmer`'s `nAGQ` argument): it combines a
-Laplace-style mode-finding step with quadrature nodes built around that
-mode, rather than nodes fixed in advance. What follows is the same idea in
-miniature, with a plain midpoint rule standing in for the Hermite nodes and
-weights that real adaptive Gauss-Hermite quadrature would use:
+By swapping the logistic function for the CDF and density of $N(\hat\mu_L, s_L^2)$, the transform becomes:
 $$
-u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad
-\mu = t(u) = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad
-\frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right),
+u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right)
 $$
-the CDF and density of $N(\hat\mu_L, s_L^2)$ in place of the logistic
-function and its derivative. The midpoint rule on this grid estimates
+
+Applying a midpoint rule on this adapted grid yields:
 $$
-P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L},
-\qquad \mu_i = t(u_i),\ u_i = \big(i-\tfrac12\big)/n,
+P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L}, \qquad \mu_i = \hat\mu_L + s_L\,\Phi^{-1}(u_i), \qquad u_i = \big(i-\tfrac12\big)/n
 $$
-which is just the earlier formula with the logistic Jacobian
-$1/\{u(1-u)\}$ replaced by $1/\phi\big((\mu-\hat\mu_L)/s_L\big)\cdot s_L$.
-Because $u_i$ is now uniform in *Laplace-normalized* space rather than raw
-$\mu$-space, the grid automatically concentrates where Laplace says the mass
-is — wherever $\hat\mu$ moves it. The app below is Unit08's app with exactly
-this one substitution; try the same values of $\hat\mu$ that broke the
-logistic-grid version and watch the quadrature bar stay glued to the true
-value instead. This app runs live only in the HTML edition of this book;
-readers of other formats can follow the link below it.
+
+Because $u_i$ is uniform in *Laplace-normalized* space, the grid automatically concentrates where the true posterior mass lives. 
 
 ::: {.content-visible when-format="html"}
 
@@ -533,53 +420,6 @@ server <- function(input, output, session) {
 
 shinyApp(ui, server)
 ```
-
-:::
-
-::: {.content-visible unless-format="html"}
-This section contains a live, in-browser Shiny app that only runs in the HTML
-edition of this book. View it at
-<https://longhaisk.github.io/compstat/chapters/unit09_laplace.html#sec-laplace-transform-app>.
-:::
-
-Because $z(\mu)$ in this particular model is itself an exact Gaussian kernel
-in $\mu$ (a normal likelihood times a normal prior), the Laplace mode and
-curvature it supplies are not approximate at all — they are the *exact*
-posterior mean and variance. The Laplace-shaped transform therefore makes
-the transformed integrand almost perfectly flat, and even a handful of grid
-points recovers the true value to several decimals, regardless of
-$\hat\mu$. With a genuinely non-Gaussian posterior the fix would be only
-approximate rather than exact, but it would still relocate the grid to
-where Laplace *thinks* the mass is instead of leaving it fixed at $\mu=0$ —
-which is precisely the manual "recentre the transform on a location
-estimate" remedy Unit08 proposed, now automated by reusing this chapter's
-own machinery.
-
-Stepping back, this recentred midpoint rule (and, more precisely, adaptive
-Gauss-Hermite quadrature itself) is a **non-random** version of importance
-sampling. Recall the general quadrature form from Unit08,
-$\tilde A_n = \sum_i w_i f(x_i)$, and the importance-sampling identity from
-later in this book,
-$$
-\int f(\theta)\,d\theta \approx \frac1n\sum_{i=1}^n \frac{f(\theta_i)}{g(\theta_i)},
-\qquad \theta_i \sim g(\theta) \text{ i.i.d.},
-$$
-for a proposal $g$. Both are weighted sums of $f$ at a set of points; the
-only difference is *how the points are chosen*. Importance sampling draws
-$\theta_i$ **at random** from $g$ and weights each by $1/\{n\,g(\theta_i)\}$;
-Gauss-Hermite and our Laplace-recentred midpoint rule use *exactly the same
-weight formula*, but place $\theta_i$ **deterministically** instead — spaced
-evenly in $u=G(\theta)$, the CDF of $g$, rather than drawn from it. Choosing
-$g$ to be the Laplace approximation, as
-this section did, is exactly choosing a *good proposal* in the
-importance-sampling sense: one shaped and centred like the target, so that
-$f/g$ is nearly constant and few points suffice. A deterministic grid pays
-for this with the curse of dimensionality (Unit08's closing point — a
-product grid needs $n^d$ points); genuine random sampling from $g$ escapes
-that curse, at the cost of Monte Carlo noise instead of quadrature error —
-which is exactly the trade-off explored in full starting with the next
-chapter.
-
 ## Summary
 
 - The Laplace approximation expands $h=-\log f$ to second order at its
