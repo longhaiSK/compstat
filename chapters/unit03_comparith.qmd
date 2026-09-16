@@ -130,152 +130,256 @@ More precisely, a floating point number $x$ is represented by a vector of bits $
 $$
 x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^{k-1}}.
 $$
-The leading mantissa bit is always 1 for a normalized number and need not be stored, and the exponent is stored with an offset so that both negative and positive exponents fit in unsigned bits. Double precision (`double` in R, the IEEE 754 standard) uses 64 bits:
 
-| part | bits | consequence |
-|:-|-:|:----------|
-| sign | 1 | |
-| mantissa | 52 | about 16 significant decimal digits |
-| exponent | 11 | $e \in [-1022,\ 1023]$, i.e. magnitudes from $10^{-308}$ to $10^{308}$ |
+### Zoom Models for Representable Floating Numbers
 
-### A toy floating point system
+```{=html}
+<style>
+.pv td.z  { color: #bbb; border-style: dashed; }          /* alignment zero, not stored */
+.pv td.x  { background: #fde0e0; color: #b22222; text-decoration: line-through; } /* digit rounded off */
+.pv td.o  { background: #fde0e0; color: #b22222; font-weight: bold; }            /* no room: overflow/underflow */
+.pv td.op { border: none; background: none; font-weight: bold; }
+.pv td.nb { border: none; background: none; }
+.pv tr.sum td:not(.op):not(.nb) { border-top: 3px solid #333; }
+</style>
+```
 
-To see what goes wrong, it is easier to work in a decimal toy computer with a **4-digit mantissa** and a **1-digit exponent**, $e\in[-9,9]$:
+A floating point number is a **ruler** and a **zoom setting**. The mantissa is a ruler with a fixed number of equally spaced marks; the exponent stretches it by $10^{e}$ over $[10^{e}, 10^{e+1})$. Stretching adds no marks, so the marks spread apart as the zoom grows.
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th>10⁻²</th><th>10⁻³</th><th></th><th>exp</th></tr>
-<tr><td class="s">+</td><td class="m">3</td><td class="p">.</td><td class="m">1</td><td class="m">4</td><td class="m">2</td><td class="p">×10^</td><td class="e">0</td></tr>
-</table>
-<p class="cap">$3.142\times10^{0}$, the closest storable value to $\pi$</p>
+#### A toy decimal computer
 
-:::
-
-Three things can go wrong, all caused by the boxes being finite:
-
-1. **Overflow**: the exponent box is too small for a large number.
-
-2. **Underflow**: the exponent box is too small for a tiny number.
-3. **Roundoff**: the mantissa boxes are too few for all the digits.
-
-### Significance of the Mantissa: A Zoom Model
-
-Think of a floating point number as a **ruler** and a **zoom setting**. The mantissa is a fixed ruler with equally spaced marks; the exponent is a zoom factor $10^{e}$ that stretches the ruler to cover the interval $[10^{e}, 10^{e+1})$. The number of marks never changes, so the more the ruler is stretched, the farther apart the marks land on the number line.
-
-The simplest case has a **one-digit mantissa**: the ruler has nine marks, $1, 2, \ldots, 9$, and a number is stored as $d\times10^{e}$ with $d\in\{1,\ldots,9\}$.
+Each number is stored in six boxes: a sign, a two-digit mantissa $d_1.d_2$ ($d_1\in\{1,\ldots,9\}$, $d_2\in\{0,\ldots,9\}$), and an exponent made of a sign and one decimal digit, so $e\in\{-9,\ldots,0,\ldots,+9\}$.
 
 ::: {.pv}
 <table>
-<tr><th>1</th><th></th><th>exp</th></tr>
-<tr><td class="m">d</td><td class="p">×10^</td><td class="e">e</td></tr>
+<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th></tr>
+<tr><td class="s">+</td><td class="m">3</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">+</td><td class="e">0</td></tr>
 </table>
-<p class="cap">One mantissa digit: the ruler marks are $1\times10^{e}, 2\times10^{e}, \ldots, 9\times10^{e}$</p>
+<p class="cap">$+3.1\times10^{+0}$, the closest storable value to $\pi$</p>
 :::
 
-| zoom $e$ | interval $[10^e, 10^{e+1})$ | storable numbers | gap |
+Each of the $19$ zoom levels is a ruler of $90$ marks. At the lowest zoom $e=-9$ the leading digit may also be $0$ (**subnormal** numbers), which fills the gap between $0$ and $1.0\times10^{-9}$.
+
+| zoom $e$ | interval | storable numbers | gap |
 |:--:|:--|:--|:--:|
-| 0 | $[1, 10)$ | $1, 2, 3, \ldots, 9$ | $1$ |
-| 1 | $[10, 100)$ | $10, 20, 30, \ldots, 90$ | $10$ |
-| 2 | $[100, 1000)$ | $100, 200, \ldots, 900$ | $100$ |
-| $-1$ | $[0.1, 1)$ | $0.1, 0.2, \ldots, 0.9$ | $0.1$ |
+| $-9$ (subnormal) | $(0, 10^{-9})$ | $0.1\times10^{-9}, \ldots, 0.9\times10^{-9}$ | $10^{-10}$ |
+| $-9$ | $[10^{-9}, 10^{-8})$ | $1.0\times10^{-9}, 1.1\times10^{-9}, \ldots, 9.9\times10^{-9}$ | $10^{-10}$ |
+| $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ |
+| $-1$ | $[0.1, 1)$ | $0.10, 0.11, \ldots, 0.99$ | $0.01$ |
+| $0$ | $[1, 10)$ | $1.0, 1.1, \ldots, 9.9$ | $0.1$ |
+| $+1$ | $[10, 100)$ | $10, 11, \ldots, 99$ | $1$ |
+| $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ |
+| $+9$ | $[10^{9}, 10^{10})$ | $1.0\times10^{9}, 1.1\times10^{9}, \ldots, 9.9\times10^{9}$ | $10^{8}$ |
 
-Within each zoom level the storable numbers are evenly spaced, and the spacing is multiplied by $10$ each time the zoom goes up one level. Every real number between two marks is rounded to the nearer mark: $24\to20$, $27\to30$, $2.4\to2$, and $0.27\to0.3$.
-
-Adding mantissa digits adds marks to the ruler without changing the zoom mechanism. With a leading digit and $t$ further digits there are $9\times10^{t}$ marks in $[10^e, 10^{e+1})$, and the gap at zoom $e$ is $10^{e-t}$.
+With both signs, the $9$ subnormals per sign, and a reserved code for $0$, the machine stores exactly $2\times(19\times90+9)+1=3439$ numbers. The $90$ normal mantissas are listed below; multiplying them by $10^{e}$, $e=-9,\ldots,9$, gives every positive normal number.
 
 ```{r}
-#| label: fig-zoom-model
+#| label: toy-all-numbers
+m <- outer(1:9, 0:9, function(a, b) a + b / 10)
+dimnames(m) <- list(d1 = 1:9, d2 = 0:9)
+m
+```
+
+```{r}
+#| label: fig-toy-lines
 #| echo: false
 #| fig-width: 9
-#| fig-height: 3.2
-#| fig-cap: "Representable numbers in $[1, 100)$ for a mantissa of 1 and 2 decimal digits. The two zoom levels $[1, 10)$ and $[10, 100)$ are shaded; within each, the marks are evenly spaced, and the spacing is ten times larger at the higher zoom."
-par(mar = c(3.5, 5, 1, 1))
-plot(NA, xlim = c(1, 100), ylim = c(0.5, 2.5), yaxt = "n", ylab = "", xlab = "", bty = "n")
-rect(1, 0.5, 10, 2.5, col = "gray95", border = NA); rect(10, 0.5, 100, 2.5, col = "gray85", border = NA)
-axis(1, at = c(1, 10, 20, 40, 60, 80, 100)); axis(2, at = 1:2, labels = c("1 digit", "2 digits"), las = 1, tick = FALSE)
-for (t in 0:1) { for (e in 0:1) { m <- 10^e * seq(1, 10 - 10^-t, by = 10^-t)
-  segments(m, t + 0.7, m, t + 1.3, lwd = if (t == 0) 2 else 1, col = c("firebrick", "steelblue")[t + 1]) } }
-text(c(3.5, 55), 2.45, c("e = 0: gap 1 (1 digit), 0.1 (2 digits)", "e = 1: gap 10 (1 digit), 1 (2 digits)"), cex = 0.8, col = "gray30")
+#| fig-height: 3.6
+#| fig-cap: 'Positive numbers at zoom $e=0$ (top, gap $0.1$) and $e=+1$ (bottom, gap $1$). Grey bands hold the crowded marks of all lower zooms ($e<0$, and $e\le 0$ in the bottom panel); overflow occurs only far to the right, beyond $9.9\times10^{9}$.'
+par(mfrow = c(2, 1), mar = c(2.5, 1, 1.5, 1))
+m0 <- (10:99) / 10; m1 <- 10:99
+plot(NA, xlim = c(0, 10.5), ylim = c(0, 1), axes = FALSE, xlab = "", ylab = "",
+     main = "e = 0   (gap 0.1)", cex.main = 0.9)
+rect(0, 0.2, 1, 0.8, col = "gray85", border = NA)
+segments(m0, 0.3, m0, 0.7, col = "steelblue")
+points(0, 0.5, pch = 19)
+axis(1, at = 0:10)
+plot(NA, xlim = c(0, 105), ylim = c(0, 1), axes = FALSE, xlab = "", ylab = "",
+     main = "e = +1   (gap 1)", cex.main = 0.9)
+rect(0, 0.2, 10, 0.8, col = "gray85", border = NA)
+segments(m1, 0.3, m1, 0.7, col = "darkorange3")
+points(0, 0.5, pch = 19)
+axis(1, at = seq(0, 100, 10))
 ```
 
-The picture explains the two facts that matter for computation:
+#### Rounding error and machine epsilon
 
-- The **absolute** gap grows with the magnitude, because the same ruler is stretched more; the **relative** gap, gap divided by magnitude, stays between $10^{-t}$ and $10^{-t-1}$ at every zoom level.
-- The relative gap near $1$ is the **machine epsilon** $\epsilon$: the smallest $\epsilon$ such that $1+\epsilon \neq 1$ on the computer. It is the distance between the first two marks of the ruler at zoom $e = 0$. In the one-digit system $\epsilon = 1$, so $1 + 0.4$ rounds back to $1$; in the four-digit toy system $\epsilon = 0.001$.
-
-A binary computer works the same way with a ruler of $2^{t}$ marks per doubling instead of $9\times10^{t}$ marks per decade. For doubles, $t = 52$ and $\epsilon = 2^{-52}\approx 2.2\times10^{-16}$.
-
-```{r}
-#| label: machine-eps
-.Machine$double.eps      # 2^-52
-1 + 2^-52 == 1
-1 + 2^-53 == 1           # half an epsilon rounds back to 1
-```
-
-For doubles the gap at zoom level $[2^e, 2^{e+1})$ is $2^{e-52}$. Near $2^{52}$ the spacing is exactly $1$, and in $[2^{53}, 2^{54})$ it is $2$, so odd integers can no longer be represented.
-
-```{r}
-#| label: spacing-demo
-2^52 + 1 == 2^52             # spacing is 1: still distinguishable
-2^53 + 1 == 2^53             # spacing is 2: the +1 is lost
-format(c(2^53, 2^53 + 1, 2^53 + 2), digits = 17)
-```
-
-This is why a `double` can hold every integer only up to $2^{53}\approx 9\times10^{15}$, and why counters or identifiers above that size must be kept as integers or character strings.
-
-### Overflow and underflow
-
-The largest toy number fills every box with 9, $9.999\times10^{9}$. The next number, $10^{10}$, needs an exponent of two digits and cannot be stored: this is **overflow**, and the result is recorded as `Inf`. At the other end, $10^{-9}$ is the smallest positive toy number, and $10^{-10}$ **underflows** to $0$.
+A real number between two marks is stored as the nearer mark. The three numbers below share the same mantissa boxes and differ only in the exponent, so the absolute error scales with the zoom while the relative error does not.
 
 ::: {.pv}
 <table>
-<tr><td class="s">+</td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="p">×10^</td><td class="x">10</td></tr>
+<tr><th>$x$</th><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th><th>stored</th><th>error</th></tr>
+<tr><td class="nb">$0.234$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">−</td><td class="e">1</td><td class="nb">$0.23$</td><td class="nb">$0.004$ (1.7%)</td></tr>
+<tr><td class="nb">$2.34$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">+</td><td class="e">0</td><td class="nb">$2.3$</td><td class="nb">$0.04$ (1.7%)</td></tr>
+<tr><td class="nb">$23.4$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">+</td><td class="e">1</td><td class="nb">$23$</td><td class="nb">$0.4$ (1.7%)</td></tr>
 </table>
-<p class="cap">$10^{10}$: overflow, stored as `Inf`</p>
-<table>
-<tr><td class="s">+</td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="p">×10^</td><td class="x">-10</td></tr>
-</table>
-<p class="cap">$10^{-10}$: underflow, stored as `0`</p>
-
 :::
 
-For doubles the largest value is about $1.8\times10^{308}$ (just below $2^{1024}$). The smallest positive value with full 52-bit precision is $2^{-1022}\approx 2.2\times10^{-308}$; below that, the IEEE standard allows "subnormal" numbers with progressively fewer significant bits down to $2^{-1074}\approx 4.9\times10^{-324}$, after which the value is $0$.
+The same rounding occurs in arithmetic. To add, the two numbers are aligned by place value; solid boxes are stored digits, dashed boxes are alignment zeros, and the result keeps only the two boxes starting at its leading digit, so digits to the right (red) are rounded off.
 
-```{tikz}
-%| label: fig-number-line
-%| echo: false
-%| fig-cap: "Overflow and underflow regions on the number line for double precision"
-%| fig-align: center
-\usetikzlibrary{decorations.pathreplacing}
-\begin{tikzpicture}[scale=1, font=\sffamily]
-  \draw[<->, thick] (-6,0) -- (6,0);
-  \draw[thick] (0,-0.2) -- (0,0.2) node[above] {$0$};
-  \draw[thick] (1.5,-0.2) -- (1.5,0.2) node[above] {$2^{-1074}$};
-  \draw[thick] (4,-0.2) -- (4,0.2) node[above] {$2^{1024}$};
-  \draw[thick] (-1.5,-0.2) -- (-1.5,0.2) node[above] {$-2^{-1074}$};
-  \draw[thick] (-4,-0.2) -- (-4,0.2) node[above] {$-2^{1024}$};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},blue,thick] (-1.4,-0.5) -- (1.4,-0.5) node[midway,below=5pt] {Underflow ($\to 0$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},red,thick] (4.1,-0.5) -- (5.9,-0.5) node[midway,below=5pt] {Overflow ($+\infty$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},red,thick] (-5.9,-0.5) -- (-4.1,-0.5) node[midway,below=5pt] {Overflow ($-\infty$)};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},green!50!black,thick] (1.6,-0.5) -- (3.9,-0.5) node[midway,below=5pt] {Representable};
-  \draw[decorate,decoration={brace,amplitude=5pt,mirror},green!50!black,thick] (-3.9,-0.5) -- (-1.6,-0.5) node[midway,below=5pt] {Representable};
-\end{tikzpicture}
-```
+:::: {.columns}
+
+::: {.column width="33%"}
+::: {.pv}
+<table>
+<tr><th></th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
+<tr><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="nb"></td></tr>
+<tr><td class="op">+</td><td class="z">0</td><td class="p">.</td><td class="m">1</td><td class="m">0</td></tr>
+<tr class="sum"><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="x">0</td></tr>
+</table>
+<p class="cap">$1.0 + 0.10 = 1.1 \ne 1.0$</p>
+:::
+:::
+
+::: {.column width="33%"}
+::: {.pv}
+<table>
+<tr><th></th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
+<tr><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="nb"></td></tr>
+<tr><td class="op">+</td><td class="z">0</td><td class="p">.</td><td class="m">1</td><td class="m">4</td></tr>
+<tr class="sum"><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="x">4</td></tr>
+</table>
+<p class="cap">$1.0 + 0.14 \to 1.1$</p>
+:::
+:::
+
+::: {.column width="33%"}
+::: {.pv}
+<table>
+<tr><th></th><th>10¹</th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
+<tr><td class="op"></td><td class="m">1</td><td class="m">0</td><td class="p">.</td><td class="nb"></td><td class="nb"></td></tr>
+<tr><td class="op">+</td><td class="z">0</td><td class="z">0</td><td class="p">.</td><td class="m">4</td><td class="m">0</td></tr>
+<tr class="sum"><td class="op"></td><td class="m">1</td><td class="m">0</td><td class="p">.</td><td class="x">4</td><td class="x">0</td></tr>
+</table>
+<p class="cap">$10 + 0.40 \to 10$</p>
+:::
+:::
+
+::::
+
+The **machine epsilon** $\epsilon$ is the gap next to $1$, the smallest increment that the second mantissa box can register when added to $1$; here $\epsilon = 0.1$ (left). Smaller increments fall into the red box: the digit $4$ is lost (middle), and at zoom $e=+1$ the whole addend $0.40$ is lost (right). Relative to the magnitude, the resolution is about $\epsilon$ at every zoom.
+
+#### Largest and smallest numbers
+
+::: {.pv}
+<table>
+<tr><th></th><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th><th>value</th></tr>
+<tr><td class="nb">largest</td><td class="s">+</td><td class="m">9</td><td class="p">.</td><td class="m">9</td><td class="p">×10^</td><td class="s">+</td><td class="e">9</td><td class="nb">$9.9\times10^{9}$</td></tr>
+<tr><td class="nb">smallest positive</td><td class="s">+</td><td class="m">0</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td><td class="nb">$0.1\times10^{-9}$</td></tr>
+<tr><td class="nb">largest negative</td><td class="s">−</td><td class="m">0</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td><td class="nb">$-0.1\times10^{-9}$</td></tr>
+<tr><td class="nb">smallest</td><td class="s">−</td><td class="m">9</td><td class="p">.</td><td class="m">9</td><td class="p">×10^</td><td class="s">+</td><td class="e">9</td><td class="nb">$-9.9\times10^{9}$</td></tr>
+</table>
+<p class="cap">Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent</p>
+:::
+
+**Overflow.** A result with magnitude at least $9.95\times10^{9}$ needs the exponent $+10$, which the single exponent digit cannot hold, so it is returned as $\pm\infty$:
+
+::: {.pv}
+<table>
+<tr><th></th><th>10¹⁰</th><th>10⁹</th><th>10⁸</th></tr>
+<tr><td class="op"></td><td class="nb"></td><td class="m">6</td><td class="m">0</td></tr>
+<tr><td class="op">+</td><td class="nb"></td><td class="m">5</td><td class="m">0</td></tr>
+<tr class="sum"><td class="op"></td><td class="o">1</td><td class="m">1</td><td class="x">0</td></tr>
+</table>
+<p class="cap">$6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty$</p>
+:::
+
+::: {.pv}
+<table>
+<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th></tr>
+<tr><td class="s">+</td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">+</td><td class="o">10</td></tr>
+</table>
+<p class="cap">The exponent $10$ needs two digits but has one box: overflow</p>
+:::
+
+**Underflow.** A result with magnitude below $0.05\times10^{-9}$ has no box pattern and is returned as $0$:
+
+::: {.pv}
+<table>
+<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th>10⁻²</th><th></th><th>±</th><th>exp</th></tr>
+<tr><td class="s">+</td><td class="m">0</td><td class="p">.</td><td class="x">0</td><td class="o">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td></tr>
+</table>
+<p class="cap">$(0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0$: the digit $1$ falls outside the mantissa</p>
+:::
+
+Every later operation treats the underflowed result as exactly zero.
+
+#### Doubles
+
+A double uses the same boxes in base $2$: $1$ sign bit, $11$ exponent bits, and $52$ mantissa bits after an implicit leading $1$. The exponent is stored with a bias of $1023$, so the codes $1,\ldots,2046$ give $e\in[-1022, 1023]$; the code $0$ is reserved for $0$ and the subnormals, and the code $2047$ for `Inf` and `NaN`.
+
+$$
+\newcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
+\begin{array}{rcccl}
+ & \text{sign} & \text{exponent} & \text{mantissa} & \text{decimal value}\\[6pt]
+1 & \underbrace{\bx{0}}_{1\text{ bit}}
+  & \underbrace{\bx{0}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}}_{11\text{ bits}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}_{52\text{ bits}}
+  & = 1\\[16pt]
+1+\epsilon & \underbrace{\bx{0}}_{1\text{ bit}}
+  & \underbrace{\bx{0}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}}_{11\text{ bits}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{1}}_{52\text{ bits}}
+  & = 1+2^{-52} \approx 1 + 2.220446\times10^{-16}\\[16pt]
+\text{largest} & \underbrace{\bx{0}}_{1\text{ bit}}
+  & \underbrace{\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{0}}_{11\text{ bits}}
+  & \underbrace{\bx{1}\bx{1}\bx{1}\cdots\bx{1}\bx{1}\bx{1}}_{52\text{ bits}}
+  & = (2-2^{-52})\times2^{1023} \approx 1.797693\times10^{308}\\[16pt]
+\text{smallest normal} & \underbrace{\bx{0}}_{1\text{ bit}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{1}}_{11\text{ bits}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}_{52\text{ bits}}
+  & = 2^{-1022} \approx 2.225074\times10^{-308}\\[16pt]
+\text{smallest positive} & \underbrace{\bx{0}}_{1\text{ bit}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}}_{11\text{ bits}}
+  & \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{1}}_{52\text{ bits}}
+  & = 2^{-1074} \approx 4.940656\times10^{-324}
+\end{array}
+$$
+
+The rows $1$ and $1+\epsilon$ differ only in the last mantissa box, which is worth $2^{-52}=\epsilon$. The largest double uses the largest usable exponent code $2046$ and a full mantissa. The smallest normal double uses the smallest usable code $1$ and mantissa $1.0$; the smallest positive (subnormal) double uses code $0$, which drops the implicit leading $1$, and only the last mantissa box.
+
+- The **machine epsilon** $\epsilon=2^{-52}$ is the gap next to $1$, set by the last mantissa bit. Since the gap in $[2^e, 2^{e+1})$ is $2^{e-52}$, $\epsilon$ is also the relative resolution at every magnitude: a double carries about $15$–$16$ significant decimal digits.
+- The **largest double** has all mantissa bits and all usable exponent bits set to $1$. Results beyond it overflow to `Inf`.
+- The **smallest normal double** has the smallest usable exponent and mantissa $1.0$. Below it, subnormals fill the gap down to $2^{-1074}$ with evenly spaced but less precise values; results below half of $2^{-1074}$ underflow to $0$.
+
+| quantity | value | R | relevance in computing |
+|:--|:--|:--|:--|
+| machine epsilon | $2^{-52}\approx2.2\times10^{-16}$ | `.Machine$double.eps` | Doubles cannot be compared exactly (`0.1 + 0.2 != 0.3`); convergence and equality tests use tolerances such as $\sqrt{\epsilon}\approx1.5\times10^{-8}$ (`all.equal`), which is also the usual step size for numerical derivatives |
+| largest double | $\approx1.80\times10^{308}$ | `.Machine$double.xmax` | `exp(x)` overflows for $x>709.8$; products of large terms such as likelihood ratios or $n!$ must be computed on the log scale |
+| smallest normal double | $2^{-1022}\approx2.2\times10^{-308}$ | `.Machine$double.xmin` | `exp(x)` leaves the normal range for $x<-708.4$; a product of many densities falls here, which is why likelihoods are computed as log-likelihoods and sums of exponentials via log-sum-exp |
+| smallest subnormal double | $2^{-1074}\approx4.9\times10^{-324}$ | `2^-1074` | Last value before underflow to $0$; subnormals keep few significant bits, so ratios of such values are unreliable |
+| largest consecutive integer | $2^{53}\approx9.0\times10^{15}$ | `2^53` | Beyond it the gap exceeds $1$ and integers are skipped; R's `integer` type stops even earlier at $2^{31}-1$, so larger identifiers must be stored as character strings or `bit64::integer64` |
 
 ```{r}
 #| label: double-limits
-## largest double precision floating-point number
-.Machine$double.xmax
-2^1023
-2^1024          # overflows to Inf
-
-## smallest double precision floating-point numbers
-.Machine$double.xmin   # smallest with full precision, 2^-1022
-2^(-1074)              # smallest subnormal
-2^(-1075)              # underflows to 0
+c(eps = .Machine$double.eps, xmax = .Machine$double.xmax,
+  xmin = .Machine$double.xmin, subnormal = 2^-1074, maxint = 2^53)
 ```
 
-Overflow is loud: `Inf` propagates and usually produces `NaN` or an error somewhere downstream. Underflow is quiet: a probability that underflows to $0$ simply produces `log(0) = -Inf` or a likelihood ratio of `0/0`, and the code may run to completion with a wrong answer.
+```{r}
+#| label: machine-eps
+1 + 2^-52 == 1
+1 + 2^-53 == 1                       # half an epsilon is lost
+0.1 + 0.2 == 0.3                     # rounding error
+isTRUE(all.equal(0.1 + 0.2, 0.3))    # test with tolerance sqrt(eps)
+```
+
+```{r}
+#| label: over-underflow
+2 * .Machine$double.xmax             # overflow: Inf
+exp(710)                             # overflow: Inf
+2^-1075                              # underflow: 0
+prod(rep(0.01, 200))                 # 1e-400 underflows to 0
+sum(log(rep(0.01, 200)))             # the log scale is safe
+```
+
+```{r}
+#| label: spacing-demo
+2^52 + 1 == 2^52                     # gap 1: still distinguishable
+2^53 + 1 == 2^53                     # gap 2: the +1 is lost
+format(c(2^53, 2^53 + 1, 2^53 + 2), digits = 17)
+.Machine$integer.max                 # 2^31 - 1
+```
+
 
 ## Rounding Error and Methods for Preventing It
 

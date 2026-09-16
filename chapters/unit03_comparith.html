@@ -277,9 +277,13 @@ window.Quarto = {
   <li><a href="#place-value" id="toc-place-value" class="nav-link" data-scroll-target="#place-value"><span class="header-section-number">3.1.1</span> Place value</a></li>
   <li><a href="#integers" id="toc-integers" class="nav-link" data-scroll-target="#integers"><span class="header-section-number">3.1.2</span> Integers</a></li>
   <li><a href="#floating-point-numbers" id="toc-floating-point-numbers" class="nav-link" data-scroll-target="#floating-point-numbers"><span class="header-section-number">3.1.3</span> Floating point numbers</a></li>
-  <li><a href="#a-toy-floating-point-system" id="toc-a-toy-floating-point-system" class="nav-link" data-scroll-target="#a-toy-floating-point-system"><span class="header-section-number">3.1.4</span> A toy floating point system</a></li>
-  <li><a href="#significance-of-the-mantissa-a-zoom-model" id="toc-significance-of-the-mantissa-a-zoom-model" class="nav-link" data-scroll-target="#significance-of-the-mantissa-a-zoom-model"><span class="header-section-number">3.1.5</span> Significance of the Mantissa: A Zoom Model</a></li>
-  <li><a href="#overflow-and-underflow" id="toc-overflow-and-underflow" class="nav-link" data-scroll-target="#overflow-and-underflow"><span class="header-section-number">3.1.6</span> Overflow and underflow</a></li>
+  <li><a href="#zoom-models-for-representable-floating-numbers" id="toc-zoom-models-for-representable-floating-numbers" class="nav-link" data-scroll-target="#zoom-models-for-representable-floating-numbers"><span class="header-section-number">3.1.4</span> Zoom Models for Representable Floating Numbers</a>
+  <ul class="collapse">
+  <li><a href="#a-toy-decimal-computer" id="toc-a-toy-decimal-computer" class="nav-link" data-scroll-target="#a-toy-decimal-computer"><span class="header-section-number">3.1.4.1</span> A toy decimal computer</a></li>
+  <li><a href="#rounding-error-and-machine-epsilon" id="toc-rounding-error-and-machine-epsilon" class="nav-link" data-scroll-target="#rounding-error-and-machine-epsilon"><span class="header-section-number">3.1.4.2</span> Rounding error and machine epsilon</a></li>
+  <li><a href="#largest-and-smallest-numbers" id="toc-largest-and-smallest-numbers" class="nav-link" data-scroll-target="#largest-and-smallest-numbers"><span class="header-section-number">3.1.4.3</span> Largest and smallest numbers</a></li>
+  <li><a href="#doubles" id="toc-doubles" class="nav-link" data-scroll-target="#doubles"><span class="header-section-number">3.1.4.4</span> Doubles</a></li>
+  </ul></li>
   </ul></li>
   <li><a href="#rounding-error-and-methods-for-preventing-it" id="toc-rounding-error-and-methods-for-preventing-it" class="nav-link" data-scroll-target="#rounding-error-and-methods-for-preventing-it"><span class="header-section-number">3.2</span> Rounding Error and Methods for Preventing It</a>
   <ul>
@@ -647,42 +651,22 @@ e
 </div>
 <p>More precisely, a floating point number <span class="math inline">\(x\)</span> is represented by a vector of bits <span class="math inline">\((s,d_0,\ldots,d_{t-1},e_1,\ldots, e_{k-1})\)</span> as, <span class="math display">\[
 x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^{k-1}}.
-\]</span> The leading mantissa bit is always 1 for a normalized number and need not be stored, and the exponent is stored with an offset so that both negative and positive exponents fit in unsigned bits. Double precision (<code>double</code> in R, the IEEE 754 standard) uses 64 bits:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 13%">
-<col style="width: 13%">
-<col style="width: 73%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">part</th>
-<th style="text-align: right;">bits</th>
-<th style="text-align: left;">consequence</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">sign</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: left;"></td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">mantissa</td>
-<td style="text-align: right;">52</td>
-<td style="text-align: left;">about 16 significant decimal digits</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">exponent</td>
-<td style="text-align: right;">11</td>
-<td style="text-align: left;"><span class="math inline">\(e \in [-1022,\ 1023]\)</span>, i.e.&nbsp;magnitudes from <span class="math inline">\(10^{-308}\)</span> to <span class="math inline">\(10^{308}\)</span></td>
-</tr>
-</tbody>
-</table>
+\]</span></p>
 </section>
-<section id="a-toy-floating-point-system" class="level3" data-number="3.1.4">
-<h3 data-number="3.1.4" class="anchored" data-anchor-id="a-toy-floating-point-system"><span class="header-section-number">3.1.4</span> A toy floating point system</h3>
-<p>To see what goes wrong, it is easier to work in a decimal toy computer with a <strong>4-digit mantissa</strong> and a <strong>1-digit exponent</strong>, <span class="math inline">\(e\in[-9,9]\)</span>:</p>
+<section id="zoom-models-for-representable-floating-numbers" class="level3" data-number="3.1.4">
+<h3 data-number="3.1.4" class="anchored" data-anchor-id="zoom-models-for-representable-floating-numbers"><span class="header-section-number">3.1.4</span> Zoom Models for Representable Floating Numbers</h3>
+<style>
+.pv td.z  { color: #bbb; border-style: dashed; }          /* alignment zero, not stored */
+.pv td.x  { background: #fde0e0; color: #b22222; text-decoration: line-through; } /* digit rounded off */
+.pv td.o  { background: #fde0e0; color: #b22222; font-weight: bold; }            /* no room: overflow/underflow */
+.pv td.op { border: none; background: none; font-weight: bold; }
+.pv td.nb { border: none; background: none; }
+.pv tr.sum td:not(.op):not(.nb) { border-top: 3px solid #333; }
+</style>
+<p>A floating point number is a <strong>ruler</strong> and a <strong>zoom setting</strong>. The mantissa is a ruler with a fixed number of equally spaced marks; the exponent stretches it by <span class="math inline">\(10^{e}\)</span> over <span class="math inline">\([10^{e}, 10^{e+1})\)</span>. Stretching adds no marks, so the marks spread apart as the zoom grows.</p>
+<section id="a-toy-decimal-computer" class="level4" data-number="3.1.4.1">
+<h4 data-number="3.1.4.1" class="anchored" data-anchor-id="a-toy-decimal-computer"><span class="header-section-number">3.1.4.1</span> A toy decimal computer</h4>
+<p>Each number is stored in six boxes: a sign, a two-digit mantissa <span class="math inline">\(d_1.d_2\)</span> (<span class="math inline">\(d_1\in\{1,\ldots,9\}\)</span>, <span class="math inline">\(d_2\in\{0,\ldots,9\}\)</span>), and an exponent made of a sign and one decimal digit, so <span class="math inline">\(e\in\{-9,\ldots,0,\ldots,+9\}\)</span>.</p>
 <div class="pv">
 <table>
 <tbody><tr>
@@ -698,12 +682,9 @@ sign
 10⁻¹
 </th>
 <th>
-10⁻²
 </th>
 <th>
-10⁻³
-</th>
-<th>
+±
 </th>
 <th>
 exp
@@ -722,14 +703,11 @@ exp
 <td class="m">
 1
 </td>
-<td class="m">
-4
-</td>
-<td class="m">
-2
-</td>
 <td class="p">
 ×10^
+</td>
+<td class="s">
++
 </td>
 <td class="e">
 0
@@ -737,163 +715,268 @@ exp
 </tr>
 </tbody></table>
 <p class="cap">
-<span class="math inline">\(3.142\times10^{0}\)</span>, the closest storable value to <span class="math inline">\(\pi\)</span>
+<span class="math inline">\(+3.1\times10^{+0}\)</span>, the closest storable value to <span class="math inline">\(\pi\)</span>
 </p>
 </div>
-<p>Three things can go wrong, all caused by the boxes being finite:</p>
-<ol type="1">
-<li><p><strong>Overflow</strong>: the exponent box is too small for a large number.</p></li>
-<li><p><strong>Underflow</strong>: the exponent box is too small for a tiny number.</p></li>
-<li><p><strong>Roundoff</strong>: the mantissa boxes are too few for all the digits.</p></li>
-</ol>
-</section>
-<section id="significance-of-the-mantissa-a-zoom-model" class="level3" data-number="3.1.5">
-<h3 data-number="3.1.5" class="anchored" data-anchor-id="significance-of-the-mantissa-a-zoom-model"><span class="header-section-number">3.1.5</span> Significance of the Mantissa: A Zoom Model</h3>
-<p>Think of a floating point number as a <strong>ruler</strong> and a <strong>zoom setting</strong>. The mantissa is a fixed ruler with equally spaced marks; the exponent is a zoom factor <span class="math inline">\(10^{e}\)</span> that stretches the ruler to cover the interval <span class="math inline">\([10^{e}, 10^{e+1})\)</span>. The number of marks never changes, so the more the ruler is stretched, the farther apart the marks land on the number line.</p>
-<p>The simplest case has a <strong>one-digit mantissa</strong>: the ruler has nine marks, <span class="math inline">\(1, 2, \ldots, 9\)</span>, and a number is stored as <span class="math inline">\(d\times10^{e}\)</span> with <span class="math inline">\(d\in\{1,\ldots,9\}\)</span>.</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-exp
-</th>
-</tr>
-<tr>
-<td class="m">
-d
-</td>
-<td class="p">
-×10^
-</td>
-<td class="e">
-e
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-One mantissa digit: the ruler marks are <span class="math inline">\(1\times10^{e}, 2\times10^{e}, \ldots, 9\times10^{e}\)</span>
-</p>
-</div>
+<p>Each of the <span class="math inline">\(19\)</span> zoom levels is a ruler of <span class="math inline">\(90\)</span> marks. At the lowest zoom <span class="math inline">\(e=-9\)</span> the leading digit may also be <span class="math inline">\(0\)</span> (<strong>subnormal</strong> numbers), which fills the gap between <span class="math inline">\(0\)</span> and <span class="math inline">\(1.0\times10^{-9}\)</span>.</p>
 <table class="caption-top table">
+<colgroup>
+<col style="width: 28%">
+<col style="width: 21%">
+<col style="width: 21%">
+<col style="width: 28%">
+</colgroup>
 <thead>
 <tr class="header">
 <th style="text-align: center;">zoom <span class="math inline">\(e\)</span></th>
-<th style="text-align: left;">interval <span class="math inline">\([10^e, 10^{e+1})\)</span></th>
+<th style="text-align: left;">interval</th>
 <th style="text-align: left;">storable numbers</th>
 <th style="text-align: center;">gap</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: center;">0</td>
-<td style="text-align: left;"><span class="math inline">\([1, 10)\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(1, 2, 3, \ldots, 9\)</span></td>
-<td style="text-align: center;"><span class="math inline">\(1\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(-9\)</span> (subnormal)</td>
+<td style="text-align: left;"><span class="math inline">\((0, 10^{-9})\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(0.1\times10^{-9}, \ldots, 0.9\times10^{-9}\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(10^{-10}\)</span></td>
 </tr>
 <tr class="even">
-<td style="text-align: center;">1</td>
-<td style="text-align: left;"><span class="math inline">\([10, 100)\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(10, 20, 30, \ldots, 90\)</span></td>
-<td style="text-align: center;"><span class="math inline">\(10\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(-9\)</span></td>
+<td style="text-align: left;"><span class="math inline">\([10^{-9}, 10^{-8})\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(1.0\times10^{-9}, 1.1\times10^{-9}, \ldots, 9.9\times10^{-9}\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(10^{-10}\)</span></td>
 </tr>
 <tr class="odd">
-<td style="text-align: center;">2</td>
-<td style="text-align: left;"><span class="math inline">\([100, 1000)\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(100, 200, \ldots, 900\)</span></td>
-<td style="text-align: center;"><span class="math inline">\(100\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(\vdots\)</span></td>
 </tr>
 <tr class="even">
 <td style="text-align: center;"><span class="math inline">\(-1\)</span></td>
 <td style="text-align: left;"><span class="math inline">\([0.1, 1)\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(0.1, 0.2, \ldots, 0.9\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(0.10, 0.11, \ldots, 0.99\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(0.01\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: left;"><span class="math inline">\([1, 10)\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(1.0, 1.1, \ldots, 9.9\)</span></td>
 <td style="text-align: center;"><span class="math inline">\(0.1\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><span class="math inline">\(+1\)</span></td>
+<td style="text-align: left;"><span class="math inline">\([10, 100)\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(10, 11, \ldots, 99\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(1\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\vdots\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(\vdots\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;"><span class="math inline">\(+9\)</span></td>
+<td style="text-align: left;"><span class="math inline">\([10^{9}, 10^{10})\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(1.0\times10^{9}, 1.1\times10^{9}, \ldots, 9.9\times10^{9}\)</span></td>
+<td style="text-align: center;"><span class="math inline">\(10^{8}\)</span></td>
 </tr>
 </tbody>
 </table>
-<p>Within each zoom level the storable numbers are evenly spaced, and the spacing is multiplied by <span class="math inline">\(10\)</span> each time the zoom goes up one level. Every real number between two marks is rounded to the nearer mark: <span class="math inline">\(24\to20\)</span>, <span class="math inline">\(27\to30\)</span>, <span class="math inline">\(2.4\to2\)</span>, and <span class="math inline">\(0.27\to0.3\)</span>.</p>
-<p>Adding mantissa digits adds marks to the ruler without changing the zoom mechanism. With a leading digit and <span class="math inline">\(t\)</span> further digits there are <span class="math inline">\(9\times10^{t}\)</span> marks in <span class="math inline">\([10^e, 10^{e+1})\)</span>, and the gap at zoom <span class="math inline">\(e\)</span> is <span class="math inline">\(10^{e-t}\)</span>.</p>
+<p>With both signs, the <span class="math inline">\(9\)</span> subnormals per sign, and a reserved code for <span class="math inline">\(0\)</span>, the machine stores exactly <span class="math inline">\(2\times(19\times90+9)+1=3439\)</span> numbers. The <span class="math inline">\(90\)</span> normal mantissas are listed below; multiplying them by <span class="math inline">\(10^{e}\)</span>, <span class="math inline">\(e=-9,\ldots,9\)</span>, gives every positive normal number.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="fu">outer</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">9</span>, <span class="dv">0</span><span class="sc">:</span><span class="dv">9</span>, <span class="cf">function</span>(a, b) a <span class="sc">+</span> b <span class="sc">/</span> <span class="dv">10</span>)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">dimnames</span>(m) <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">d1 =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">9</span>, <span class="at">d2 =</span> <span class="dv">0</span><span class="sc">:</span><span class="dv">9</span>)</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>m</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>   d2
+d1  0   1   2   3   4   5   6   7   8   9
+  1 1 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9
+  2 2 2.1 2.2 2.3 2.4 2.5 2.6 2.7 2.8 2.9
+  3 3 3.1 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9
+  4 4 4.1 4.2 4.3 4.4 4.5 4.6 4.7 4.8 4.9
+  5 5 5.1 5.2 5.3 5.4 5.5 5.6 5.7 5.8 5.9
+  6 6 6.1 6.2 6.3 6.4 6.5 6.6 6.7 6.8 6.9
+  7 7 7.1 7.2 7.3 7.4 7.5 7.6 7.7 7.8 7.9
+  8 8 8.1 8.2 8.3 8.4 8.5 8.6 8.7 8.8 8.9
+  9 9 9.1 9.2 9.3 9.4 9.5 9.6 9.7 9.8 9.9</code></pre>
+</div>
+</div>
 <div class="cell">
 <div class="cell-output-display">
-<div id="fig-zoom-model" class="quarto-float quarto-figure quarto-figure-center anchored">
+<div id="fig-toy-lines" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-zoom-model-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit03_comparith_files/figure-html/fig-zoom-model-1.png" class="img-fluid figure-img" width="864">
+<div aria-describedby="fig-toy-lines-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit03_comparith_files/figure-html/fig-toy-lines-1.png" class="img-fluid figure-img" width="864">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-zoom-model-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3.1: Representable numbers in <span class="math inline">\([1, 100)\)</span> for a mantissa of 1 and 2 decimal digits. The two zoom levels <span class="math inline">\([1, 10)\)</span> and <span class="math inline">\([10, 100)\)</span> are shaded; within each, the marks are evenly spaced, and the spacing is ten times larger at the higher zoom.
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-toy-lines-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;3.1: Positive numbers at zoom <span class="math inline">\(e=0\)</span> (top, gap <span class="math inline">\(0.1\)</span>) and <span class="math inline">\(e=+1\)</span> (bottom, gap <span class="math inline">\(1\)</span>). Grey bands hold the crowded marks of all lower zooms (<span class="math inline">\(e&lt;0\)</span>, and <span class="math inline">\(e\le 0\)</span> in the bottom panel); overflow occurs only far to the right, beyond <span class="math inline">\(9.9\times10^{9}\)</span>.
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>The picture explains the two facts that matter for computation:</p>
-<ul>
-<li>The <strong>absolute</strong> gap grows with the magnitude, because the same ruler is stretched more; the <strong>relative</strong> gap, gap divided by magnitude, stays between <span class="math inline">\(10^{-t}\)</span> and <span class="math inline">\(10^{-t-1}\)</span> at every zoom level.</li>
-<li>The relative gap near <span class="math inline">\(1\)</span> is the <strong>machine epsilon</strong> <span class="math inline">\(\epsilon\)</span>: the smallest <span class="math inline">\(\epsilon\)</span> such that <span class="math inline">\(1+\epsilon \neq 1\)</span> on the computer. It is the distance between the first two marks of the ruler at zoom <span class="math inline">\(e = 0\)</span>. In the one-digit system <span class="math inline">\(\epsilon = 1\)</span>, so <span class="math inline">\(1 + 0.4\)</span> rounds back to <span class="math inline">\(1\)</span>; in the four-digit toy system <span class="math inline">\(\epsilon = 0.001\)</span>.</li>
-</ul>
-<p>A binary computer works the same way with a ruler of <span class="math inline">\(2^{t}\)</span> marks per doubling instead of <span class="math inline">\(9\times10^{t}\)</span> marks per decade. For doubles, <span class="math inline">\(t = 52\)</span> and <span class="math inline">\(\epsilon = 2^{-52}\approx 2.2\times10^{-16}\)</span>.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>.Machine<span class="sc">$</span>double.eps      <span class="co"># 2^-52</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 2.220446049250313080847e-16</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^-</span><span class="dv">52</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] FALSE</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^-</span><span class="dv">53</span> <span class="sc">==</span> <span class="dv">1</span>           <span class="co"># half an epsilon rounds back to 1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] TRUE</code></pre>
-</div>
-</div>
-<p>For doubles the gap at zoom level <span class="math inline">\([2^e, 2^{e+1})\)</span> is <span class="math inline">\(2^{e-52}\)</span>. Near <span class="math inline">\(2^{52}\)</span> the spacing is exactly <span class="math inline">\(1\)</span>, and in <span class="math inline">\([2^{53}, 2^{54})\)</span> it is <span class="math inline">\(2\)</span>, so odd integers can no longer be represented.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">52</span> <span class="sc">+</span> <span class="dv">1</span> <span class="sc">==</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">52</span>             <span class="co"># spacing is 1: still distinguishable</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] FALSE</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">1</span> <span class="sc">==</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span>             <span class="co"># spacing is 2: the +1 is lost</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] TRUE</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format</span>(<span class="fu">c</span>(<span class="dv">2</span><span class="sc">^</span><span class="dv">53</span>, <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">2</span>), <span class="at">digits =</span> <span class="dv">17</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] "9007199254740992" "9007199254740992" "9007199254740994"</code></pre>
-</div>
-</div>
-<p>This is why a <code>double</code> can hold every integer only up to <span class="math inline">\(2^{53}\approx 9\times10^{15}\)</span>, and why counters or identifiers above that size must be kept as integers or character strings.</p>
 </section>
-<section id="overflow-and-underflow" class="level3" data-number="3.1.6">
-<h3 data-number="3.1.6" class="anchored" data-anchor-id="overflow-and-underflow"><span class="header-section-number">3.1.6</span> Overflow and underflow</h3>
-<p>The largest toy number fills every box with 9, <span class="math inline">\(9.999\times10^{9}\)</span>. The next number, <span class="math inline">\(10^{10}\)</span>, needs an exponent of two digits and cannot be stored: this is <strong>overflow</strong>, and the result is recorded as <code>Inf</code>. At the other end, <span class="math inline">\(10^{-9}\)</span> is the smallest positive toy number, and <span class="math inline">\(10^{-10}\)</span> <strong>underflows</strong> to <span class="math inline">\(0\)</span>.</p>
+<section id="rounding-error-and-machine-epsilon" class="level4" data-number="3.1.4.2">
+<h4 data-number="3.1.4.2" class="anchored" data-anchor-id="rounding-error-and-machine-epsilon"><span class="header-section-number">3.1.4.2</span> Rounding error and machine epsilon</h4>
+<p>A real number between two marks is stored as the nearer mark. The three numbers below share the same mantissa boxes and differ only in the exponent, so the absolute error scales with the zoom while the relative error does not.</p>
 <div class="pv">
 <table>
 <tbody><tr>
+<th>
+<span class="math inline">\(x\)</span>
+</th>
+<th>
+sign
+</th>
+<th>
+1
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+</th>
+<th>
+±
+</th>
+<th>
+exp
+</th>
+<th>
+stored
+</th>
+<th>
+error
+</th>
+</tr>
+<tr>
+<td class="nb">
+<span class="math inline">\(0.234\)</span>
+</td>
 <td class="s">
 +
+</td>
+<td class="m">
+2
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+3
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
+−
+</td>
+<td class="e">
+1
+</td>
+<td class="nb">
+<span class="math inline">\(0.23\)</span>
+</td>
+<td class="nb">
+<span class="math inline">\(0.004\)</span> (1.7%)
+</td>
+</tr>
+<tr>
+<td class="nb">
+<span class="math inline">\(2.34\)</span>
+</td>
+<td class="s">
++
+</td>
+<td class="m">
+2
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+3
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
++
+</td>
+<td class="e">
+0
+</td>
+<td class="nb">
+<span class="math inline">\(2.3\)</span>
+</td>
+<td class="nb">
+<span class="math inline">\(0.04\)</span> (1.7%)
+</td>
+</tr>
+<tr>
+<td class="nb">
+<span class="math inline">\(23.4\)</span>
+</td>
+<td class="s">
++
+</td>
+<td class="m">
+2
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+3
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
++
+</td>
+<td class="e">
+1
+</td>
+<td class="nb">
+<span class="math inline">\(23\)</span>
+</td>
+<td class="nb">
+<span class="math inline">\(0.4\)</span> (1.7%)
+</td>
+</tr>
+</tbody></table>
+</div>
+<p>The same rounding occurs in arithmetic. To add, the two numbers are aligned by place value; solid boxes are stored digits, dashed boxes are alignment zeros, and the result keeps only the two boxes starting at its leading digit, so digits to the right (red) are rounded off.</p>
+<div class="columns">
+<div class="column" style="width:33%;">
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+</th>
+<th>
+10⁰
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+10⁻²
+</th>
+</tr>
+<tr>
+<td class="op">
 </td>
 <td class="m">
 1
@@ -904,117 +987,717 @@ Figure&nbsp;3.1: Representable numbers in <span class="math inline">\([1, 100)\)
 <td class="m">
 0
 </td>
+<td class="nb">
+</td>
+</tr>
+<tr>
+<td class="op">
++
+</td>
+<td class="z">
+0
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
 <td class="m">
 0
+</td>
+</tr>
+<tr class="sum">
+<td class="op">
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="x">
+0
+</td>
+</tr>
+</tbody></table>
+<p class="cap">
+<span class="math inline">\(1.0 + 0.10 = 1.1 \ne 1.0\)</span>
+</p>
+</div>
+</div><div class="column" style="width:33%;">
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+</th>
+<th>
+10⁰
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+10⁻²
+</th>
+</tr>
+<tr>
+<td class="op">
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+0
+</td>
+<td class="nb">
+</td>
+</tr>
+<tr>
+<td class="op">
++
+</td>
+<td class="z">
+0
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="m">
+4
+</td>
+</tr>
+<tr class="sum">
+<td class="op">
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="x">
+4
+</td>
+</tr>
+</tbody></table>
+<p class="cap">
+<span class="math inline">\(1.0 + 0.14 \to 1.1\)</span>
+</p>
+</div>
+</div><div class="column" style="width:33%;">
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+</th>
+<th>
+10¹
+</th>
+<th>
+10⁰
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+10⁻²
+</th>
+</tr>
+<tr>
+<td class="op">
+</td>
+<td class="m">
+1
 </td>
 <td class="m">
 0
 </td>
 <td class="p">
-×10^
+.
+</td>
+<td class="nb">
+</td>
+<td class="nb">
+</td>
+</tr>
+<tr>
+<td class="op">
++
+</td>
+<td class="z">
+0
+</td>
+<td class="z">
+0
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+4
+</td>
+<td class="m">
+0
+</td>
+</tr>
+<tr class="sum">
+<td class="op">
+</td>
+<td class="m">
+1
+</td>
+<td class="m">
+0
+</td>
+<td class="p">
+.
 </td>
 <td class="x">
+4
+</td>
+<td class="x">
+0
+</td>
+</tr>
+</tbody></table>
+<p class="cap">
+<span class="math inline">\(10 + 0.40 \to 10\)</span>
+</p>
+</div>
+</div>
+</div>
+<p>The <strong>machine epsilon</strong> <span class="math inline">\(\epsilon\)</span> is the gap next to <span class="math inline">\(1\)</span>, the smallest increment that the second mantissa box can register when added to <span class="math inline">\(1\)</span>; here <span class="math inline">\(\epsilon = 0.1\)</span> (left). Smaller increments fall into the red box: the digit <span class="math inline">\(4\)</span> is lost (middle), and at zoom <span class="math inline">\(e=+1\)</span> the whole addend <span class="math inline">\(0.40\)</span> is lost (right). Relative to the magnitude, the resolution is about <span class="math inline">\(\epsilon\)</span> at every zoom.</p>
+</section>
+<section id="largest-and-smallest-numbers" class="level4" data-number="3.1.4.3">
+<h4 data-number="3.1.4.3" class="anchored" data-anchor-id="largest-and-smallest-numbers"><span class="header-section-number">3.1.4.3</span> Largest and smallest numbers</h4>
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+</th>
+<th>
+sign
+</th>
+<th>
+1
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+</th>
+<th>
+±
+</th>
+<th>
+exp
+</th>
+<th>
+value
+</th>
+</tr>
+<tr>
+<td class="nb">
+largest
+</td>
+<td class="s">
++
+</td>
+<td class="m">
+9
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+9
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
++
+</td>
+<td class="e">
+9
+</td>
+<td class="nb">
+<span class="math inline">\(9.9\times10^{9}\)</span>
+</td>
+</tr>
+<tr>
+<td class="nb">
+smallest positive
+</td>
+<td class="s">
++
+</td>
+<td class="m">
+0
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
+−
+</td>
+<td class="e">
+9
+</td>
+<td class="nb">
+<span class="math inline">\(0.1\times10^{-9}\)</span>
+</td>
+</tr>
+<tr>
+<td class="nb">
+largest negative
+</td>
+<td class="s">
+−
+</td>
+<td class="m">
+0
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
+−
+</td>
+<td class="e">
+9
+</td>
+<td class="nb">
+<span class="math inline">\(-0.1\times10^{-9}\)</span>
+</td>
+</tr>
+<tr>
+<td class="nb">
+smallest
+</td>
+<td class="s">
+−
+</td>
+<td class="m">
+9
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+9
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
++
+</td>
+<td class="e">
+9
+</td>
+<td class="nb">
+<span class="math inline">\(-9.9\times10^{9}\)</span>
+</td>
+</tr>
+</tbody></table>
+<p class="cap">
+Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent
+</p>
+</div>
+<p><strong>Overflow.</strong> A result with magnitude at least <span class="math inline">\(9.95\times10^{9}\)</span> needs the exponent <span class="math inline">\(+10\)</span>, which the single exponent digit cannot hold, so it is returned as <span class="math inline">\(\pm\infty\)</span>:</p>
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+</th>
+<th>
+10¹⁰
+</th>
+<th>
+10⁹
+</th>
+<th>
+10⁸
+</th>
+</tr>
+<tr>
+<td class="op">
+</td>
+<td class="nb">
+</td>
+<td class="m">
+6
+</td>
+<td class="m">
+0
+</td>
+</tr>
+<tr>
+<td class="op">
++
+</td>
+<td class="nb">
+</td>
+<td class="m">
+5
+</td>
+<td class="m">
+0
+</td>
+</tr>
+<tr class="sum">
+<td class="op">
+</td>
+<td class="o">
+1
+</td>
+<td class="m">
+1
+</td>
+<td class="x">
+0
+</td>
+</tr>
+</tbody></table>
+<p class="cap">
+<span class="math inline">\(6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty\)</span>
+</p>
+</div>
+<div class="pv">
+<table>
+<tbody><tr>
+<th>
+sign
+</th>
+<th>
+1
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+</th>
+<th>
+±
+</th>
+<th>
+exp
+</th>
+</tr>
+<tr>
+<td class="s">
++
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+.
+</td>
+<td class="m">
+1
+</td>
+<td class="p">
+×10^
+</td>
+<td class="s">
++
+</td>
+<td class="o">
 10
 </td>
 </tr>
 </tbody></table>
 <p class="cap">
-<span class="math inline">\(10^{10}\)</span>: overflow, stored as <code>Inf</code>
+The exponent <span class="math inline">\(10\)</span> needs two digits but has one box: overflow
 </p>
+</div>
+<p><strong>Underflow.</strong> A result with magnitude below <span class="math inline">\(0.05\times10^{-9}\)</span> has no box pattern and is returned as <span class="math inline">\(0\)</span>:</p>
+<div class="pv">
 <table>
 <tbody><tr>
+<th>
+sign
+</th>
+<th>
+1
+</th>
+<th>
+</th>
+<th>
+10⁻¹
+</th>
+<th>
+10⁻²
+</th>
+<th>
+</th>
+<th>
+±
+</th>
+<th>
+exp
+</th>
+</tr>
+<tr>
 <td class="s">
 +
 </td>
 <td class="m">
-1
+0
 </td>
 <td class="p">
 .
 </td>
-<td class="m">
+<td class="x">
 0
 </td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
+<td class="o">
+1
 </td>
 <td class="p">
 ×10^
 </td>
-<td class="x">
--10
+<td class="s">
+−
+</td>
+<td class="e">
+9
 </td>
 </tr>
 </tbody></table>
 <p class="cap">
-<span class="math inline">\(10^{-10}\)</span>: underflow, stored as <code>0</code>
+<span class="math inline">\((0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0\)</span>: the digit <span class="math inline">\(1\)</span> falls outside the mantissa
 </p>
 </div>
-<p>For doubles the largest value is about <span class="math inline">\(1.8\times10^{308}\)</span> (just below <span class="math inline">\(2^{1024}\)</span>). The smallest positive value with full 52-bit precision is <span class="math inline">\(2^{-1022}\approx 2.2\times10^{-308}\)</span>; below that, the IEEE standard allows “subnormal” numbers with progressively fewer significant bits down to <span class="math inline">\(2^{-1074}\approx 4.9\times10^{-324}\)</span>, after which the value is <span class="math inline">\(0\)</span>.</p>
-<div class="cell" data-layout-align="center">
-<div class="cell-output-display">
-<div id="fig-number-line" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-number-line-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit03_comparith_files/figure-html/fig-number-line-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="672">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-number-line-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3.2: Overflow and underflow regions on the number line for double precision
-</figcaption>
-</figure>
-</div>
+<p>Every later operation treats the underflowed result as exactly zero.</p>
+</section>
+<section id="doubles" class="level4" data-number="3.1.4.4">
+<h4 data-number="3.1.4.4" class="anchored" data-anchor-id="doubles"><span class="header-section-number">3.1.4.4</span> Doubles</h4>
+<p>A double uses the same boxes in base <span class="math inline">\(2\)</span>: <span class="math inline">\(1\)</span> sign bit, <span class="math inline">\(11\)</span> exponent bits, and <span class="math inline">\(52\)</span> mantissa bits after an implicit leading <span class="math inline">\(1\)</span>. The exponent is stored with a bias of <span class="math inline">\(1023\)</span>, so the codes <span class="math inline">\(1,\ldots,2046\)</span> give <span class="math inline">\(e\in[-1022, 1023]\)</span>; the code <span class="math inline">\(0\)</span> is reserved for <span class="math inline">\(0\)</span> and the subnormals, and the code <span class="math inline">\(2047\)</span> for <code>Inf</code> and <code>NaN</code>.</p>
+<p><span class="math display">\[
+\newcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
+\begin{array}{rcccl}
+&amp; \text{sign} &amp; \text{exponent} &amp; \text{mantissa} &amp; \text{decimal value}\\[6pt]
+1 &amp; \underbrace{\bx{0}}_{1\text{ bit}}
+  &amp; \underbrace{\bx{0}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}}_{11\text{ bits}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}_{52\text{ bits}}
+  &amp; = 1\\[16pt]
+1+\epsilon &amp; \underbrace{\bx{0}}_{1\text{ bit}}
+  &amp; \underbrace{\bx{0}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}}_{11\text{ bits}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{1}}_{52\text{ bits}}
+  &amp; = 1+2^{-52} \approx 1 + 2.220446\times10^{-16}\\[16pt]
+\text{largest} &amp; \underbrace{\bx{0}}_{1\text{ bit}}
+  &amp; \underbrace{\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{1}\bx{0}}_{11\text{ bits}}
+  &amp; \underbrace{\bx{1}\bx{1}\bx{1}\cdots\bx{1}\bx{1}\bx{1}}_{52\text{ bits}}
+  &amp; = (2-2^{-52})\times2^{1023} \approx 1.797693\times10^{308}\\[16pt]
+\text{smallest normal} &amp; \underbrace{\bx{0}}_{1\text{ bit}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{1}}_{11\text{ bits}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}_{52\text{ bits}}
+  &amp; = 2^{-1022} \approx 2.225074\times10^{-308}\\[16pt]
+\text{smallest positive} &amp; \underbrace{\bx{0}}_{1\text{ bit}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}}_{11\text{ bits}}
+  &amp; \underbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{1}}_{52\text{ bits}}
+  &amp; = 2^{-1074} \approx 4.940656\times10^{-324}
+\end{array}
+\]</span></p>
+<p>The rows <span class="math inline">\(1\)</span> and <span class="math inline">\(1+\epsilon\)</span> differ only in the last mantissa box, which is worth <span class="math inline">\(2^{-52}=\epsilon\)</span>. The largest double uses the largest usable exponent code <span class="math inline">\(2046\)</span> and a full mantissa. The smallest normal double uses the smallest usable code <span class="math inline">\(1\)</span> and mantissa <span class="math inline">\(1.0\)</span>; the smallest positive (subnormal) double uses code <span class="math inline">\(0\)</span>, which drops the implicit leading <span class="math inline">\(1\)</span>, and only the last mantissa box.</p>
+<ul>
+<li>The <strong>machine epsilon</strong> <span class="math inline">\(\epsilon=2^{-52}\)</span> is the gap next to <span class="math inline">\(1\)</span>, set by the last mantissa bit. Since the gap in <span class="math inline">\([2^e, 2^{e+1})\)</span> is <span class="math inline">\(2^{e-52}\)</span>, <span class="math inline">\(\epsilon\)</span> is also the relative resolution at every magnitude: a double carries about <span class="math inline">\(15\)</span>–<span class="math inline">\(16\)</span> significant decimal digits.</li>
+<li>The <strong>largest double</strong> has all mantissa bits and all usable exponent bits set to <span class="math inline">\(1\)</span>. Results beyond it overflow to <code>Inf</code>.</li>
+<li>The <strong>smallest normal double</strong> has the smallest usable exponent and mantissa <span class="math inline">\(1.0\)</span>. Below it, subnormals fill the gap down to <span class="math inline">\(2^{-1074}\)</span> with evenly spaced but less precise values; results below half of <span class="math inline">\(2^{-1074}\)</span> underflow to <span class="math inline">\(0\)</span>.</li>
+</ul>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">quantity</th>
+<th style="text-align: left;">value</th>
+<th style="text-align: left;">R</th>
+<th style="text-align: left;">relevance in computing</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">machine epsilon</td>
+<td style="text-align: left;"><span class="math inline">\(2^{-52}\approx2.2\times10^{-16}\)</span></td>
+<td style="text-align: left;"><code>.Machine$double.eps</code></td>
+<td style="text-align: left;">Doubles cannot be compared exactly (<code>0.1 + 0.2 != 0.3</code>); convergence and equality tests use tolerances such as <span class="math inline">\(\sqrt{\epsilon}\approx1.5\times10^{-8}\)</span> (<code>all.equal</code>), which is also the usual step size for numerical derivatives</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">largest double</td>
+<td style="text-align: left;"><span class="math inline">\(\approx1.80\times10^{308}\)</span></td>
+<td style="text-align: left;"><code>.Machine$double.xmax</code></td>
+<td style="text-align: left;"><code>exp(x)</code> overflows for <span class="math inline">\(x&gt;709.8\)</span>; products of large terms such as likelihood ratios or <span class="math inline">\(n!\)</span> must be computed on the log scale</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">smallest normal double</td>
+<td style="text-align: left;"><span class="math inline">\(2^{-1022}\approx2.2\times10^{-308}\)</span></td>
+<td style="text-align: left;"><code>.Machine$double.xmin</code></td>
+<td style="text-align: left;"><code>exp(x)</code> leaves the normal range for <span class="math inline">\(x&lt;-708.4\)</span>; a product of many densities falls here, which is why likelihoods are computed as log-likelihoods and sums of exponentials via log-sum-exp</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">smallest subnormal double</td>
+<td style="text-align: left;"><span class="math inline">\(2^{-1074}\approx4.9\times10^{-324}\)</span></td>
+<td style="text-align: left;"><code>2^-1074</code></td>
+<td style="text-align: left;">Last value before underflow to <span class="math inline">\(0\)</span>; subnormals keep few significant bits, so ratios of such values are unreliable</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">largest consecutive integer</td>
+<td style="text-align: left;"><span class="math inline">\(2^{53}\approx9.0\times10^{15}\)</span></td>
+<td style="text-align: left;"><code>2^53</code></td>
+<td style="text-align: left;">Beyond it the gap exceeds <span class="math inline">\(1\)</span> and integers are skipped; R’s <code>integer</code> type stops even earlier at <span class="math inline">\(2^{31}-1\)</span>, so larger identifiers must be stored as character strings or <code>bit64::integer64</code></td>
+</tr>
+</tbody>
+</table>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">eps =</span> .Machine<span class="sc">$</span>double.eps, <span class="at">xmax =</span> .Machine<span class="sc">$</span>double.xmax,</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">xmin =</span> .Machine<span class="sc">$</span>double.xmin, <span class="at">subnormal =</span> <span class="dv">2</span><span class="sc">^-</span><span class="dv">1074</span>, <span class="at">maxint =</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>          eps          xmax          xmin     subnormal        maxint 
+ 2.220446e-16 1.797693e+308 2.225074e-308 4.940656e-324  9.007199e+15 </code></pre>
 </div>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="do">## largest double precision floating-point number</span></span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>.Machine<span class="sc">$</span>double.xmax</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^-</span><span class="dv">52</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 1.797693134862315708145e+308</code></pre>
+<pre><code>[1] FALSE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">1023</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^-</span><span class="dv">53</span> <span class="sc">==</span> <span class="dv">1</span>                       <span class="co"># half an epsilon is lost</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 8.988465674311579538647e+307</code></pre>
+<pre><code>[1] TRUE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">1024</span>          <span class="co"># overflows to Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fl">0.1</span> <span class="sc">+</span> <span class="fl">0.2</span> <span class="sc">==</span> <span class="fl">0.3</span>                     <span class="co"># rounding error</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] FALSE</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">isTRUE</span>(<span class="fu">all.equal</span>(<span class="fl">0.1</span> <span class="sc">+</span> <span class="fl">0.2</span>, <span class="fl">0.3</span>))    <span class="co"># test with tolerance sqrt(eps)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] TRUE</code></pre>
+</div>
+</div>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span> <span class="sc">*</span> .Machine<span class="sc">$</span>double.xmax             <span class="co"># overflow: Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="do">## smallest double precision floating-point numbers</span></span>
-<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>.Machine<span class="sc">$</span>double.xmin   <span class="co"># smallest with full precision, 2^-1022</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="dv">710</span>)                             <span class="co"># overflow: Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 2.22507385850720138309e-308</code></pre>
+<pre><code>[1] Inf</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">1074</span>)              <span class="co"># smallest subnormal</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 4.940656458412465441766e-324</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">1075</span>)              <span class="co"># underflows to 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^-</span><span class="dv">1075</span>                              <span class="co"># underflow: 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0</code></pre>
 </div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prod</span>(<span class="fu">rep</span>(<span class="fl">0.01</span>, <span class="dv">200</span>))                 <span class="co"># 1e-400 underflows to 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0</code></pre>
 </div>
-<p>Overflow is loud: <code>Inf</code> propagates and usually produces <code>NaN</code> or an error somewhere downstream. Underflow is quiet: a probability that underflows to <span class="math inline">\(0\)</span> simply produces <code>log(0) = -Inf</code> or a likelihood ratio of <code>0/0</code>, and the code may run to completion with a wrong answer.</p>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">log</span>(<span class="fu">rep</span>(<span class="fl">0.01</span>, <span class="dv">200</span>)))             <span class="co"># the log scale is safe</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] -921.034</code></pre>
+</div>
+</div>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">52</span> <span class="sc">+</span> <span class="dv">1</span> <span class="sc">==</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">52</span>                     <span class="co"># gap 1: still distinguishable</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] FALSE</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">1</span> <span class="sc">==</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span>                     <span class="co"># gap 2: the +1 is lost</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] TRUE</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="fu">format</span>(<span class="fu">c</span>(<span class="dv">2</span><span class="sc">^</span><span class="dv">53</span>, <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span><span class="sc">^</span><span class="dv">53</span> <span class="sc">+</span> <span class="dv">2</span>), <span class="at">digits =</span> <span class="dv">17</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] "9007199254740992" "9007199254740992" "9007199254740994"</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>.Machine<span class="sc">$</span>integer.max                 <span class="co"># 2^31 - 1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2147483647</code></pre>
+</div>
+</div>
+</section>
 </section>
 </section>
 <section id="rounding-error-and-methods-for-preventing-it" class="level2" data-number="3.2">
@@ -1101,7 +1784,7 @@ The red digit does not fit and is rounded away: the stored result is exactly <sp
 <img src="unit03_comparith_files/figure-html/fig-large-plus-small-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="672">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-large-plus-small-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3.3: Roundoff error when adding a large and a small number
+Figure&nbsp;3.2: Roundoff error when adding a large and a small number
 </figcaption>
 </figure>
 </div>
@@ -1112,97 +1795,97 @@ Figure&nbsp;3.3: Roundoff error when adding a large and a small number
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the target value</span></span>
-<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>f0 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">40</span>)</span>
-<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>f0</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the target value</span></span>
+<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>f0 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">40</span>)</span>
+<span id="cb47-3"><a href="#cb47-3" aria-hidden="true" tabindex="-1"></a>f0</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.000000000000909494702</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="do">## adding 2^-52 (one epsilon) 2^12 times works: each addition changes the sum</span></span>
-<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>f1 <span class="ot">&lt;-</span> <span class="dv">1</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">12</span>) { f1 <span class="ot">&lt;-</span> f1 <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
-<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>f1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a><span class="do">## adding 2^-52 (one epsilon) 2^12 times works: each addition changes the sum</span></span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>f1 <span class="ot">&lt;-</span> <span class="dv">1</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">12</span>) { f1 <span class="ot">&lt;-</span> f1 <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>f1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.000000000000909494702</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a><span class="do">## adding 2^-53 (half an epsilon) 2^13 times fails: 1 + 2^-53 rounds to 1 every time</span></span>
-<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>f2 <span class="ot">&lt;-</span> <span class="dv">1</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">13</span>) { f2 <span class="ot">&lt;-</span> f2 <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">53</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
-<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>f2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="do">## adding 2^-53 (half an epsilon) 2^13 times fails: 1 + 2^-53 rounds to 1 every time</span></span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>f2 <span class="ot">&lt;-</span> <span class="dv">1</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">13</span>) { f2 <span class="ot">&lt;-</span> f2 <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">53</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>f2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a><span class="do">## this difference is not due to number display in R</span></span>
-<span id="cb47-2"><a href="#cb47-2" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="do">## this difference is not due to number display in R</span></span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f1</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] TRUE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f2</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] FALSE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb51"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="do">## R's built-in sum() uses pairwise summation and extended precision</span></span>
-<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>f3 <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">53</span>), <span class="dv">2</span><span class="sc">^</span><span class="dv">13</span>))); f3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a><span class="do">## R's built-in sum() uses pairwise summation and extended precision</span></span>
+<span id="cb57-2"><a href="#cb57-2" aria-hidden="true" tabindex="-1"></a>f3 <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">53</span>), <span class="dv">2</span><span class="sc">^</span><span class="dv">13</span>))); f3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a>f1 <span class="sc">==</span> f3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a>f1 <span class="sc">==</span> f3</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] FALSE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a>f4 <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">54</span>), <span class="dv">2</span><span class="sc">^</span><span class="dv">14</span>))); f4</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb61"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>f4 <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">54</span>), <span class="dv">2</span><span class="sc">^</span><span class="dv">14</span>))); f4</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href="#cb57-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f4</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f4</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] FALSE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the fix: accumulate the small numbers first, then add to 1</span></span>
-<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a>f6s <span class="ot">&lt;-</span> <span class="dv">0</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">14</span>) { f6s <span class="ot">&lt;-</span> f6s <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">54</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
-<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a>f6s</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the fix: accumulate the small numbers first, then add to 1</span></span>
+<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>f6s <span class="ot">&lt;-</span> <span class="dv">0</span>; i <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> (i <span class="sc">&lt;=</span> <span class="dv">2</span><span class="sc">^</span><span class="dv">14</span>) { f6s <span class="ot">&lt;-</span> f6s <span class="sc">+</span> <span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">54</span>); i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span> }</span>
+<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a>f6s</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 9.09494701772928237915e-13</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb61"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb61-1"><a href="#cb61-1" aria-hidden="true" tabindex="-1"></a>f6 <span class="ot">&lt;-</span> f6s <span class="sc">+</span> <span class="dv">1</span>; f6</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a>f6 <span class="ot">&lt;-</span> f6s <span class="sc">+</span> <span class="dv">1</span>; f6</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.000000000000909494702</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb63-1"><a href="#cb63-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f6</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a>f0 <span class="sc">==</span> f6</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] TRUE</code></pre>
@@ -1218,20 +1901,20 @@ Figure&nbsp;3.3: Roundoff error when adding a large and a small number
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="fl">1e-16</span>, <span class="fl">1e4</span>))                 <span class="co"># exact sum is 1 + 1e-12</span></span>
-<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a>naive_sum <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { s <span class="ot">&lt;-</span> <span class="dv">0</span>; <span class="cf">for</span> (v <span class="cf">in</span> x) s <span class="ot">&lt;-</span> s <span class="sc">+</span> v; s }</span>
-<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a>kahan_sum <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
-<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a>  s <span class="ot">&lt;-</span> <span class="dv">0</span>; c <span class="ot">&lt;-</span> <span class="dv">0</span>                            <span class="co"># c holds the running roundoff error</span></span>
-<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (v <span class="cf">in</span> x) { y <span class="ot">&lt;-</span> v <span class="sc">-</span> c; t <span class="ot">&lt;-</span> s <span class="sc">+</span> y; c <span class="ot">&lt;-</span> (t <span class="sc">-</span> s) <span class="sc">-</span> y; s <span class="ot">&lt;-</span> t }</span>
-<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a>  s }</span>
-<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive   =</span> <span class="fu">naive_sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
-<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">sorted  =</span> <span class="fu">naive_sum</span>(<span class="fu">sort</span>(x)) <span class="sc">-</span> <span class="dv">1</span>,</span>
-<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">kahan   =</span> <span class="fu">kahan_sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
-<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">builtin =</span> <span class="fu">sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
-<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">exact   =</span> <span class="fl">1e-12</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb71"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">rep</span>(<span class="fl">1e-16</span>, <span class="fl">1e4</span>))                 <span class="co"># exact sum is 1 + 1e-12</span></span>
+<span id="cb71-2"><a href="#cb71-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-3"><a href="#cb71-3" aria-hidden="true" tabindex="-1"></a>naive_sum <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { s <span class="ot">&lt;-</span> <span class="dv">0</span>; <span class="cf">for</span> (v <span class="cf">in</span> x) s <span class="ot">&lt;-</span> s <span class="sc">+</span> v; s }</span>
+<span id="cb71-4"><a href="#cb71-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-5"><a href="#cb71-5" aria-hidden="true" tabindex="-1"></a>kahan_sum <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb71-6"><a href="#cb71-6" aria-hidden="true" tabindex="-1"></a>  s <span class="ot">&lt;-</span> <span class="dv">0</span>; c <span class="ot">&lt;-</span> <span class="dv">0</span>                            <span class="co"># c holds the running roundoff error</span></span>
+<span id="cb71-7"><a href="#cb71-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (v <span class="cf">in</span> x) { y <span class="ot">&lt;-</span> v <span class="sc">-</span> c; t <span class="ot">&lt;-</span> s <span class="sc">+</span> y; c <span class="ot">&lt;-</span> (t <span class="sc">-</span> s) <span class="sc">-</span> y; s <span class="ot">&lt;-</span> t }</span>
+<span id="cb71-8"><a href="#cb71-8" aria-hidden="true" tabindex="-1"></a>  s }</span>
+<span id="cb71-9"><a href="#cb71-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb71-10"><a href="#cb71-10" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive   =</span> <span class="fu">naive_sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb71-11"><a href="#cb71-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">sorted  =</span> <span class="fu">naive_sum</span>(<span class="fu">sort</span>(x)) <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb71-12"><a href="#cb71-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">kahan   =</span> <span class="fu">kahan_sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb71-13"><a href="#cb71-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">builtin =</span> <span class="fu">sum</span>(x) <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb71-14"><a href="#cb71-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">exact   =</span> <span class="fl">1e-12</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                      naive                      sorted 
@@ -1247,42 +1930,42 @@ Figure&nbsp;3.3: Roundoff error when adding a large and a small number
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">log</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>))               <span class="co"># base e: about -36</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb73"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="fu">log</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>))               <span class="co"># base e: about -36</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] -36.04365338911715355152</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">35</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb75"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">35</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.000000000000000666134</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb71"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">37</span>)               <span class="co"># evaluates to exactly 1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb77"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">37</span>)               <span class="co"># evaluates to exactly 1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb73"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb73-1"><a href="#cb73-1" aria-hidden="true" tabindex="-1"></a><span class="fu">log</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>), <span class="at">base =</span> <span class="dv">10</span>)    <span class="co"># base 10: about -15.7</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb79"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="fu">log</span>(<span class="dv">2</span><span class="sc">^</span>(<span class="sc">-</span><span class="dv">52</span>), <span class="at">base =</span> <span class="dv">10</span>)    <span class="co"># base 10: about -15.7</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] -15.65355977452702163077</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb75"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fl">1e-15</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb81"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fl">1e-15</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] FALSE</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb77"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb77-1"><a href="#cb77-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fl">1e-16</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb83"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a><span class="dv">1</span> <span class="sc">+</span> <span class="fl">1e-16</span> <span class="sc">==</span> <span class="dv">1</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] TRUE</code></pre>
@@ -1324,24 +2007,24 @@ e^x \approx \sum_{k=0}^{K}\frac{x^k}{k!} = 1 + x + \frac{x^2}{2!} + \frac{x^3}{3
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb79"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(knitr)</span>
-<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb79-3"><a href="#cb79-3" aria-hidden="true" tabindex="-1"></a>fexp <span class="ot">&lt;-</span> <span class="cf">function</span>(x, <span class="at">debug =</span> <span class="cn">FALSE</span>) {</span>
-<span id="cb79-4"><a href="#cb79-4" aria-hidden="true" tabindex="-1"></a>  i <span class="ot">&lt;-</span> <span class="dv">0</span>; expx <span class="ot">&lt;-</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb79-5"><a href="#cb79-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (debug) debug_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb79-6"><a href="#cb79-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> (<span class="fu">abs</span>(u) <span class="sc">&gt;</span> <span class="fl">1e-20</span> <span class="sc">*</span> <span class="fu">abs</span>(expx)) {</span>
-<span id="cb79-7"><a href="#cb79-7" aria-hidden="true" tabindex="-1"></a>    i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span></span>
-<span id="cb79-8"><a href="#cb79-8" aria-hidden="true" tabindex="-1"></a>    u <span class="ot">&lt;-</span> u <span class="sc">*</span> x <span class="sc">/</span> i</span>
-<span id="cb79-9"><a href="#cb79-9" aria-hidden="true" tabindex="-1"></a>    expx <span class="ot">&lt;-</span> expx <span class="sc">+</span> u</span>
-<span id="cb79-10"><a href="#cb79-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (debug) debug_list[[i]] <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">Step =</span> i, <span class="at">Term_u =</span> u, <span class="at">exp_x =</span> expx)</span>
-<span id="cb79-11"><a href="#cb79-11" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb79-12"><a href="#cb79-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (debug) <span class="fu">return</span>(<span class="fu">do.call</span>(rbind, debug_list))</span>
-<span id="cb79-13"><a href="#cb79-13" aria-hidden="true" tabindex="-1"></a>  expx</span>
-<span id="cb79-14"><a href="#cb79-14" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb79-15"><a href="#cb79-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb79-16"><a href="#cb79-16" aria-hidden="true" tabindex="-1"></a>test_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">60</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="sc">-</span><span class="dv">50</span>)</span>
-<span id="cb79-17"><a href="#cb79-17" aria-hidden="true" tabindex="-1"></a>res1 <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> test_vals, <span class="at">Built_in_Exp =</span> <span class="fu">exp</span>(test_vals), <span class="at">Taylor_fexp =</span> <span class="fu">sapply</span>(test_vals, fexp))</span>
-<span id="cb79-18"><a href="#cb79-18" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res1, <span class="at">caption =</span> <span class="st">"Built-in exp() versus the naive Taylor series fexp()"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb85"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(knitr)</span>
+<span id="cb85-2"><a href="#cb85-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-3"><a href="#cb85-3" aria-hidden="true" tabindex="-1"></a>fexp <span class="ot">&lt;-</span> <span class="cf">function</span>(x, <span class="at">debug =</span> <span class="cn">FALSE</span>) {</span>
+<span id="cb85-4"><a href="#cb85-4" aria-hidden="true" tabindex="-1"></a>  i <span class="ot">&lt;-</span> <span class="dv">0</span>; expx <span class="ot">&lt;-</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb85-5"><a href="#cb85-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (debug) debug_list <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
+<span id="cb85-6"><a href="#cb85-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> (<span class="fu">abs</span>(u) <span class="sc">&gt;</span> <span class="fl">1e-20</span> <span class="sc">*</span> <span class="fu">abs</span>(expx)) {</span>
+<span id="cb85-7"><a href="#cb85-7" aria-hidden="true" tabindex="-1"></a>    i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb85-8"><a href="#cb85-8" aria-hidden="true" tabindex="-1"></a>    u <span class="ot">&lt;-</span> u <span class="sc">*</span> x <span class="sc">/</span> i</span>
+<span id="cb85-9"><a href="#cb85-9" aria-hidden="true" tabindex="-1"></a>    expx <span class="ot">&lt;-</span> expx <span class="sc">+</span> u</span>
+<span id="cb85-10"><a href="#cb85-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (debug) debug_list[[i]] <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">Step =</span> i, <span class="at">Term_u =</span> u, <span class="at">exp_x =</span> expx)</span>
+<span id="cb85-11"><a href="#cb85-11" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb85-12"><a href="#cb85-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (debug) <span class="fu">return</span>(<span class="fu">do.call</span>(rbind, debug_list))</span>
+<span id="cb85-13"><a href="#cb85-13" aria-hidden="true" tabindex="-1"></a>  expx</span>
+<span id="cb85-14"><a href="#cb85-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb85-15"><a href="#cb85-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb85-16"><a href="#cb85-16" aria-hidden="true" tabindex="-1"></a>test_vals <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">60</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="sc">-</span><span class="dv">50</span>)</span>
+<span id="cb85-17"><a href="#cb85-17" aria-hidden="true" tabindex="-1"></a>res1 <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> test_vals, <span class="at">Built_in_Exp =</span> <span class="fu">exp</span>(test_vals), <span class="at">Taylor_fexp =</span> <span class="fu">sapply</span>(test_vals, fexp))</span>
+<span id="cb85-18"><a href="#cb85-18" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res1, <span class="at">caption =</span> <span class="st">"Built-in exp() versus the naive Taylor series fexp()"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -1397,12 +2080,12 @@ e^x \approx \sum_{k=0}^{K}\frac{x^k}{k!} = 1 + x + \frac{x^2}{2!} + \frac{x^3}{3
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a>debug_matrix <span class="ot">&lt;-</span> <span class="fu">fexp</span>(<span class="sc">-</span><span class="dv">50</span>, <span class="at">debug =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>debug_summary <span class="ot">&lt;-</span> <span class="fu">rbind</span>(</span>
-<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>(debug_matrix, <span class="dv">10</span>),</span>
-<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="at">nrow =</span> <span class="dv">1</span>, <span class="at">ncol =</span> <span class="dv">3</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="st">"..."</span>, <span class="fu">colnames</span>(debug_matrix))),</span>
-<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tail</span>(debug_matrix, <span class="dv">10</span>))</span>
-<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(debug_summary, <span class="at">caption =</span> <span class="st">"Debug trace for fexp(-50) showing catastrophic cancellation"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb86"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a>debug_matrix <span class="ot">&lt;-</span> <span class="fu">fexp</span>(<span class="sc">-</span><span class="dv">50</span>, <span class="at">debug =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb86-2"><a href="#cb86-2" aria-hidden="true" tabindex="-1"></a>debug_summary <span class="ot">&lt;-</span> <span class="fu">rbind</span>(</span>
+<span id="cb86-3"><a href="#cb86-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>(debug_matrix, <span class="dv">10</span>),</span>
+<span id="cb86-4"><a href="#cb86-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="at">nrow =</span> <span class="dv">1</span>, <span class="at">ncol =</span> <span class="dv">3</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="st">"..."</span>, <span class="fu">colnames</span>(debug_matrix))),</span>
+<span id="cb86-5"><a href="#cb86-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tail</span>(debug_matrix, <span class="dv">10</span>))</span>
+<span id="cb86-6"><a href="#cb86-6" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(debug_summary, <span class="at">caption =</span> <span class="st">"Debug trace for fexp(-50) showing catastrophic cancellation"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -1559,15 +2242,15 @@ e^{-x} = \frac{1}{e^{x}}, \qquad x &gt; 0 .
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb81"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a>fexp2 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
-<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a>  xa <span class="ot">&lt;-</span> <span class="fu">abs</span>(x); i <span class="ot">&lt;-</span> <span class="dv">0</span>; expx <span class="ot">&lt;-</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> <span class="dv">1</span></span>
-<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> (u <span class="sc">&gt;</span> <span class="fl">1e-20</span> <span class="sc">*</span> expx) { i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> u <span class="sc">*</span> xa <span class="sc">/</span> i; expx <span class="ot">&lt;-</span> expx <span class="sc">+</span> u }</span>
-<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (x <span class="sc">&gt;=</span> <span class="dv">0</span>) expx <span class="cf">else</span> <span class="dv">1</span> <span class="sc">/</span> expx</span>
-<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb81-7"><a href="#cb81-7" aria-hidden="true" tabindex="-1"></a>test_vals_neg <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">10</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="sc">-</span><span class="dv">50</span>)</span>
-<span id="cb81-8"><a href="#cb81-8" aria-hidden="true" tabindex="-1"></a>res2 <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> test_vals_neg, <span class="at">Built_in_Exp =</span> <span class="fu">exp</span>(test_vals_neg), <span class="at">Robust_fexp2 =</span> <span class="fu">sapply</span>(test_vals_neg, fexp2))</span>
-<span id="cb81-9"><a href="#cb81-9" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res2, <span class="at">caption =</span> <span class="st">"Robust fexp2() for negative arguments"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb87"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a>fexp2 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a>  xa <span class="ot">&lt;-</span> <span class="fu">abs</span>(x); i <span class="ot">&lt;-</span> <span class="dv">0</span>; expx <span class="ot">&lt;-</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> (u <span class="sc">&gt;</span> <span class="fl">1e-20</span> <span class="sc">*</span> expx) { i <span class="ot">&lt;-</span> i <span class="sc">+</span> <span class="dv">1</span>; u <span class="ot">&lt;-</span> u <span class="sc">*</span> xa <span class="sc">/</span> i; expx <span class="ot">&lt;-</span> expx <span class="sc">+</span> u }</span>
+<span id="cb87-4"><a href="#cb87-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (x <span class="sc">&gt;=</span> <span class="dv">0</span>) expx <span class="cf">else</span> <span class="dv">1</span> <span class="sc">/</span> expx</span>
+<span id="cb87-5"><a href="#cb87-5" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb87-6"><a href="#cb87-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-7"><a href="#cb87-7" aria-hidden="true" tabindex="-1"></a>test_vals_neg <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">10</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="sc">-</span><span class="dv">50</span>)</span>
+<span id="cb87-8"><a href="#cb87-8" aria-hidden="true" tabindex="-1"></a>res2 <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> test_vals_neg, <span class="at">Built_in_Exp =</span> <span class="fu">exp</span>(test_vals_neg), <span class="at">Robust_fexp2 =</span> <span class="fu">sapply</span>(test_vals_neg, fexp2))</span>
+<span id="cb87-9"><a href="#cb87-9" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res2, <span class="at">caption =</span> <span class="st">"Robust fexp2() for negative arguments"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -1604,8 +2287,8 @@ e^{-x} = \frac{1}{e^{x}}, \qquad x &gt; 0 .
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb82"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb82-1"><a href="#cb82-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fl">1e-10</span></span>
-<span id="cb82-2"><a href="#cb82-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">exp</span>(x) <span class="sc">-</span> <span class="dv">1</span>, <span class="at">expm1 =</span> <span class="fu">expm1</span>(x), <span class="at">series =</span> x <span class="sc">+</span> x<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb88"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fl">1e-10</span></span>
+<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">exp</span>(x) <span class="sc">-</span> <span class="dv">1</span>, <span class="at">expm1 =</span> <span class="fu">expm1</span>(x), <span class="at">series =</span> x <span class="sc">+</span> x<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                      naive                       expm1 
@@ -1615,8 +2298,8 @@ e^{-x} = \frac{1}{e^{x}}, \qquad x &gt; 0 .
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb84"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb84-1"><a href="#cb84-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fl">1e-20</span></span>
-<span id="cb84-2"><a href="#cb84-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">+</span> x), <span class="at">log1p =</span> <span class="fu">log1p</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb90"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fl">1e-20</span></span>
+<span id="cb90-2"><a href="#cb90-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">+</span> x), <span class="at">log1p =</span> <span class="fu">log1p</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                      naive                       log1p 
@@ -1706,32 +2389,32 @@ lost
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb86"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb86-1"><a href="#cb86-1" aria-hidden="true" tabindex="-1"></a><span class="do">## one-pass (computational) formula</span></span>
-<span id="cb86-2"><a href="#cb86-2" aria-hidden="true" tabindex="-1"></a>var1 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); (<span class="fu">sum</span>(x<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fu">sum</span>(x)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> n) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
-<span id="cb86-3"><a href="#cb86-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb86-4"><a href="#cb86-4" aria-hidden="true" tabindex="-1"></a><span class="do">## two-pass formula (centering on the mean)</span></span>
-<span id="cb86-5"><a href="#cb86-5" aria-hidden="true" tabindex="-1"></a>var2 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); <span class="fu">sum</span>((x <span class="sc">-</span> <span class="fu">mean</span>(x))<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
-<span id="cb86-6"><a href="#cb86-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb86-7"><a href="#cb86-7" aria-hidden="true" tabindex="-1"></a><span class="do">## small data works fine for both</span></span>
-<span id="cb86-8"><a href="#cb86-8" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>)</span>
-<span id="cb86-9"><a href="#cb86-9" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb92"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a><span class="do">## one-pass (computational) formula</span></span>
+<span id="cb92-2"><a href="#cb92-2" aria-hidden="true" tabindex="-1"></a>var1 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); (<span class="fu">sum</span>(x<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fu">sum</span>(x)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> n) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
+<span id="cb92-3"><a href="#cb92-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb92-4"><a href="#cb92-4" aria-hidden="true" tabindex="-1"></a><span class="do">## two-pass formula (centering on the mean)</span></span>
+<span id="cb92-5"><a href="#cb92-5" aria-hidden="true" tabindex="-1"></a>var2 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); <span class="fu">sum</span>((x <span class="sc">-</span> <span class="fu">mean</span>(x))<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
+<span id="cb92-6"><a href="#cb92-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb92-7"><a href="#cb92-7" aria-hidden="true" tabindex="-1"></a><span class="do">## small data works fine for both</span></span>
+<span id="cb92-8"><a href="#cb92-8" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>)</span>
+<span id="cb92-9"><a href="#cb92-9" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1 1 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb88"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb88-1"><a href="#cb88-1" aria-hidden="true" tabindex="-1"></a><span class="do">## a large shift exposes catastrophic cancellation in var1</span></span>
-<span id="cb88-2"><a href="#cb88-2" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e8</span></span>
-<span id="cb88-3"><a href="#cb88-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb94"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb94-1"><a href="#cb94-1" aria-hidden="true" tabindex="-1"></a><span class="do">## a large shift exposes catastrophic cancellation in var1</span></span>
+<span id="cb94-2"><a href="#cb94-2" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e8</span></span>
+<span id="cb94-3"><a href="#cb94-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0 1 1</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb90"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb90-1"><a href="#cb90-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e10</span></span>
-<span id="cb90-2"><a href="#cb90-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb96"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb96-1"><a href="#cb96-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e10</span></span>
+<span id="cb96-2"><a href="#cb96-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="fu">var1</span>(x), <span class="fu">var2</span>(x), <span class="fu">var</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] -32768      1      1</code></pre>
@@ -1741,9 +2424,9 @@ lost
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb92"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">10</span>)</span>
-<span id="cb92-2"><a href="#cb92-2" aria-hidden="true" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(M, <span class="cf">function</span>(m) { x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> m; <span class="fu">c</span>(<span class="at">M =</span> m, <span class="at">one_pass =</span> <span class="fu">var1</span>(x), <span class="at">two_pass =</span> <span class="fu">var2</span>(x)) }))</span>
-<span id="cb92-3"><a href="#cb92-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res, <span class="at">caption =</span> <span class="st">"One-pass versus two-pass variance as the data are shifted by M"</span>, <span class="at">digits =</span> <span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb98"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb98-1"><a href="#cb98-1" aria-hidden="true" tabindex="-1"></a>M <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">10</span>)</span>
+<span id="cb98-2"><a href="#cb98-2" aria-hidden="true" tabindex="-1"></a>res <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(M, <span class="cf">function</span>(m) { x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> m; <span class="fu">c</span>(<span class="at">M =</span> m, <span class="at">one_pass =</span> <span class="fu">var1</span>(x), <span class="at">two_pass =</span> <span class="fu">var2</span>(x)) }))</span>
+<span id="cb98-3"><a href="#cb98-3" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(res, <span class="at">caption =</span> <span class="st">"One-pass versus two-pass variance as the data are shifted by M"</span>, <span class="at">digits =</span> <span class="dv">6</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -1829,15 +2512,15 @@ lost
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb93"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a>var_shifted <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); d <span class="ot">&lt;-</span> x <span class="sc">-</span> x[<span class="dv">1</span>]; (<span class="fu">sum</span>(d<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fu">sum</span>(d)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> n) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
-<span id="cb93-2"><a href="#cb93-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb93-3"><a href="#cb93-3" aria-hidden="true" tabindex="-1"></a>var_welford <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
-<span id="cb93-4"><a href="#cb93-4" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;-</span> <span class="dv">0</span>; S <span class="ot">&lt;-</span> <span class="dv">0</span></span>
-<span id="cb93-5"><a href="#cb93-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_along</span>(x)) { m_old <span class="ot">&lt;-</span> m; m <span class="ot">&lt;-</span> m <span class="sc">+</span> (x[k] <span class="sc">-</span> m) <span class="sc">/</span> k; S <span class="ot">&lt;-</span> S <span class="sc">+</span> (x[k] <span class="sc">-</span> m_old) <span class="sc">*</span> (x[k] <span class="sc">-</span> m) }</span>
-<span id="cb93-6"><a href="#cb93-6" aria-hidden="true" tabindex="-1"></a>  S <span class="sc">/</span> (<span class="fu">length</span>(x) <span class="sc">-</span> <span class="dv">1</span>) }</span>
-<span id="cb93-7"><a href="#cb93-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb93-8"><a href="#cb93-8" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e10</span></span>
-<span id="cb93-9"><a href="#cb93-9" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">one_pass =</span> <span class="fu">var1</span>(x), <span class="at">shifted =</span> <span class="fu">var_shifted</span>(x), <span class="at">welford =</span> <span class="fu">var_welford</span>(x), <span class="at">two_pass =</span> <span class="fu">var2</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb99"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a>var_shifted <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); d <span class="ot">&lt;-</span> x <span class="sc">-</span> x[<span class="dv">1</span>]; (<span class="fu">sum</span>(d<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fu">sum</span>(d)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> n) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
+<span id="cb99-2"><a href="#cb99-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-3"><a href="#cb99-3" aria-hidden="true" tabindex="-1"></a>var_welford <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb99-4"><a href="#cb99-4" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;-</span> <span class="dv">0</span>; S <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb99-5"><a href="#cb99-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_along</span>(x)) { m_old <span class="ot">&lt;-</span> m; m <span class="ot">&lt;-</span> m <span class="sc">+</span> (x[k] <span class="sc">-</span> m) <span class="sc">/</span> k; S <span class="ot">&lt;-</span> S <span class="sc">+</span> (x[k] <span class="sc">-</span> m_old) <span class="sc">*</span> (x[k] <span class="sc">-</span> m) }</span>
+<span id="cb99-6"><a href="#cb99-6" aria-hidden="true" tabindex="-1"></a>  S <span class="sc">/</span> (<span class="fu">length</span>(x) <span class="sc">-</span> <span class="dv">1</span>) }</span>
+<span id="cb99-7"><a href="#cb99-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb99-8"><a href="#cb99-8" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>) <span class="sc">+</span> <span class="fl">1e10</span></span>
+<span id="cb99-9"><a href="#cb99-9" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">one_pass =</span> <span class="fu">var1</span>(x), <span class="at">shifted =</span> <span class="fu">var_shifted</span>(x), <span class="at">welford =</span> <span class="fu">var_welford</span>(x), <span class="at">two_pass =</span> <span class="fu">var2</span>(x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>one_pass  shifted  welford two_pass 
@@ -1897,12 +2580,12 @@ lost
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb95"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="fu">exp</span>(theta) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(theta))</span>
-<span id="cb95-2"><a href="#cb95-2" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>theta))</span>
-<span id="cb95-3"><a href="#cb95-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb95-4"><a href="#cb95-4" aria-hidden="true" tabindex="-1"></a><span class="do">## large positive theta breaks p1, works in p2</span></span>
-<span id="cb95-5"><a href="#cb95-5" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
-<span id="cb95-6"><a href="#cb95-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="fu">exp</span>(theta) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(theta))</span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>theta))</span>
+<span id="cb101-3"><a href="#cb101-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb101-4"><a href="#cb101-4" aria-hidden="true" tabindex="-1"></a><span class="do">## large positive theta breaks p1, works in p2</span></span>
+<span id="cb101-5"><a href="#cb101-5" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb101-6"><a href="#cb101-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code> p1  p2 
@@ -1910,9 +2593,9 @@ NaN   1 </code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb97"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb97-1"><a href="#cb97-1" aria-hidden="true" tabindex="-1"></a><span class="do">## large negative theta works for both</span></span>
-<span id="cb97-2"><a href="#cb97-2" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2000</span></span>
-<span id="cb97-3"><a href="#cb97-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="do">## large negative theta works for both</span></span>
+<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2000</span></span>
+<span id="cb103-3"><a href="#cb103-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>p1 p2 
@@ -1920,9 +2603,9 @@ NaN   1 </code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb99"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb99-1"><a href="#cb99-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the piecewise form is safe everywhere and keeps full precision in both tails</span></span>
-<span id="cb99-2"><a href="#cb99-2" aria-hidden="true" tabindex="-1"></a>sigmoid <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(x <span class="sc">&gt;=</span> <span class="dv">0</span>, <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>x)), <span class="fu">exp</span>(x) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(x)))</span>
-<span id="cb99-3"><a href="#cb99-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sigmoid</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">2000</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="dv">20</span>, <span class="dv">2000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the piecewise form is safe everywhere and keeps full precision in both tails</span></span>
+<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>sigmoid <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(x <span class="sc">&gt;=</span> <span class="dv">0</span>, <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>x)), <span class="fu">exp</span>(x) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(x)))</span>
+<span id="cb105-3"><a href="#cb105-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sigmoid</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">2000</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="dv">20</span>, <span class="dv">2000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0.000000000000000000000e+00 2.061153618190203325213e-09
@@ -1985,7 +2668,7 @@ NaN   1 </code></pre>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">factorial</span>(<span class="dv">1000</span>)), <span class="at">lfactorial =</span> <span class="fu">lfactorial</span>(<span class="dv">1000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">factorial</span>(<span class="dv">1000</span>)), <span class="at">lfactorial =</span> <span class="fu">lfactorial</span>(<span class="dv">1000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                  naive              lfactorial 
@@ -1993,7 +2676,7 @@ NaN   1 </code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">dnorm</span>(<span class="dv">40</span>)), <span class="at">dnorm_log =</span> <span class="fu">dnorm</span>(<span class="dv">40</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb109"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">dnorm</span>(<span class="dv">40</span>)), <span class="at">dnorm_log =</span> <span class="fu">dnorm</span>(<span class="dv">40</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                dnorm_log 
@@ -2001,7 +2684,7 @@ NaN   1 </code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)), <span class="at">stable =</span> <span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb111"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)), <span class="at">stable =</span> <span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                   stable 
@@ -2023,45 +2706,45 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="dv">800</span>; x <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_x); x          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb113"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="dv">800</span>; x <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_x); x          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb109"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a>log_y <span class="ot">&lt;-</span> <span class="dv">805</span>; y <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_y); y          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb115"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a>log_y <span class="ot">&lt;-</span> <span class="dv">805</span>; y <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_y); y          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb111"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a>x <span class="sc">/</span> y                                     <span class="co"># Inf/Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb117"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a>x <span class="sc">/</span> y                                     <span class="co"># Inf/Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] NaN</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb113"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>log_xovery <span class="ot">&lt;-</span> log_x <span class="sc">-</span> log_y               <span class="co"># subtracting logs is safe</span></span>
-<span id="cb113-2"><a href="#cb113-2" aria-hidden="true" tabindex="-1"></a>log_xovery</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb119"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a>log_xovery <span class="ot">&lt;-</span> log_x <span class="sc">-</span> log_y               <span class="co"># subtracting logs is safe</span></span>
+<span id="cb119-2"><a href="#cb119-2" aria-hidden="true" tabindex="-1"></a>log_xovery</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] -5</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb115"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_xovery)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb121"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_xovery)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0.006737946999085467000845</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb117"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="do">## likelihood versus log-likelihood for 2000 fair-coin tosses</span></span>
-<span id="cb117-2"><a href="#cb117-2" aria-hidden="true" tabindex="-1"></a>p <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fl">0.5</span>, <span class="dv">2000</span>)</span>
-<span id="cb117-3"><a href="#cb117-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">likelihood =</span> <span class="fu">prod</span>(p), <span class="at">log_likelihood =</span> <span class="fu">sum</span>(<span class="fu">log</span>(p)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb123"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="do">## likelihood versus log-likelihood for 2000 fair-coin tosses</span></span>
+<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a>p <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fl">0.5</span>, <span class="dv">2000</span>)</span>
+<span id="cb123-3"><a href="#cb123-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">likelihood =</span> <span class="fu">prod</span>(p), <span class="at">log_likelihood =</span> <span class="fu">sum</span>(<span class="fu">log</span>(p)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>             likelihood          log_likelihood 
@@ -2116,21 +2799,21 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb119"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x) {</span>
-<span id="cb119-2"><a href="#cb119-2" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
-<span id="cb119-3"><a href="#cb119-3" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x)))</span>
-<span id="cb119-4"><a href="#cb119-4" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb119-5"><a href="#cb119-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb119-6"><a href="#cb119-6" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would overflow directly</span></span>
-<span id="cb119-7"><a href="#cb119-7" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
-<span id="cb119-8"><a href="#cb119-8" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb125"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x) {</span>
+<span id="cb125-2"><a href="#cb125-2" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
+<span id="cb125-3"><a href="#cb125-3" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x)))</span>
+<span id="cb125-4"><a href="#cb125-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb125-5"><a href="#cb125-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb125-6"><a href="#cb125-6" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would overflow directly</span></span>
+<span id="cb125-7"><a href="#cb125-7" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
+<span id="cb125-8"><a href="#cb125-8" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf Inf Inf</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb121"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb127"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                 direct                     lse 
@@ -2138,16 +2821,16 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb123"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would underflow directly</span></span>
-<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
-<span id="cb123-3"><a href="#cb123-3" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb129"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would underflow directly</span></span>
+<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
+<span id="cb129-3"><a href="#cb129-3" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0 0 0</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb125"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb131"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                 direct                     lse 
@@ -2158,11 +2841,11 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb127"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fl">0.5</span>, <span class="dv">2</span>, <span class="dv">45</span>)                      <span class="co"># the last value is far from both means</span></span>
-<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">3</span>); w <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.6</span>, <span class="fl">0.4</span>)</span>
-<span id="cb127-3"><a href="#cb127-3" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">log</span>(w[<span class="dv">1</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">1</span>]) <span class="sc">+</span> w[<span class="dv">2</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">2</span>])))</span>
-<span id="cb127-4"><a href="#cb127-4" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">sapply</span>(y, <span class="cf">function</span>(yi) <span class="fu">log_sum_exp</span>(<span class="fu">log</span>(w) <span class="sc">+</span> <span class="fu">dnorm</span>(yi, mu, <span class="at">log =</span> <span class="cn">TRUE</span>))))</span>
-<span id="cb127-5"><a href="#cb127-5" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> naive, <span class="at">stable =</span> stable)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb133"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fl">0.5</span>, <span class="dv">2</span>, <span class="dv">45</span>)                      <span class="co"># the last value is far from both means</span></span>
+<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">3</span>); w <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.6</span>, <span class="fl">0.4</span>)</span>
+<span id="cb133-3"><a href="#cb133-3" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">log</span>(w[<span class="dv">1</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">1</span>]) <span class="sc">+</span> w[<span class="dv">2</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">2</span>])))</span>
+<span id="cb133-4"><a href="#cb133-4" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">sapply</span>(y, <span class="cf">function</span>(yi) <span class="fu">log_sum_exp</span>(<span class="fu">log</span>(w) <span class="sc">+</span> <span class="fu">dnorm</span>(yi, mu, <span class="at">log =</span> <span class="cn">TRUE</span>))))</span>
+<span id="cb133-5"><a href="#cb133-5" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> naive, <span class="at">stable =</span> stable)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                   stable 
@@ -2173,10 +2856,10 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb129"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1000</span>, <span class="dv">1001</span>, <span class="dv">1005</span>)</span>
-<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">exp</span>(x) <span class="sc">/</span> <span class="fu">sum</span>(<span class="fu">exp</span>(x)))</span>
-<span id="cb129-3"><a href="#cb129-3" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> x <span class="sc">-</span> <span class="fu">log_sum_exp</span>(x)</span>
-<span id="cb129-4"><a href="#cb129-4" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(naive, stable, <span class="at">probabilities =</span> <span class="fu">exp</span>(stable))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb135"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1000</span>, <span class="dv">1001</span>, <span class="dv">1005</span>)</span>
+<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">exp</span>(x) <span class="sc">/</span> <span class="fu">sum</span>(<span class="fu">exp</span>(x)))</span>
+<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> x <span class="sc">-</span> <span class="fu">log_sum_exp</span>(x)</span>
+<span id="cb135-4"><a href="#cb135-4" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(naive, stable, <span class="at">probabilities =</span> <span class="fu">exp</span>(stable))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                                     [,1]                      [,2]
@@ -2198,28 +2881,28 @@ probabilities  0.97555875494443089479546</code></pre>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb131"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a>log_minus_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x, log_y) {</span>
-<span id="cb131-2"><a href="#cb131-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (log_x <span class="sc">&lt;</span> log_y) <span class="fu">stop</span>(<span class="st">"the first argument must be the larger"</span>)</span>
-<span id="cb131-3"><a href="#cb131-3" aria-hidden="true" tabindex="-1"></a>  log_x <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_y <span class="sc">-</span> log_x))</span>
-<span id="cb131-4"><a href="#cb131-4" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb131-5"><a href="#cb131-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb131-6"><a href="#cb131-6" aria-hidden="true" tabindex="-1"></a><span class="fu">log_minus_exp</span>(<span class="dv">2020</span>, <span class="dv">2000</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb137"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb137-1"><a href="#cb137-1" aria-hidden="true" tabindex="-1"></a>log_minus_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x, log_y) {</span>
+<span id="cb137-2"><a href="#cb137-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (log_x <span class="sc">&lt;</span> log_y) <span class="fu">stop</span>(<span class="st">"the first argument must be the larger"</span>)</span>
+<span id="cb137-3"><a href="#cb137-3" aria-hidden="true" tabindex="-1"></a>  log_x <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_y <span class="sc">-</span> log_x))</span>
+<span id="cb137-4"><a href="#cb137-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb137-5"><a href="#cb137-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb137-6"><a href="#cb137-6" aria-hidden="true" tabindex="-1"></a><span class="fu">log_minus_exp</span>(<span class="dv">2020</span>, <span class="dv">2000</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 2019.999999997938857632</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb133"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="dv">2000</span>) <span class="sc">-</span> <span class="fu">exp</span>(<span class="dv">1999</span>)                       <span class="co"># direct subtraction: Inf - Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb139"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb139-1"><a href="#cb139-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="dv">2000</span>) <span class="sc">-</span> <span class="fu">exp</span>(<span class="dv">1999</span>)                       <span class="co"># direct subtraction: Inf - Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] NaN</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb135"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a><span class="do">## nearly equal arguments: log1p keeps the precision that log(1 - .) would lose</span></span>
-<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a>lx <span class="ot">&lt;-</span> <span class="dv">10</span>; ly <span class="ot">&lt;-</span> <span class="dv">10</span> <span class="sc">-</span> <span class="fl">1e-12</span></span>
-<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">with_log1p =</span> <span class="fu">log_minus_exp</span>(lx, ly), <span class="at">with_log =</span> lx <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(ly <span class="sc">-</span> lx)), <span class="at">exact =</span> <span class="fu">log</span>(<span class="fu">exp</span>(lx) <span class="sc">-</span> <span class="fu">exp</span>(ly)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb141"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb141-1"><a href="#cb141-1" aria-hidden="true" tabindex="-1"></a><span class="do">## nearly equal arguments: log1p keeps the precision that log(1 - .) would lose</span></span>
+<span id="cb141-2"><a href="#cb141-2" aria-hidden="true" tabindex="-1"></a>lx <span class="ot">&lt;-</span> <span class="dv">10</span>; ly <span class="ot">&lt;-</span> <span class="dv">10</span> <span class="sc">-</span> <span class="fl">1e-12</span></span>
+<span id="cb141-3"><a href="#cb141-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">with_log1p =</span> <span class="fu">log_minus_exp</span>(lx, ly), <span class="at">with_log =</span> lx <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(ly <span class="sc">-</span> lx)), <span class="at">exact =</span> <span class="fu">log</span>(<span class="fu">exp</span>(lx) <span class="sc">-</span> <span class="fu">exp</span>(ly)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>              with_log1p                 with_log                    exact 
