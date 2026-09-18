@@ -57,7 +57,9 @@ $$
 x = -\ln(1-U)
 $$
 
-## Shinylive  App: Inverse CDF Sampling
+## Shinylive App: Inverse CDF Sampling {#sec-inverse-cdf-app}
+
+The app below draws samples one step at a time (or continuously via **Play**), showing on the top panel how each uniform draw $u$ maps through the CDF to a sample $x = F^{-1}(u)$, and on the bottom panel how those draws accumulate into a histogram against the true $\text{Exp}(1)$ density.
 
 ```{shinylive-r}
 #| standalone: true
@@ -100,7 +102,7 @@ server <- function(input, output, session) {
 
   draw_step <- function() {
     u  <- runif(input$n)
-    xs <- -log(u) / lambda
+    xs <- -log(1 - u) / lambda
     rv$u_last <- u
     rv$x_last <- xs
     rv$x      <- c(rv$x, xs)
@@ -150,6 +152,27 @@ server <- function(input, output, session) {
       rug(x[x <= xmax], side = 1, col = "firebrick", lwd = 2)
       points(rep(0, length(u)), u, pch = 16, col = "grey35", cex = 0.8)
     }
+  })
+
+  output$histPlot <- renderPlot({
+    par(mar = c(4, 4, 2.5, 1))
+    if (length(rv$x) < 2) {
+      plot.new()
+      title(main = "Draw some samples to see the histogram")
+      return(invisible())
+    }
+    hist(rv$x, breaks = 30, freq = FALSE, col = "grey85", border = "white",
+         xlim = c(0, xmax), xlab = "x", ylab = "density",
+         main = "Accumulated draws vs. the true Exp(1) density")
+    curve(dexp(x, lambda), add = TRUE, col = "steelblue", lwd = 2.5)
+    abline(v = mean(rv$x), col = "firebrick", lwd = 2, lty = 2)
+    legend("topright", bty = "n", lwd = 2, lty = c(1, 2),
+           col = c("steelblue", "firebrick"),
+           legend = c("true density", "sample mean"))
+  })
+}
+
+shinyApp(ui, server)
 ```
 
 

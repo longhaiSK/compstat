@@ -7,7 +7,7 @@ function Pandoc(doc)
       name = "custombook",
       version = "1.0.0",
       stylesheets = { "bookstyles.css" },
-      scripts = { "num_eq.js", "merge-toc.js" }
+      scripts = { "num_eq.js"--[[, "merge-toc.js"]] }
     })
   end
   return doc
