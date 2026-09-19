@@ -110,7 +110,288 @@ log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
 ```
 
-## Example 1: Tail Probability of a Student-$t$ Distribution {#sec-ars-tnorm}
+## Example 1: Same Support, but a Mode Is Missed
+
+$$
+f(\theta) = \tfrac12\varphi(\theta+d) + \tfrac12\varphi(\theta-d), \qquad
+g_{\sigma}(\theta) = \tfrac{1}{\sigma}\varphi\!\left(\tfrac{\theta+d}{\sigma}\right),
+\qquad d = 5 .
+$$
+
+Both are positive on all of $\mathbb{R}$, so the support requirement holds. But
+for $\sigma$ of order one the proposal concentrates around $-d$ and never
+produces draws near the second mode at $+d$. For $\theta$ near $-d$ and
+$\sigma=1$,
+$$
+w(\theta) = \frac{f(\theta)}{g_{1}(\theta)}
+          = \tfrac12 + \tfrac12\,\frac{\varphi(\theta-d)}{\varphi(\theta+d)}
+          = \tfrac12 + \tfrac12 e^{2d\theta} \;\approx\; \tfrac12 ,
+$$
+so every observed weight is nearly equal, $\tilde w_{i}\approx 1/S$ and
+$S_{\text{eff}}\approx S$, while $\widehat{C_{f}/C_{g}}\approx\tfrac12$ against a
+truth of $1$ and $\widehat{E}_{f}(\theta)\approx -d$ against a truth of $0$. The
+draws that would expose the error carry $w\approx\tfrac12 e^{2d\theta}\gg 1$ near
+$\theta=+d$ and have probability $\Phi(-2d)\approx 10^{-23}$ under $g_{1}$: they
+never appear.
+
+Both panels of @fig-missed-mode are drawn on the same $\theta$ axis. The lower
+panel plots the *normalized weight function* $\theta\mapsto w(\theta)/\sum_{j}w_{j}$,
+whose values at the sampled points are exactly the plotted stems, so the sample
+can be seen sitting on the flat part of a function that rises without bound to
+the right.
+
+```{r}
+#| label: fig-missed-mode
+#| fig-cap: "Top: the bimodal target f (firebrick) against the proposal g (steelblue)
+#|   on a log density scale, with a rug of S = 2000 draws. Bottom: normalized
+#|   importance weights at the sampled points, with the normalized weight function
+#|   through them. Every observed weight is essentially 1/2, so S_eff is close to
+#|   its nominal value while the estimate of C<sub>f</sub>/C<sub>g</sub> is half the truth."
+#| fig-width: 9
+#| fig-height: 7
+d <- 5; sg <- 1; S <- 2000
+set.seed(11)
+
+## log of the mixture density, computed stably
+log_f <- function(th, d) {
+    a <- dnorm(th, -d, log = TRUE); b <- dnorm(th, d, log = TRUE)
+    m <- pmax(a, b)
+    m + log(exp(a - m) + exp(b - m)) - log(2)
+}
+
+## exact log E_g(w^2) for this pair; infinite when 2 - 1/sigma^2 <= 0,
+## i.e. when sigma <= 1/sqrt(2).  Since E_g(w) = 1 exactly, the ideal
+## effective fraction is 1 / E_g(w^2).
+log_Ew2 <- function(d, sg) {
+    A <- 2 - 1 / sg^2
+    if (A <= 0) return(Inf)
+    lterm <- function(a, b) {
+        m <- (a + b) / 2
+        B <- 2 * m + d / sg^2
+        C <- 2 * m^2 - d^2 / sg^2
+        dnorm(a, b, sqrt(2), log = TRUE) + log(sg) + 0.5 * log(2) +
+            0.5 * log(2 * pi / A) - 0.5 * (C - B^2 / A)
+    }
+    lv <- c(lterm(-d, -d), log(2) + lterm(-d, d), lterm(d, d))
+    m  <- max(lv)
+    m + log(sum(exp(lv - m))) - log(4)
+}
+
+## ---- sample and weight ------------------------------------------------
+th   <- rnorm(S, -d, sg)
+logw <- log_f(th, d) - dnorm(th, -d, sg, log = TRUE)
+mx   <- max(logw); v <- exp(logw - mx)
+Chat <- mean(v) * exp(mx)                       # estimate of C_f / C_g, truth 1
+se   <- sd(v) / sqrt(S) * exp(mx)
+wn   <- v / sum(v)                              # normalized weights
+ess  <- 1 / sum(wn^2)
+Ehat <- sum(wn * th)                            # estimate of E_f(theta), truth 0
+ess_x <- 100 * exp(-log_Ew2(d, sg))             # exact effective fraction
+
+## ---- shared axis ------------------------------------------------------
+xr <- range(c(th, -d - 4, d + 4))
+xs <- seq(xr[1], xr[2], length.out = 1000)
+fx <- exp(log_f(xs, d)); gx <- dnorm(xs, -d, sg)
+lwc <- log_f(xs, d) - dnorm(xs, -d, sg, log = TRUE) - (mx + log(sum(v)))
+
+layout(matrix(1:2, 2), heights = c(3, 2))
+
+## ---- top panel: the two densities ------------------------------------
+par(mar = c(0.4, 5, 3, 1))
+yl <- c(1e-10, max(fx, gx) * 2)
+plot(xs, fx, type = "n", log = "y", ylim = yl, xlim = xr, xaxt = "n",
+     xlab = "", ylab = "density (log scale)",
+     main = "bimodal target and a proposal centred on one mode")
+lines(xs, fx, lwd = 4, col = "grey25")
+lines(xs, gx, lwd = 3, col = "grey60")
+rug(th, col = adjustcolor("grey45", 0.35))
+legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
+       lwd = c(4, 3, NA, NA, NA), col = c("grey25", "grey60", NA, NA, NA),
+       legend = c("target  f", sprintf("proposal  g,  sd = %.2f", sg),
+                  sprintf("C_f/C_g:   true 1,   est. %.3f", Chat),
+                  sprintf("95%% CI  (%.3f, %.3f)", Chat - 1.96 * se, Chat + 1.96 * se),
+                  sprintf("E_f(theta):  true 0,   est. %.2f", Ehat)))
+
+## ---- bottom panel: normalized weights --------------------------------
+par(mar = c(4.5, 5, 0.4, 1))
+wl <- c(min(wn) / 5, max(wn) * 5)
+plot(th, wn, type = "n", log = "y", ylim = wl, xlim = xr,
+     xlab = expression(theta), ylab = "normalized weight (log scale)")
+lines(xs, exp(pmin(lwc, 700)), lwd = 2, col = "grey25")
+segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
+abline(h = 1 / S, lty = 2, col = "grey55", lwd = 2)
+legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
+       lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA),
+       col = c("grey55", "grey25", NA, NA),
+       legend = c("1 / S", "normalized weight function",
+                  sprintf("observed ESS = %.1f%% of S", 100 * ess / S),
+                  sprintf("exact ESS = %.3g%% of S", ess_x)))
+```
+
+The last two legend entries are the whole lesson. The observed effective sample
+size is a statistic of the weights that actually appeared, and it reports
+near-perfect efficiency. The exact effective fraction $1/E_{g}(w^{2})$, available
+here in closed form because both densities are Gaussian mixtures, is smaller by
+some forty orders of magnitude. At $\sigma=1$ the variance is finite, so the
+central limit theorem does apply and the estimator is consistent; it would
+simply need $S$ of order $10^{43}$ before its sampling distribution resembled a
+normal one. Finiteness of the variance is itself fragile: the exact second
+moment diverges once $2-\sigma^{-2}\le 0$, that is for every
+$\sigma\le 1/\sqrt{2}$.
+
+### An interactive view
+
+@fig-missed-mode-app varies $\sigma$ with everything else held fixed. Three regimes appear.
+Below $\sigma=1/\sqrt{2}$ the variance is infinite and the exact effective
+fraction is reported as zero. Between there and roughly $\sigma=3$ the failure is
+silent in the sense above: observed $S_{\text{eff}}$ near $S$, estimate near
+$\tfrac12$. Past $\sigma\approx4$ the proposal is over-dispersed enough to place
+draws near $+d$; the observed $S_{\text{eff}}$ then *drops*, which looks like
+deterioration and is in fact the diagnostic finally working, and the estimate
+moves onto the truth. The cure for a missed mode is a proposal that is too
+diffuse rather than too well matched.
+
+::: {#fig-missed-mode-app}
+
+```{shinylive-r}
+#| label: app-missed-mode
+#| standalone: true
+#| viewerHeight: 720
+library(shiny)
+
+d <- 5
+
+log_f <- function(th, d) {
+    a <- dnorm(th, -d, log = TRUE); b <- dnorm(th, d, log = TRUE)
+    m <- pmax(a, b)
+    m + log(exp(a - m) + exp(b - m)) - log(2)
+}
+
+log_Ew2 <- function(d, sg) {
+    A <- 2 - 1 / sg^2
+    if (A <= 0) return(Inf)
+    lterm <- function(a, b) {
+        m <- (a + b) / 2
+        B <- 2 * m + d / sg^2
+        C <- 2 * m^2 - d^2 / sg^2
+        dnorm(a, b, sqrt(2), log = TRUE) + log(sg) + 0.5 * log(2) +
+            0.5 * log(2 * pi / A) - 0.5 * (C - B^2 / A)
+    }
+    lv <- c(lterm(-d, -d), log(2) + lterm(-d, d), lterm(d, d))
+    m  <- max(lv)
+    m + log(sum(exp(lv - m))) - log(4)
+}
+
+ui <- fluidPage(
+    titlePanel("A missed mode: the proposal's standard deviation"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 3,
+            sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 8,
+                        value = 1, step = 0.05),
+            selectInput("S", "sample size  S",
+                        choices = c(500, 2000, 10000), selected = 2000),
+            numericInput("seed", "seed", value = 11, min = 1, step = 1),
+            actionButton("new", "New sample"),
+            tags$hr(style = "margin:8px 0"),
+            htmlOutput("readout")
+        ),
+        mainPanel(width = 9, plotOutput("panels", height = "660px"))
+    )
+)
+
+server <- function(input, output) {
+
+    sim <- reactive({
+        S  <- as.integer(input$S); sg <- input$sg
+        set.seed(input$seed + 1000 * input$new)
+
+        th   <- rnorm(S, -d, sg)
+        logw <- log_f(th, d) - dnorm(th, -d, sg, log = TRUE)
+        mx   <- max(logw); v <- exp(logw - mx)
+        wn   <- v / sum(v)
+
+        list(th = th, wn = wn, S = S, sg = sg,
+             Chat = mean(v) * exp(mx),
+             se   = sd(v) / sqrt(S) * exp(mx),
+             ess  = 1 / sum(wn^2),
+             Ehat = sum(wn * th),
+             lsum = mx + log(sum(v)),
+             ess_x = 100 * exp(-log_Ew2(d, sg)))
+    })
+
+    output$panels <- renderPlot({
+        s  <- sim(); th <- s$th; sg <- s$sg
+        xr <- range(c(th, -d - 4, d + 4))
+        xs <- seq(xr[1], xr[2], length.out = 1000)
+        fx <- exp(log_f(xs, d)); gx <- dnorm(xs, -d, sg)
+        lwc <- log_f(xs, d) - dnorm(xs, -d, sg, log = TRUE) - s$lsum
+
+        layout(matrix(1:2, 2), heights = c(3, 2))
+
+        par(mar = c(0.4, 5, 3, 1))
+        yl <- c(1e-10, max(fx, gx) * 2)
+        plot(xs, fx, type = "n", log = "y", ylim = yl, xlim = xr, xaxt = "n",
+             xlab = "", ylab = "density (log scale)",
+             main = "bimodal target and a proposal centred on one mode")
+        lines(xs, fx, lwd = 4, col = "grey25")
+        lines(xs, gx, lwd = 3, col = "grey60")
+        rug(th, col = adjustcolor("grey45", 0.35))
+        legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
+               lwd = c(4, 3, NA, NA, NA),
+               col = c("grey25", "grey60", NA, NA, NA),
+               legend = c("target  f", sprintf("proposal  g,  sd = %.2f", sg),
+                          sprintf("C_f/C_g:   true 1,   est. %.3f", s$Chat),
+                          sprintf("95%% CI  (%.3f, %.3f)",
+                                  s$Chat - 1.96 * s$se, s$Chat + 1.96 * s$se),
+                          sprintf("E_f(theta):  true 0,   est. %.2f", s$Ehat)))
+
+        par(mar = c(4.5, 5, 0.4, 1))
+        wn <- s$wn
+        wl <- c(min(wn) / 5, max(wn) * 5)
+        plot(th, wn, type = "n", log = "y", ylim = wl, xlim = xr,
+             xlab = expression(theta), ylab = "normalized weight (log scale)")
+        lines(xs, exp(pmin(lwc, 700)), lwd = 2, col = "grey25")
+        segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
+        abline(h = 1 / s$S, lty = 2, col = "grey55", lwd = 2)
+        legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
+               lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA),
+               col = c("grey55", "grey25", NA, NA),
+               legend = c("1 / S", "normalized weight function",
+                          sprintf("observed ESS = %.1f%% of S", 100 * s$ess / s$S),
+                          sprintf("exact ESS = %.3g%% of S", s$ess_x)))
+    })
+
+    output$readout <- renderUI({
+        s <- sim()
+        HTML(sprintf(
+            "<b>C<sub>f</sub>/C<sub>g</sub></b><br>true 1, est. %.4f<br>
+             <b>95%% CI</b> (%.4f, %.4f)<br>
+             <b>E<sub>f</sub>(theta)</b><br>true 0, est. %.3f<br>
+             <b>observed ESS</b> %.1f%%<br>
+             <b>exact ESS</b> %.3g%%<br>
+             <b>Var<sub>f</sub>(w)</b> %s",
+            s$Chat, s$Chat - 1.96 * s$se, s$Chat + 1.96 * s$se, s$Ehat,
+            100 * s$ess / s$S, s$ess_x,
+            if (s$sg <= 1 / sqrt(2)) "infinite" else "finite"))
+    })
+}
+
+shinyApp(ui, server)
+```
+
+Interactive version of @fig-missed-mode. The proposal's standard deviation
+$\sigma$ is under slider control and both panels are redrawn for each setting.
+For $\sigma \le 1/\sqrt{2}$ the weight variance is infinite; near $\sigma = 1$
+the failure is silent, with the observed effective sample size close to $S$
+while the estimate of $C_f/C_g$ sits at one half; past $\sigma \approx 4$ the
+proposal reaches the second mode, the observed effective sample size falls, and
+the estimate moves onto the truth.
+
+:::
+
+
+## Example 2: Tail Probability of a Student-$t$ Distribution {#sec-ars-tnorm}
 
 The target is a standard Student-$t_{\nu}$ distribution, with the degrees of
 freedom $\nu$ a **tuning parameter of the target** that controls how heavy
@@ -425,20 +706,6 @@ edition of this book. View it at
 <https://longhaisk.github.io/compstat/chapters/unit12_importance_sampling.html#sec-t-is-app>.
 :::
 
-::: {.callout-note}
-### Reproducing this figure
-The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
-extension, which compiles the app to WebAssembly so that it runs in the
-reader's browser with no Shiny server (`quarto add quarto-ext/shinylive`, then
-`filters: [shinylive]` in the document or project YAML, already set for this
-book). A `{shinylive-r}` chunk cannot see objects defined elsewhere in the
-document, so `rtnorm_ars()` and `is_t_interval()` are pasted inside the app
-chunk verbatim rather than reused from the chunks above. `library(ars)` works
-inside the app too: webR fetches CRAN packages compiled to WebAssembly on
-demand, and `ars` is one of them. To develop the app interactively instead,
-an ordinary `{r}` chunk with `shinyApp(ui, server)` at the end can be run
-directly in RStudio or Positron, which opens it in the viewer pane.
-:::
 
 Several settings repay attention.
 
@@ -462,9 +729,8 @@ Several settings repay attention.
   improvement on being invisibly unreliable.
 
 
-## Example 2: Marginal Likelihood via Importance Sampling
+## Example 3: Marginal Likelihood of Normal Data via Importance Sampling
 
-### Setup
 
 The [quadrature](unit09_integral.qmd) and Laplace-approximation chapters
 compute the marginal likelihood $P(y) = \int L(\theta)\pi(\theta)\,d\theta$ of
@@ -490,7 +756,7 @@ the (typically much wider, uninformative) prior, which is exactly the
 check: it is importance sampling with $g = \pi$, and its weights are just the
 likelihood values $L(\theta_s)$.
 
-### An efficient implementation
+**Implementation**
 
 ```{r}
 #| label: marlik-functions
@@ -566,14 +832,6 @@ log_marlik_grid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n_grid = 400, width
 }
 ```
 
-Replacing the two `apply()` calls used in earlier drafts of this code — one
-for the proposal log-density, one for the log-posterior — with a single
-vectorized quadratic form (`log_dmvnorm_batch`) removes $S$ separate R
-function calls for the proposal evaluation; only the data-dependent
-log-likelihood still needs one call per draw, since it sums over the $n$
-observations for each $\theta_s$ separately.
-
-### Checking accuracy
 
 `log_marlik_grid()` supplies ground truth by quadrature — a midpoint grid
 over $(\mu,w)$, centred and scaled by the same Laplace fit used for the
@@ -583,77 +841,81 @@ proposals against it in a single run, with a 95% CI built from the standard
 error of that run, makes the difference between them concrete rather than
 just asserted.
 
-```{r}
-#| label: tbl-marlik-check
-#| tbl-cap: "Log marginal likelihood: truth by grid quadrature versus a single
-#|   run of importance sampling (S = 2000) from a Laplace-shaped proposal and
-#|   from the prior, for two simulated data sets."
-set.seed(4)
-x_small <- rnorm(10);  x_large <- rnorm(200)
+**Results across sample sizes**
 
-marlik_row <- function(x, dataset, proposal_fn, proposal, S = 2000) {
-    truth <- log_marlik_grid(x, 0, 5, 0, 5)
-    est   <- proposal_fn(x, 0, 5, 0, 5, S)
-    se    <- attr(est, "se"); ess <- attr(est, "ess")
-    data.frame(dataset = dataset, proposal = proposal,
-               truth = truth, estimate = as.numeric(est),
-               ci_lower = as.numeric(est) - 1.96 * se,
-               ci_upper = as.numeric(est) + 1.96 * se,
-               ess_pct = 100 * ess / S)
+Both proposals target the same $f=L\pi$, and the prior is a legitimate
+proposal for it: every posterior draw has positive prior density, so the
+support condition holds. The two differ only in how well their shape matches
+the target's, and the following table varies the amount of data to make that
+difference visible.
+
+```{r}
+#| label: tbl-marlik-merged
+#| tbl-cap: "Log marginal likelihood for a freshly simulated data set at each
+#|   sample size n: truth by grid quadrature, against single runs of importance
+#|   sampling (S = 2000) from a Laplace-shaped proposal and from the prior."
+set.seed(4)
+ns <- c(5, 20, 100, 400)
+S  <- 2000
+
+## one proposal, one data set: estimate, interval and S_eff as a % of S
+summarize_is <- function(fn, x, S) {
+    est <- fn(x, 0, 5, 0, 5, S)
+    se  <- attr(est, "se")
+    c(estimate = sprintf("%.2f", as.numeric(est)),
+      ci       = sprintf("(%.2f, %.2f)",
+                         as.numeric(est) - 1.96 * se,
+                         as.numeric(est) + 1.96 * se),
+      ess      = sprintf("%.1f", 100 * attr(est, "ess") / S))
 }
 
-check_tbl <- rbind(
-    marlik_row(x_small, "n = 10",  log_marlik_imps,  "Laplace"),
-    marlik_row(x_small, "n = 10",  log_marlik_prior, "prior"),
-    marlik_row(x_large, "n = 200", log_marlik_imps,  "Laplace"),
-    marlik_row(x_large, "n = 200", log_marlik_prior, "prior")
-)
-knitr::kable(check_tbl, digits = 3,
-             col.names = c("dataset", "proposal", "truth", "estimate",
-                           "95% CI lower", "95% CI upper", "ESS %"))
-```
-
-At both sample sizes the Laplace-shaped proposal's CI is tight and centred on
-the truth, with $S_{\text{eff}}$ close to the nominal $S=2000$ — a second-order
-approximation to the posterior is evidently a good match to it. The prior's
-CI can still cover the truth (it does, barely, at $n=200$ above), but its
-$S_{\text{eff}}$ collapses to a fraction of a percent as $n$ grows: a handful
-of draws are carrying the entire estimate, so that CI is only as trustworthy
-as those few draws happen to be, run to run — exactly the "noisy failure"
-this chapter's diagnostic is built to catch, in contrast to the *silent*
-failures earlier where $S_{\text{eff}}$ looked fine and the estimate was
-wrong anyway.
-
-### Why the proposal matters: Laplace-shaped versus prior sampling
-
-The prior is a valid proposal for the same target — every posterior draw is
-also a prior draw with positive density — so `log_marlik_prior` is a
-legitimate importance-sampling estimator too. But the prior is far more
-diffuse than the posterior, especially once $n$ is not tiny, so it is a much
-poorer match to $f = L\pi$.
-
-```{r}
-#| label: tbl-marlik-ess-vs-n
-#| tbl-cap: "Effective sample size (of S = 500 draws) for the Laplace-shaped proposal versus prior sampling, as the sample size n of the simulated data grows. Both target the same posterior for (mu, w)."
-set.seed(5)
-ns <- c(5, 20, 100, 400)
-ess_tbl <- do.call(rbind, lapply(ns, function(n) {
-    x <- rnorm(n)
-    data.frame(n = n,
-               ess_laplace_proposal = attr(log_marlik_imps(x, 0, 5, 0, 5, 500), "ess"),
-               ess_prior_sampling   = attr(log_marlik_prior(x, 0, 5, 0, 5, 500), "ess"))
+merged_tbl <- do.call(rbind, lapply(ns, function(n) {
+    x   <- rnorm(n)
+    lap <- summarize_is(log_marlik_imps,  x, S)
+    pri <- summarize_is(log_marlik_prior, x, S)
+    data.frame(n     = n,
+               truth = sprintf("%.2f", log_marlik_grid(x, 0, 5, 0, 5)),
+               lap_estimate = lap[["estimate"]],
+               lap_ci       = lap[["ci"]],
+               lap_ess      = lap[["ess"]],
+               pri_estimate = pri[["estimate"]],
+               pri_ci       = pri[["ci"]],
+               pri_ess      = pri[["ess"]],
+               row.names    = NULL)
 }))
-knitr::kable(ess_tbl, digits = c(0, 1, 1))
+
+## repeated names are intentional: the proposal is carried by the banner
+names(merged_tbl) <- c("n", "truth",
+                       "estimate", "95% CI", "ESS %",
+                       "estimate", "95% CI", "ESS %")
+
+tinytable::tt(merged_tbl) |>
+    tinytable::group_tt(j = list("Laplace-shaped proposal" = 3:5,
+                                 "prior sampling"          = 6:8))
 ```
 
-As $n$ grows the posterior sharpens around the truth while the prior does
-not, so prior sampling's effective sample size deteriorates steadily; the
-Laplace-shaped proposal, which re-centers and re-scales itself around the
-posterior mode for every data set, keeps pace. This is the marginal-likelihood
-instance of the same lesson as the missed-mode example above: a fixed,
-data-independent proposal becomes an increasingly bad match to a target that
-concentrates as more data arrive, and only a proposal that adapts to the
-target avoids the resulting collapse in efficiency.
+The Laplace-shaped proposal re-centers and re-scales itself around the
+posterior mode for every data set. Its interval stays tight and centred on the
+truth at every $n$, and $S_{\text{eff}}$ stays close to the nominal $S$: a
+second-order approximation to the posterior is evidently a good match to it.
+Prior sampling degrades monotonically. The posterior concentrates at rate
+$n^{-1/2}$ while the prior does not move, so the fraction of prior mass lying
+where the likelihood is appreciable shrinks with $n$, the weights become ever
+more concentrated on a handful of draws, and $S_{\text{eff}}$ falls to a small
+fraction of one percent. Its interval may still cover the truth, but it is only
+as trustworthy as those few draws happen to be from one run to the next.
+
+This is the marginal-likelihood instance of the lesson drawn from the
+missed-mode example: a fixed, data-independent proposal becomes an increasingly
+poor match to a target that concentrates as data accumulate, and only a
+proposal that adapts to the target avoids the resulting collapse in efficiency.
+Note also the contrast in how the two failures announce themselves. Prior
+sampling fails *noisily* — $S_{\text{eff}}$ reports the collapse directly, which
+is exactly what the diagnostic is built to catch. The earlier tail examples
+failed *silently*, with $S_{\text{eff}}$ near its nominal value while the
+estimate was badly wrong, because there the weights were uniform among the
+draws actually observed and the trouble lay entirely outside the region the
+proposal ever visited.
 
 ### Seeing it: sorted weights {#sec-marlik-app}
 
