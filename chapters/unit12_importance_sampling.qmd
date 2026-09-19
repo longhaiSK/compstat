@@ -157,6 +157,40 @@ est_tnorm_unif <- function(a_fn, l, u, S) {
 }
 ```
 
+```{r}
+#| label: fig-tnorm-proposals
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Target f (bold) and the two proposals for each interval: the naive proposal (dashed) is the untruncated normal itself — inside the interval it is literally identical to f — while the uniform proposal (flat) has a totally different shape but guarantees every draw lands inside. Right panel is on a log scale because f is minuscule near (5, 6)."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+
+l1 <- -2; u1 <- 2
+curve(dnorm, -4, 4, lwd = 2, lty = 2, col = "steelblue", xlab = "x", ylab = "density",
+      main = "moderate interval (-2, 2)", ylim = c(0, 0.55))
+curve(dnorm, from = l1, to = u1, add = TRUE, lwd = 4, col = "firebrick")
+segments(l1, 1 / (u1 - l1), u1, 1 / (u1 - l1), col = "forestgreen", lwd = 3)
+legend("topright", bty = "n", lwd = c(4, 3, 2), lty = c(1, 1, 2),
+       col = c("firebrick", "forestgreen", "steelblue"),
+       legend = c("f = target", "g: uniform", "g: naive (= phi everywhere)"))
+
+l2 <- 5; u2 <- 6
+curve(dnorm, 4, 7, log = "y", lwd = 2, lty = 2, col = "steelblue", xlab = "x",
+      ylab = "density (log scale)", main = "rare interval (5, 6)", ylim = c(1e-11, 2))
+curve(dnorm, from = l2, to = u2, add = TRUE, lwd = 4, col = "firebrick")
+segments(l2, 1 / (u2 - l2), u2, 1 / (u2 - l2), col = "forestgreen", lwd = 3)
+legend("bottomleft", bty = "n", lwd = c(4, 3, 2), lty = c(1, 1, 2),
+       col = c("firebrick", "forestgreen", "steelblue"),
+       legend = c("f = target", "g: uniform", "g: naive"))
+```
+
+Inside the interval, the naive proposal's shape is not the problem — it is
+*exactly* $f$'s shape, since $g=\varphi$ everywhere. Its problem is how rarely
+it visits the interval at all: for $(5,6)$ the flat uniform proposal (green)
+sits many orders of magnitude above the target near the right edge of its own
+support, which is precisely the size of the importance weight needed to
+correct for its shape mismatch — a price worth paying, since every one of its
+draws lands inside.
+
 ### Comparing MSE for both quantities
 
 ```{r}
@@ -228,6 +262,42 @@ matches that decay and keeps the weights nearly constant:
 $$
 g(x) = \frac{\lambda e^{-\lambda(x-a)}}{1-e^{-\lambda(b-a)}}\,I(a\le x\le b).
 $$
+
+```{r}
+#| label: fig-tail-log-weight
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Left: log-density of f and the shifted-exponential proposal (plain density underflows to 0 here, so only the log scale is meaningful). Right: log importance weight log f(x) - log g(x) for each proposal, x - a on a log scale, with a rug of 2000 draws actually generated from each g. The exponential's own draws (orange) stay in the region where its weight curve is flat; the uniform's draws (green) spread into the region where its weight has already collapsed."
+lam <- a
+log_g_exp <- function(x) log(lam) - lam * (x - a) - log1p(-exp(-lam * (b - a)))
+log_g_u   <- function(x) rep(-log(b - a), length(x))
+log_f     <- function(x) dnorm(x, log = TRUE)
+
+set.seed(7)
+Sfig <- 2000
+xfig_u <- runif(Sfig, a, b)
+ufig_e <- runif(Sfig); xfig_e <- a - log(1 - ufig_e * (1 - exp(-lam * (b - a)))) / lam
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+
+curve(log_f, a, b, lwd = 4, col = "firebrick", xlab = "x", ylab = "log density",
+      main = "log-density of f and the exponential g", n = 500)
+curve(log_g_exp, add = TRUE, lwd = 3, col = "darkorange", n = 500)
+legend("bottomleft", bty = "n", lwd = 3, col = c("firebrick", "darkorange"),
+       legend = c("f = target", "g: shifted exponential"))
+
+d  <- 10^seq(-4, log10(b - a), length.out = 500)
+xg <- a + d
+plot(d, log_f(xg) - log_g_u(xg), type = "l", lwd = 3, col = "forestgreen", log = "x",
+     xlab = "x - a  (log scale)", ylab = "log weight  log f(x) - log g(x)",
+     main = "log weight, and where each g's draws land",
+     ylim = range(c(log_f(xg) - log_g_u(xg), log_f(xg) - log_g_exp(xg))))
+lines(d, log_f(xg) - log_g_exp(xg), lwd = 3, col = "darkorange")
+rug(pmax(xfig_u - a, 1e-4), col = adjustcolor("forestgreen", 0.4))
+rug(pmax(xfig_e - a, 1e-4), col = adjustcolor("darkorange", 0.4))
+legend("bottomleft", bty = "n", lwd = 3, cex = 0.85, col = c("forestgreen", "darkorange"),
+       legend = c("uniform: draws reach the collapse", "exponential: draws stay flat"))
+```
 
 ```{r}
 #| label: tbl-tail-proposals
@@ -359,39 +429,84 @@ size. The draws that would reveal the problem, near $\theta=+5$, have
 probability under $g$ of order $\Phi(-10) \approx 10^{-23}$: they simply never
 appear, at any practical $S$.
 
-### A proposal narrower than the target's support
+### A narrower-tailed proposal: approximating a Cauchy survival probability
 
-The same failure in its starkest form, using the running truncated-normal
-example: the true truncation bounds are $(-2,2)$, with $C_f/C_g = P(-2<X<2)
-\approx 0.9545$ from the very first table above. Suppose instead the uniform
-proposal is (mistakenly) built for the narrower interval $(-1,1)\subset(-2,2)$,
-$g(x) = I(-1\le x\le1)/2$. Every draw from $g$ lands inside $(-1,1)$, so the
-sampler never visits the roughly $27\%$ of the truncated normal's mass that
-sits in $(-2,-1]\cup[1,2)$.
+The same failure in a subtler form: instead of a finite interval, let $X$
+follow a standard Cauchy distribution and take $f(x) = f_{\text{Cauchy}}(x)\,
+I(x>t)$ for $t=2$, so $C_f = P(X>t)$ is the Cauchy **survival probability**
+beyond $t$. A tempting proposal is a **truncated standard normal** on
+$(t,\infty)$ — easy to sample, and the support condition $\{g>0\}\supseteq
+\{f>0\}$ holds exactly, so nothing looks obviously wrong at first glance.
 
 ```{r}
-#| label: tbl-support-violation
-#| tbl-cap: "Estimated P(-2 < X < 2) using a uniform proposal on the narrower (-1, 1), as the sample size grows: no amount of additional sampling helps, because g never visits (-2, -1] or [1, 2)."
-tp_true <- pnorm(2) - pnorm(-2)
-set.seed(3)
-support_tbl <- data.frame(
-    S = c(1e2, 1e3, 1e4, 1e5),
-    estimate = sapply(c(1e2, 1e3, 1e4, 1e5), function(S) {
-        X <- runif(S, -1, 1)          # draws from the too-narrow proposal g
-        mean(dnorm(X) * 2)            # w(x) = f(x)/g(x) = 2*phi(x); C_g = 1
-    })
-)
-knitr::kable(cbind(support_tbl, true_prob = tp_true), digits = c(0, 3, 3))
+#| label: fig-cauchy-normal-tails
+#| fig-cap: "Target (Cauchy tail beyond t = 2, firebrick) and proposal (truncated normal beyond t = 2, steelblue), log density scale, with a rug of 2000 draws from the proposal. The densities cross near x = 3.8; beyond that the proposal falls away far faster than the target, and its own draws almost never reach past x = 5."
+t <- 2
+Zt <- 1 - pnorm(t)
+f_tail <- function(x) dcauchy(x)
+g_tail <- function(x) dnorm(x) / Zt
+
+set.seed(1)
+X_g <- qnorm(pnorm(t) + runif(2000) * Zt)
+
+curve(f_tail, t, 8, log = "y", lwd = 4, col = "firebrick", xlab = "x", ylab = "density (log scale)",
+      main = "target: Cauchy tail vs. proposal: truncated normal", ylim = c(1e-10, 3), n = 500)
+curve(g_tail, add = TRUE, lwd = 3, col = "steelblue", n = 500)
+rug(X_g, col = adjustcolor("steelblue", 0.35))
+legend("bottomleft", bty = "n", lwd = c(4, 3), col = c("firebrick", "steelblue"),
+       legend = c("f: Cauchy(0,1), x > 2", "g: N(0,1), x > 2 (truncated)"))
 ```
 
-The estimate stabilizes near $P(-1<X<1) \approx 0.6827$ regardless of $S$, not
-the true $0.9545$: this is a bias that more sampling cannot fix, because it
-comes from where $g$ looks, not from how much it looks there. The reverse
-situation — $g$ wider than $f$ — is harmless: draws outside $\text{supp}(f)$
-simply receive weight $0$ and are correctly down-weighted. Together with the
-missed-mode example, the lesson is that $S_{\text{eff}}$
-alone cannot certify a good proposal; the proposal must be checked against
-what is actually known about where $f$ puts its mass.
+The densities cross near $x\approx3.8$; to the right, $\varphi$'s Gaussian
+decay $e^{-x^2/2}$ falls away far faster than the Cauchy's polynomial tail
+$1/(\pi x^2)$, so the importance weight $w(x)=f(x)/g(x)$ grows without bound —
+by $x=6$ it is already of order $10^4$, by $x=8$ of order $10^{10}$. This
+generalizes the too-narrow-support failure to tails: a truncated normal is,
+in effect, narrower than a Cauchy no matter how far out its own truncation
+point sits, because it assigns vanishing *relative* density to the region
+that actually carries the heavy tail's mass. Formally, $\text{Var}_g(w) =
+\int f(x)^2/g(x)\,dx = \infty$ here — the ratio estimator is still unbiased,
+but its Monte Carlo variance is infinite. The reverse mismatch — a
+*heavier*-tailed proposal than the target, such as a Cauchy or low-df
+Student-$t$ proposal for a normal target — is harmless: it only ever produces
+occasional small weights, never unbounded ones.
+
+```{r}
+#| label: tbl-cauchy-normal-mse
+#| tbl-cap: "Estimated P(X > 2) for the Cauchy using the truncated-normal proposal, over 500 replications at S = 1000 and 200 replications at S = 100,000. The median stays badly low at both sample sizes, and effective sample size as a percentage of S gets worse, not better, as S grows."
+true_surv <- 1 - pcauchy(t)
+est_cauchy_normal <- function(S) {
+    X <- qnorm(pnorm(t) + runif(S) * Zt)
+    w <- dcauchy(X) / (dnorm(X) / Zt)
+    c(Chat = mean(w), ess = ess(w))
+}
+
+set.seed(2)
+cauchy_tbl <- do.call(rbind, lapply(list(c(500, 1000), c(200, 1e5)), function(spec) {
+    reps <- t(replicate(spec[1], est_cauchy_normal(spec[2])))
+    data.frame(S = spec[2], reps = spec[1],
+               mean_est = mean(reps[, "Chat"]), median_est = median(reps[, "Chat"]),
+               sd_est = sd(reps[, "Chat"]), mean_ess_pct = 100 * mean(reps[, "ess"]) / spec[2])
+}))
+knitr::kable(cbind(true = round(true_surv, 4), cauchy_tbl), digits = c(4, 0, 0, 4, 4, 4, 2))
+```
+
+The true survival probability is `r round(true_surv, 3)`, but the *typical*
+(median) run badly undershoots it at both sample sizes, and the standard
+deviation across replications shrinks far slower than the $1/\sqrt{S}$ rate a
+finite-variance estimator would give — a hundredfold increase in $S$ buys
+nowhere near a tenfold reduction in spread, and $S_{\text{eff}}$ as a
+*percentage* of $S$ gets worse, not better, as $S$ grows. Occasionally a draw
+lands far enough into the tail to carry a huge weight and swing that one
+replication's estimate close to, or past, the truth; but such draws are rare
+enough under the truncated normal that most practical runs never see one, and
+there is no way to tell from a single run's $S_{\text{eff}}$ whether it got
+lucky. Together with the missed-mode example,
+the lesson generalizes beyond finite supports: $S_{\text{eff}}$ diagnoses
+variability among the weights actually observed, but says nothing about how a
+proposal's shape compares to the target's far outside the region the proposal
+is likely to visit — whether that region is a missed mode or, as here, a
+heavier tail.
 
 ### Explore it interactively {#sec-importance-app}
 
