@@ -110,500 +110,388 @@ log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
 ```
 
-## Estimating a Truncated Normal: Probability and Expectation
+## Example 1: Tail Probability of Cauchy {#sec-ars-tnorm}
 
-### Setup: two quantities, one target
 
-For $X \sim N(0,1)$, take $f(x) = \varphi(x)\,I(l<x<u)$, the standard normal
-density truncated to $(l,u)$, so that $C_f = P(l<X<u)$. The same $f$ also
-defines a conditional expectation $A = E\big[a(X) \mid l<X<u\big]$ for any
-function $a$ — for instance $a(x)=x^2$. Both quantities are instances of the
-two estimators from the start of the chapter, $\widehat{C_f/C_g} =
-\frac1S\sum_s w_s$ and the self-normalized $\hat A = \sum_s a(\theta_s)\tilde
-w_s$, applied to the *same* weighted sample — so one simulation answers both
-questions at once, and it is natural to compare their errors side by side.
 
-### Two proposals
-
-- **The untruncated normal itself**, $g(x) = \varphi(x)$: since $f \le g$
-  everywhere (the indicator only ever removes mass from $\varphi$), the
-  importance weight is $w(x) = I(l<x<u)$ — exactly $0$ or $1$. Averaging $w$
-  over draws from $g$ is plain Monte Carlo for $C_f$; averaging $a(x)$ over
-  only the draws that land inside $(l,u)$ is *exact rejection sampling* for
-  $A$, with no extra machinery, because a weight in $\{0,1\}$ makes
-  acceptance deterministic. Both readings of the same draws waste every
-  proposal that lands outside $(l,u)$ — fine when $(l,u)$ holds most of the
-  mass, ruinous when it is rare.
-- **Uniform on $(l,u)$**, $g(x) = I(l\le x\le u)/(u-l)$: every draw lands
-  inside the interval, so $w(x) = (u-l)\varphi(x)$ is never $0$. This is the
-  *Monte Carlo* version of the midpoint rule from the quadrature chapter — a
-  random grid instead of an equally spaced one, evaluating the same weighted
-  sum — and it feeds both estimators from a single sample.
-
-```{r}
-#| label: tnorm-functions
-### naive proposal g = phi: w in {0, 1}; doubles as plain MC (Chat) and exact
-### rejection sampling (Ahat, over the accepted subset) from the same draws
-est_tnorm_naive <- function(a_fn, l, u, S) {
-    X <- rnorm(S)
-    inside <- X > l & X < u
-    c(Chat = mean(inside), Ahat = if (any(inside)) mean(a_fn(X[inside])) else NA_real_)
-}
-### uniform proposal on (l, u): every draw counts for both quantities
-est_tnorm_unif <- function(a_fn, l, u, S) {
-    X <- runif(S, l, u)
-    w <- dnorm(X) * (u - l)
-    c(Chat = mean(w), Ahat = sum(a_fn(X) * w) / sum(w))
-}
-```
-
-```{r}
-#| label: fig-tnorm-proposals
-#| fig-width: 10
-#| fig-height: 4.2
-#| fig-cap: "Target f (bold) and the two proposals for each interval: the naive proposal (dashed) is the untruncated normal itself — inside the interval it is literally identical to f — while the uniform proposal (flat) has a totally different shape but guarantees every draw lands inside. Right panel is on a log scale because f is minuscule near (5, 6)."
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-
-l1 <- -2; u1 <- 2
-curve(dnorm, -4, 4, lwd = 2, lty = 2, col = "steelblue", xlab = "x", ylab = "density",
-      main = "moderate interval (-2, 2)", ylim = c(0, 0.55))
-curve(dnorm, from = l1, to = u1, add = TRUE, lwd = 4, col = "firebrick")
-segments(l1, 1 / (u1 - l1), u1, 1 / (u1 - l1), col = "forestgreen", lwd = 3)
-legend("topright", bty = "n", lwd = c(4, 3, 2), lty = c(1, 1, 2),
-       col = c("firebrick", "forestgreen", "steelblue"),
-       legend = c("f = target", "g: uniform", "g: naive (= phi everywhere)"))
-
-l2 <- 5; u2 <- 6
-curve(dnorm, 4, 7, log = "y", lwd = 2, lty = 2, col = "steelblue", xlab = "x",
-      ylab = "density (log scale)", main = "rare interval (5, 6)", ylim = c(1e-11, 2))
-curve(dnorm, from = l2, to = u2, add = TRUE, lwd = 4, col = "firebrick")
-segments(l2, 1 / (u2 - l2), u2, 1 / (u2 - l2), col = "forestgreen", lwd = 3)
-legend("bottomleft", bty = "n", lwd = c(4, 3, 2), lty = c(1, 1, 2),
-       col = c("firebrick", "forestgreen", "steelblue"),
-       legend = c("f = target", "g: uniform", "g: naive"))
-```
-
-Inside the interval, the naive proposal's shape is not the problem — it is
-*exactly* $f$'s shape, since $g=\varphi$ everywhere. Its problem is how rarely
-it visits the interval at all: for $(5,6)$ the flat uniform proposal (green)
-sits many orders of magnitude above the target near the right edge of its own
-support, which is precisely the size of the importance weight needed to
-correct for its shape mismatch — a price worth paying, since every one of its
-draws lands inside.
-
-### Comparing MSE for both quantities
-
-```{r}
-#| label: tbl-tnorm-mse
-#| tbl-cap: "Mean squared error of the probability and expectation estimates over 1000 replications, for a moderate and a rare event, S = 100 draws per replication. a(x) = x^2; true E[a] from a 100,000-point midpoint rule."
-a_fn <- function(x) x^2
-midpoint_ref <- function(l, u, n = 100000) {
-    h <- (u - l) / n; xm <- l + (seq_len(n) - 0.5) * h
-    sum(a_fn(xm) * dnorm(xm)) * h / (pnorm(u) - pnorm(l))
-}
-
-set.seed(1)
-cases <- list(c(-2, 2), c(5, 6))
-tnorm_mse <- do.call(rbind, lapply(cases, function(A) {
-    tp    <- pnorm(A[2]) - pnorm(A[1])
-    ref   <- midpoint_ref(A[1], A[2])
-    naive <- replicate(1000, est_tnorm_naive(a_fn, A[1], A[2], 100))
-    unif  <- replicate(1000, est_tnorm_unif(a_fn, A[1], A[2], 100))
-    ok <- !is.na(naive["Ahat", ])
-    data.frame(
-        interval       = sprintf("(%g, %g)", A[1], A[2]),
-        true_prob      = formatC(tp, format = "e", digits = 3),
-        mse_prob_naive = formatC(mean((naive["Chat", ] - tp)^2), format = "e", digits = 3),
-        mse_prob_unif  = formatC(mean((unif["Chat", ] - tp)^2), format = "e", digits = 3),
-        true_Ea        = formatC(ref, format = "e", digits = 3),
-        mse_Ea_naive   = if (any(ok)) formatC(mean((naive["Ahat", ok] - ref)^2), format = "e", digits = 3)
-                          else sprintf("never accepted (0/%d)", ncol(naive)),
-        mse_Ea_unif    = formatC(mean((unif["Ahat", ] - ref)^2), format = "e", digits = 3)
-    )
-}))
-knitr::kable(tnorm_mse, align = c("l", rep("r", 6)),
-             col.names = c("interval", "true P", "MSE P (naive)", "MSE P (uniform)",
-                           "true E[a]", "MSE E[a] (naive)", "MSE E[a] (uniform)"))
-```
-
-For the moderate interval $(-2,2)$ both proposals estimate both quantities
-reasonably well. For the rare event $(5,6)$, the naive proposal never once
-places a draw inside the interval across any of the 1000 replications — it
-cannot even form an estimate of $E[a(X)\mid 5<X<6]$ — and its probability
-estimate looks deceptively accurate in MSE only because the true probability
-is itself tiny (both estimate and truth round to $0$). The uniform proposal,
-which *guarantees* every draw lands in $(5,6)$, stays usable for both
-quantities and is an order of magnitude more accurate for the probability
-besides.
-
-### An underflowing tail probability
-
-Push the interval further out, to $A = (50,100)$. Now even $\varphi(50)$
-itself underflows to exactly $0$ in double precision (its log is about
-$-1251$, far below the smallest representable log), so every calculation must
-be carried out on the log scale.
-
-```{r}
-#| label: exact-far-tail
-a <- 50; b <- 100
-log_minus_exp <- function(la, lb) la + log1p(-exp(lb - la))
-log_exact <- log_minus_exp(pnorm(-a, log = TRUE), pnorm(-b, log = TRUE))
-log_exact
-```
-
-### Matching the proposal to the tail: a better envelope
-
-A uniform proposal on $(50,100)$ still works in principle, but $\varphi$ decays
-so fast across the interval that the weights vary enormously: nearly all of
-the probability mass under $\varphi$ restricted to $(50,100)$ sits within a
-sliver near $x=50$, so a uniform draw almost never lands where the weight is
-large. A **shifted exponential** proposal with rate $\lambda \approx a$
-matches that decay and keeps the weights nearly constant:
+Write the proposal on the standardized scale $z=(x-\mu)/\sigma$ with
+standardized cutoff $a=(c-\mu)/\sigma$, so that
 $$
-g(x) = \frac{\lambda e^{-\lambda(x-a)}}{1-e^{-\lambda(b-a)}}\,I(a\le x\le b).
+h(z) \;=\; \log\varphi(z) \;=\; -\tfrac{1}{2}z^{2} + \text{const},
+\qquad h'(z) = -z , \qquad h''(z) = -1 < 0 .
 $$
+Restricting $z$ to $(a,\infty)$ intersects the support with a convex set and
+therefore preserves concavity of $h$. A single sampler on the $z$ scale
+consequently serves every parameter combination: only $a$ changes, and draws
+are returned as $x=\mu+\sigma z$.
+
+ARS exploits concavity twice. Tangent lines to $h$ at abscissae
+$x_{1}<\dots<x_{k}$ in $(a,\infty)$ lie *above* $h$, so their pointwise
+minimum is an **upper hull** $u(z)\ge h(z)$; exponentiating gives a
+piecewise-exponential envelope that is trivial to sample by inversion within
+each piece. Chords joining adjacent $(x_{j},h(x_{j}))$ lie *below* $h$, so
+they supply a **lower hull** $\ell(z)\le h(z)$, the *squeeze*. Each candidate
+$z^{*}$ drawn from the envelope is accepted at once if
+$\log U \le \ell(z^{*})-u(z^{*})$, and only otherwise is $h(z^{*})$ evaluated;
+when it is evaluated, $z^{*}$ is appended to the abscissae and the hull is
+rebuilt, so the envelope tightens as sampling proceeds. Two structural
+requirements are worth noting. The piece boundaries are the tangent
+intersections
+$$
+z_{j} \;=\;
+\frac{h(x_{j+1}) - h(x_{j}) - x_{j+1}h'(x_{j+1}) + x_{j}h'(x_{j})}
+     {h'(x_{j}) - h'(x_{j+1})} ,
+$$
+which for the Gaussian collapse to the midpoints $(x_{j}+x_{j+1})/2$; and the
+envelope is integrable on the unbounded right piece only if
+$h'(x_{k})<0$, so the largest abscissa must exceed the mode. The lower end of
+the domain is the finite cutoff $a$, where no such condition is needed.
+
+The implementation below adapts until the hull reaches `max_hull` points and
+then freezes it, after which the remaining draws are generated by ordinary
+vectorized rejection from a fixed envelope. Roughly two dozen tangents give
+acceptance rates above $0.95$ across the whole parameter range used here.
 
 ```{r}
-#| label: fig-tail-log-weight
-#| fig-width: 10
-#| fig-height: 4.2
-#| fig-cap: "Left: log-density of f and the shifted-exponential proposal (plain density underflows to 0 here, so only the log scale is meaningful). Right: log importance weight log f(x) - log g(x) for each proposal, x - a on a log scale, with a rug of 2000 draws actually generated from each g. The exponential's own draws (orange) stay in the region where its weight curve is flat; the uniform's draws (green) spread into the region where its weight has already collapsed."
-lam <- a
-log_g_exp <- function(x) log(lam) - lam * (x - a) - log1p(-exp(-lam * (b - a)))
-log_g_u   <- function(x) rep(-log(b - a), length(x))
-log_f     <- function(x) dnorm(x, log = TRUE)
+#| label: rtnorm-ars
+## ---------------------------------------------------------------------
+##  rtnorm_ars(): adaptive rejection sampling from
+##      g(x)  proportional to  phi((x - mu) / sigma) * I(x > c)
+##  Returns a numeric vector with attributes "hull" (final abscissae, on
+##  the original scale) and "acc_rate" (accepted draws per envelope draw).
+## ---------------------------------------------------------------------
+rtnorm_ars <- function(n, mu = 0, sigma = 1, c = 0,
+                       max_hull = 25, batch = 4096) {
 
-set.seed(7)
-Sfig <- 2000
-xfig_u <- runif(Sfig, a, b)
-ufig_e <- runif(Sfig); xfig_e <- a - log(1 - ufig_e * (1 - exp(-lam * (b - a)))) / lam
+    stopifnot(n >= 1, sigma > 0, is.finite(c), max_hull >= 3)
 
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+    a  <- (c - mu) / sigma                 # standardized cutoff
+    h  <- function(z) -z^2 / 2             # log density, up to a constant
+    hp <- function(z) -z                   # its derivative
 
-curve(log_f, a, b, lwd = 4, col = "firebrick", xlab = "x", ylab = "log density",
-      main = "log-density of f and the exponential g", n = 500)
-curve(log_g_exp, add = TRUE, lwd = 3, col = "darkorange", n = 500)
-legend("bottomleft", bty = "n", lwd = 3, col = c("firebrick", "darkorange"),
-       legend = c("f = target", "g: shifted exponential"))
+    ## ---- upper hull: tangents at the abscissae x ---------------------
+    ## Piece j is the tangent at x[j], valid on [z[j], z[j+1]], where the
+    ## z[] are the tangent intersections, z[1] = a and z[k+1] = Inf.
+    build <- function(x) {
+        x <- sort(unique(x))
+        x[x == 0] <- 1e-8                  # keep every slope non-zero
+        x <- sort(unique(x))
+        k  <- length(x)
+        hx <- h(x)
+        sx <- hp(x)
 
-d  <- 10^seq(-4, log10(b - a), length.out = 500)
-xg <- a + d
-plot(d, log_f(xg) - log_g_u(xg), type = "l", lwd = 3, col = "forestgreen", log = "x",
-     xlab = "x - a  (log scale)", ylab = "log weight  log f(x) - log g(x)",
-     main = "log weight, and where each g's draws land",
-     ylim = range(c(log_f(xg) - log_g_u(xg), log_f(xg) - log_g_exp(xg))))
-lines(d, log_f(xg) - log_g_exp(xg), lwd = 3, col = "darkorange")
-rug(pmax(xfig_u - a, 1e-4), col = adjustcolor("forestgreen", 0.4))
-rug(pmax(xfig_e - a, 1e-4), col = adjustcolor("darkorange", 0.4))
-legend("bottomleft", bty = "n", lwd = 3, cex = 0.85, col = c("forestgreen", "darkorange"),
-       legend = c("uniform: draws reach the collapse", "exponential: draws stay flat"))
-```
+        j  <- seq_len(k - 1)
+        ## general ARS intersection formula; for the Gaussian it reduces
+        ## to the midpoint (x[j] + x[j+1]) / 2
+        zz <- (hx[j + 1] - hx[j] - x[j + 1] * sx[j + 1] + x[j] * sx[j]) /
+              (sx[j] - sx[j + 1])
+        z  <- c(a, zz, Inf)
 
-```{r}
-#| label: tbl-tail-proposals
-#| tbl-cap: "Two proposals for the same rare event, S = 10,000 draws: log-scale weights avoid the underflow that would occur if densities were multiplied directly."
-S <- 1e4; lam <- a
-x_u <- runif(S, a, b);  lw_u <- log(b - a) + dnorm(x_u, log = TRUE)
-u_e <- runif(S); x_e <- a - log(1 - u_e * (1 - exp(-lam * (b - a)))) / lam        # inverse cdf
-lg_e <- log(lam) - lam * (x_e - a) - log1p(-exp(-lam * (b - a)))
-lw_e <- dnorm(x_e, log = TRUE) - lg_e
+        ul <- hx + sx * (z[1:k] - x)       # hull at the left end of piece j
+        ur <- hx + sx * (z[2:(k + 1)] - x) # hull at the right end (-Inf on the last)
 
-tail_tbl <- data.frame(
-    proposal   = c("uniform on (a, b)", "shifted exponential"),
-    log_C_f    = c(log_sum_exp(lw_u) - log(S), log_sum_exp(lw_e) - log(S)),
-    S_eff      = c(log_ess(lw_u), log_ess(lw_e))
-)
-knitr::kable(tail_tbl, digits = c(0, 4, 1))
-```
+        ## log mass of each piece, |exp(ul) - exp(ur)| / |slope|, computed
+        ## with a per-piece offset so that nothing under- or overflows
+        M  <- pmax(ul, ur)
+        lp <- M + log(abs(exp(ul - M) - exp(ur - M))) - log(abs(sx))
+        lp[!is.finite(lp)] <- -Inf
 
-Both proposals give a log-probability close to `r round(log_exact, 3)`, but
-their effective sample sizes are worlds apart: the exponential proposal keeps
-essentially all `r S` draws informative, while the uniform proposal's
-effective sample size collapses because almost all of its weight concentrates
-on the handful of draws nearest $a$. Shaping $g$ like $f$ is not just
-elegant — it is what makes the computation efficient.
+        list(x = x, hx = hx, sx = sx, z = z, ul = ul, ur = ur, M = M,
+             p = exp(lp - max(lp)))
+    }
 
-### Exact draws instead of weights: adaptive rejection sampling
+    ## ---- draw m points from the piecewise-exponential envelope -------
+    draw <- function(H, m) {
+        j  <- sample.int(length(H$x), m, replace = TRUE, prob = H$p)
+        v  <- runif(m)
+        Mj <- H$M[j]
+        el <- exp(H$ul[j] - Mj)
+        er <- exp(H$ur[j] - Mj)
+        lu <- Mj + log(el + v * (er - el))      # inverse cdf within the piece
+        list(z = H$x[j] + (lu - H$hx[j]) / H$sx[j], u = lu)
+    }
 
-The naive filter from the setup above is exact rejection sampling too, but
-only when $(l,u)$ is not rare — most of its proposals are wasted otherwise, as
-just seen for $(5,6)$. **Adaptive rejection sampling** (`ars` package,
-applicable because $\log\varphi$ is concave) builds its envelope directly on
-$(l,u)$ itself instead of on the whole real line, so it stays exact and fully
-efficient no matter how rare the interval is — at the cost of an accept/reject
-loop that a single weighted average avoids.
+    ## ---- lower hull (squeeze): chords between adjacent abscissae -----
+    squeeze <- function(H, zs) {
+        k   <- length(H$x)
+        i   <- findInterval(zs, H$x)
+        out <- rep(-Inf, length(zs))
+        ok  <- i >= 1 & i <= k - 1
+        if (any(ok)) {
+            ii <- i[ok]; zz <- zs[ok]
+            out[ok] <- ((H$x[ii + 1] - zz) * H$hx[ii] +
+                        (zz - H$x[ii]) * H$hx[ii + 1]) /
+                       (H$x[ii + 1] - H$x[ii])
+        }
+        out
+    }
 
-```{r}
-#| label: tnorm-ars-function
-### exact draws via adaptive rejection sampling (log phi is concave)
-sample_tnorm_ars <- function(n, l, u) {
-    logf   <- function(x) dnorm(x, log = TRUE)
-    fprima <- function(x) -x
-    ars(n, f = logf, fprima = fprima, x = c(l, (l + u) / 2, u),
-        lb = TRUE, ub = TRUE, xlb = l, xub = u)
+    ## ---- initial abscissae -------------------------------------------
+    ## All must lie in (a, Inf) and the largest must have a negative slope,
+    ## so that the final piece of the envelope is integrable.  The local
+    ## scale 1 / max(|a|, 1) reflects the near-exponential behaviour of the
+    ## Gaussian tail just above a large cutoff.
+    s0 <- 1 / max(abs(a), 1)
+    H  <- build(c(a + 1e-3 * s0, a + 0.5 * s0, a + 2 * s0, max(a, 0) + 1.5))
+
+    out <- numeric(n); got <- 0L; tries <- 0L
+
+    ## ---- phase 1: adaptive, one draw at a time ------------------------
+    while (got < n && length(H$x) < max_hull) {
+        d  <- draw(H, 1); tries <- tries + 1L
+        lw <- log(runif(1))
+        if (lw <= squeeze(H, d$z) - d$u) {          # cheap squeeze test
+            got <- got + 1L; out[got] <- d$z
+        } else {                                    # full test, then adapt
+            if (lw <= h(d$z) - d$u) { got <- got + 1L; out[got] <- d$z }
+            H <- build(c(H$x, d$z))
+        }
+    }
+
+    ## ---- phase 2: envelope frozen, vectorized rejection ---------------
+    while (got < n) {
+        m    <- max(batch, n - got)
+        d    <- draw(H, m); tries <- tries + m
+        zs   <- d$z[log(runif(m)) <= h(d$z) - d$u]
+        take <- min(length(zs), n - got)
+        if (take > 0L) out[got + seq_len(take)] <- zs[seq_len(take)]
+        got <- got + take
+    }
+
+    structure(mu + sigma * out,
+              hull     = mu + sigma * H$x,
+              acc_rate = n / tries)
 }
 ```
 
-The original version of `sample_tnorm_ars` always drew exactly $10{,}000$
-points regardless of the requested `n`; the version above respects `n`, which
-matters for the timing comparison next.
-
-```{r}
-#| label: tbl-tnorm-speed
-#| tbl-cap: "Importance sampling versus adaptive rejection sampling for E[X^2 | l < X < u], averaged over 100 replications at S = 1000 draws each, for the same moderate and rare intervals as above. Timings are milliseconds per replication."
-tnorm_speed <- do.call(rbind, lapply(cases, function(A) {
-    l <- A[1]; u <- A[2]; ref <- midpoint_ref(l, u)
-    t_imps <- system.time(EA_imps <- replicate(100, est_tnorm_unif(a_fn, l, u, 1000)["Ahat"]))
-    t_rej  <- system.time(EA_rej  <- replicate(100, mean(a_fn(sample_tnorm_ars(1000, l, u)))))
-    data.frame(interval = sprintf("(%g, %g)", l, u), reference = ref,
-               mean_imps = mean(EA_imps), mse_imps = mean((EA_imps - ref)^2),
-               ms_imps = 1000 * t_imps[["elapsed"]] / 100,
-               mean_rej = mean(EA_rej), mse_rej = mean((EA_rej - ref)^2),
-               ms_rej = 1000 * t_rej[["elapsed"]] / 100)
-}))
-knitr::kable(tnorm_speed, digits = c(0, 4, 4, 6, 2, 4, 6, 2))
-```
-
-Both estimators agree with the midpoint-rule reference to the precision
-shown, including for the rare interval $(5,6)$ where the naive filter above
-never once produced an estimate; importance sampling is markedly faster here
-because it needs no accept/reject loop or per-interval envelope construction,
-at the cost of returning a *weighted* rather than an exact sample.
-
-## Two Bad Stories: When Reweighting Fails Silently
-
-$S_{\text{eff}}$ diagnoses only *one* kind of failure: weights that vary
-wildly among the draws actually observed. It says nothing about mass that $g$
-never visits at all, and a badly wrong estimate can carry a perfectly healthy
-$S_{\text{eff}}$.
-
-### A proposal that misses a mode
-
-Let $f(\theta) = \tfrac12\varphi(\theta+5) + \tfrac12\varphi(\theta-5)$ (a
-50/50 mixture, so $C_f=1$ and $E_f(\theta)=0$) and $g(\theta) = \varphi(\theta+5)$.
-Both are positive everywhere, so the support requirement holds. But $g$ places
-essentially all of its mass near $\theta=-5$ and, for $\theta$ near $-5$,
+The contrast with the target is the point of the exercise. ARS requires
+log-concavity, and the standard Cauchy is not log-concave:
 $$
-w(\theta) = \tfrac12 + \tfrac12\,\frac{\varphi(\theta-5)}{\varphi(\theta+5)}
-= \tfrac12 + \tfrac12\, e^{10\theta} \ \approx\ \tfrac12,
+\bigl(\log f_{\text{Cauchy}}\bigr)''(x) \;=\; \frac{2(x^{2}-1)}{(1+x^{2})^{2}} ,
 $$
-so every weight the sampler actually sees looks almost identical.
+which is *positive* for $|x|>1$, so $\log f_{\text{Cauchy}}$ is convex in both
+tails and no tangent line lies above it there. The hull construction fails
+outright. This is not an incidental obstacle: log-concavity forces tails to
+decay at least exponentially, which is precisely the property that disqualifies
+the normal as a proposal for a Cauchy target. The densities ARS handles most
+comfortably are, tail for tail, the ones least able to serve as importance
+proposals for heavy-tailed targets.
+
+### The estimator and its variance
+
+With $g$ the normalized truncated normal on $(c,\infty)$ and
+$f(x)=f_{\text{Cauchy}}(x)I(x>c)$, the weights are $w(x)=f(x)/g(x)$ and
+$$
+\widehat{C} \;=\; \frac{1}{S}\sum_{i=1}^{S} w(X_{i}), \qquad X_{i}\sim g ,
+$$
+is unbiased for $C_{f}=P(X>c)$ for every $(\mu,\sigma)$. Its variance is
+$$
+\operatorname{Var}_{g}\bigl(w(X)\bigr)
+ \;=\; \int_{c}^{\infty}\frac{f_{\text{Cauchy}}(x)^{2}}{g(x)}\,dx \;-\; C_{f}^{2} ,
+$$
+and since $f_{\text{Cauchy}}(x)^{2}\asymp \pi^{-2}x^{-4}$ while
+$g(x)\propto\exp\{-(x-\mu)^{2}/2\sigma^{2}\}$, the integrand grows like
+$x^{-4}\exp\{(x-\mu)^{2}/2\sigma^{2}\}$. The integral diverges for **every**
+finite $\mu$ and every $\sigma>0$. No choice of proposal parameters repairs the
+estimator; the parameters govern only how quickly the damage becomes visible.
+Reported standard errors and confidence intervals are estimating a quantity
+that does not exist, and the sample standard deviation of the weights, being
+finite by construction, gives no warning of this.
+
+### An interactive view
+
+The app below puts $c$, $\mu$ and $\sigma$ under slider control and displays,
+on a common $x$-axis: the two normalized truncated densities on a log scale
+with a rug of the draws, and the normalized importance weights
+$\tilde w_{i}=w_{i}/\sum_{j}w_{j}$ at the sampled points. Because both
+densities are normalized, the vertical gap between the curves on the log scale
+is $\log w(x)-\log C_{f}$, so the visual divergence of the curves *is* the
+growth of the weight function. The region beyond the largest draw is shaded:
+the proposal's shape there is never interrogated by the sample, and it is
+exactly there that the target carries the mass the estimator is missing. The
+legends report the true $P(X>c)$, the estimate with its nominal 95% interval,
+and $S_{\text{eff}}=1/\sum_{i}\tilde w_{i}^{2}$.
 
 ```{r}
-#| label: fig-missed-mode
-#| fig-width: 10
-#| fig-height: 4.2
-#| fig-cap: "Left: target f (mixture of two normals) and proposal g (only the left component). Right: normalized weights look almost flat — S_eff is close to S — even though the estimate is badly wrong."
-set.seed(2)
-S <- 5000
-f_mix <- function(t) 0.5 * dnorm(t + 5) + 0.5 * dnorm(t - 5)
-g_mix <- function(t) dnorm(t + 5)
-th <- rnorm(S, -5)
-w  <- f_mix(th) / g_mix(th)
-wt <- w / sum(w)
-
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-curve(f_mix, -9, 9, lwd = 3, col = "firebrick", xlab = expression(theta), ylab = "",
-      main = "target f and proposal g", ylim = c(0, 0.42))
-curve(g_mix, add = TRUE, lwd = 3, col = "steelblue")
-rug(th[1:300], col = adjustcolor("steelblue", 0.5))
-legend("topright", bty = "n", lwd = 3, col = c("firebrick", "steelblue"), legend = c("f", "g"))
-hist(wt * S, breaks = 40, col = "gray85", border = "white", xlab = expression(S * tilde(w)[s]),
-     main = sprintf("weights: S_eff = %.0f of %d", ess(w), S))
-```
-
-```{r}
-#| label: tbl-missed-mode
-#| tbl-cap: "Missed-mode failure: the effective sample size looks fine, but both quantities of interest are far from the truth."
-missed_mode_tbl <- data.frame(
-    quantity = c("C_f / C_g (true 1)", "E_f[theta] (true 0)", "S_eff (of S = 5000)"),
-    estimate = c(mean(w), sum(th * wt), ess(w))
-)
-knitr::kable(missed_mode_tbl, digits = 3)
-```
-
-The estimate of $C_f/C_g$ comes out near `r round(mean(w), 2)` instead of $1$,
-and $E_f[\theta]$ near `r round(sum(th * wt), 2)` instead of $0$ — both wrong
-by a wide margin — while $S_{\text{eff}}$ reports essentially the full sample
-size. The draws that would reveal the problem, near $\theta=+5$, have
-probability under $g$ of order $\Phi(-10) \approx 10^{-23}$: they simply never
-appear, at any practical $S$.
-
-### A narrower-tailed proposal: approximating a Cauchy survival probability
-
-The same failure in a subtler form: instead of a finite interval, let $X$
-follow a standard Cauchy distribution and take $f(x) = f_{\text{Cauchy}}(x)\,
-I(x>t)$ for $t=2$, so $C_f = P(X>t)$ is the Cauchy **survival probability**
-beyond $t$. A tempting proposal is a **truncated standard normal** on
-$(t,\infty)$ — easy to sample, and the support condition $\{g>0\}\supseteq
-\{f>0\}$ holds exactly, so nothing looks obviously wrong at first glance.
-
-```{r}
-#| label: fig-cauchy-normal-tails
-#| fig-cap: "Target (Cauchy tail beyond t = 2, firebrick) and proposal (truncated normal beyond t = 2, steelblue), log density scale, with a rug of 2000 draws from the proposal. The densities cross near x = 3.8; beyond that the proposal falls away far faster than the target, and its own draws almost never reach past x = 5."
-t <- 2
-Zt <- 1 - pnorm(t)
-f_tail <- function(x) dcauchy(x)
-g_tail <- function(x) dnorm(x) / Zt
-
-set.seed(1)
-X_g <- qnorm(pnorm(t) + runif(2000) * Zt)
-
-curve(f_tail, t, 8, log = "y", lwd = 4, col = "firebrick", xlab = "x", ylab = "density (log scale)",
-      main = "target: Cauchy tail vs. proposal: truncated normal", ylim = c(1e-10, 3), n = 500)
-curve(g_tail, add = TRUE, lwd = 3, col = "steelblue", n = 500)
-rug(X_g, col = adjustcolor("steelblue", 0.35))
-legend("bottomleft", bty = "n", lwd = c(4, 3), col = c("firebrick", "steelblue"),
-       legend = c("f: Cauchy(0,1), x > 2", "g: N(0,1), x > 2 (truncated)"))
-```
-
-The densities cross near $x\approx3.8$; to the right, $\varphi$'s Gaussian
-decay $e^{-x^2/2}$ falls away far faster than the Cauchy's polynomial tail
-$1/(\pi x^2)$, so the importance weight $w(x)=f(x)/g(x)$ grows without bound —
-by $x=6$ it is already of order $10^4$, by $x=8$ of order $10^{10}$. This
-generalizes the too-narrow-support failure to tails: a truncated normal is,
-in effect, narrower than a Cauchy no matter how far out its own truncation
-point sits, because it assigns vanishing *relative* density to the region
-that actually carries the heavy tail's mass. Formally, $\text{Var}_g(w) =
-\int f(x)^2/g(x)\,dx = \infty$ here — the ratio estimator is still unbiased,
-but its Monte Carlo variance is infinite. The reverse mismatch — a
-*heavier*-tailed proposal than the target, such as a Cauchy or low-df
-Student-$t$ proposal for a normal target — is harmless: it only ever produces
-occasional small weights, never unbounded ones.
-
-```{r}
-#| label: tbl-cauchy-normal-mse
-#| tbl-cap: "Estimated P(X > 2) for the Cauchy using the truncated-normal proposal, over 500 replications at S = 1000 and 200 replications at S = 100,000. The median stays badly low at both sample sizes, and effective sample size as a percentage of S gets worse, not better, as S grows."
-true_surv <- 1 - pcauchy(t)
-est_cauchy_normal <- function(S) {
-    X <- qnorm(pnorm(t) + runif(S) * Zt)
-    w <- dcauchy(X) / (dnorm(X) / Zt)
-    c(Chat = mean(w), ess = ess(w))
-}
-
-set.seed(2)
-cauchy_tbl <- do.call(rbind, lapply(list(c(500, 1000), c(200, 1e5)), function(spec) {
-    reps <- t(replicate(spec[1], est_cauchy_normal(spec[2])))
-    data.frame(S = spec[2], reps = spec[1],
-               mean_est = mean(reps[, "Chat"]), median_est = median(reps[, "Chat"]),
-               sd_est = sd(reps[, "Chat"]), mean_ess_pct = 100 * mean(reps[, "ess"]) / spec[2])
-}))
-knitr::kable(cbind(true = round(true_surv, 4), cauchy_tbl), digits = c(4, 0, 0, 4, 4, 4, 2))
-```
-
-The true survival probability is `r round(true_surv, 3)`, but the *typical*
-(median) run badly undershoots it at both sample sizes, and the standard
-deviation across replications shrinks far slower than the $1/\sqrt{S}$ rate a
-finite-variance estimator would give — a hundredfold increase in $S$ buys
-nowhere near a tenfold reduction in spread, and $S_{\text{eff}}$ as a
-*percentage* of $S$ gets worse, not better, as $S$ grows. Occasionally a draw
-lands far enough into the tail to carry a huge weight and swing that one
-replication's estimate close to, or past, the truth; but such draws are rare
-enough under the truncated normal that most practical runs never see one, and
-there is no way to tell from a single run's $S_{\text{eff}}$ whether it got
-lucky. Together with the missed-mode example,
-the lesson generalizes beyond finite supports: $S_{\text{eff}}$ diagnoses
-variability among the weights actually observed, but says nothing about how a
-proposal's shape compares to the target's far outside the region the proposal
-is likely to visit — whether that region is a missed mode or, as here, a
-heavier tail.
-
-### Explore it interactively {#sec-importance-app}
-
-This app runs live
-only in the HTML edition of this book; readers of other formats can follow
-the link below it.
-
-::: {#fig-importance-app .content-visible when-format="html"}
-
-```{shinylive-r}
-#| label: missed-mode-app
-#| standalone: true
-#| viewerHeight: 800
-
+#| label: is-cauchy-app
+#| eval: false
 library(shiny)
 
-f_mix <- function(t) 0.5 * dnorm(t + 5) + 0.5 * dnorm(t - 5)
-ess   <- function(w) sum(w)^2 / sum(w^2)
-
 ui <- fluidPage(
-    titlePanel(NULL),
+    titlePanel("Importance sampling for a Cauchy tail with a truncated-normal proposal"),
     sidebarLayout(
         sidebarPanel(
-            width = 4,
-            sliderInput("mean_g", "proposal mean", min = -9, max = 9, value = -5, step = 0.5),
-            sliderInput("sd_g", "proposal sd", min = 0.5, max = 8, value = 1, step = 0.5),
-            helpText("Target f is a 50/50 mixture of N(-5, 1) and N(5, 1), so the ",
-                     "truth is C_f/C_g = 1 and E_f(theta) = 0 when g integrates to 1. ",
-                     "A narrow proposal centred on one mode gives a deceptively healthy ",
-                     "S_eff while both estimates are wrong; only a proposal wide enough ",
-                     "or centred between the modes recovers the truth."),
-            tableOutput("tab")
+            width = 3,
+            sliderInput("cc", "tail cutoff  c", min = 0, max = 10,
+                        value = 2, step = 0.25),
+            tags$hr(style = "margin:6px 0"),
+            sliderInput("mu", HTML("proposal mean &mu;"), min = -5, max = 20,
+                        value = 0, step = 0.25),
+            sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 10,
+                        value = 1, step = 0.25),
+            tags$hr(style = "margin:6px 0"),
+            selectInput("S", "sample size  S",
+                        choices = c(200, 1000, 5000, 20000), selected = 1000),
+            numericInput("seed", "seed", value = 1, min = 1, step = 1),
+            actionButton("new", "New sample"),
+            checkboxInput("logw", "log scale for the weights", FALSE),
+            tags$hr(style = "margin:6px 0"),
+            htmlOutput("readout")
         ),
-        mainPanel(
-            width = 8,
-            plotOutput("curves", height = "260px"),
-            plotOutput("weights", height = "260px")
-        )
+        mainPanel(width = 9, plotOutput("panels", height = "680px"))
     )
 )
 
-server <- function(input, output, session) {
+server <- function(input, output) {
 
-    draws <- reactive({
-        set.seed(1)
-        th <- rnorm(5000, input$mean_g, input$sd_g)
-        w  <- f_mix(th) / dnorm(th, input$mean_g, input$sd_g)
-        list(th = th, w = w)
+    sim <- reactive({
+        S  <- as.integer(input$S)
+        cc <- input$cc; mu <- input$mu; sg <- input$sg
+        set.seed(input$seed + 1000 * input$new)
+
+        X  <- rtnorm_ars(S, mu, sg, cc)
+
+        ## log importance weight  log f_Cauchy(x) - log g(x),  with g the
+        ## normalized truncated normal on (c, Inf)
+        lZ   <- pnorm(cc, mu, sg, lower.tail = FALSE, log.p = TRUE)
+        logw <- dcauchy(X, log = TRUE) - (dnorm(X, mu, sg, log = TRUE) - lZ)
+
+        m    <- max(logw)
+        v    <- exp(logw - m)                       # rescaled weights
+        Chat <- mean(v) * exp(m)                    # unbiased estimate of P(X > c)
+        se   <- sd(v) / sqrt(S) * exp(m)            # nominal standard error
+        wn   <- v / sum(v)                          # normalized weights
+
+        list(X = X, wn = wn, S = S, cc = cc, mu = mu, sg = sg,
+             Chat = Chat, se = se, ess = 1 / sum(wn^2),
+             truth = pcauchy(cc, lower.tail = FALSE),
+             acc = attr(X, "acc_rate"))
     })
 
-    output$curves <- renderPlot({
-        d <- draws()
-        par(mar = c(4, 4, 2, 1))
-        curve(f_mix, -12, 12, lwd = 3, col = "firebrick", xlab = expression(theta), ylab = "",
-              main = "target f and proposal g", ylim = c(0, 0.45))
-        curve(dnorm(x, input$mean_g, input$sd_g), add = TRUE, lwd = 3, col = "steelblue")
-        rug(d$th[1:300], col = adjustcolor("steelblue", 0.5))
+    output$panels <- renderPlot({
+        s  <- sim()
+        cc <- s$cc; X <- s$X
+        lo <- cc
+        hi <- max(max(X) + 0.5, cc + 5)
+        xs <- seq(lo, hi, length.out = 800)
+
+        ## both densities normalized on (c, Inf)
+        ft <- dcauchy(xs) / s$truth
+        gt <- dnorm(xs, s$mu, s$sg) / pnorm(cc, s$mu, s$sg, lower.tail = FALSE)
+        yl <- range(c(ft, gt)[c(ft, gt) > 0])
+        yl[1] <- max(yl[1], 1e-12)
+
+        lwr <- s$Chat - 1.96 * s$se
+        upr <- s$Chat + 1.96 * s$se
+        covered <- lwr <= s$truth && s$truth <= upr
+
+        layout(matrix(1:2, 2), heights = c(3, 2))
+
+        ## ---- top panel: the two densities ----------------------------
+        par(mar = c(0.4, 5, 3, 1))
+        plot(xs, ft, type = "n", log = "y", ylim = yl, xlim = c(lo, hi),
+             xaxt = "n", xlab = "", ylab = "density (log scale)",
+             main = "target and proposal, both normalized on (c, Inf)")
+        rect(max(X), yl[1], hi, yl[2] * 10,
+             col = adjustcolor("grey60", 0.18), border = NA)
+        lines(xs, ft, lwd = 4, col = "firebrick")
+        lines(xs, gt, lwd = 3, col = "steelblue")
+        rug(X, col = adjustcolor("steelblue", 0.25))
+        legend("topright", bty = "n", cex = 1.05,
+               lwd = c(4, 3, NA, NA, NA),
+               col = c("firebrick", "steelblue", NA, NA, NA),
+               legend = c(
+                   "target: Cauchy, truncated at c",
+                   sprintf("proposal: N(%.2f, %.2f^2), truncated at c", s$mu, s$sg),
+                   sprintf("true  P(X > c) = %.5g", s$truth),
+                   sprintf("est.  P(X > c) = %.5g", s$Chat),
+                   sprintf("95%% CI = (%.5g, %.5g)%s", lwr, upr,
+                           if (covered) "" else "   << misses the truth")))
+        text(max(X), yl[2], "  no draw ever reached here", adj = c(0, 1.4),
+             col = "grey35", cex = 0.95)
+
+        ## ---- bottom panel: normalized weights ------------------------
+        par(mar = c(4.5, 5, 0.4, 1))
+        wn <- s$wn
+        if (input$logw) {
+            wl <- c(max(min(wn[wn > 0]), 1e-12), max(wn))
+            plot(X, wn, type = "n", log = "y", ylim = wl, xlim = c(lo, hi),
+                 xlab = "x", ylab = "normalized weight (log scale)")
+            segments(X, wl[1], X, wn, col = adjustcolor("grey25", 0.5))
+        } else {
+            plot(X, wn, type = "n", ylim = c(0, max(wn) * 1.08),
+                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight")
+            segments(X, 0, X, wn, col = adjustcolor("grey25", 0.5))
+        }
+        abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
+        legend("topleft", bty = "n", cex = 1.05,
+               lty = c(2, NA, NA), lwd = c(2, NA, NA),
+               col = c("darkgreen", NA, NA),
+               legend = c("1 / S  (perfectly balanced weights)",
+                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
+                                  s$ess, 100 * s$ess / s$S, s$S),
+                          sprintf("largest weight = %.1f%% of the total",
+                                  100 * max(wn))))
     })
 
-    output$weights <- renderPlot({
-        d <- draws(); wt <- d$w / sum(d$w)
-        par(mar = c(4, 4, 2, 1))
-        hist(wt * length(d$w), breaks = 40, col = "gray85", border = "white",
-             xlab = expression(S * tilde(w)[s]),
-             main = sprintf("S_eff = %.0f of %d", ess(d$w), length(d$w)))
+    output$readout <- renderUI({
+        s   <- sim()
+        lwr <- s$Chat - 1.96 * s$se; upr <- s$Chat + 1.96 * s$se
+        ok  <- lwr <= s$truth && s$truth <= upr
+        HTML(sprintf(
+            "<b>true</b> %.6g<br><b>estimate</b> %.6g<br>
+             <b>95%% CI</b> (%.6g, %.6g)<br>
+             <b>covers?</b> <span style='color:%s'>%s</span><br>
+             <b>ESS</b> %.1f (%.2f%%)<br>
+             <b>ARS acceptance</b> %.3f",
+            s$truth, s$Chat, lwr, upr,
+            if (ok) "green" else "red", if (ok) "yes" else "no",
+            s$ess, 100 * s$ess / s$S, s$acc))
     })
-
-    output$tab <- renderTable({
-        d <- draws(); wt <- d$w / sum(d$w)
-        data.frame(quantity = c("C_f / C_g (true 1)", "E_f[theta] (true 0)", "S_eff (of 5000)"),
-                   estimate = c(mean(d$w), sum(d$th * wt), ess(d$w)))
-    }, digits = 3, rownames = FALSE)
 }
 
 shinyApp(ui, server)
 ```
 
-**Shinylive App Illustrating Importance Sampling with a Missed Mode.** The app below reproduces the missed-mode example with an adjustable proposal:
-move its mean and spread and watch the effective sample size stay high while
-the estimated mean drifts away from the true value of $0$ whenever the
-proposal fails to reach both components of the target.
+The chunk is marked `eval: false` so that the document renders statically. To
+run the app, execute the `rtnorm-ars` chunk and then the `is-cauchy-app` chunk
+interactively in RStudio or Positron; `shinyApp()` opens it in the viewer pane.
 
-:::
+Two alternatives make the app live in the rendered document. Adding
+`server: shiny` to the YAML header turns the document into a Shiny document:
+the interface elements are then written as ordinary chunks, the reactive code
+moves into a chunk marked `#| context: server`, the function definition moves
+into one marked `#| context: setup`, and the document is served with
+`quarto serve`. Alternatively the `quarto-shinylive` extension compiles the app
+to WebAssembly and embeds it in a self-contained HTML file with no server, which
+suits distribution to students; in that case the chunk is marked
+`{shinylive-r}` with `#| standalone: true`, and the body of `rtnorm_ars()` must
+be pasted inside the app chunk, since a shinylive chunk cannot see objects
+defined elsewhere in the document.
 
-::: {.content-visible unless-format="html"}
-This section contains a live, in-browser Shiny app that only runs in the HTML
-edition of this book. View it at
-<https://longhaisk.github.io/compstat/chapters/unit11_importance_sampling.html#sec-importance-app>.
-:::
+Several settings repay attention.
 
-::: {.callout-note}
-### Reproducing this figure
-See the callout in [Numerical Quadrature](unit09_integral.qmd) for how to
-install the `shinylive` extension used above.
-:::
+- **Small $\sigma$, or $\mu$ far below $c$.** The draws pile up just above the
+  cutoff, the weights are nearly equal among them, and $S_{\text{eff}}$ is
+  close to $S$ — while the estimate sits far below the truth and the interval
+  excludes it. This is the diagnostic failing in its most misleading form:
+  uniform weights certify that the proposal is internally consistent, not that
+  it has found the target's mass.
+- **Large $\sigma$.** Draws occasionally reach past the crossing of the two
+  curves, one weight then dominates the sum, $S_{\text{eff}}$ collapses toward
+  $1$, and the estimate jumps. The estimator is now visibly unreliable, which
+  is an improvement on being invisibly unreliable.
+- **Repeated resampling at fixed $S$.** Pressing *New sample* varies the
+  estimate far more than the reported standard error admits, and the nominal
+  95% interval misses the truth far more often than 5% of the time.
+- **Raising $S$ a hundredfold.** The nominal standard error falls by a factor
+  of ten, the actual spread across resamples does not, and $S_{\text{eff}}$ as a
+  *percentage* of $S$ deteriorates rather than improving.
+- **Raising $c$.** The mismatch worsens monotonically, since the polynomial and
+  Gaussian tails separate faster the further out one starts.
 
-## Application: Marginal Likelihood via Importance Sampling
+
+## Example 2: Marginal Likelihood via Importance Sampling
 
 ### Setup
 
