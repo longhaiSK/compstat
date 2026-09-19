@@ -660,22 +660,27 @@ target avoids the resulting collapse in efficiency.
 A single number like $S_{\text{eff}}$ summarizes the weight distribution;
 looking at the weights themselves is more direct. The app below draws $S$
 importance samples from each proposal and plots their *normalized weights,
-sorted from largest to smallest* against rank$/S$, on a log scale. A proposal
-shaped like the target gives a nearly flat curve close to $1/S$ (every draw
-contributes about equally); a poorly matched proposal gives a curve that
-falls off a cliff — a handful of draws near rank $0$ carry nearly all the
-weight, and everything past them is numerically negligible. The legend
-reports the grid-quadrature truth and, for each proposal, its estimate and
-95% CI, colored green when the interval covers the truth and red when it does
-not. This app runs live only in the HTML edition of this book; readers of
-other formats can follow the link below it.
+sorted from largest to smallest* against rank$/S$, in two separate panels,
+because the two proposals' weights live on such different scales that a
+shared axis would flatten the well-behaved one to a barely visible line. The
+weight axis defaults to a log scale — a proposal shaped like the target gives
+a nearly flat curve close to $1/S$ (every draw contributes about equally),
+while a poorly matched proposal gives a curve that falls off a cliff, with a
+handful of draws near rank $0$ carrying nearly all the weight; a checkbox
+switches both panels to a linear scale instead, where that same cliff
+collapses to a single spike against an otherwise invisible floor — a useful
+reminder that the log scale is doing real work, not just spreading the
+picture out. Each panel's legend reports the grid-quadrature truth and that
+proposal's estimate and 95% CI, colored green when the interval covers the
+truth and red when it does not. This app runs live only in the HTML edition
+of this book; readers of other formats can follow the link below it.
 
 ::: {#fig-marlik-app .content-visible when-format="html"}
 
 ```{shinylive-r}
 #| label: marlik-weights-app
 #| standalone: true
-#| viewerHeight: 650
+#| viewerHeight: 820
 
 library(shiny)
 
@@ -748,9 +753,10 @@ ui <- fluidPage(
             sliderInput("sig_w", HTML("prior sd on w"), min = 1, max = 10, value = 5, step = 0.5),
             selectInput("S", "importance sample size  S",
                         choices = c(500, 2000, 5000, 20000), selected = 2000),
-            actionButton("new", "New sample")
+            actionButton("new", "New sample"),
+            checkboxInput("logw", "log scale for weights", TRUE)
         ),
-        mainPanel(width = 9, plotOutput("panel", height = "560px"))
+        mainPanel(width = 9, plotOutput("panel", height = "720px"))
     )
 )
 
@@ -771,37 +777,44 @@ server <- function(input, output) {
     output$panel <- renderPlot({
         s <- sim(); S <- s$S
         rank_frac <- seq_len(S) / S
-
-        floor  <- max(min(c(s$lap$wn[s$lap$wn > 0], s$pri$wn[s$pri$wn > 0])), 1e-300)
-        wn_lap <- pmax(s$lap$wn, floor)
-        wn_pri <- pmax(s$pri$wn, floor)
-
-        par(mar = c(4.5, 5, 2.5, 1))
-        plot(rank_frac, wn_lap, type = "n", log = "y", ylim = c(floor, 1),
-             xlab = "rank / S  (draws sorted by weight, largest first)",
-             ylab = "normalized weight (log scale)",
-             main = "sorted importance weights")
-        lines(rank_frac, wn_lap, lwd = 3, col = "steelblue")
-        lines(rank_frac, wn_pri, lwd = 3, col = "firebrick")
-        abline(h = 1 / S, lty = 2, col = "darkgreen", lwd = 2)
+        uselog <- input$logw
 
         lwr_lap <- s$lap$est - 1.96 * s$lap$se; upr_lap <- s$lap$est + 1.96 * s$lap$se
         lwr_pri <- s$pri$est - 1.96 * s$pri$se; upr_pri <- s$pri$est + 1.96 * s$pri$se
         cov_lap <- if (lwr_lap <= s$truth && s$truth <= upr_lap) "darkgreen" else "firebrick"
         cov_pri <- if (lwr_pri <= s$truth && s$truth <= upr_pri) "darkgreen" else "firebrick"
 
-        legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.0,
-               lwd = c(NA, 3, 3, NA, NA),
-               col  = c(NA, "steelblue", "firebrick", NA, NA),
-               text.col = c("black", "black", "black", cov_lap, cov_pri),
-               legend = c(
-                   sprintf("truth (grid quadrature): log P(y) = %.3f", s$truth),
-                   "Laplace proposal",
-                   "prior proposal",
-                   sprintf("Laplace: est=%.3f  CI=(%.3f,%.3f)  ESS=%.1f%%",
-                           s$lap$est, lwr_lap, upr_lap, 100 * s$lap$ess / S),
-                   sprintf("prior:   est=%.3f  CI=(%.3f,%.3f)  ESS=%.2f%%",
-                           s$pri$est, lwr_pri, upr_pri, 100 * s$pri$ess / S)))
+        draw_panel <- function(wn, col, title, xlab, est, lwr, upr, ess_pct, cov_col) {
+            if (uselog) {
+                floor <- max(min(wn[wn > 0]), 1e-300)
+                wn    <- pmax(wn, floor)
+                ylim  <- range(wn)
+                ylab  <- "normalized weight (log scale)"
+            } else {
+                ylim <- c(0, max(wn))
+                ylab <- "normalized weight"
+            }
+            plot(rank_frac, wn, type = "n", log = if (uselog) "y" else "",
+                 ylim = ylim, xlab = xlab, ylab = ylab, main = title)
+            lines(rank_frac, wn, lwd = 3, col = col)
+            abline(h = 1 / S, lty = 2, col = "darkgreen", lwd = 2)
+            legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
+                   text.col = c("black", cov_col),
+                   legend = c(
+                       sprintf("truth: log P(y) = %.3f", s$truth),
+                       sprintf("est=%.3f  CI=(%.3f,%.3f)  ESS=%.2f%%", est, lwr, upr, ess_pct)))
+        }
+
+        layout(matrix(1:2, 2))
+
+        par(mar = c(2.5, 5, 3, 1))
+        draw_panel(s$lap$wn, "steelblue", "Laplace-shaped proposal", "",
+                   s$lap$est, lwr_lap, upr_lap, 100 * s$lap$ess / S, cov_lap)
+
+        par(mar = c(4.5, 5, 2.5, 1))
+        draw_panel(s$pri$wn, "firebrick", "prior proposal",
+                   "rank / S  (draws sorted by weight, largest first)",
+                   s$pri$est, lwr_pri, upr_pri, 100 * s$pri$ess / S, cov_pri)
     })
 }
 
@@ -809,10 +822,13 @@ shinyApp(ui, server)
 ```
 
 **Shinylive App for Sorted Importance Weights.** Sliders control the
-simulated data size $n$ and the prior spreads on $\mu$ and $w$; the plot
-compares the sorted, normalized importance weights from the Laplace-shaped
-proposal against those from the prior, with the dashed line at $1/S$ marking
-perfectly balanced weights.
+simulated data size $n$ and the prior spreads on $\mu$ and $w$; the top panel
+plots the sorted, normalized importance weights from the Laplace-shaped
+proposal and the bottom panel the same for the prior — each on its own axis,
+since one proposal's weights routinely span far more orders of magnitude
+than the other's — with a checkbox toggling both between log and linear
+scale, and the dashed line at $1/S$ marking perfectly balanced weights in
+both.
 
 :::
 
