@@ -110,46 +110,97 @@ log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
 ```
 
-## A Good Story: Estimating a Normal Tail Probability
+## Estimating a Truncated Normal: Probability and Expectation
 
-### From plain Monte Carlo to importance sampling
+### Setup: two quantities, one target
 
-For $X \sim N(0,1)$, take $f(x) = \varphi(x)\,I(a<x<b)$, the standard normal
-density truncated to $[a,b]$, so that $C_f = P(a<X<b)$. Plain Monte Carlo
-draws $X_i \sim N(0,1)$ and averages the indicator $I(a<X_i<b)$; this wastes
-every draw that lands outside $[a,b]$; for a proposal $g$ supported on $[a,b]$
-itself, every draw contributes.
+For $X \sim N(0,1)$, take $f(x) = \varphi(x)\,I(l<x<u)$, the standard normal
+density truncated to $(l,u)$, so that $C_f = P(l<X<u)$. The same $f$ also
+defines a conditional expectation $A = E\big[a(X) \mid l<X<u\big]$ for any
+function $a$ — for instance $a(x)=x^2$. Both quantities are instances of the
+two estimators from the start of the chapter, $\widehat{C_f/C_g} =
+\frac1S\sum_s w_s$ and the self-normalized $\hat A = \sum_s a(\theta_s)\tilde
+w_s$, applied to the *same* weighted sample — so one simulation answers both
+questions at once, and it is natural to compare their errors side by side.
 
-The simplest such $g$ is uniform on $[a,b]$: $g(x) = I(a\le x\le b)/(b-a)$, so
-$w(x) = (b-a)\varphi(x)$ and $\widehat{C_f} = (b-a)\cdot\frac1S\sum_s
-\varphi(x_s)$ — the *Monte Carlo* version of the midpoint rule from the
-quadrature chapter: a random grid instead of an equally spaced one, evaluating
-the same weighted sum.
+### Two proposals
+
+- **The untruncated normal itself**, $g(x) = \varphi(x)$: since $f \le g$
+  everywhere (the indicator only ever removes mass from $\varphi$), the
+  importance weight is $w(x) = I(l<x<u)$ — exactly $0$ or $1$. Averaging $w$
+  over draws from $g$ is plain Monte Carlo for $C_f$; averaging $a(x)$ over
+  only the draws that land inside $(l,u)$ is *exact rejection sampling* for
+  $A$, with no extra machinery, because a weight in $\{0,1\}$ makes
+  acceptance deterministic. Both readings of the same draws waste every
+  proposal that lands outside $(l,u)$ — fine when $(l,u)$ holds most of the
+  mass, ruinous when it is rare.
+- **Uniform on $(l,u)$**, $g(x) = I(l\le x\le u)/(u-l)$: every draw lands
+  inside the interval, so $w(x) = (u-l)\varphi(x)$ is never $0$. This is the
+  *Monte Carlo* version of the midpoint rule from the quadrature chapter — a
+  random grid instead of an equally spaced one, evaluating the same weighted
+  sum — and it feeds both estimators from a single sample.
 
 ```{r}
-#| label: tbl-tail-good
-#| tbl-cap: "Mean squared error of the truncated-probability estimate over 1000 replications, for a moderate and a rare event, S = 100 draws per replication."
-est_normprob_mc   <- function(A, S) { X <- rnorm(S); mean((X > A[1]) & (X < A[2])) }
-est_normprob_imps <- function(A, S) { X <- runif(S, A[1], A[2]); mean(dnorm(X)) * (A[2] - A[1]) }
+#| label: tnorm-functions
+### naive proposal g = phi: w in {0, 1}; doubles as plain MC (Chat) and exact
+### rejection sampling (Ahat, over the accepted subset) from the same draws
+est_tnorm_naive <- function(a_fn, l, u, S) {
+    X <- rnorm(S)
+    inside <- X > l & X < u
+    c(Chat = mean(inside), Ahat = if (any(inside)) mean(a_fn(X[inside])) else NA_real_)
+}
+### uniform proposal on (l, u): every draw counts for both quantities
+est_tnorm_unif <- function(a_fn, l, u, S) {
+    X <- runif(S, l, u)
+    w <- dnorm(X) * (u - l)
+    c(Chat = mean(w), Ahat = sum(a_fn(X) * w) / sum(w))
+}
+```
+
+### Comparing MSE for both quantities
+
+```{r}
+#| label: tbl-tnorm-mse
+#| tbl-cap: "Mean squared error of the probability and expectation estimates over 1000 replications, for a moderate and a rare event, S = 100 draws per replication. a(x) = x^2; true E[a] from a 100,000-point midpoint rule."
+a_fn <- function(x) x^2
+midpoint_ref <- function(l, u, n = 100000) {
+    h <- (u - l) / n; xm <- l + (seq_len(n) - 0.5) * h
+    sum(a_fn(xm) * dnorm(xm)) * h / (pnorm(u) - pnorm(l))
+}
 
 set.seed(1)
 cases <- list(c(-2, 2), c(5, 6))
-mse_tbl <- do.call(rbind, lapply(cases, function(A) {
-    tp <- pnorm(A[2]) - pnorm(A[1])
-    mc  <- replicate(1000, est_normprob_mc(A, 100))
-    imp <- replicate(1000, est_normprob_imps(A, 100))
-    data.frame(interval = sprintf("(%g, %g)", A[1], A[2]),
-               true_prob = formatC(tp, format = "e", digits = 3),
-               mse_mc = formatC(mean((mc - tp)^2), format = "e", digits = 3),
-               mse_importance = formatC(mean((imp - tp)^2), format = "e", digits = 3))
+tnorm_mse <- do.call(rbind, lapply(cases, function(A) {
+    tp    <- pnorm(A[2]) - pnorm(A[1])
+    ref   <- midpoint_ref(A[1], A[2])
+    naive <- replicate(1000, est_tnorm_naive(a_fn, A[1], A[2], 100))
+    unif  <- replicate(1000, est_tnorm_unif(a_fn, A[1], A[2], 100))
+    ok <- !is.na(naive["Ahat", ])
+    data.frame(
+        interval       = sprintf("(%g, %g)", A[1], A[2]),
+        true_prob      = formatC(tp, format = "e", digits = 3),
+        mse_prob_naive = formatC(mean((naive["Chat", ] - tp)^2), format = "e", digits = 3),
+        mse_prob_unif  = formatC(mean((unif["Chat", ] - tp)^2), format = "e", digits = 3),
+        true_Ea        = formatC(ref, format = "e", digits = 3),
+        mse_Ea_naive   = if (any(ok)) formatC(mean((naive["Ahat", ok] - ref)^2), format = "e", digits = 3)
+                          else sprintf("never accepted (0/%d)", ncol(naive)),
+        mse_Ea_unif    = formatC(mean((unif["Ahat", ] - ref)^2), format = "e", digits = 3)
+    )
 }))
-knitr::kable(mse_tbl, align = c("l", "r", "r", "r"))
+knitr::kable(tnorm_mse, align = c("l", rep("r", 6)),
+             col.names = c("interval", "true P", "MSE P (naive)", "MSE P (uniform)",
+                           "true E[a]", "MSE E[a] (naive)", "MSE E[a] (uniform)"))
 ```
 
-For the moderate interval $(-2,2)$ both methods work; for the rarer event
-$(5,6)$, where plain Monte Carlo almost never lands an observation inside the
-interval, the importance-sampling error is many orders of magnitude smaller
-— the uniform proposal *guarantees* every draw falls in $[a,b]$.
+For the moderate interval $(-2,2)$ both proposals estimate both quantities
+reasonably well. For the rare event $(5,6)$, the naive proposal never once
+places a draw inside the interval across any of the 1000 replications — it
+cannot even form an estimate of $E[a(X)\mid 5<X<6]$ — and its probability
+estimate looks deceptively accurate in MSE only because the true probability
+is itself tiny (both estimate and truth round to $0$). The uniform proposal,
+which *guarantees* every draw lands in $(5,6)$, stays usable for both
+quantities and is an order of magnitude more accurate for the probability
+besides.
 
 ### An underflowing tail probability
 
@@ -201,6 +252,53 @@ essentially all `r S` draws informative, while the uniform proposal's
 effective sample size collapses because almost all of its weight concentrates
 on the handful of draws nearest $a$. Shaping $g$ like $f$ is not just
 elegant — it is what makes the computation efficient.
+
+### Exact draws instead of weights: adaptive rejection sampling
+
+The naive filter from the setup above is exact rejection sampling too, but
+only when $(l,u)$ is not rare — most of its proposals are wasted otherwise, as
+just seen for $(5,6)$. **Adaptive rejection sampling** (`ars` package,
+applicable because $\log\varphi$ is concave) builds its envelope directly on
+$(l,u)$ itself instead of on the whole real line, so it stays exact and fully
+efficient no matter how rare the interval is — at the cost of an accept/reject
+loop that a single weighted average avoids.
+
+```{r}
+#| label: tnorm-ars-function
+### exact draws via adaptive rejection sampling (log phi is concave)
+sample_tnorm_ars <- function(n, l, u) {
+    logf   <- function(x) dnorm(x, log = TRUE)
+    fprima <- function(x) -x
+    ars(n, f = logf, fprima = fprima, x = c(l, (l + u) / 2, u),
+        lb = TRUE, ub = TRUE, xlb = l, xub = u)
+}
+```
+
+The original version of `sample_tnorm_ars` always drew exactly $10{,}000$
+points regardless of the requested `n`; the version above respects `n`, which
+matters for the timing comparison next.
+
+```{r}
+#| label: tbl-tnorm-speed
+#| tbl-cap: "Importance sampling versus adaptive rejection sampling for E[X^2 | l < X < u], averaged over 100 replications at S = 1000 draws each, for the same moderate and rare intervals as above. Timings are milliseconds per replication."
+tnorm_speed <- do.call(rbind, lapply(cases, function(A) {
+    l <- A[1]; u <- A[2]; ref <- midpoint_ref(l, u)
+    t_imps <- system.time(EA_imps <- replicate(100, est_tnorm_unif(a_fn, l, u, 1000)["Ahat"]))
+    t_rej  <- system.time(EA_rej  <- replicate(100, mean(a_fn(sample_tnorm_ars(1000, l, u)))))
+    data.frame(interval = sprintf("(%g, %g)", l, u), reference = ref,
+               mean_imps = mean(EA_imps), mse_imps = mean((EA_imps - ref)^2),
+               ms_imps = 1000 * t_imps[["elapsed"]] / 100,
+               mean_rej = mean(EA_rej), mse_rej = mean((EA_rej - ref)^2),
+               ms_rej = 1000 * t_rej[["elapsed"]] / 100)
+}))
+knitr::kable(tnorm_speed, digits = c(0, 4, 4, 6, 2, 4, 6, 2))
+```
+
+Both estimators agree with the midpoint-rule reference to the precision
+shown, including for the rare interval $(5,6)$ where the naive filter above
+never once produced an estimate; importance sampling is markedly faster here
+because it needs no accept/reject loop or per-interval envelope construction,
+at the cost of returning a *weighted* rather than an exact sample.
 
 ## Two Bad Stories: When Reweighting Fails Silently
 
@@ -263,32 +361,35 @@ appear, at any practical $S$.
 
 ### A proposal narrower than the target's support
 
-The same failure in its starkest form: $f(\theta) = I(0\le\theta\le2)$,
-$g(\theta) = I(0\le\theta\le1)$. The true ratio is $C_f/C_g = 2$, but every
-draw from $g$ lands in $(0,1)$, where $w(\theta)=f(\theta)/g(\theta)=1$
-identically.
+The same failure in its starkest form, using the running truncated-normal
+example: the true truncation bounds are $(-2,2)$, with $C_f/C_g = P(-2<X<2)
+\approx 0.9545$ from the very first table above. Suppose instead the uniform
+proposal is (mistakenly) built for the narrower interval $(-1,1)\subset(-2,2)$,
+$g(x) = I(-1\le x\le1)/2$. Every draw from $g$ lands inside $(-1,1)$, so the
+sampler never visits the roughly $27\%$ of the truncated normal's mass that
+sits in $(-2,-1]\cup[1,2)$.
 
 ```{r}
 #| label: tbl-support-violation
-#| tbl-cap: "Estimated C_f / C_g (true value 2) as the sample size grows: no amount of additional sampling helps, because g never visits (1, 2]."
+#| tbl-cap: "Estimated P(-2 < X < 2) using a uniform proposal on the narrower (-1, 1), as the sample size grows: no amount of additional sampling helps, because g never visits (-2, -1] or [1, 2)."
+tp_true <- pnorm(2) - pnorm(-2)
 set.seed(3)
-f_indicator <- function(x) as.numeric(x >= 0 & x <= 2)   # f = I(0 <= theta <= 2)
-g_indicator <- function(x) as.numeric(x >= 0 & x <= 1)   # g = I(0 <= theta <= 1)
 support_tbl <- data.frame(
     S = c(1e2, 1e3, 1e4, 1e5),
     estimate = sapply(c(1e2, 1e3, 1e4, 1e5), function(S) {
-        th <- runif(S, 0, 1)                              # draws from g
-        mean(f_indicator(th) / g_indicator(th))            # weight is 1 for every draw
+        X <- runif(S, -1, 1)          # draws from the too-narrow proposal g
+        mean(dnorm(X) * 2)            # w(x) = f(x)/g(x) = 2*phi(x); C_g = 1
     })
 )
-knitr::kable(support_tbl, digits = c(0, 3))
+knitr::kable(cbind(support_tbl, true_prob = tp_true), digits = c(0, 3, 3))
 ```
 
-The estimate sits at $1$ regardless of $S$: this is a bias that more sampling
-cannot fix, because it comes from where $g$ looks, not from how much it looks
-there. The reverse situation — $g$ wider than $f$ — is harmless: draws outside
-$\text{supp}(f)$ simply receive weight $0$ and are correctly down-weighted.
-Together with the missed-mode example, the lesson is that $S_{\text{eff}}$
+The estimate stabilizes near $P(-1<X<1) \approx 0.6827$ regardless of $S$, not
+the true $0.9545$: this is a bias that more sampling cannot fix, because it
+comes from where $g$ looks, not from how much it looks there. The reverse
+situation — $g$ wider than $f$ — is harmless: draws outside $\text{supp}(f)$
+simply receive weight $0$ and are correctly down-weighted. Together with the
+missed-mode example, the lesson is that $S_{\text{eff}}$
 alone cannot certify a good proposal; the proposal must be checked against
 what is actually known about where $f$ puts its mass.
 
@@ -386,69 +487,6 @@ edition of this book. View it at
 See the callout in [Numerical Quadrature](unit09_integral.qmd) for how to
 install the `shinylive` extension used above.
 :::
-
-## Estimating a Truncated-Normal Expectation
-
-Return to a truncated $N(0,1)$ on $[l,u]$, and estimate $E\big[a(X)\mid l<X<u\big]$
-for $a(x)=x^2$. Two competing samplers:
-
-- **Importance sampling** with $g(x) = I(l\le x\le u)/(u-l)$ (uniform), giving
-  $w(x) = \varphi(x)$ up to the constant $(u-l)$ that cancels in the
-  self-normalized estimator.
-- **Rejection sampling** via adaptive rejection sampling (`ars` package,
-  applicable because $\log\varphi$ is concave), producing exact iid draws.
-
-```{r}
-#| label: tnorm-functions
-### importance-sampling estimate of E[a(X) | l < X < u], X ~ N(0,1)
-est_tnorm_imps <- function(a_fn, l, u, S) {
-    X <- runif(S, l, u)
-    W <- dnorm(X)
-    ahat <- sum(a_fn(X) * W) / sum(W)
-    attr(ahat, "ess") <- ess(W)
-    ahat
-}
-
-### exact draws via adaptive rejection sampling (log phi is concave)
-sample_tnorm_ars <- function(n, l, u) {
-    logf   <- function(x) dnorm(x, log = TRUE)
-    fprima <- function(x) -x
-    ars(n, f = logf, fprima = fprima, x = c(l, (l + u) / 2, u),
-        lb = TRUE, ub = TRUE, xlb = l, xub = u)
-}
-```
-
-The original version of `sample_tnorm_ars` always drew exactly $10{,}000$
-points regardless of the requested `n`; the version above respects `n`, which
-matters for the timing comparison next.
-
-```{r}
-#| label: tbl-tnorm-compare
-#| tbl-cap: "Importance sampling versus adaptive rejection sampling for E[X^2 | l < X < u], averaged over 100 replications at S = 1000 draws each. Both recover the midpoint-rule reference to the precision shown; timings are milliseconds per replication."
-a_fn <- function(x) x^2
-midpoint_ref <- function(l, u, n = 100000) {
-    h <- (u - l) / n; xm <- l + (seq_len(n) - 0.5) * h
-    sum(a_fn(xm) * dnorm(xm)) * h / (pnorm(u) - pnorm(l))
-}
-
-intervals <- list(c(1, 2), c(-1, 1))
-tnorm_tbl <- do.call(rbind, lapply(intervals, function(iv) {
-    l <- iv[1]; u <- iv[2]; ref <- midpoint_ref(l, u)
-    t_imps <- system.time(EA_imps <- replicate(100, est_tnorm_imps(a_fn, l, u, 1000)))
-    t_rej  <- system.time(EA_rej  <- replicate(100, mean(a_fn(sample_tnorm_ars(1000, l, u)))))
-    data.frame(interval = sprintf("(%g, %g)", l, u), reference = ref,
-               mean_imps = mean(EA_imps), mse_imps = mean((EA_imps - ref)^2),
-               ms_imps = 1000 * t_imps[["elapsed"]] / 100,
-               mean_rej = mean(EA_rej), mse_rej = mean((EA_rej - ref)^2),
-               ms_rej = 1000 * t_rej[["elapsed"]] / 100)
-}))
-knitr::kable(tnorm_tbl, digits = c(0, 4, 4, 6, 2, 4, 6, 2))
-```
-
-Both estimators are unbiased for this smooth, bounded target and agree with
-the midpoint-rule reference; importance sampling is markedly faster here
-because it needs no accept/reject loop or envelope construction, at the cost
-of returning a *weighted* rather than an exact sample.
 
 ## Application: Marginal Likelihood via Importance Sampling
 
@@ -593,8 +631,9 @@ target avoids the resulting collapse in efficiency.
   $\hat A = \sum_s a(\theta_s)\tilde w_s$; only the support condition
   $\{g>0\}\supseteq\{f>0\}$ is required, not an envelope $g \ge f$.
 - A good proposal shaped like the target on its support gives near-constant
-  weights and $S_{\text{eff}} \approx S$ (the tail-probability and
-  Laplace-proposal examples).
+  weights and $S_{\text{eff}} \approx S$ (the truncated-normal and
+  Laplace-proposal examples), and a single weighted sample can answer several
+  questions about the same target — a probability and an expectation alike.
 - A proposal that misses a mode or part of the support fails **silently**: the
   observed weights can look perfectly healthy while both $C_f/C_g$ and
   $E_f[a]$ are badly wrong, and no amount of extra sampling fixes it.
