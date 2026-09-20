@@ -270,12 +270,7 @@ c(root = lstar, contraction_factor = xbar_d * exp(-lstar))
 ### Fixed-Point (Simple) Iteration
 
 Rearrange the score equation algebraically into the form $\theta = g(\theta)$ and iterate $\theta_{k+1} = g(\theta_k)$. If $g$ maps an interval into itself and $|g'(\theta^{*})| < 1$ at the fixed point, the mean value theorem gives
-$$
-\lvert\theta_{k+1} - \theta^{*}\right
-vert = \left|g(\theta_k) - g(\theta^{*})\lvert \le \left
-vertg'(\xi)\lvert \left
-vert\theta_k - \theta^{*}\right| ,
-$$
+$$\left|\theta_{k+1} - \theta^{*}\right| = \left|g(\theta_k) - g(\theta^{*})\right| \le \left|g'(\xi)\right| \left|\theta_k - \theta^{*}\right| ,$$
 so the error contracts by roughly the constant factor $|g'(\theta^{*})|$ at each step. This is **linear convergence**: a fixed number of digits is gained per iteration, and the closer $|g'|$ is to 1 the slower the progress.
 
 ```{r}
@@ -511,8 +506,7 @@ curve(s, -5, 5, n = 400, lwd = 2, xlab = TeX(r"($\theta$)"), ylab = TeX(r"($s(\t
 abline(h = 0, lty = 3); abline(v = c(-1, 1), col = 2, lty = 2)
 ```
 
-Tracing the iterates from three starting values shows the boundary at $\lvert\theta_0
-vert = 1$, where the derivative $s$ turns over:
+Tracing the iterates from three starting values shows the boundary at $|\theta_0| = 1$, where the derivative $s$ turns over:
 
 ```{r}
 #| label: newton-divergence-trace
@@ -686,8 +680,7 @@ $$
 \ell''(\theta) \approx \frac{\ell(\theta + h) - 2\ell(\theta) + \ell(\theta - h)}{h^{2}}.
 $$
 
-The step $h$ trades off two sources of error: too large and the approximation suffers **truncation error** from the curvature of $\ell$ itself; too small and it suffers **rounding error**, because the numerator subtracts two nearly equal floating-point numbers. A step of $h \approx \sqrt{\varepsilon}\,(1 + \lvert\theta
-vert) \approx 10^{-8}$ balances the two for the first derivative, and $h \approx \varepsilon^{1/3}$ for the second, where $\varepsilon \approx 2 \times 10^{-16}$ is double-precision machine epsilon.
+The step $h$ trades off two sources of error: too large and the approximation suffers **truncation error** from the curvature of $\ell$ itself; too small and it suffers **rounding error**, because the numerator subtracts two nearly equal floating-point numbers. A step of $h \approx \sqrt{\varepsilon}\,(1 + |\theta|) \approx 10^{-8}$ balances the two for the first derivative, and $h \approx \varepsilon^{1/3}$ for the second, where $\varepsilon \approx 2 \times 10^{-16}$ is double-precision machine epsilon.
 
 ```{r}
 #| label: numerical-derivative-check
@@ -707,9 +700,9 @@ The two agree to several digits, which is reassuring but also the point: `nlm()`
 | method of scoring | $S$ and $I(\theta)$ | linear to quadratic | $E[\cdot]$ unavailable |
 | golden section | $\ell$ only, and a bracket | linear, factor $0.618$ | $\ell$ not unimodal |
 
-## Example of Univariate Optimization: Poisson Data With Zeros Unobserved
+### Example: Univariate Optimzation for Zero-truncated Poisson Data
 
-### The Model
+#### The Model
 
 Counts are often recorded only when positive: a study of hospital stays sees admitted patients, a survey of litters sees litters that exist. If $Y \sim \mathrm{Poisson}(\lambda)$ and we observe $X = Y \mid Y > 0$,
 $$
@@ -771,7 +764,7 @@ plot(lambdas, nzp.scorefunction(xp, lambdas), type = "l", lwd = 2,
 abline(h = 0, lty = 3)
 ```
 
-### The Three Iterations
+#### The Three Iterations
 
 Each method below returns the whole sequence of iterates together with the log-likelihood attained, so the trajectories can be compared directly.
 
@@ -810,7 +803,7 @@ nzp.method.of.scoring <- function(n, r, lambda0 = mean(n)) {
 }
 ```
 
-### Comparison From Several Starting Values
+#### Comparison From Several Starting Values
 
 The three methods are run for 15 iterations from a sensible start, a start far below, and a start far above.
 
@@ -871,7 +864,7 @@ c(newton      = unname(newton(S_xp, dS_xp, mean(xp))["root"]),
 
 All six agree, which is the point of running them together: the methods differ in cost and robustness, not in the answer.
 
-### Standard Error From the Curvature
+#### Standard Error From the Curvature
 
 The optimizer has already produced everything inference needs.
 
@@ -905,7 +898,7 @@ legend("bottom", bty = "n", lwd = 2, lty = c(1, 2), col = c(1, 2),
 
 The parabola implied by the observed information tracks the log-likelihood closely over the width of the interval, so the Wald interval is trustworthy here.
 
-### Evaluating the Naive Estimator
+#### Evaluating the Naive Estimator
 
 All of this machinery is worth the effort only if the MLE beats the easy alternative. The naive estimator ignores the truncation and reports $\overline x$. Simulating many truncated samples gives the sampling distributions of both estimators.
 
@@ -943,72 +936,49 @@ for (m in c("naive", "mle")) {
 
 The naive estimator is biased upward, and severely so when $\lambda$ is small, since that is when most of the probability mass sits on the discarded zero. Its bias does not shrink with sample size: it reflects the wrong model, not too little data. The MLE is centred on the truth with a standard deviation matching the information-based standard error of the previous section. The optimization was the means; the correct estimator was the end.
 
-## Postscript: Interval Data and a Flat Likelihood
+## Multivariate Newton-Raphson Optimzation Methods
 
-Not every likelihood is well approximated by a parabola, and when it is not, the information-based standard error misleads. Suppose each Poisson observation is known only to lie in an interval $[l_i, h_i]$. Then
+
+### Gradient and Hessian: A Geometric Illustration
+
+The two objects entering the multivariate Newton step have a direct geometric reading. The score $S(\theta)$ is the direction of steepest ascent and is perpendicular to the contour of $\ell$ through $\theta$; the Hessian $H(\theta)$ describes how that direction curves, and at a strict local maximum $J(\theta) = -H(\theta)$ is positive definite. Near $\hat\theta$, $\ell$ is well approximated by the quadratic
 $$
-\ell(\lambda) = \sum_{i=1}^{n} \log \Pr\left(l_i \le X_i \le h_i \mid \lambda\right)
-= \sum_{i=1}^{n} \log \sum_{x = l_i}^{h_i} \frac{e^{-\lambda}\lambda^{x}}{x!} .
+\ell(\theta) \approx \ell(\hat\theta) - \tfrac12(\theta - \hat\theta)^\top J(\hat\theta)(\theta - \hat\theta),
 $$
-
-The inner sum is computed on the log scale with the log-sum-exp trick to avoid underflow, and the maximization is delegated to `nlm`, which returns a numerical Hessian and hence a standard error.
+whose contours are ellipses centred at $\hat\theta$. Writing the eigendecomposition $J(\hat\theta) = Q\Lambda Q^\top$, the axes of these ellipses point along the eigenvectors in $Q$, and the half-length along axis $j$ is proportional to $1/\sqrt{\lambda_j}$: a large eigenvalue means sharp curvature and a short, well-determined direction, while $\lambda_{\max}/\lambda_{\min}$ measures how elongated — and, once the axes are tilted, how correlated the parameters are.
 
 ```{r}
-#| label: interval-poisson-functions
-log_sum_exp <- function(lx) { mlx <- max(lx); mlx + log(sum(exp(lx - mlx))) }
-
-poisson_log_likelihood <- function(lambda, low, high)
-  sum(vapply(seq_along(low),
-             function(i) log_sum_exp(dpois(low[i]:high[i], lambda, log = TRUE)),
-             numeric(1)))
-### equivalently, and faster: sum(log(ppois(high, lambda) - ppois(low - 1, lambda)))
-
-poisson_mle <- function(low, high) {
-  if (length(low) != length(high)) stop("low and high have different lengths")
-  if (any(floor(low) != low) || any(floor(high) != high)) stop("interval ends are not integers")
-
-  fit <- nlm(function(l) -poisson_log_likelihood(l, low, high),
-             p = (mean(low) + mean(high)) / 2, hessian = TRUE)
-  est <- fit$estimate; sd <- sqrt(1 / fit$hessian[1, 1])
-  list(est = est, sd = sd, CI = est + c(-1.96, 1.96) * sd)
+#| label: fig-hessian-ellipse
+#| echo: false
+#| fig-width: 7
+#| fig-height: 7
+#| fig-cap: "Contours of a quadratic log-likelihood: gradient arrows (green) point uphill perpendicular to the contours but not toward the maximum unless the ellipses are circular; the dashed axes are the eigenvectors of $J(\\hat\\theta)$, each with half-length $1/\\sqrt{\\lambda_j}$."
+A <- matrix(c(2, 1.2, 1.2, 1), 2)
+s <- seq(-2, 2, length.out = 80); g <- expand.grid(x = s, y = s)
+z <- matrix(apply(g, 1, function(v) -0.5 * drop(t(v) %*% A %*% v)), 80)
+par(pty = "s", mar = c(4, 4, 1, 1))
+contour(s, s, z, nlevels = 12, xlab = expression(theta[1]), ylab = expression(theta[2]))
+## gradient arrows
+pts <- rbind(c(1, 1), c(-1.5, 0.5), c(0.5, -1.5))
+for (i in 1:3) {
+  gr <- -A %*% pts[i, ]
+  arrows(pts[i, 1], pts[i, 2], pts[i, 1] + 0.3 * gr[1], pts[i, 2] + 0.3 * gr[2],
+         col = 3, lwd = 2, length = 0.1)
 }
-```
-
-```{r}
-#| label: interval-poisson-fits
-#| cache: true
-pn <- rpois(1000, lambda = 20)
-
-tight <- poisson_mle(pmax(pn - 1, 0), pn + 4)      # narrow intervals: much information
-wide  <- poisson_mle(pmax(pn - 5, 0), pn + 5)     # wide intervals: little information
-
-rbind(tight = c(est = tight$est, sd = tight$sd, tight$CI),
-      wide  = c(est = wide$est,  sd = wide$sd,  wide$CI))
-```
-
-```{r}
-#| label: fig-interval-poisson-loglik
-#| fig-width: 10
-#| fig-height: 4.5
-#| fig-cap: "Log-likelihood for the interval-censored Poisson mean under narrow versus wide censoring intervals: wide intervals carry much less information, giving a flatter peak."
-lam_grid <- seq(1, 50, by = 0.5)
-
-par(mfrow = c(1, 2), mar = c(4, 4.5, 2.5, 1))
-for (iv in list(list(lo = pmax(pn - 1, 0), hi = pn + 4, lab = "narrow intervals"),
-                list(lo = pmax(pn - 50, 0), hi = pn + 5, lab = "wide intervals"))) {
-  lp <- vapply(lam_grid, poisson_log_likelihood, numeric(1), low = iv$lo, high = iv$hi)
-  plot(lam_grid, lp - max(lp), type = "l", lwd = 2, ylim = c(-50, 0),
-       xlab = TeX(r"($\lambda$)"), ylab = TeX(r"($\ell(\lambda) - \ell(\hat{\lambda})$)"),
-       main = TeX(sprintf(r"(%s)", iv$lab)))
-  abline(h = -1.92, col = 4, lty = 3)
+## principal axes with eigenvalue labels: length 1/sqrt(lambda) on each side
+e <- eigen(A); k <- 1.6
+for (j in 1:2) {
+  v <- e$vectors[, j] * k / sqrt(e$values[j])
+  segments(-v[1], -v[2], v[1], v[2], col = "firebrick", lwd = 2, lty = 2)
+  text(v[1], v[2], bquote(lambda[.(j)] == .(round(e$values[j], 2))),
+       col = "firebrick", pos = if (j == 1) 4 else 2, cex = 0.9)
 }
+points(0, 0, pch = 19)
 ```
 
-With narrow intervals the log-likelihood is sharply peaked and the standard error is small and reliable. With wide intervals, most of which include the lower boundary at zero, the log-likelihood is nearly flat over a broad range: the curvature at the maximum is tiny, the reported standard error is large, and — because the curve is visibly asymmetric and non-quadratic — even that large value understates the true uncertainty. The information-based standard error is an asymptotic approximation resting on local quadratic behaviour, and this is what its failure looks like. When the log-likelihood is this shape, report a likelihood-based interval, read off where $\ell$ drops by 1.92, instead of a Wald interval.
+Every gradient arrow in the figure is perpendicular to the contour it starts on and points generally uphill toward the maximum at the origin, but only an arrow started exactly on a principal axis points straight at it. This is why Newton's step, which multiplies the score by $J(\hat\theta)^{-1}$ rather than simply following the gradient, converges directly to $\hat\theta$: it rescales and rotates the ascent direction to undo exactly this distortion. The plain gradient-ascent methods of a later section have no such correction, and zig-zag across elongated contours like these.
 
-## The Newton–Raphson Algorithm in Several Dimensions
-
-### Derivation from a quadratic approximation
+### Naive Newton-Raphson Iterations
 
 In the previous section the parameter was a scalar, and the log-likelihood could
 be inspected by plotting it. Once $\theta \in \mathbb{R}^p$ neither is true: we
@@ -1117,54 +1087,12 @@ the response. Logistic regression uses the canonical logit link, so the example
 below is simultaneously Newton–Raphson, Fisher scoring, and — as we note at the
 end of the section — iteratively reweighted least squares.
 
-### Gradient and Hessian: A Geometric Illustration
-
-The two objects entering the multivariate Newton step have a direct geometric reading. The score $S(\theta)$ is the direction of steepest ascent and is perpendicular to the contour of $\ell$ through $\theta$; the Hessian $H(\theta)$ describes how that direction curves, and at a strict local maximum $J(\theta) = -H(\theta)$ is positive definite. Near $\hat\theta$, $\ell$ is well approximated by the quadratic
-$$
-\ell(\theta) \approx \ell(\hat\theta) - \tfrac12(\theta - \hat\theta)^\top J(\hat\theta)(\theta - \hat\theta),
-$$
-whose contours are ellipses centred at $\hat\theta$. Writing the eigendecomposition $J(\hat\theta) = Q\Lambda Q^\top$, the axes of these ellipses point along the eigenvectors in $Q$, and the half-length along axis $j$ is proportional to $1/\sqrt{\lambda_j}$: a large eigenvalue means sharp curvature and a short, well-determined direction, while $\lambda_{\max}/\lambda_{\min}$ measures how elongated — and, once the axes are tilted, how correlated the parameters are.
-
-```{r}
-#| label: fig-hessian-ellipse
-#| echo: false
-#| fig-width: 7
-#| fig-height: 7
-#| fig-cap: "Contours of a quadratic log-likelihood: gradient arrows (green) point uphill perpendicular to the contours but not toward the maximum unless the ellipses are circular; the dashed axes are the eigenvectors of $J(\\hat\\theta)$, each with half-length $1/\\sqrt{\\lambda_j}$."
-A <- matrix(c(2, 1.2, 1.2, 1), 2)
-s <- seq(-2, 2, length.out = 80); g <- expand.grid(x = s, y = s)
-z <- matrix(apply(g, 1, function(v) -0.5 * drop(t(v) %*% A %*% v)), 80)
-par(pty = "s", mar = c(4, 4, 1, 1))
-contour(s, s, z, nlevels = 12, xlab = expression(theta[1]), ylab = expression(theta[2]))
-## gradient arrows
-pts <- rbind(c(1, 1), c(-1.5, 0.5), c(0.5, -1.5))
-for (i in 1:3) {
-  gr <- -A %*% pts[i, ]
-  arrows(pts[i, 1], pts[i, 2], pts[i, 1] + 0.3 * gr[1], pts[i, 2] + 0.3 * gr[2],
-         col = 3, lwd = 2, length = 0.1)
-}
-## principal axes with eigenvalue labels: length 1/sqrt(lambda) on each side
-e <- eigen(A); k <- 1.6
-for (j in 1:2) {
-  v <- e$vectors[, j] * k / sqrt(e$values[j])
-  segments(-v[1], -v[2], v[1], v[2], col = "firebrick", lwd = 2, lty = 2)
-  text(v[1], v[2], bquote(lambda[.(j)] == .(round(e$values[j], 2))),
-       col = "firebrick", pos = if (j == 1) 4 else 2, cex = 0.9)
-}
-points(0, 0, pch = 19)
-```
-
-Every gradient arrow in the figure is perpendicular to the contour it starts on and points generally uphill toward the maximum at the origin, but only an arrow started exactly on a principal axis points straight at it. This is why Newton's step, which multiplies the score by $J(\hat\theta)^{-1}$ rather than simply following the gradient, converges directly to $\hat\theta$: it rescales and rotates the ascent direction to undo exactly this distortion. The plain gradient-ascent methods of a later section have no such correction, and zig-zag across elongated contours like these.
 
 ### Convergence properties
 
 Near a maximum $\hat\theta$ at which $J(\hat\theta)$ is positive definite,
 Newton–Raphson converges **quadratically**: the error satisfies
-$$
-\\lvert\theta^{(k+1)} - \hat\theta\
-vert \;\le\; C \,\\lvert\theta^{(k)} - \hat\theta\
-vert^{2},
-$$
+$$\|\theta^{(k+1)} - \hat\theta\| \;\le\; C \,\|\theta^{(k)} - \hat\theta\|^{2},$$
 
 for some constant $C$ depending on the third derivatives. Informally, the number
 of correct digits doubles at each iteration, which is why five or six iterations
@@ -1188,9 +1116,9 @@ the curvature information needed for inference has already been computed. Method
 that never form a Hessian require a separate numerical differentiation step, which
 is what `hessian = TRUE` requests from `nlm` and `optim`.
 
-## Worked Example: Logistic Regression
+### Example: Multivariate Newton-Raphson for Logistic Regression
 
-### The model and its derivatives
+#### The model and its derivatives
 
 With a single covariate $z_i$ and binary response $r_i$, let
 $u_i = \beta_0 + \beta_1 z_i$ and $p_i = e^{u_i}/(1 + e^{u_i})$. The
@@ -1216,7 +1144,7 @@ $|u_i|$ is large, so $W$ — and hence $J$ — degenerates toward singularity wh
 the fitted probabilities are extreme. That observation is the whole explanation
 of the divergence we are about to see.
 
-### Implementation
+#### Implementation
 
 ```{r}
 #| label: logistic-fns
@@ -1297,7 +1225,7 @@ round(mle_logistic_nr(c(0, 3), 8, data$r, data$z), 6)
 The doubling of correct digits predicted by the quadratic-convergence result is
 visible in the final rows.
 
-### Comparison with `nlm` and `glm`
+#### Comparison with `nlm` and `glm`
 
 ```{r}
 #| label: logistic-nlm
@@ -1320,13 +1248,12 @@ $u_i + (r_i - p_i)/\{p_i(1-p_i)\}$ on $X$ with weights $p_i(1-p_i)$, giving
 algorithm but a different arrangement of the same one, and it explains why
 `glm` reports "Fisher Scoring iterations" in its output.
 
-## Divergence {#sec-divergence}
+### Divergence {#sec-divergence}
 
-### What goes wrong {#sec-nr-divergence-app}
+#### What goes wrong {#sec-nr-divergence-app}
 
 The quadratic approximation is trustworthy only in a neighbourhood of the
-current iterate. Starting from a large $\lvert\beta_1
-vert$, nearly all fitted
+current iterate. Starting from a large $|\beta_1|$, nearly all fitted
 probabilities are pushed to $0$ or $1$, so the weights $p_i(1-p_i)$ are
 essentially zero, $J$ is nearly singular, and $J^{-1}$ is enormous. The
 resulting step is huge, the new iterate lands far outside the region where the
@@ -1497,7 +1424,7 @@ edition of this book. View it at
 
 ::: {.callout-note}
 
-### Reproducing this figure
+#### Reproducing this figure
 The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
 extension, which compiles the app to WebAssembly so that it runs in the reader's
 browser with no Shiny server. Install it once per project with
@@ -1512,7 +1439,7 @@ base R and `shiny`.
 
 :::
 
-### Safeguards
+#### Enhancements to Multivariate Newton-Raphson Methods
 
 The divergence is not a defect of the Newton direction but of the Newton *step
 length*. The standard remedies all keep the direction and control the distance.
@@ -1530,8 +1457,7 @@ $\lambda \to 0$ recovers Newton. This also repairs indefiniteness, and is the
 approach `nlm` takes internally.
 
 **Trust regions.** Maximise the quadratic approximation subject to
-$\\lvert\theta - \theta^{(k)}\
-vert \le \Delta_k$, adapting $\Delta_k$ according to how
+$\|\theta - \theta^{(k)}\| \le \Delta_k$, adapting $\Delta_k$ according to how
 well the quadratic predicted the realised change. This is `nlminb` and the
 `PORT` routines.
 
@@ -1546,8 +1472,7 @@ Two more precise versions of these ideas are worth stating explicitly, since tog
 $$
 \tilde J_k = J_k + \tau I, \qquad \tau = \max\!\big(0,\ \delta - \lambda_{\min}(J_k)\big), \qquad \delta = 10^{-3}\,\lambda_{\max}(J_k),
 $$
-which shifts every eigenvalue of $J_k$ by $\tau$ while leaving its eigenvectors unchanged. As $\tau \to \infty$ the resulting direction $\tilde J_k^{-1}S_k$ rotates toward $S_k$ itself — plain gradient ascent — so ridging interpolates continuously between Newton and steepest ascent. An alternative, **spectral modification**, decomposes $J_k = V\Lambda V^\top$ and replaces each eigenvalue $\lambda_i$ by $\max(\lvert\lambda_i
-vert, \delta)$: this reverses negative-curvature directions rather than merely damping them, pushing the step away from a saddle instead of just slowing it down. Wherever $J_k \succ 0$ already, both reduce to $\tau = 0$ and $\tilde J_k = J_k$, so the safeguard is inactive exactly where it is not needed.
+which shifts every eigenvalue of $J_k$ by $\tau$ while leaving its eigenvectors unchanged. As $\tau \to \infty$ the resulting direction $\tilde J_k^{-1}S_k$ rotates toward $S_k$ itself — plain gradient ascent — so ridging interpolates continuously between Newton and steepest ascent. An alternative, **spectral modification**, decomposes $J_k = V\Lambda V^\top$ and replaces each eigenvalue $\lambda_i$ by $\max(|\lambda_i|, \delta)$: this reverses negative-curvature directions rather than merely damping them, pushing the step away from a saddle instead of just slowing it down. Wherever $J_k \succ 0$ already, both reduce to $\tau = 0$ and $\tilde J_k = J_k$, so the safeguard is inactive exactly where it is not needed.
 
 **A precise stopping rule for step halving: the Armijo condition.** Accepting the halved step $\theta_k + s\,\delta_k$ the first time the log-likelihood merely fails to decrease is workable but crude. The standard criterion instead requires a **sufficient** increase,
 $$
@@ -2070,7 +1995,7 @@ server <- function(input, output, session) {
 shinyApp(ui, server)
 ```
 
-**Shinylive App Comparing Four Optimizers.** Choose an algorithm and objective, then step or play through the iterations.
+**Shinylive App Comparing Gradient Descent and Newton-Raphson Optimization Algorithms.** Choose an algorithm and objective, then step or play through the iterations.
 
 :::
 
