@@ -14,6 +14,7 @@ code-fold: true
 ```{r}
 #| label: setup
 #| message: false
+#| warning: false
 library(ars)
 library(latex2exp)
 ```
@@ -27,79 +28,72 @@ from the wrong distribution. The price is that the resulting sample is no
 longer an exact iid sample from $f$ — it is a *weighted* sample — but nothing
 is ever thrown away, and no envelope condition $g \ge f$ is required.
 
-## The Reweighting Idea
+## Importance Reweighting Formulas
 
-### The goal
+### Objective
 
-As in the last two chapters, $f(\theta)$ is an **unnormalized** function of
-interest — typically $f(\theta) = L(\theta)\pi(\theta)$ for a likelihood $L$
-and prior $\pi$ — and we want two kinds of integral:
-$$
-A = E_f\big[a(\theta)\big] = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta},
-\qquad\qquad
-C_f = \int f(\theta)\,d\theta,
-$$
-a posterior expectation and a normalizing constant (the marginal likelihood
-when $f = L\pi$). Plain Monte Carlo needs draws from $f/C_f$, which we
-generally cannot produce.
+Let $f(\theta)$ denote an unnormalized function of interest. In Bayesian inference, this typically takes the form $f(\theta) = L(\theta)\pi(\theta)$, representing the product of a likelihood function $L$ and a prior distribution $\pi$. The objective is generally to evaluate two types of integrals:
 
-Suppose instead we can draw from another function $g(\theta)$ (also possibly
-unnormalized, with $C_g = \int g(\theta)\,d\theta$). Wherever $f$ puts mass,
-$g$ must too:
-$$
-\{\theta : g(\theta) > 0\} \ \supseteq\ \{\theta : f(\theta) > 0\}.
-$$
-Unlike rejection sampling, $g$ need **not** dominate $f$ everywhere — there is
-no requirement $g \ge f$. This is what makes importance sampling applicable
-in situations where no usable envelope exists.
 
-### Two estimators
+$$A = E_f\big[a(\theta)\big] = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta}, \qquad\qquad C_f = \int f(\theta)\,d\theta,$$
 
-Define the **importance weight** $w(\theta) = f(\theta)/g(\theta)$. For any
-$a$,
-$$
-E_f\big[a(\theta)\big]
-= \int a(\theta)\,\frac{f(\theta)}{C_f}\,d\theta
-= \frac{C_g}{C_f}\, E_g\big[a(\theta)\,w(\theta)\big],
-$$
-and taking $a \equiv 1$ gives $C_f/C_g = E_g[w(\theta)]$. Combining the two,
-$$
-E_f\big[a(\theta)\big] = \frac{E_g\big[a(\theta)\,w(\theta)\big]}{E_g\big[w(\theta)\big]}.
-$$
-Draw $\theta_1,\ldots,\theta_S \overset{iid}{\sim} g/C_g$ and compute
-$w_s = w(\theta_s)$. Two estimators follow directly:
 
-- **Ratio of normalizing constants**: $\widehat{C_f/C_g} = \frac1S\sum_s w_s$,
-  unbiased for $C_f/C_g$; if $g$ is already a normalized density ($C_g=1$)
-  this estimates $C_f$ itself.
-- **Self-normalized expectation**: $\hat A = \sum_{s=1}^S a(\theta_s)\,\tilde w_s$,
-  with normalized weights $\tilde w_s = w_s / \sum_j w_j$ summing to $1$. This
-  turns the proposal sample into a *weighted sample from $f$*: any unknown
-  constants in $f$ and $g$ cancel in the ratio, so $\hat A$ needs only $f$ and
-  $g$ up to a proportionality constant. It is a ratio of two averages and so
-  is biased with bias $O(1/S)$, but consistent.
+which correspond to a posterior expectation and a normalizing constant (the marginal likelihood), respectively. Standard Monte Carlo methods require sampling directly from the normalized target density $f/C_f$, which is computationally intractable in most complex settings.
 
-### Effective sample size
+Suppose we can instead sample from an alternative proposal distribution $g(\theta)$, which may also be unnormalized, with a corresponding normalizing constant $C_g = \int g(\theta)\,d\theta$. The absolute continuity requirement dictates that $g(\theta)$ must possess support wherever $f(\theta)$ does:
 
-$\hat A$ is a weighted average of $a(\theta_s)$: draws where $f \gg g$ count
-more, draws where $f \ll g$ count less. How many *equally weighted* draws is
-the weighted sample worth?
-$$
-S_{\text{eff}} = \frac{1}{\displaystyle\sum_{s=1}^S \tilde w_s^2}.
-$$
-If the weights are all equal, $\tilde w_s = 1/S$ and $S_{\text{eff}} =
-1/(S \cdot 1/S^2) = S$: the proposal is shaped just like the target, and every
-draw counts fully. If one weight dominates all the others, $\tilde w_s
-\approx 1$ for that draw and $S_{\text{eff}} \approx 1$: only one draw is
-doing any work. A variance heuristic makes this precise:
-$\text{Var}_g(\hat A) \approx \text{Var}_f(a)/S_{\text{eff}}$, the same form as
-for an iid sample of size $S_{\text{eff}}$ from $f$ itself.
 
-The catch, central to this chapter, is that $S_{\text{eff}}$ is computed
-**only from the weights actually observed**. A proposal that never visits the
-part of $\theta$-space where $f$ and $g$ disagree most will report a
-reassuring $S_{\text{eff}}$ while being badly wrong — this is exactly the
-subject of the "bad stories" below.
+$$\{\theta : g(\theta) > 0\} \ \supseteq\ \{\theta : f(\theta) > 0\}.$$
+
+
+Unlike rejection sampling, the proposal $g$ is not required to strictly dominate $f$ uniformly; there is no prerequisite that $g \ge f$. This characteristic renders importance sampling feasible in situations where constructing a bounding envelope is mathematically or computationally impractical.
+
+### Fundamental Estimators
+
+We define the unnormalized **importance weight** as $w(\theta) = f(\theta)/g(\theta)$. For any arbitrary function $a(\theta)$, the expectation under $f$ can be expressed as:
+
+
+$$E_f\big[a(\theta)\big] = \int a(\theta)\,\frac{f(\theta)}{C_f}\,d\theta = \frac{C_g}{C_f}\, E_g\big[a(\theta)\,w(\theta)\big].$$
+
+
+By evaluating the special case where $a \equiv 1$, we obtain the ratio of normalizing constants $C_f/C_g = E_g[w(\theta)]$. Combining these relations yields:
+
+
+$$E_f\big[a(\theta)\big] = \frac{E_g\big[a(\theta)\,w(\theta)\big]}{E_g\big[w(\theta)\big]}.$$
+
+
+Given a sequence of independent and identically distributed draws $\theta_1,\ldots,\theta_S \sim g/C_g$, we compute the corresponding weights $w_s = w(\theta_s)$. This operation leads directly to two primary estimators:
+
+* **Ratio of Normalizing Constants:** The estimator $\widehat{C_f/C_g} = \frac{1}{S}\sum_{s=1}^S w_s$ provides an unbiased estimate for the ratio $C_f/C_g$. If $g$ is a properly normalized density (such that $C_g=1$), this term serves as an unbiased estimator for the marginal likelihood $C_f$ itself.
+* **Self-Normalized Expectation:** The estimator $\hat{A} = \sum_{s=1}^S a(\theta_s)\,\tilde{w}_s$ utilizes the normalized weights $\tilde{w}_s = w_s / \sum_{j=1}^S w_j$, which inherently sum to $1$. This methodology transforms the proposal draws into a weighted sample from the target density $f$. Because any unknown proportionality constants in $f$ and $g$ cancel mathematically within the ratio, computing $\hat{A}$ only requires $f$ and $g$ to be specified up to a proportionality constant. While this estimator is formally biased due to being a ratio of random variables (with a bias of order $O(1/S)$), it is asymptotically consistent.
+
+### Effective Sample Size (ESS)
+
+The estimator $\hat{A}$ operates as a weighted average over $a(\theta_s)$. Draws located in regions where $f(\theta) \gg g(\theta)$ disproportionately influence the estimate, whereas draws in regions where $f(\theta) \ll g(\theta)$ contribute minimally. To quantify the efficiency of this weighted sample relative to an ideal scenario of independent draws, we compute the Effective Sample Size (ESS):
+
+
+$$S_{\text{eff}} = \frac{1}{\displaystyle\sum_{s=1}^S \tilde{w}_s^2}.$$
+
+
+If the normalized weights are perfectly uniform ($\tilde{w}_s = 1/S$), then $S_{\text{eff}} = S$, indicating optimal efficiency. Conversely, if a single weight heavily dominates the sample, $S_{\text{eff}} \approx 1$, implying that the inference relies almost entirely on a single draw.
+
+**Theoretical Derivation.** The self-normalized estimator can be expressed as the ratio $\hat{A} = \bar{N}/\bar{D}$, where $N_s = w_s a(\theta_s)$ and $D_s = w_s$, utilizing $w = f/g$. Applying the delta method to this ratio yields a first-order variance approximation:
+
+
+$$\operatorname{Var}_g(\hat{A}) \approx \frac{1}{S}E_g\!\bigl[w^{2}(a-A)^{2}\bigr] = \frac{1}{S}E_f\!\bigl[w(a-A)^{2}\bigr],$$
+
+
+which relies on the identity $E_g[w\,h] = E_f[h]$. Assuming that the weight $w$ varies minimally across the primary support of $(a-A)^2$, we can approximate this integral by factoring it as $E_g[w^2]\operatorname{Var}_f(a)/S$ (substituting $E_f[w] = E_g[w^2]$). This produces the relationship:
+
+
+$$\operatorname{Var}_g(\hat{A}) \approx \frac{\operatorname{Var}_f(a)}{S_{\text{eff}}^{\star}}, \qquad S_{\text{eff}}^{\star} := \frac{S}{E_g[w^{2}]},$$
+
+
+where $S_{\text{eff}}^{\star}$ denotes the theoretical (or population) ESS. This quantity is an inherent property of the relationship between the distributions $f$ and $g$, independent of the target function $a$ or finite-sample effects. It represents the exact mathematical metric that reveals severe inefficiencies in pathological scenarios (e.g., missed target modes or heavy-tailed discrepancies), even when the empirically observed $S_{\text{eff}}$ appears deceptively stable.
+
+**Empirical Estimation.** By substituting the sample moments $\frac{1}{S}\sum w_s$ for $E_g[w]$ and $\frac{1}{S}\sum w_s^2$ for $E_g[w^2]$, the theoretical metric $S_{\text{eff}}^{\star}$ transitions into the standard Kish's formula: $(\sum w_s)^2 / \sum w_s^2 = 1 / \sum \tilde{w}_s^2$. This demonstrates that Kish's formula functions as a principled plug-in estimator rather than an ad hoc heuristic.
+
+**Limitations and Caveats.** The Kish approximation is not uniformly precise. For instance, utilizing the parameters $f = N(0,1)$, $g = N(0,2^2)$, $a(\theta) = \theta^2$, and $S = 4000$, empirical simulation yields $\operatorname{Var}(\hat{A}) \approx 3.15 \times 10^{-4}$, which aligns closely with exact delta-method calculations. However, the theoretical approximation $\operatorname{Var}_f(a)/S_{\text{eff}}^{\star}$ yields $7.56 \times 10^{-4}$ — an overestimation by more than a factor of two, caused by the negative correlation between $w$ and $(a-A)^2$ in this specific configuration. More critically, the empirical ESS ($\widehat{S_{\text{eff}}}$) is derived exclusively from the observed weights. If the proposal distribution fails to adequately explore regions where $f$ and $g$ diverge significantly, the estimator may yield a falsely reassuring $\widehat{S_{\text{eff}}}$, thereby masking severe sampling inadequacies.
 
 ```{r}
 #| label: ess-helpers
@@ -109,8 +103,8 @@ ess <- function(w) sum(w)^2 / sum(w^2)
 log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 ### effective sample size computed from LOG weights (avoids under/overflow)
 log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
-```
 
+```
 ## Example 1: Same Support, but a Mode Is Missed
 
 $$
@@ -185,7 +179,7 @@ mx   <- max(logw); v <- exp(logw - mx)
 Chat <- mean(v) * exp(mx)                       # estimate of C_f / C_g, truth 1
 se   <- sd(v) / sqrt(S) * exp(mx)
 wn   <- v / sum(v)                              # normalized weights
-ess  <- 1 / sum(wn^2)
+ess_obs <- 1 / sum(wn^2)
 Ehat <- sum(wn * th)                            # estimate of E_f(theta), truth 0
 ess_x <- 100 * exp(-log_Ew2(d, sg))             # exact effective fraction
 
@@ -229,7 +223,7 @@ legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
        legend = TeX(c(
            r"($1/S$)",
            r"(normalized weight function)",
-           sprintf(r"(observed $S_{eff}$ = %.1f%% of S)", 100 * ess / S),
+           sprintf(r"(observed $S_{eff}$ = %.1f%% of S)", 100 * ess_obs / S),
            sprintf(r"(exact $S_{eff}$ = %.3g%% of S)", ess_x))))
 ```
 
@@ -261,7 +255,7 @@ diffuse rather than too well matched.
 ```{shinylive-r}
 #| label: app-missed-mode
 #| standalone: true
-#| viewerHeight: 720
+#| viewerHeight: 850
 library(shiny)
 library(latex2exp)
 
@@ -289,7 +283,7 @@ log_Ew2 <- function(d, sg) {
 }
 
 ui <- fluidPage(
-    titlePanel("A missed mode: the proposal's standard deviation"),
+    titlePanel("A Failure Example of Importance Sampling"),
     sidebarLayout(
         sidebarPanel(
             width = 3,
@@ -389,7 +383,7 @@ server <- function(input, output) {
 shinyApp(ui, server)
 ```
 
-Interactive version of @fig-missed-mode. The proposal's standard deviation
+A Failure Example of Importance Sampling. The proposal's standard deviation
 $\sigma$ is under slider control and both panels are redrawn for each setting.
 For $\sigma \le 1/\sqrt{2}$ the weight variance is infinite; near $\sigma = 1$
 the failure is silent, with the observed effective sample size close to $S$
@@ -1111,9 +1105,250 @@ edition of this book. View it at
 
 Raise $n$ with the sliders at their defaults and watch the prior's curve
 rotate from a gentle slope into a cliff at the very first few ranks, while the
-Laplace curve barely moves — the same collapse as
-@tbl-marlik-ess-vs-n, now visible in the shape of the curve rather than
-only in a single summary number.
+Laplace curve barely moves — the same collapse as in @tbl-marlik-merged, now
+visible in the shape of the curve rather than only in a single summary
+number.
+
+## Example 4: Free Energy, the Marginal Likelihood, and Tempering
+
+### The physics: partition functions and free energy
+
+Statistical physics supplies a second reading of the same estimator. A system
+with energy $U(x)$ at inverse temperature $\beta$ has partition function and
+free energy
+$$
+Z(\beta) = \int e^{-\beta U(x)}\,dx, \qquad F(\beta) = -\frac{1}{\beta}\log Z(\beta).
+$$
+$e^{-\beta U(x)}/Z(\beta)$ is the Boltzmann distribution at temperature
+$1/\beta$: large $\beta$ (low temperature) concentrates mass where $U$ is
+small, small $\beta$ (high temperature) spreads it out.
+
+To move between two temperatures, importance-sample from $g(x)=e^{-\beta_0
+U(x)}$ to $f(x) = e^{-\beta_1 U(x)}$. The weight is $w(x) =
+f(x)/g(x)=e^{-(\beta_1-\beta_0)U(x)}$, and the ratio-of-normalizing-constants
+estimator from the start of the chapter reads
+$$
+\frac{Z(\beta_1)}{Z(\beta_0)} = E_{\beta_0}\!\left[e^{-(\beta_1-\beta_0)U(x)}\right],
+$$
+an expectation under the $\beta_0$-tempered distribution.
+
+### The Bayesian analogue
+
+Set $U(\theta) = -\log L(\theta)$. Then $\beta=0$ gives $e^{-\beta U}\propto
+1$ — up to normalization the prior, taking $g=\pi(\theta)$ — and $\beta=1$
+gives $e^{-U}=L(\theta)$, so $f=L(\theta)\pi(\theta)$ is the (unnormalized)
+posterior. The ratio $Z(1)/Z(0)$ is exactly the marginal likelihood
+$C_f/C_g$ of the previous section:
+$$
+P(y) = \frac{C_f}{C_g} = E_\pi\!\big[L(\theta)\big] \approx \frac1S\sum_{s=1}^S L(\theta_s), \qquad \theta_s\sim\pi,
+$$
+and $-\log P(y)$ is, in this language, the free energy of the posterior at
+$\beta=1$. This is not a new estimator — it is `log_marlik_prior()` from
+above, rederived from a different starting point. The physics vocabulary
+just names the failure mode precisely: jumping straight from $\beta=0$ to
+$\beta=1$ asks one importance-sampling step to bridge the *entire*
+temperature range in a single move, and the wider the prior is relative to
+the likelihood, the more that one jump resembles the badly matched proposals
+seen earlier in this chapter.
+
+### Stepping stones: many small jumps instead of one big one
+
+The fix follows from the algebra of the ratio itself. Chaining intermediate
+temperatures $\beta_0=0<\beta_1<\dots<\beta_K=1$,
+$$
+\frac{Z(1)}{Z(0)} = \prod_{k=1}^K \frac{Z(\beta_k)}{Z(\beta_{k-1})}, \qquad
+\log Z(1)-\log Z(0) = \sum_{k=1}^K \log\frac{Z(\beta_k)}{Z(\beta_{k-1})},
+$$
+and each factor is its own small importance-sampling problem: sample from
+the tempered distribution at $\beta_{k-1}$, weight by
+$e^{-(\beta_k-\beta_{k-1})U(\theta)}$. If the temperatures are close enough
+together, $g_{\beta_{k-1}}$ and $f_{\beta_k}$ nearly coincide and every step
+is a good-story proposal with near-constant weights — the same principle as
+building an envelope from many well-fitting pieces rather than one loose
+one. This chain of intermediate distributions is a **stepping-stones**
+estimator (a discretization of thermodynamic integration, and the same
+schedule idea behind simulated annealing and parallel tempering).
+
+For the normal-mean model with a conjugate normal prior, each tempered
+posterior is itself normal, so every step can be sampled directly with no
+accept/reject machinery of its own:
+
+```{r}
+#| label: ex4-prior-sampling
+set.seed(1)
+y   <- rnorm(30, 1, 1); n <- length(y)                # data; model N(theta, 1)
+s2p <- 100                                            # prior N(0, s2p)
+logL <- function(th) sapply(th, function(t) sum(dnorm(y, t, log = TRUE)))
+
+## exact log P(y): marginally, y ~ N(0, I_n + s2p * J_n), J_n the all-ones matrix
+ybar  <- mean(y)
+exact <- -n / 2 * log(2 * pi) - 0.5 * sum((y - ybar)^2) -
+    0.5 * log(1 + n * s2p) - 0.5 * n * ybar^2 / (1 + n * s2p)
+
+## the free-energy view of the previous section's estimator: g = prior (beta: 0 -> 1 in one jump)
+S  <- 1e5
+th <- rnorm(S, 0, sqrt(s2p)); lw <- logL(th)
+c(exact = exact, prior_sampling = log_sum_exp(lw) - log(S),
+  ess_pct = 100 * ess(exp(lw - max(lw))) / S)
+```
+
+```{r}
+#| label: ex4-stepping-stones
+betas <- seq(0, 1, by = 0.1); logZ <- 0
+for (k in 2:length(betas)) {
+    ## tempered posterior at beta_{k-1} is N(m, v) by conjugacy
+    b0 <- betas[k - 1]
+    v  <- 1 / (1 / s2p + b0 * n); m <- v * b0 * n * ybar
+    th <- rnorm(S, m, sqrt(v))
+    lw <- (betas[k] - b0) * logL(th)                  # weight for the step beta_{k-1} -> beta_k
+    logZ <- logZ + log_sum_exp(lw) - log(S)
+}
+c(exact = exact, stepping_stones = logZ)
+```
+
+Prior sampling recovers the right order of magnitude, but the printed
+$S_{\text{eff}}$ shows only a few percent of the $S=100{,}000$ prior draws
+doing any real work — the same disease as `log_marlik_prior()`, now visible
+as one large step from $\beta=0$ to $\beta=1$. Breaking that single jump
+into ten steps of $\Delta\beta=0.1$, each tempered posterior sampled
+directly by conjugacy, reproduces the exact value far more closely, and
+every summand in the chain is a well-behaved importance-sampling problem on
+its own. The mismatch between prior and posterior has not gone away — it is
+the same mismatch throughout — but spreading it over many small, well-matched
+steps rather than absorbing it in one large one is exactly the strategy that
+makes annealing- and tempering-based samplers practical where a direct jump
+is not.
+
+## Example 5: Bayesian Leave-One-Out Cross-Validation
+
+### The leave-one-out predictive density
+
+Cross-validation asks how well a model predicts observations it was not
+fitted to. The Bayesian version of a single leave-one-out fold is the
+**leave-one-out predictive density**
+$$
+p(y_i\mid y_{-i}) = \int p(y_i\mid\theta)\,p(\theta\mid y_{-i})\,d\theta,
+$$
+the posterior predictive density for $y_i$ under the posterior that never
+saw $y_i$. Summed in log over $i=1,\dots,n$, these give the expected log
+pointwise predictive density, a standard measure of a model's out-of-sample
+fit. Computed directly it requires refitting the model $n$ times — one full
+posterior per left-out observation — exactly the cost importance sampling is
+suited to avoid.
+
+### Reusing the full posterior as the proposal
+
+Take $g(\theta)=p(\theta\mid y)$, the **full** posterior — already available
+from a single fit — as the proposal, and target the leave-one-out posterior
+$f(\theta)=p(\theta\mid y_{-i})$. Since $p(\theta\mid
+y)\propto p(y_i\mid\theta)\,p(\theta\mid y_{-i})$,
+$$
+f(\theta) = p(\theta\mid y_{-i}) \;\propto\; \frac{p(\theta\mid y)}{p(y_i\mid\theta)}, \qquad
+w_i(\theta) = \frac{f(\theta)}{g(\theta)} \;\propto\; \frac{1}{p(y_i\mid\theta)}.
+$$
+Reusing the self-normalized estimator from the start of the chapter with
+$a(\theta)=p(y_i\mid\theta)$,
+$$
+\widehat{p(y_i\mid y_{-i})} =
+\frac{\sum_{s} p(y_i\mid\theta_s)\,w_i(\theta_s)}{\sum_s w_i(\theta_s)} =
+\frac{\sum_s p(y_i\mid\theta_s)/p(y_i\mid\theta_s)}{\sum_s 1/p(y_i\mid\theta_s)} =
+\frac{S}{\sum_{s=1}^S 1/p(y_i\mid\theta_s)},
+$$
+the **harmonic mean** of the likelihood contributions $p(y_i\mid\theta_s)$
+over draws from the *full* posterior (Gelfand, Dey & Chang, 1992) — one
+weighted average per left-out observation, all reusing the same $S$
+posterior draws from the single original fit.
+
+### When it works, and when it breaks
+
+This is the missing-support danger from earlier in the chapter, with the
+roles reversed. There, the proposal was too wide (the prior) relative to a
+narrow target (the posterior). Here $g$ is the full posterior and $f$ is the
+leave-one-out posterior — and the full posterior, having seen one more
+observation than $f$, is **narrower**: $g$ has *lighter* tails than $f$.
+That is precisely the heavy-tailed-weight failure examined for the
+truncated-normal-versus-$t$ example: whenever $f$'s tail decays more slowly
+than $g$'s, $w=f/g$ is unbounded and its variance can be, or become,
+infinite.
+
+For a typical observation $y_i$, dropping it barely moves the posterior —
+$f\approx g$, the weights $1/p(y_i\mid\theta_s)$ are well-behaved, and
+$S_{\text{eff}}$ stays high. For an **influential** observation — an
+outlier, or a high-leverage point — dropping it moves the posterior
+noticeably, $f$ develops a heavier tail than $g$ in the direction that
+explains $y_i$, and the weights $1/p(y_i\mid\theta_s)$ can have infinite
+variance: a handful of draws with an accidentally tiny $p(y_i\mid\theta_s)$
+dominate the harmonic mean, exactly as a handful of draws with an
+accidentally large weight dominated the earlier examples.
+
+### Diagnostics and fixes
+
+Three responses follow directly from what $S_{\text{eff}}$ can and cannot
+see:
+
+- **$S_{\text{eff}}$ per observation.** Since $w_i$ differs for every $i$, so
+  does $S_{\text{eff}}$; computing all $n$ values at once flags exactly which
+  observations are influential, at no extra sampling cost.
+- **Pareto-smoothed importance sampling (PSIS)** (Vehtari, Gelman & Gabry,
+  2017) fits a generalized Pareto distribution to the largest importance
+  weights for each $i$ and replaces them with smoothed order statistics,
+  stabilizing the harmonic mean without discarding the tail information the
+  way truncation would. The fitted shape parameter $\hat k$ is itself a
+  diagnostic: $\hat k\lesssim 0.7$ indicates the weight distribution is close
+  enough to finite-variance for the smoothed estimate to be trusted; a
+  larger $\hat k$ flags an observation whose importance-sampling estimate is
+  not trustworthy at any $S$ — the same underlying question a diverging
+  $\operatorname{Var}_g(w)$ answered earlier in the chapter, now measured
+  observation by observation instead of only globally.
+- **Refit only the flagged points.** Because the diagnostic is per-observation
+  and cheap, the expensive exact refit can be reserved for the handful of
+  observations PSIS flags, rather than paid for all $n$.
+
+### A typical point versus an outlier
+
+The simulation below reuses the 30 observations $y$ simulated above, adds one
+more observation as a deliberate outlier, and compares the sorted,
+normalized leave-one-out weights $\tilde w_i$ for the first (typical) point
+against the appended outlier. Because the prior is conjugate normal, the
+full posterior needed for $g$ is available directly, without refitting
+anything, from a single draw shared by every $i$:
+
+```{r}
+#| label: fig-loo-weights
+#| fig-cap: "Sorted, normalized leave-one-out importance weights for a typical
+#|   point (left, steelblue) and a deliberately added outlier (right,
+#|   firebrick), both computed from the same S = 4000 draws of the full
+#|   posterior. The outlier's weights are more concentrated: a handful of
+#|   draws with an unusually small $p(y_i \\mid \\theta_s)$ carry more of the
+#|   harmonic mean, and S_eff drops accordingly."
+#| fig-width: 10
+#| fig-height: 3.8
+y2 <- c(y, 6); n2 <- length(y2)                        # append one outlier
+v  <- 1 / (1 / s2p + n2); m <- v * sum(y2)             # full posterior, conjugate normal
+ths <- rnorm(4000, m, sqrt(v))
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+for (i in c(1, n2)) {
+    lw <- -dnorm(y2[i], ths, log = TRUE)               # log w_i = -log p(y_i | theta_s)
+    w  <- exp(lw - max(lw)); wt <- w / sum(w)
+    plot(sort(wt, decreasing = TRUE)[1:150], type = "h", lwd = 2,
+         col = if (i == 1) "steelblue" else "firebrick",
+         xlab = "draw (sorted by weight)", ylab = TeX(r"($\tilde{w}_i$)"),
+         main = sprintf("%s (y = %.2f):  S_eff = %.0f of 4000",
+                         if (i == 1) "typical point" else "outlier",
+                         y2[i], ess(w)))
+}
+```
+
+The typical point's weights are close to flat across the sorted draws — the
+leave-one-out and full posteriors barely differ, so almost every draw
+contributes. The outlier's weights fall off faster: the full posterior
+(which includes the outlier) sits somewhat away from where the leave-one-out
+posterior actually is, so the draws that happen to land there carry
+disproportionately more weight, and $S_{\text{eff}}$ drops well below its
+value for the typical point. Flagging this observation for a direct refit,
+rather than trusting the importance-sampling estimate outright, is exactly
+the response the diagnostics above prescribe.
 
 ## Summary
 
@@ -1136,3 +1371,16 @@ only in a single summary number.
   posterior sharpens, while a fixed, data-independent proposal such as the
   prior does not — reinforcing why the mode-finding methods from earlier
   chapters remain useful even once we turn to sampling-based methods.
+- Recast as free energy, the marginal likelihood's prior-versus-posterior
+  mismatch is a single large jump in inverse temperature from $\beta=0$ to
+  $\beta=1$; a stepping-stones chain of small, well-matched jumps — the same
+  idea behind simulated annealing and parallel tempering — turns one
+  badly-matched importance-sampling problem into many good ones, with the
+  log ratios simply adding up.
+- Leave-one-out cross-validation reuses a single posterior sample as the
+  proposal for $n$ related leave-one-out targets; because the full posterior
+  is narrower than any of them, the same heavy-tailed-weight failure
+  threatens every observation, and Pareto-smoothed importance sampling turns
+  $S_{\text{eff}}$'s global blind spot into a per-observation, actionable
+  diagnostic ($\hat k$) that says which few points are worth refitting
+  exactly.
