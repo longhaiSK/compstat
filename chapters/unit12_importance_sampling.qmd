@@ -1109,7 +1109,8 @@ Laplace curve barely moves — the same collapse as in @tbl-marlik-merged, now
 visible in the shape of the curve rather than only in a single summary
 number.
 
-## Example 4: Free Energy, the Marginal Likelihood, and Tempering
+
+## Advanced Applications of Importance Sampling
 
 ### The physics: partition functions and free energy
 
@@ -1132,7 +1133,7 @@ $$
 $$
 an expectation under the $\beta_0$-tempered distribution.
 
-### The Bayesian analogue
+#### The Bayesian analogue
 
 Set $U(\theta) = -\log L(\theta)$. Then $\beta=0$ gives $e^{-\beta U}\propto
 1$ — up to normalization the prior, taking $g=\pi(\theta)$ — and $\beta=1$
@@ -1151,7 +1152,7 @@ temperature range in a single move, and the wider the prior is relative to
 the likelihood, the more that one jump resembles the badly matched proposals
 seen earlier in this chapter.
 
-### Stepping stones: many small jumps instead of one big one
+#### Stepping stones: many small jumps instead of one big one
 
 The fix follows from the algebra of the ratio itself. Chaining intermediate
 temperatures $\beta_0=0<\beta_1<\dots<\beta_K=1$,
@@ -1169,59 +1170,9 @@ one. This chain of intermediate distributions is a **stepping-stones**
 estimator (a discretization of thermodynamic integration, and the same
 schedule idea behind simulated annealing and parallel tempering).
 
-For the normal-mean model with a conjugate normal prior, each tempered
-posterior is itself normal, so every step can be sampled directly with no
-accept/reject machinery of its own:
+### Bayesian Leave-One-Out Cross-Validation
 
-```{r}
-#| label: ex4-prior-sampling
-set.seed(1)
-y   <- rnorm(30, 1, 1); n <- length(y)                # data; model N(theta, 1)
-s2p <- 100                                            # prior N(0, s2p)
-logL <- function(th) sapply(th, function(t) sum(dnorm(y, t, log = TRUE)))
-
-## exact log P(y): marginally, y ~ N(0, I_n + s2p * J_n), J_n the all-ones matrix
-ybar  <- mean(y)
-exact <- -n / 2 * log(2 * pi) - 0.5 * sum((y - ybar)^2) -
-    0.5 * log(1 + n * s2p) - 0.5 * n * ybar^2 / (1 + n * s2p)
-
-## the free-energy view of the previous section's estimator: g = prior (beta: 0 -> 1 in one jump)
-S  <- 1e5
-th <- rnorm(S, 0, sqrt(s2p)); lw <- logL(th)
-c(exact = exact, prior_sampling = log_sum_exp(lw) - log(S),
-  ess_pct = 100 * ess(exp(lw - max(lw))) / S)
-```
-
-```{r}
-#| label: ex4-stepping-stones
-betas <- seq(0, 1, by = 0.1); logZ <- 0
-for (k in 2:length(betas)) {
-    ## tempered posterior at beta_{k-1} is N(m, v) by conjugacy
-    b0 <- betas[k - 1]
-    v  <- 1 / (1 / s2p + b0 * n); m <- v * b0 * n * ybar
-    th <- rnorm(S, m, sqrt(v))
-    lw <- (betas[k] - b0) * logL(th)                  # weight for the step beta_{k-1} -> beta_k
-    logZ <- logZ + log_sum_exp(lw) - log(S)
-}
-c(exact = exact, stepping_stones = logZ)
-```
-
-Prior sampling recovers the right order of magnitude, but the printed
-$S_{\text{eff}}$ shows only a few percent of the $S=100{,}000$ prior draws
-doing any real work — the same disease as `log_marlik_prior()`, now visible
-as one large step from $\beta=0$ to $\beta=1$. Breaking that single jump
-into ten steps of $\Delta\beta=0.1$, each tempered posterior sampled
-directly by conjugacy, reproduces the exact value far more closely, and
-every summand in the chain is a well-behaved importance-sampling problem on
-its own. The mismatch between prior and posterior has not gone away — it is
-the same mismatch throughout — but spreading it over many small, well-matched
-steps rather than absorbing it in one large one is exactly the strategy that
-makes annealing- and tempering-based samplers practical where a direct jump
-is not.
-
-## Example 5: Bayesian Leave-One-Out Cross-Validation
-
-### The leave-one-out predictive density
+#### The leave-one-out predictive density
 
 Cross-validation asks how well a model predicts observations it was not
 fitted to. The Bayesian version of a single leave-one-out fold is the
@@ -1236,7 +1187,7 @@ fit. Computed directly it requires refitting the model $n$ times — one full
 posterior per left-out observation — exactly the cost importance sampling is
 suited to avoid.
 
-### Reusing the full posterior as the proposal
+#### Reusing the full posterior as the proposal
 
 Take $g(\theta)=p(\theta\mid y)$, the **full** posterior — already available
 from a single fit — as the proposal, and target the leave-one-out posterior
@@ -1259,96 +1210,7 @@ over draws from the *full* posterior (Gelfand, Dey & Chang, 1992) — one
 weighted average per left-out observation, all reusing the same $S$
 posterior draws from the single original fit.
 
-### When it works, and when it breaks
 
-This is the missing-support danger from earlier in the chapter, with the
-roles reversed. There, the proposal was too wide (the prior) relative to a
-narrow target (the posterior). Here $g$ is the full posterior and $f$ is the
-leave-one-out posterior — and the full posterior, having seen one more
-observation than $f$, is **narrower**: $g$ has *lighter* tails than $f$.
-That is precisely the heavy-tailed-weight failure examined for the
-truncated-normal-versus-$t$ example: whenever $f$'s tail decays more slowly
-than $g$'s, $w=f/g$ is unbounded and its variance can be, or become,
-infinite.
-
-For a typical observation $y_i$, dropping it barely moves the posterior —
-$f\approx g$, the weights $1/p(y_i\mid\theta_s)$ are well-behaved, and
-$S_{\text{eff}}$ stays high. For an **influential** observation — an
-outlier, or a high-leverage point — dropping it moves the posterior
-noticeably, $f$ develops a heavier tail than $g$ in the direction that
-explains $y_i$, and the weights $1/p(y_i\mid\theta_s)$ can have infinite
-variance: a handful of draws with an accidentally tiny $p(y_i\mid\theta_s)$
-dominate the harmonic mean, exactly as a handful of draws with an
-accidentally large weight dominated the earlier examples.
-
-### Diagnostics and fixes
-
-Three responses follow directly from what $S_{\text{eff}}$ can and cannot
-see:
-
-- **$S_{\text{eff}}$ per observation.** Since $w_i$ differs for every $i$, so
-  does $S_{\text{eff}}$; computing all $n$ values at once flags exactly which
-  observations are influential, at no extra sampling cost.
-- **Pareto-smoothed importance sampling (PSIS)** (Vehtari, Gelman & Gabry,
-  2017) fits a generalized Pareto distribution to the largest importance
-  weights for each $i$ and replaces them with smoothed order statistics,
-  stabilizing the harmonic mean without discarding the tail information the
-  way truncation would. The fitted shape parameter $\hat k$ is itself a
-  diagnostic: $\hat k\lesssim 0.7$ indicates the weight distribution is close
-  enough to finite-variance for the smoothed estimate to be trusted; a
-  larger $\hat k$ flags an observation whose importance-sampling estimate is
-  not trustworthy at any $S$ — the same underlying question a diverging
-  $\operatorname{Var}_g(w)$ answered earlier in the chapter, now measured
-  observation by observation instead of only globally.
-- **Refit only the flagged points.** Because the diagnostic is per-observation
-  and cheap, the expensive exact refit can be reserved for the handful of
-  observations PSIS flags, rather than paid for all $n$.
-
-### A typical point versus an outlier
-
-The simulation below reuses the 30 observations $y$ simulated above, adds one
-more observation as a deliberate outlier, and compares the sorted,
-normalized leave-one-out weights $\tilde w_i$ for the first (typical) point
-against the appended outlier. Because the prior is conjugate normal, the
-full posterior needed for $g$ is available directly, without refitting
-anything, from a single draw shared by every $i$:
-
-```{r}
-#| label: fig-loo-weights
-#| fig-cap: "Sorted, normalized leave-one-out importance weights for a typical
-#|   point (left, steelblue) and a deliberately added outlier (right,
-#|   firebrick), both computed from the same S = 4000 draws of the full
-#|   posterior. The outlier's weights are more concentrated: a handful of
-#|   draws with an unusually small $p(y_i \\mid \\theta_s)$ carry more of the
-#|   harmonic mean, and S_eff drops accordingly."
-#| fig-width: 10
-#| fig-height: 3.8
-y2 <- c(y, 6); n2 <- length(y2)                        # append one outlier
-v  <- 1 / (1 / s2p + n2); m <- v * sum(y2)             # full posterior, conjugate normal
-ths <- rnorm(4000, m, sqrt(v))
-
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
-for (i in c(1, n2)) {
-    lw <- -dnorm(y2[i], ths, log = TRUE)               # log w_i = -log p(y_i | theta_s)
-    w  <- exp(lw - max(lw)); wt <- w / sum(w)
-    plot(sort(wt, decreasing = TRUE)[1:150], type = "h", lwd = 2,
-         col = if (i == 1) "steelblue" else "firebrick",
-         xlab = "draw (sorted by weight)", ylab = TeX(r"($\tilde{w}_i$)"),
-         main = sprintf("%s (y = %.2f):  S_eff = %.0f of 4000",
-                         if (i == 1) "typical point" else "outlier",
-                         y2[i], ess(w)))
-}
-```
-
-The typical point's weights are close to flat across the sorted draws — the
-leave-one-out and full posteriors barely differ, so almost every draw
-contributes. The outlier's weights fall off faster: the full posterior
-(which includes the outlier) sits somewhat away from where the leave-one-out
-posterior actually is, so the draws that happen to land there carry
-disproportionately more weight, and $S_{\text{eff}}$ drops well below its
-value for the typical point. Flagging this observation for a direct refit,
-rather than trusting the importance-sampling estimate outright, is exactly
-the response the diagnostics above prescribe.
 
 ## Summary
 
@@ -1372,15 +1234,3 @@ the response the diagnostics above prescribe.
   prior does not — reinforcing why the mode-finding methods from earlier
   chapters remain useful even once we turn to sampling-based methods.
 - Recast as free energy, the marginal likelihood's prior-versus-posterior
-  mismatch is a single large jump in inverse temperature from $\beta=0$ to
-  $\beta=1$; a stepping-stones chain of small, well-matched jumps — the same
-  idea behind simulated annealing and parallel tempering — turns one
-  badly-matched importance-sampling problem into many good ones, with the
-  log ratios simply adding up.
-- Leave-one-out cross-validation reuses a single posterior sample as the
-  proposal for $n$ related leave-one-out targets; because the full posterior
-  is narrower than any of them, the same heavy-tailed-weight failure
-  threatens every observation, and Pareto-smoothed importance sampling turns
-  $S_{\text{eff}}$'s global blind spot into a per-observation, actionable
-  diagnostic ($\hat k$) that says which few points are worth refitting
-  exactly.
