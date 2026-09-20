@@ -20,7 +20,12 @@ its maximum (Newton–Raphson), and using the curvature of that quadratic to
 report a standard error. The multivariate case, where neither plotting nor
 bracketing is available, shows what survives of that idea and what has to be
 added — safeguards against divergence, and a wider menu of derivative-free and
-gradient-only methods for when the Hessian is unavailable or too expensive.
+gradient-only methods (Nelder–Mead, gradient descent, conjugate gradient,
+BFGS, and stochastic gradient descent) for when the Hessian is unavailable or
+too expensive. Several of these methods are illustrated below with live,
+in-browser animations that let you change the objective function, the
+starting point, and the algorithm before watching the iterates respond.
+
 
 ```{r}
 #| label: setup
@@ -48,6 +53,45 @@ Three quantities recur throughout the chapter:
 - the **expected information** $n I(\theta) = -E_D\left[\ell''(\theta; D)\right]$, its expectation under the model.
 
 The second derivative therefore plays a double role. It determines how a Newton-type algorithm steps toward the maximum, and it determines how precisely the data pin the parameter down. An optimizer that computes the curvature has computed the standard error at the same time.
+
+### Example: iid Bernoulli
+
+Before turning to a model with a continuous parameter and an exactly quadratic
+log-likelihood, it is worth solving the score equation by hand in the simplest
+possible case. Let $Y_1, \ldots, Y_n \overset{iid}{\sim} \mathrm{Bernoulli}(\theta)$,
+so that $P(y_i \mid \theta) = \theta^{y_i}(1 - \theta)^{1 - y_i}$. Writing
+$n_1 = \sum_i y_i$ for the number of successes and $n_0 = n - n_1$ for the
+number of failures,
+$$L(\theta) = \theta^{n_1}(1 - \theta)^{n_0}, \qquad \ell(\theta) = n_1 \log\theta + n_0 \log(1 - \theta).$$
+
+The score is
+$$S(\theta) = \frac{n_1}{\theta} - \frac{n_0}{1 - \theta},$$
+and setting $S(\theta) = 0$ gives $n_1(1-\theta) = n_0\theta$, i.e.
+$n_1 = (n_1 + n_0)\theta = n\theta$, so
+$$\hat\theta = \frac{n_1}{n} = \bar y.$$
+
+The second derivative $\ell''(\theta) = -n_1/\theta^{2} - n_0/(1-\theta)^{2}$ is
+negative wherever it is defined, confirming that $\bar y$ is a maximum and not
+a saddle point. With only three observations, $y = (1, 1, 0)$, the likelihood
+can even be tabulated and plotted directly, which makes the maximum at
+$\hat\theta = 2/3 = \bar y$ visible without any calculus at all.
+
+| $\theta$ | $P(1, 1, 0 \mid \theta) = \theta^{2}(1-\theta)$ |
+|:---:|:---|
+| $0$ | $0$ |
+| $1/2$ | $1/8 = 0.1250$ |
+| $2/3$ | $4/27 = 0.1481$ **(max)** |
+| $3/4$ | $9/64 = 0.1406$ |
+| $1$ | $0$ |
+
+```{r}
+#| label: fig-bernoulli-toy-likelihood
+#| fig-width: 5
+#| fig-height: 4
+#| fig-cap: "Likelihood of $\\theta$ for three Bernoulli observations $y = (1,1,0)$: the maximum sits at $\\hat\\theta = \\bar y = 2/3$."
+curve(x^2 * (1 - x), 0, 1, lwd = 2, xlab = TeX(r"($\theta$)"), ylab = "likelihood")
+abline(v = 2 / 3, col = 2, lty = 2)
+```
 
 ### Closed Form: the Normal Mean
 
@@ -376,6 +420,35 @@ newton <- function(S, dS, x0, tol = 1e-10, maxit = 100, trace = FALSE) {
 }
 ```
 
+### A Classic Illustration: Newton's Method for $\sqrt{a}$
+
+**Derivation.** To find $\sqrt{a}$, take $f(x) = x^2 - a$, whose positive root is $\sqrt a$. Then $f'(x) = 2x$, and the Newton step is
+
+$$x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)} = x_k - \frac{x_k^{2} - a}{2x_k} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right).$$
+
+The final form is the Babylonian rule: if $x_k$ is too small then $a/x_k$ is too large, and the root lies between them, so average the pair. Newton's tangent line lands exactly on the midpoint.
+
+The error follows the general quadratic law. Writing $e_k = x_k - \sqrt a$,
+
+$$e_{k+1} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right) - \sqrt a = \frac{\left(x_k - \sqrt a\right)^{2}}{2x_k} = \frac{e_k^{2}}{2x_k},$$
+
+so the number of correct digits roughly doubles each step.
+
+```{r}
+#| label: babylonian-sqrt
+babylonian <- function(a, x0 = 1, iters = 6)
+  Reduce(function(x, k) (x + a / x) / 2, 1:iters, init = x0, accumulate = TRUE)
+
+traces <- sapply(c(10, 20, 50), babylonian)
+dimnames(traces) <- list(paste("iter", 0:6), sprintf("sqrt(%d)", c(10, 20, 50)))
+
+print(traces, digits = 12)
+sqrt(c(10, 20, 50))                       # for comparison
+signif(abs(traces - rep(sqrt(c(10, 20, 50)), each = 7)), 3)    # errors
+```
+
+Starting from $x_0 = 1$ in every case, the first two steps do the coarse work — the larger $a$ is, the further the opening leap — and from the third step on the error squares: roughly $10^{-1}$, then $10^{-3}$, then $10^{-6}$, then machine precision. Six iterations suffice for all three, though $\sqrt{50}$ spends one more step than $\sqrt{10}$ recovering from the poor start.
+
 ### Problem: divergence
 
 Newton uses only local information, so the quadratic model can be badly wrong away from the maximum. Three failures occur:
@@ -436,6 +509,32 @@ newton.method(FUN = s, init = 0.5, rg = c(-1.5, 1.5))
 newton.method(FUN = s, init = 0.8, rg = c(-8, 1.5))
 newton.method(FUN = s, init = 1.2, rg = c(-2, 20))
 ```
+
+### Univariate Fisher Scoring
+
+Newton's step divides by the *observed* curvature $S'(\theta_k) = \ell''(\theta_k)$, computed from the data at hand, which can be positive — or nearly zero — far from the maximum. Replacing it by the *expected* curvature $-nI(\theta_k)$ gives the **method of scoring**:
+$$\theta_{k+1} = \theta_k + \frac{S(\theta_k)}{nI(\theta_k)}.$$
+
+Because $nI(\theta) > 0$ for every $\theta$ by construction, the denominator never changes sign: every step of scoring is an ascent step, even at a point where Newton's step would point downhill or blow up. Near the maximum $nI(\hat\theta) \approx -\ell''(\hat\theta)$, so scoring and Newton coincide and both converge quickly; the two methods differ only in how they behave away from the root.
+
+```{r}
+#| label: fisher-scoring-univariate
+fisher_scoring <- function(S, nI, x0, tol = 1e-10, maxit = 100) {
+  for (k in 1:maxit) {
+    x1 <- x0 + S(x0) / nI(x0)
+    if (abs(x1 - x0) < tol) return(c(root = x1, iter = k))
+    x0 <- x1
+  }
+  stop("not converged")
+}
+
+## a poor start: at lambda = 3.5 the truncated-Poisson score is nearly flat
+c(newton_step_from_3.5 = 3.5 - S_d(3.5) / dS_d(3.5))    # overshoots to an infeasible negative lambda
+rbind(newton  = tryCatch(newton(S_d, dS_d, 3.5), error = function(e) c(root = NA, iter = NA)),
+      scoring = fisher_scoring(S_d, I_d, 3.5))
+```
+
+From this poor start, Newton's step lands on a negative — and hence infeasible — value of $\lambda$ and never recovers, while scoring's positive-definite denominator lands its very first step near $\lambda \approx 1.53$, already close to the root, and converges normally from there. The price of that safety is that $nI(\theta)$ must be available in closed form; where it is not, Newton with the safeguards below is the fallback.
 
 ### Safeguards
 
@@ -538,6 +637,22 @@ abline(v = golden(f2, c(0, 20)), col = 2, lty = 2, lwd = 2)
 
 c(linkage = golden(f1, c(0.001, 0.999)), abs_value = golden(f2, c(0, 20)))
 ```
+
+### Numerical Derivatives
+
+When $S$ or $S'$ is tedious or error-prone to derive by hand, both can be approximated by finite differences:
+$$\ell'(\theta) \approx \frac{\ell(\theta + h) - \ell(\theta - h)}{2h}, \qquad
+\ell''(\theta) \approx \frac{\ell(\theta + h) - 2\ell(\theta) + \ell(\theta - h)}{h^{2}}.$$
+
+The step $h$ trades off two sources of error: too large and the approximation suffers **truncation error** from the curvature of $\ell$ itself; too small and it suffers **rounding error**, because the numerator subtracts two nearly equal floating-point numbers. A step of $h \approx \sqrt{\varepsilon}\,(1 + |\theta|) \approx 10^{-8}$ balances the two for the first derivative, and $h \approx \varepsilon^{1/3}$ for the second, where $\varepsilon \approx 2 \times 10^{-16}$ is double-precision machine epsilon.
+
+```{r}
+#| label: numerical-derivative-check
+h <- 1e-5
+c(analytic = dS_d(lstar), numeric = (ll_d(lstar + h) - 2 * ll_d(lstar) + ll_d(lstar - h)) / h^2)
+```
+
+The two agree to several digits, which is reassuring but also the point: `nlm()` and `optim(method = "BFGS")` fall back on exactly this kind of finite differencing whenever an analytic gradient is not supplied, and `numDeriv::grad()` / `numDeriv::hessian()` implement more accurate variants (Richardson extrapolation) for when a single finite difference is not precise enough.
 
 ### Summary of the Methods
 
@@ -836,35 +951,6 @@ for (iv in list(list(lo = pmax(pn - 1, 0), hi = pn + 4, lab = "narrow intervals"
 
 With narrow intervals the log-likelihood is sharply peaked and the standard error is small and reliable. With wide intervals, most of which include the lower boundary at zero, the log-likelihood is nearly flat over a broad range: the curvature at the maximum is tiny, the reported standard error is large, and — because the curve is visibly asymmetric and non-quadratic — even that large value understates the true uncertainty. The information-based standard error is an asymptotic approximation resting on local quadratic behaviour, and this is what its failure looks like. When the log-likelihood is this shape, report a likelihood-based interval, read off where $\ell$ drops by 1.92, instead of a Wald interval.
 
-## A Practical Newton-Raphson Algorithm for Finding $\sqrt{a}$
-
-**Derivation.** To find $\sqrt{a}$, take $f(x) = x^2 - a$, whose positive root is $\sqrt a$. Then $f'(x) = 2x$, and the Newton step is
-
-$$x_{k+1} = x_k - \frac{f(x_k)}{f'(x_k)} = x_k - \frac{x_k^{2} - a}{2x_k} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right).$$
-
-The final form is the Babylonian rule: if $x_k$ is too small then $a/x_k$ is too large, and the root lies between them, so average the pair. Newton's tangent line lands exactly on the midpoint.
-
-The error follows the general quadratic law. Writing $e_k = x_k - \sqrt a$,
-
-$$e_{k+1} = \frac{1}{2}\left(x_k + \frac{a}{x_k}\right) - \sqrt a = \frac{\left(x_k - \sqrt a\right)^{2}}{2x_k} = \frac{e_k^{2}}{2x_k},$$
-
-so the number of correct digits roughly doubles each step.
-
-```{r}
-#| label: babylonian-sqrt
-babylonian <- function(a, x0 = 1, iters = 6)
-  Reduce(function(x, k) (x + a / x) / 2, 1:iters, init = x0, accumulate = TRUE)
-
-traces <- sapply(c(10, 20, 50), babylonian)
-dimnames(traces) <- list(paste("iter", 0:6), sprintf("sqrt(%d)", c(10, 20, 50)))
-
-print(traces, digits = 12)
-sqrt(c(10, 20, 50))                       # for comparison
-signif(abs(traces - rep(sqrt(c(10, 20, 50)), each = 7)), 3)    # errors
-```
-
-Starting from $x_0 = 1$ in every case, the first two steps do the coarse work — the larger $a$ is, the further the opening leap — and from the third step on the error squares: roughly $10^{-1}$, then $10^{-3}$, then $10^{-6}$, then machine precision. Six iterations suffice for all three, though $\sqrt{50}$ spends one more step than $\sqrt{10}$ recovering from the poor start.
-
 ## The Newton–Raphson Algorithm in Several Dimensions
 
 ### Derivation from a quadratic approximation
@@ -980,6 +1066,43 @@ exactly, because the second derivative of the log-likelihood does not involve
 the response. Logistic regression uses the canonical logit link, so the example
 below is simultaneously Newton–Raphson, Fisher scoring, and — as we note at the
 end of the section — iteratively reweighted least squares.
+
+### Gradient and Hessian: A Geometric Illustration
+
+The two objects entering the multivariate Newton step have a direct geometric reading. The score $S(\theta)$ is the direction of steepest ascent and is perpendicular to the contour of $\ell$ through $\theta$; the Hessian $H(\theta)$ describes how that direction curves, and at a strict local maximum $J(\theta) = -H(\theta)$ is positive definite. Near $\hat\theta$, $\ell$ is well approximated by the quadratic
+$$\ell(\theta) \approx \ell(\hat\theta) - \tfrac12(\theta - \hat\theta)^\top J(\hat\theta)(\theta - \hat\theta),$$
+whose contours are ellipses centred at $\hat\theta$. Writing the eigendecomposition $J(\hat\theta) = Q\Lambda Q^\top$, the axes of these ellipses point along the eigenvectors in $Q$, and the half-length along axis $j$ is proportional to $1/\sqrt{\lambda_j}$: a large eigenvalue means sharp curvature and a short, well-determined direction, while $\lambda_{\max}/\lambda_{\min}$ measures how elongated — and, once the axes are tilted, how correlated the parameters are.
+
+```{r}
+#| label: fig-hessian-ellipse
+#| echo: false
+#| fig-width: 7
+#| fig-height: 7
+#| fig-cap: "Contours of a quadratic log-likelihood: gradient arrows (green) point uphill perpendicular to the contours but not toward the maximum unless the ellipses are circular; the dashed axes are the eigenvectors of $J(\\hat\\theta)$, each with half-length $1/\\sqrt{\\lambda_j}$."
+A <- matrix(c(2, 1.2, 1.2, 1), 2)
+s <- seq(-2, 2, length.out = 80); g <- expand.grid(x = s, y = s)
+z <- matrix(apply(g, 1, function(v) -0.5 * drop(t(v) %*% A %*% v)), 80)
+par(pty = "s", mar = c(4, 4, 1, 1))
+contour(s, s, z, nlevels = 12, xlab = expression(theta[1]), ylab = expression(theta[2]))
+## gradient arrows
+pts <- rbind(c(1, 1), c(-1.5, 0.5), c(0.5, -1.5))
+for (i in 1:3) {
+  gr <- -A %*% pts[i, ]
+  arrows(pts[i, 1], pts[i, 2], pts[i, 1] + 0.3 * gr[1], pts[i, 2] + 0.3 * gr[2],
+         col = 3, lwd = 2, length = 0.1)
+}
+## principal axes with eigenvalue labels: length 1/sqrt(lambda) on each side
+e <- eigen(A); k <- 1.6
+for (j in 1:2) {
+  v <- e$vectors[, j] * k / sqrt(e$values[j])
+  segments(-v[1], -v[2], v[1], v[2], col = "firebrick", lwd = 2, lty = 2)
+  text(v[1], v[2], bquote(lambda[.(j)] == .(round(e$values[j], 2))),
+       col = "firebrick", pos = if (j == 1) 4 else 2, cex = 0.9)
+}
+points(0, 0, pch = 19)
+```
+
+Every gradient arrow in the figure is perpendicular to the contour it starts on and points generally uphill toward the maximum at the origin, but only an arrow started exactly on a principal axis points straight at it. This is why Newton's step, which multiplies the score by $J(\hat\theta)^{-1}$ rather than simply following the gradient, converges directly to $\hat\theta$: it rescales and rotates the ascent direction to undo exactly this distortion. The plain gradient-ascent methods of a later section have no such correction, and zig-zag across elongated contours like these.
 
 ### Convergence properties
 
@@ -1362,7 +1485,32 @@ scaling covariates improves conditioning of $J$ substantially, and for GLMs
 the null-model fit is a reliable starting point — which is what `glm` uses when
 `start` is not supplied.
 
-## Other Multivariate Optimization Methods
+Two more precise versions of these ideas are worth stating explicitly, since together they make up what is sometimes called **safeguarded Newton** — not "Newton–Raphson" in the textbook sense, and not what `nlm()` runs internally, which globalises with a trust region instead.
+
+**A principled choice of ridge.** Write $\delta_k = J_k^{-1}S_k$ for the raw Newton step at $\theta_k$ (with $J_k = J(\theta_k)$, $S_k = S(\theta_k)$). Two things can go wrong once $\theta_k$ is far from $\hat\theta$: the direction may not ascend at all, since $S_k^\top \delta_k = S_k^\top J_k^{-1}S_k > 0$ requires $J_k \succ 0$, which need not hold where $\ell$ is not concave; and even when $J_k \succ 0$, the full step can overshoot, since the quadratic model is trustworthy only near $\theta_k$. Ridging replaces $J_k$ by
+$$\tilde J_k = J_k + \tau I, \qquad \tau = \max\!\big(0,\ \delta - \lambda_{\min}(J_k)\big), \qquad \delta = 10^{-3}\,\lambda_{\max}(J_k),$$
+which shifts every eigenvalue of $J_k$ by $\tau$ while leaving its eigenvectors unchanged. As $\tau \to \infty$ the resulting direction $\tilde J_k^{-1}S_k$ rotates toward $S_k$ itself — plain gradient ascent — so ridging interpolates continuously between Newton and steepest ascent. An alternative, **spectral modification**, decomposes $J_k = V\Lambda V^\top$ and replaces each eigenvalue $\lambda_i$ by $\max(|\lambda_i|, \delta)$: this reverses negative-curvature directions rather than merely damping them, pushing the step away from a saddle instead of just slowing it down. Wherever $J_k \succ 0$ already, both reduce to $\tau = 0$ and $\tilde J_k = J_k$, so the safeguard is inactive exactly where it is not needed.
+
+**A precise stopping rule for step halving: the Armijo condition.** Accepting the halved step $\theta_k + s\,\delta_k$ the first time the log-likelihood merely fails to decrease is workable but crude. The standard criterion instead requires a **sufficient** increase,
+$$\ell(\theta_k + s\,\delta_k) \ \ge\ \ell(\theta_k) + c_1\, s\, S_k^\top \delta_k, \qquad c_1 = 10^{-4},$$
+tested at $s = 1, \rho, \rho^2, \ldots$ for a fixed $\rho \in (0,1)$ (e.g. $\rho = \tfrac12$) until it holds. Because $c_1$ is tiny, $s = 1$ passes immediately whenever the ordinary Newton step already improves $\ell$, so quadratic convergence near $\hat\theta$ is untouched. A companion **curvature (Wolfe) condition**,
+$$S(\theta_k + s\,\delta_k)^\top \delta_k \ \le\ c_2\, S_k^\top \delta_k, \qquad c_2 = 0.9,$$
+additionally rules out steps that are cut *too* short — something plain backtracking, which only ever shrinks $s$, cannot enforce on its own. This second condition matters less for Newton itself than for the gradient-only methods of the next section, where it is exactly what keeps the BFGS update well defined.
+
+::: {.callout-note appearance="minimal"}
+**The safeguarded step, in full.** At $\theta_k$: compute $S_k$ and $J_k$; form $\tilde J_k \succ 0$ by ridging or spectral modification; solve $\tilde J_k\,\delta_k = S_k$; choose $s_k$ from $s_0 = 1$ by backtracking against the Armijo condition; set $\theta_{k+1} = \theta_k + s_k\,\delta_k$.
+:::
+
+Both safeguards switch themselves off automatically near a well-behaved maximum, and stay active only where they are needed:
+
+| | near the maximum | far away / indefinite |
+|:--|:--|:--|
+| ridge $\tau$ | $0$ | $> 0$, direction rotates toward $S_k$ |
+| step $s_k$ | $1$ | $< 1$ |
+
+so quadratic convergence is retained locally while sufficient increase at every iteration guarantees progress from remote starting points — the combination that step halving, ridging, trust regions, and good starting values each approximate in the plainer forms described above.
+
+## Gradient-Based Methods
 
 Newton–Raphson is the method of choice when the second derivatives are available
 and $p$ is modest. Outside that regime, three considerations push toward
@@ -1370,6 +1518,8 @@ alternatives: derivatives may be unavailable or painful to code; the $O(p^3)$
 cost of solving the Newton system and the $O(p^2)$ storage of $J$ become
 prohibitive for large $p$; and the objective may be non-smooth, noisy or
 multimodal.
+
+Throughout this section it is more convenient to **minimise** $f(\theta) = -\ell(\theta)$ rather than maximise $\ell$ directly — the minimum of $f$ is exactly the maximum of $\ell$, and this is also the convention that R's `optim()`, `nlm()`, and `nlminb()` use internally, so the code below matches what those functions do under the hood.
 
 ### Classification by derivative information
 
@@ -1383,47 +1533,1340 @@ Methods are most usefully organised by what they require of the objective.
 
 : Optimization methods classified by the derivative information required {#tbl-orders}
 
-### The main alternatives
+### Steepest Descent with Line Search
 
-**Nelder–Mead (simplex).** Maintains $p+1$ points forming a simplex and moves it
-downhill by reflecting, expanding, contracting and shrinking. It needs no
-derivatives and tolerates mild non-smoothness, but converges slowly, degrades
-badly as $p$ grows past roughly 10–20, and can stall at non-stationary points.
-It is `optim`'s default, which makes it by far the most-used and most-overused
-method in R. Reasonable as a first look at an unfamiliar objective; a poor
-choice for a likelihood you will fit thousands of times.
+Move along $-\nabla f$, the direction of steepest descent, choosing the distance by a one-dimensional search:
+$$
+\theta_{k+1} = \theta_k + \alpha_k d_k, \qquad d_k = -\nabla f(\theta_k), \qquad \alpha_k = \arg\min_{\alpha > 0} f(\theta_k + \alpha d_k) .
+$$
 
-**Steepest descent with line search.** Move along $-\nabla f$, choosing the
-distance by a one-dimensional search. Conceptually the simplest gradient method
-and the one that best illustrates the role of a line search, but the
-convergence is only linear, and the rate deteriorates with the condition number
-of the Hessian: on an elongated valley the iterates zig-zag across it rather
-than travelling along it. Rarely used unmodified.
+The step length $\alpha_k$ can come from an **exact** line search — a univariate minimization by golden section or `optimize()` along the ray — or an **inexact** one: start at $\alpha = 1$ and halve until the Armijo sufficient-decrease condition $f(\theta_k + \alpha d_k) \le f(\theta_k) + c\,\alpha\,\nabla f(\theta_k)'d_k$ holds. This is conceptually the simplest gradient method, and the one that best illustrates the role of a line search, but its convergence is only linear, and the rate deteriorates with the condition number of the Hessian: on an elongated valley the iterates zig-zag across it rather than travelling along it, as the next figure shows. It is rarely used unmodified.
 
-**Conjugate gradient.** Corrects the zig-zag by choosing each direction to be
-conjugate to the previous ones with respect to the local curvature, without ever
-forming or storing a Hessian. Storage is $O(p)$, which is its defining
-advantage. Fletcher–Reeves and Polak–Ribière differ only in the formula for the
-correction coefficient. The method is sensitive to the accuracy of the line
-search and usually needs periodic restarting.
+```{r}
+#| label: grad-descent-fn
+grad_descent <- function(f, gr, x0, maxit = 1000, tol = 1e-8) {
+  path <- x0
+  for (k in 1:maxit) {
+    d <- -gr(x0); a <- optimize(function(a) f(x0 + a * d), c(0, 10))$minimum   # exact line search
+    x1 <- x0 + a * d; path <- rbind(path, x1)
+    if (sqrt(sum((x1 - x0)^2)) < tol) break
+    x0 <- x1 }
+  list(par = x1, iter = k, path = path)
+}
+```
 
-**Quasi-Newton (BFGS and L-BFGS).** Builds an approximation to $J^{-1}$ from
-successive gradient differences, so it attains superlinear convergence with only
-first derivatives. BFGS stores a full $p \times p$ approximation; L-BFGS keeps
-only the last few update vectors, reducing storage to $O(mp)$ and making it the
-default choice for high-dimensional smooth problems. For most likelihood
-problems where the Hessian is awkward to derive, BFGS with an analytic gradient
-is the best practical compromise.
+### Why Gradient Descent Zig-Zags
 
-**Stochastic gradient descent.** For an objective that is a sum over $n$
-observations, estimate the gradient from a small random subset ("minibatch") at
-each step. The per-iteration cost becomes independent of $n$, at the price of a
-noisy trajectory requiring a decreasing step-size sequence
-($\sum_k \alpha_k = \infty$, $\sum_k \alpha_k^2 < \infty$). Modern variants —
-momentum, AdaGrad, RMSProp, Adam — adapt the step size per coordinate. SGD is
-the foundation of neural-network fitting and is treated in its own right in a
-later chapter; for classical likelihood problems with $n$ in the thousands it
-offers nothing over BFGS.
+With an exact line search, consecutive directions are **orthogonal** — $\nabla f(\theta_{k+1})'d_k = 0$, since the search stops exactly where the directional derivative along $d_k$ vanishes. On the elongated contours of the quadratic from @fig-hessian-ellipse, that orthogonality forces the path to zig-zag back and forth across the valley instead of running down its length:
+
+```{r}
+#| label: fig-gd-zigzag
+#| echo: false
+#| fig-cap: "Gradient descent with an exact line search zig-zags across an elongated valley: each step is orthogonal to the next."
+fq <- function(v) 0.5 * drop(t(v) %*% A %*% v); gq <- function(v) drop(A %*% v)
+gd <- grad_descent(fq, gq, c(2, -1.8), maxit = 30)
+par(pty = "s", mar = c(4, 4, 2, 1))
+contour(s, s, -z, nlevels = 15, main = sprintf("gradient descent, %d iterations", gd$iter))
+lines(gd$path, type = "b", col = 2, pch = 19, cex = 0.6)
+```
+
+The number of iterations needed grows with the **condition number** $\lambda_{\max}/\lambda_{\min}$ of the Hessian — precisely the elongation of the ellipses in the earlier figure.
+
+### Conjugate Gradient
+
+The zig-zag is fixed by choosing each new direction to be **conjugate** to the previous ones with respect to the Hessian $Q$: $d_i'Qd_j = 0$ for $i \ne j$. For a quadratic $f(\theta) = \tfrac12\theta'Q\theta - b'\theta$, minimizing along $p$ such directions in succession reaches the exact minimum in **at most $p$ steps**, without ever forming or storing $Q$ — storage is $O(p)$, its defining advantage over Newton.
+
+The nonlinear version builds directions from gradients only:
+$$
+d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k,
+$$
+$$
+\beta_k^{FR} = \frac{g_{k+1}'g_{k+1}}{g_k'g_k}\ \text{(Fletcher–Reeves)}, \qquad
+\beta_k^{PR} = \frac{g_{k+1}'(g_{k+1} - g_k)}{g_k'g_k}\ \text{(Polak–Ribière)},
+$$
+with $\theta_{k+1} = \theta_k + \alpha_k d_k$ from a line search and $g_k = \nabla f(\theta_k)$. Fletcher–Reeves and Polak–Ribière differ only in this correction coefficient. The method is sensitive to the accuracy of the line search, and conjugacy degrades on non-quadratic $f$, so it is usually restarted with $d = -g$ every $p$ iterations.
+
+```{r}
+#| label: fig-conjugate-gradient
+#| fig-cap: "Conjugate gradient (blue) reaches the minimum of the same elongated quadratic in far fewer iterations than gradient descent (red)."
+conj_grad <- function(f, gr, x0, maxit = 1000, tol = 1e-8, restart = length(x0)) {
+  g0 <- gr(x0); d <- -g0; path <- x0
+  for (k in 1:maxit) {
+    a <- optimize(function(a) f(x0 + a * d), c(0, 10))$minimum
+    x1 <- x0 + a * d; g1 <- gr(x1); path <- rbind(path, x1)
+    if (sqrt(sum(g1^2)) < tol) break
+    beta <- if (k %% restart == 0) 0 else max(0, sum(g1 * (g1 - g0)) / sum(g0^2))   # Polak-Ribiere+
+    d <- -g1 + beta * d; x0 <- x1; g0 <- g1 }
+  list(par = x1, iter = k, path = path)
+}
+cg <- conj_grad(fq, gq, c(2, -1.8))
+par(pty = "s", mar = c(4, 4, 2, 1))
+contour(s, s, -z, nlevels = 15, main = sprintf("conjugate gradient, %d iterations", cg$iter))
+lines(gd$path, type = "b", col = 2, pch = 19, cex = 0.6); lines(cg$path, type = "b", col = 4, pch = 19, lwd = 2)
+legend("topleft", c("gradient descent", "conjugate gradient"), col = c(2, 4), lwd = 2, bty = "n")
+```
+
+### Quasi-Newton: BFGS
+
+BFGS sits between the gradient methods above and Newton's method: it builds an approximation $B_k \approx J(\theta_k)$ from successive gradient differences $s_k = \theta_{k+1} - \theta_k$, $y_k = g_{k+1} - g_k$, via a rank-two update that keeps $B_k$ positive definite by construction (which is exactly why the Wolfe curvature condition of an earlier section matters: it is what guarantees $s_k'y_k > 0$, and hence a well-defined update). Steps are $d_k = -B_k^{-1}g_k$ with a line search, giving **superlinear** convergence from only first derivatives. BFGS itself stores a full $p \times p$ approximation; **L-BFGS** keeps only the last few update vectors, reducing storage to $O(mp)$ and making it the default choice for high-dimensional smooth problems. For most likelihood problems where the Hessian is awkward to derive, BFGS with an analytic gradient is the best practical compromise.
+
+Returning to the logistic-regression example, `optim()` can fit it with no Hessian at all — Nelder–Mead needs only the log-likelihood, CG and BFGS also take the analytic gradient already coded for Newton–Raphson:
+
+```{r}
+#| label: bfgs-vs-nm-cg
+negll_fn  <- function(b) neg_logp_logistic(b, data$z, data$r)
+neggr_fn  <- function(b) lik_score_info(b, data$r, data$z)$neg_score
+
+fits <- list(NM   = optim(c(0, 0), negll_fn, method = "Nelder-Mead"),
+             CG   = optim(c(0, 0), negll_fn, neggr_fn, method = "CG"),
+             BFGS = optim(c(0, 0), negll_fn, neggr_fn, method = "BFGS", hessian = TRUE))
+t(sapply(fits, function(f) c(f$par, f_evals = f$counts[1], g_evals = f$counts[2])))
+sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hessian at the optimum
+```
+
+All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for a method that never formed one during the iterations.
+
+### Animation: Comparing the Optimizers {#sec-gradient-methods-app}
+
+Press play to watch safeguarded Newton, gradient descent, conjugate gradient, and BFGS attack the same objective from the same start, on six test functions ranging from a well-conditioned quadratic to Rastrigin's many local minima. Click anywhere in the contour panel to try a different starting point.
+
+::: {#fig-gradient-methods-app .content-visible when-format="html"}
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 820
+
+library(shiny)
+
+## ---------------------------------------------------------------- objectives
+mk <- function(label, fv, xlim, ylim, start, xstar) {
+  force(fv)
+  list(label = label, fv = fv, f = function(p) fv(p[1], p[2]),
+       xlim = xlim, ylim = ylim, start = start,
+       xstar = matrix(xstar, ncol = 2))
+}
+
+FNS <- list(
+  quad = mk(
+    "(a) Well-conditioned quadratic",
+    function(x, y) 0.5 * (2 * (x - 1)^2 + 1.6 * (x - 1) * (y - 1) +
+                          2 * (y - 1)^2),
+    c(-3, 4), c(-3, 4), c(-2, 3), c(1, 1)
+  ),
+  banana = mk(
+    "(b) Rosenbrock banana (narrow curved ridge)",
+    function(x, y) (1 - x)^2 + 100 * (y - x^2)^2,
+    c(-2, 2), c(-1, 3), c(-1.2, 1), c(1, 1)
+  ),
+  mix = mk(
+    "(c) Highly correlated, two modes",
+    function(x, y) {
+      rho <- 0.9; den <- 1 - rho^2
+      q <- function(u, v) (u^2 - 2 * rho * u * v + v^2) / den
+      -log(exp(-0.5 * q(x - 1.2, y - 1.2)) +
+           0.6 * exp(-0.5 * q(x + 1.5, y + 1.5) / 1.5) + 1e-12)
+    },
+    c(-4, 4), c(-4, 4), c(-3, -0.5), c(1.2, 1.2)
+  ),
+  himmel = mk(
+    "(d) Himmelblau (four global minima)",
+    function(x, y) (x^2 + y - 11)^2 + (x + y^2 - 7)^2,
+    c(-5, 5), c(-5, 5), c(-4, 4),
+    rbind(c(3, 2), c(-2.805118, 3.131312),
+          c(-3.779310, -3.283186), c(3.584428, -1.848126))
+  ),
+  beale = mk(
+    "(e) Beale (flat plateau, sharp valley)",
+    function(x, y) (1.5 - x + x * y)^2 + (2.25 - x + x * y^2)^2 +
+                   (2.625 - x + x * y^3)^2,
+    c(-4.5, 4.5), c(-4.5, 4.5), c(-1, 1), c(3, 0.5)
+  ),
+  rastrigin = mk(
+    "(f) Rastrigin (many local minima)",
+    function(x, y) 20 + x^2 - 10 * cos(2 * pi * x) +
+                        y^2 - 10 * cos(2 * pi * y),
+    c(-5.12, 5.12), c(-5.12, 5.12), c(-3.1, 4.2), c(0, 0)
+  )
+)
+
+## ------------------------------------------------- numerical derivatives
+num_grad <- function(f, x) {
+  h <- 1e-5 * (1 + abs(x))
+  g <- numeric(2)
+  for (i in 1:2) {
+    e <- numeric(2); e[i] <- h[i]
+    g[i] <- (f(x + e) - f(x - e)) / (2 * h[i])
+  }
+  g
+}
+
+num_hess <- function(f, x) {
+  h <- 1e-4 * (1 + abs(x))
+  H <- matrix(0, 2, 2)
+  for (i in 1:2) for (j in i:2) {
+    ei <- numeric(2); ei[i] <- h[i]
+    ej <- numeric(2); ej[j] <- h[j]
+    H[i, j] <- (f(x + ei + ej) - f(x + ei - ej) -
+                f(x - ei + ej) + f(x - ei - ej)) / (4 * h[i] * h[j])
+    H[j, i] <- H[i, j]
+  }
+  H
+}
+
+## --------------------------------------------------- Wolfe line search
+line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
+  f0 <- f(x); gd0 <- sum(g * d)
+  if (!is.finite(gd0) || gd0 >= 0) return(list(alpha = 0, ok = FALSE))
+  lo <- 0; hi <- Inf; a <- a0
+  for (it in 1:60) {
+    fa <- f(x + a * d)
+    if (!is.finite(fa) || fa > f0 + c1 * a * gd0) {
+      hi <- a; a <- 0.5 * (lo + hi)
+    } else {
+      ga <- num_grad(f, x + a * d)
+      if (sum(ga * d) < c2 * gd0) {
+        lo <- a
+        a <- if (is.finite(hi)) 0.5 * (lo + hi) else min(2 * a, 1e4)
+      } else {
+        return(list(alpha = a, ok = TRUE))
+      }
+    }
+    if (a < 1e-14) return(list(alpha = 0, ok = FALSE))
+  }
+  list(alpha = a, ok = (a > 0))
+}
+
+## ------------------------------------------------------------- algorithms
+run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
+  f <- FN$f
+  X <- matrix(NA_real_, maxit + 1, 2); G <- matrix(NA_real_, maxit + 1, 2)
+  D <- matrix(NA_real_, maxit + 1, 2); Fv <- rep(NA_real_, maxit + 1)
+  AL <- rep(NA_real_, maxit + 1)
+  x <- x0; B <- diag(2)
+  g_prev <- NULL; d_prev <- NULL; s_prev <- NULL
+  n <- 0; note <- "maximum number of iterations reached"
+
+  for (k in seq_len(maxit)) {
+    g <- num_grad(f, x); gn <- sqrt(sum(g^2))
+    X[k, ] <- x; G[k, ] <- g; Fv[k] <- f(x); n <- k
+    if (!is.finite(gn)) { note <- "diverged"; break }
+    if (gn < tol) { note <- "converged (||grad|| < 1e-6)"; break }
+
+    if (alg == "nr") {
+      H <- num_hess(f, x); H <- (H + t(H)) / 2
+      ev <- eigen(H, symmetric = TRUE, only.values = TRUE)$values
+      delta <- 1e-3 * max(1, max(abs(ev)))
+      tau <- max(0, delta - min(ev))
+      d <- tryCatch(solve(H + tau * diag(2), -g), error = function(e) -g)
+    } else if (alg == "gd") {
+      d <- -g
+    } else if (alg == "cg") {
+      if (is.null(d_prev)) {
+        d <- -g
+      } else {
+        y <- g - g_prev
+        beta <- max(0, sum(g * y) / max(sum(g_prev^2), 1e-300))   # PR+
+        d <- -g + beta * d_prev
+      }
+      if (sum(g * d) > -1e-12) d <- -g                            # restart
+    } else {                                                      # BFGS
+      if (!is.null(s_prev)) {
+        y <- g - g_prev; sy <- sum(s_prev * y)
+        if (sy > 1e-10) {
+          rho <- 1 / sy
+          V <- diag(2) - rho * outer(s_prev, y)
+          B <- V %*% B %*% t(V) + rho * outer(s_prev, s_prev)
+        }
+      }
+      d <- -as.vector(B %*% g)
+      if (sum(g * d) > -1e-12) { B <- diag(2); d <- -g }
+    }
+
+    ls <- line_search(f, g, x, d)
+    D[k, ] <- d; AL[k] <- ls$alpha
+    if (ls$alpha <= 0) { note <- "line search failed (flat or non-descent)"; break }
+
+    s_prev <- ls$alpha * d; g_prev <- g; d_prev <- d
+    x <- x + s_prev
+  }
+
+  list(X = X[1:n, , drop = FALSE], G = G[1:n, , drop = FALSE],
+       D = D[1:n, , drop = FALSE], F = Fv[1:n], A = AL[1:n],
+       n = n, note = note)
+}
+
+ALGS <- c("Safeguarded Newton (modified Hessian + line search)" = "nr",
+          "Gradient descent + line search"    = "gd",
+          "Conjugate gradient (PR+)"          = "cg",
+          "BFGS (quasi-Newton)"               = "bfgs")
+
+## ---------------------------- widen the data box to the device aspect ratio
+expand_box <- function(xlim, ylim, pin) {
+  if (length(pin) != 2 || any(!is.finite(pin)) || any(pin <= 0))
+    return(list(xlim = xlim, ylim = ylim))
+  r <- pin[1] / pin[2]
+  wd <- diff(xlim); ht <- diff(ylim)
+  if (wd / ht < r) {
+    w <- ht * r; m <- mean(xlim); xlim <- m + c(-0.5, 0.5) * w
+  } else {
+    h <- wd / r; m <- mean(ylim); ylim <- m + c(-0.5, 0.5) * h
+  }
+  list(xlim = xlim, ylim = ylim)
+}
+
+## --------------------------------------------------------------------- UI
+ui <- fluidPage(
+  fluidRow(
+    ## ---- column 1: controls -------------------------------------------
+    column(
+      3,
+      selectInput("alg", "Algorithm", ALGS),
+      selectInput("fn", "Objective function",
+                  setNames(names(FNS), sapply(FNS, `[[`, "label"))),
+      sliderInput("k", "Iteration k", min = 0, max = 1, value = 0, step = 1),
+      checkboxInput("showpath", "Show the whole path", TRUE),
+      htmlOutput("info")
+    ),
+    ## ---- column 2: playback -------------------------------------------
+    column(
+      2,
+      div(
+        style = "margin-top:26px;",
+        actionButton("play", "Play", class = "btn-primary btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("step", "Next", class = "btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("back", "Prev", class = "btn-lg",
+                     style = "width:100%;"),
+        hr(),
+        checkboxInput("autoplay", "Autoplay on Changing Initial", TRUE),
+        actionButton("reset", "Reset initial",
+                     style = "width:100%; margin-bottom:8px;"),
+        helpText("Click inside the contour plot to choose a new initial value.")
+      )
+    ),
+    ## ---- column 3: plots ----------------------------------------------
+    column(
+      7,
+      plotOutput("contour", click = "click", height = "540px"),
+      plotOutput("conv", height = "190px")
+    )
+  )
+)
+
+## ----------------------------------------------------------------- server
+server <- function(input, output, session) {
+
+  FN <- reactive(FNS[[input$fn]])
+  start <- reactiveVal(FNS[[1]]$start)
+  playing <- reactiveVal(FALSE)
+
+  observeEvent(input$fn, start(FNS[[input$fn]]$start))
+  observeEvent(input$reset, start(FN()$start))
+  observeEvent(input$click, {
+    p <- c(input$click$x, input$click$y)
+    if (all(is.finite(p))) start(p)
+  })
+
+  path <- reactive({
+    req(start())
+    run_alg(input$alg, FN(), start())
+  })
+
+  observeEvent(path(), {
+    updateSliderInput(session, "k", max = max(1, path()$n - 1), value = 0)
+    playing(isTRUE(input$autoplay) && path()$n > 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) {
+      playing(FALSE)
+    } else {
+      if (as.integer(input$k) >= path()$n - 1)
+        updateSliderInput(session, "k", value = 0)
+      playing(TRUE)
+    }
+  })
+
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       label = if (isTRUE(playing())) "Pause" else "Play")
+  })
+
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax <- isolate(path()$n) - 1
+    k <- isolate(as.integer(input$k))
+    if (k >= kmax) { playing(FALSE); return() }
+    invalidateLater(900, session)
+    updateSliderInput(session, "k", value = k + 1)
+  })
+
+  observeEvent(input$step, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = min(as.integer(input$k) + 1, max(0, path()$n - 1)))
+  })
+
+  observeEvent(input$back, {
+    playing(FALSE)
+    updateSliderInput(session, "k", value = max(as.integer(input$k) - 1, 0))
+  })
+
+  output$contour <- renderPlot({
+    FNc <- FN(); P <- path()
+    k <- min(as.integer(input$k), P$n - 1) + 1L
+
+    par(mar = c(4, 4, 2.5, 1))
+    plot.new()
+    bx <- expand_box(FNc$xlim, FNc$ylim, par("pin"))
+    plot.window(xlim = bx$xlim, ylim = bx$ylim, xaxs = "i", yaxs = "i")
+
+    xs <- seq(bx$xlim[1], bx$xlim[2], length.out = 180)
+    ys <- seq(bx$ylim[1], bx$ylim[2], length.out = 180)
+    z  <- outer(xs, ys, FNc$fv)
+    zf <- z[is.finite(z)]
+    lv <- unique(quantile(zf, probs = seq(0, 1, length.out = 30)^1.7))
+    zr <- matrix(rank(z, na.last = "keep", ties.method = "average"),
+                 nrow = length(xs))
+
+    image(xs, ys, zr, add = TRUE,
+          col = colorRampPalette(c("#f7fbff", "#9ec4e3"))(128))
+    contour(xs, ys, z, levels = lv, add = TRUE,
+            col = "grey45", drawlabels = FALSE)
+    axis(1); axis(2); box()
+    title(main = paste0(names(ALGS)[ALGS == input$alg], "  |  ", FNc$label),
+          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1.0)
+
+    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 8, col = "red",
+           cex = 1.3, lwd = 2)
+
+    if (isTRUE(input$showpath) && k > 1)
+      lines(P$X[1:k, 1], P$X[1:k, 2], col = "grey25", lty = 2)
+    points(P$X[1:k, 1], P$X[1:k, 2], pch = 20, col = "grey35", cex = 0.9)
+
+    xk <- P$X[k, ]; gk <- P$G[k, ]; gn <- sqrt(sum(gk^2))
+    L <- 0.09 * diff(bx$xlim)                      # fixed display length
+    if (gn > 0) {
+      u <- -gk / gn
+      arrows(xk[1], xk[2], xk[1] + L * u[1], xk[2] + L * u[2],
+             col = "grey45", lwd = 3, length = 0.10)
+      arrows(xk[1], xk[2], xk[1] - gk[1], xk[2] - gk[2],
+             col = "#E8820C", lwd = 3, length = 0.13)
+    }
+    if (k < P$n) {
+      arrows(xk[1], xk[2], P$X[k + 1, 1], P$X[k + 1, 2],
+             col = "#2E8B57", lwd = 3, length = 0.13)
+      points(P$X[k + 1, 1], P$X[k + 1, 2], pch = 21, bg = "white",
+             col = "#2E8B57", cex = 1.2)
+    }
+    points(xk[1], xk[2], pch = 19, col = "black", cex = 1.3)
+
+    legend("topleft", lwd = 3, cex = 0.9, bg = "#ffffffcc", box.col = NA,
+           col = c("grey45", "#E8820C", "#2E8B57"),
+           legend = c(expression(-nabla * f(x[k])~"(direction only)"),
+                      expression(-nabla * f(x[k])~"(actual length)"),
+                      expression(alpha[k] * d[k]~"(step taken)")))
+  })
+
+  output$conv <- renderPlot({
+    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
+    gn <- sqrt(rowSums(P$G^2))
+    gn[!is.finite(gn) | gn <= 0] <- NA
+    par(mar = c(4, 4.5, 1.5, 1))
+    plot(seq_len(P$n) - 1, gn, type = "b", pch = 20, log = "y",
+         xlab = "iteration k", ylab = expression("||" * nabla * f * "||"),
+         col = "grey40")
+    points(k - 1, gn[k], pch = 19, col = "#E8820C", cex = 1.6)
+  })
+
+  output$info <- renderUI({
+    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
+    xk <- P$X[k, ]; gk <- P$G[k, ]; gn <- sqrt(sum(gk^2))
+    ang <- NA
+    if (k < P$n) {
+      sk <- P$X[k + 1, ] - xk
+      cs <- sum(-gk * sk) / (gn * sqrt(sum(sk^2)))
+      ang <- acos(max(-1, min(1, cs))) * 180 / pi
+    }
+    fmt <- function(v, d = 4) formatC(v, format = "g", digits = d)
+    HTML(paste0(
+      "<hr><b>iteration</b> ", k - 1, " of ", P$n - 1, "<br>",
+      "<b>x<sub>k</sub></b> = (", fmt(xk[1]), ", ", fmt(xk[2]), ")<br>",
+      "<b>f(x<sub>k</sub>)</b> = ", fmt(P$F[k], 6), "<br>",
+      "<b>||grad||</b> = ", fmt(gn), "<br>",
+      "<b>step size &alpha;<sub>k</sub></b> = ",
+      if (k < P$n) fmt(P$A[k]) else "&ndash;", "<br>",
+      "<b>angle(grey, green)</b> = ",
+      if (is.na(ang)) "&ndash;" else paste0(fmt(ang, 3), "&deg;"),
+      "<br><br><i>", P$note, "</i>"
+    ))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**Shinylive App Comparing Four Optimizers.** Choose an algorithm and objective, then step or play through the iterations.
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit06_MLE.html#sec-gradient-methods-app>.
+:::
+
+The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (@sec-nr-divergence-app); see the callout there for how to reproduce a shinylive app of your own.
+
+## Nelder–Mead (Simplex Method)
+
+Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
+
+1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
+2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
+3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
+
+```{r}
+#| label: nelder-mead-rosenbrock
+rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
+nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
+```
+
+The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
+
+### Animation for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
+
+The interactive figure below animates every reflection, expansion, contraction, and shrink on six test objectives; click inside the panel to place a new starting simplex.
+
+::: {#fig-nelder-mead-app .content-visible when-format="html"}
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 820
+
+library(shiny)
+
+## ---------------------------------------------------------------- objectives
+mk <- function(label, fv, xlim, ylim, start, xstar) {
+  force(fv)
+  list(label = label, fv = fv, f = function(p) fv(p[1], p[2]),
+       xlim = xlim, ylim = ylim, start = start,
+       xstar = matrix(xstar, ncol = 2))
+}
+
+FNS <- list(
+  quad = mk(
+    "(a) Well-conditioned quadratic",
+    function(x, y) 0.5 * (2 * (x - 1)^2 + 1.6 * (x - 1) * (y - 1) +
+                          2 * (y - 1)^2),
+    c(-3, 4), c(-3, 4), c(-2, 3), c(1, 1)
+  ),
+  banana = mk(
+    "(b) Rosenbrock banana (narrow curved ridge)",
+    function(x, y) (1 - x)^2 + 100 * (y - x^2)^2,
+    c(-2, 2), c(-1, 3), c(-1.2, 1), c(1, 1)
+  ),
+  mix = mk(
+    "(c) Highly correlated, two modes",
+    function(x, y) {
+      rho <- 0.9; den <- 1 - rho^2
+      q <- function(u, v) (u^2 - 2 * rho * u * v + v^2) / den
+      -log(exp(-0.5 * q(x - 1.2, y - 1.2)) +
+           0.6 * exp(-0.5 * q(x + 1.5, y + 1.5) / 1.5) + 1e-12)
+    },
+    c(-4, 4), c(-4, 4), c(-3, -0.5), c(1.2, 1.2)
+  ),
+  himmel = mk(
+    "(d) Himmelblau (four global minima)",
+    function(x, y) (x^2 + y - 11)^2 + (x + y^2 - 7)^2,
+    c(-5, 5), c(-5, 5), c(-4, 4),
+    rbind(c(3, 2), c(-2.805118, 3.131312),
+          c(-3.779310, -3.283186), c(3.584428, -1.848126))
+  ),
+  beale = mk(
+    "(e) Beale (flat plateau, sharp valley)",
+    function(x, y) (1.5 - x + x * y)^2 + (2.25 - x + x * y^2)^2 +
+                   (2.625 - x + x * y^3)^2,
+    c(-4.5, 4.5), c(-4.5, 4.5), c(-1, 1), c(3, 0.5)
+  ),
+  rastrigin = mk(
+    "(f) Rastrigin (many local minima)",
+    function(x, y) 20 + x^2 - 10 * cos(2 * pi * x) +
+                        y^2 - 10 * cos(2 * pi * y),
+    c(-5.12, 5.12), c(-5.12, 5.12), c(-3.1, 4.2), c(0, 0)
+  )
+)
+
+## ------------------------------------------------------------- Nelder-Mead
+## coefficients: reflection a, expansion g, contraction r, shrink s
+run_nm <- function(FN, x0, h, a = 1, g = 2, r = 0.5, s = 0.5,
+                   maxit = 80, tol = 1e-7) {
+  f <- FN$f
+  S <- rbind(x0, x0 + c(h, 0), x0 + c(0, h))
+  fS <- apply(S, 1, f)
+  steps <- list()
+  note <- "maximum number of iterations reached"
+
+  for (k in seq_len(maxit)) {
+    o <- order(fS); S <- S[o, , drop = FALSE]; fS <- fS[o]
+    dia <- max(c(sqrt(sum((S[1, ] - S[2, ])^2)),
+                 sqrt(sum((S[1, ] - S[3, ])^2)),
+                 sqrt(sum((S[2, ] - S[3, ])^2))))
+
+    if (dia < tol || diff(range(fS)) < 1e-12) {
+      steps[[k]] <- list(S = S, fS = fS, dia = dia, op = "converged",
+                         cen = colMeans(S[1:2, , drop = FALSE]),
+                         xr = NULL, xe = NULL, xc = NULL, Sn = S)
+      note <- "converged (simplex collapsed)"
+      break
+    }
+
+    cen <- colMeans(S[1:2, , drop = FALSE])          # centroid of the best two
+    xr <- cen + a * (cen - S[3, ]); fr <- f(xr)
+    xe <- NULL; xc <- NULL
+    Sn <- S; fn <- fS
+
+    if (fr < fS[1]) {                                 # better than the best
+      xe <- cen + g * (xr - cen); fe <- f(xe)
+      if (fe < fr) { Sn[3, ] <- xe; fn[3] <- fe; op <- "expansion" }
+      else         { Sn[3, ] <- xr; fn[3] <- fr; op <- "reflection" }
+    } else if (fr < fS[2]) {                          # middling: accept
+      Sn[3, ] <- xr; fn[3] <- fr; op <- "reflection"
+    } else {
+      if (fr < fS[3]) {                               # outside contraction
+        xc <- cen + r * (xr - cen); fc <- f(xc)
+        if (fc <= fr) { Sn[3, ] <- xc; fn[3] <- fc; op <- "outside contraction" }
+        else op <- "shrink"
+      } else {                                        # inside contraction
+        xc <- cen + r * (S[3, ] - cen); fc <- f(xc)
+        if (fc < fS[3]) { Sn[3, ] <- xc; fn[3] <- fc; op <- "inside contraction" }
+        else op <- "shrink"
+      }
+      if (op == "shrink") {
+        Sn[2, ] <- S[1, ] + s * (S[2, ] - S[1, ])
+        Sn[3, ] <- S[1, ] + s * (S[3, ] - S[1, ])
+        fn[2] <- f(Sn[2, ]); fn[3] <- f(Sn[3, ])
+      }
+    }
+
+    steps[[k]] <- list(S = S, fS = fS, dia = dia, op = op, cen = cen,
+                       xr = xr, xe = xe, xc = xc, Sn = Sn)
+    S <- Sn; fS <- fn
+  }
+
+  list(steps = steps, n = length(steps), note = note)
+}
+
+## ---------------------------- widen the data box to the device aspect ratio
+expand_box <- function(xlim, ylim, pin) {
+  if (length(pin) != 2 || any(!is.finite(pin)) || any(pin <= 0))
+    return(list(xlim = xlim, ylim = ylim))
+  rr <- pin[1] / pin[2]
+  wd <- diff(xlim); ht <- diff(ylim)
+  if (wd / ht < rr) {
+    w <- ht * rr; m <- mean(xlim); xlim <- m + c(-0.5, 0.5) * w
+  } else {
+    hh <- wd / rr; m <- mean(ylim); ylim <- m + c(-0.5, 0.5) * hh
+  }
+  list(xlim = xlim, ylim = ylim)
+}
+
+COL <- c(refl = "#E8820C", exp = "#7B3FBF", con = "#1F6FB4",
+         new = "#2E8B57", best = "#2E8B57", worst = "#C81E1E")
+
+## --------------------------------------------------------------------- UI
+ui <- fluidPage(
+  fluidRow(
+    column(
+      3,
+      selectInput("fn", "Objective function",
+                  setNames(names(FNS), sapply(FNS, `[[`, "label"))),
+      sliderInput("k", "Iteration k", min = 0, max = 1, value = 0, step = 1),
+      sliderInput("h", "Initial simplex size (% of range)",
+                  min = 2, max = 40, value = 12, step = 1),
+      checkboxInput("showpath", "Keep past simplices", TRUE),
+      htmlOutput("info")
+    ),
+    column(
+      2,
+      div(
+        style = "margin-top:26px;",
+        actionButton("play", "Play", class = "btn-primary btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("step", "Next", class = "btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("back", "Prev", class = "btn-lg",
+                     style = "width:100%;"),
+        hr(),
+        checkboxInput("autoplay", "Autoplay on change", FALSE),
+        actionButton("reset", "Reset initial",
+                     style = "width:100%; margin-bottom:8px;"),
+        helpText("Click inside the contour plot to choose a new initial value.")
+      )
+    ),
+    column(
+      7,
+      plotOutput("contour", click = "click", height = "540px"),
+      plotOutput("conv", height = "190px")
+    )
+  )
+)
+
+## ----------------------------------------------------------------- server
+server <- function(input, output, session) {
+
+  FN <- reactive(FNS[[input$fn]])
+  start <- reactiveVal(FNS[[1]]$start)
+  playing <- reactiveVal(FALSE)
+
+  observeEvent(input$fn, start(FNS[[input$fn]]$start))
+  observeEvent(input$reset, start(FN()$start))
+  observeEvent(input$click, {
+    p <- c(input$click$x, input$click$y)
+    if (all(is.finite(p))) start(p)
+  })
+
+  path <- reactive({
+    req(start())
+    FNc <- FN()
+    run_nm(FNc, start(), h = input$h / 100 * diff(FNc$xlim))
+  })
+
+  observeEvent(path(), {
+    updateSliderInput(session, "k", max = max(1, path()$n - 1), value = 0)
+    playing(isTRUE(input$autoplay) && path()$n > 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) {
+      playing(FALSE)
+    } else {
+      if (as.integer(input$k) >= path()$n - 1)
+        updateSliderInput(session, "k", value = 0)
+      playing(TRUE)
+    }
+  })
+
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       label = if (isTRUE(playing())) "Pause" else "Play")
+  })
+
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax <- isolate(path()$n) - 1
+    k <- isolate(as.integer(input$k))
+    if (k >= kmax) { playing(FALSE); return() }
+    invalidateLater(900, session)
+    updateSliderInput(session, "k", value = k + 1)
+  })
+
+  observeEvent(input$step, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = min(as.integer(input$k) + 1, max(0, path()$n - 1)))
+  })
+
+  observeEvent(input$back, {
+    playing(FALSE)
+    updateSliderInput(session, "k", value = max(as.integer(input$k) - 1, 0))
+  })
+
+  output$contour <- renderPlot({
+    FNc <- FN(); P <- path()
+    k <- min(as.integer(input$k), P$n - 1) + 1L
+    st <- P$steps[[k]]
+
+    par(mar = c(4, 4, 3, 1))
+    plot.new()
+    bx <- expand_box(FNc$xlim, FNc$ylim, par("pin"))
+    plot.window(xlim = bx$xlim, ylim = bx$ylim, xaxs = "i", yaxs = "i")
+
+    xs <- seq(bx$xlim[1], bx$xlim[2], length.out = 180)
+    ys <- seq(bx$ylim[1], bx$ylim[2], length.out = 180)
+    z  <- outer(xs, ys, FNc$fv)
+    zf <- z[is.finite(z)]
+    lv <- unique(quantile(zf, probs = seq(0, 1, length.out = 30)^1.7))
+    zr <- matrix(rank(z, na.last = "keep", ties.method = "average"),
+                 nrow = length(xs))
+
+    image(xs, ys, zr, add = TRUE,
+          col = colorRampPalette(c("#f7fbff", "#9ec4e3"))(128))
+    contour(xs, ys, z, levels = lv, add = TRUE,
+            col = "grey45", drawlabels = FALSE)
+    axis(1); axis(2); box()
+    title(main = paste0("Nelder-Mead  |  ", FNc$label),
+          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1.0)
+    mtext(paste0("iteration ", k - 1, ":  ", st$op), side = 3, line = 0.1,
+          cex = 1.1, font = 2)
+
+    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 8, col = "red",
+           cex = 1.3, lwd = 2)
+
+    ## past simplices
+    if (isTRUE(input$showpath) && k > 1)
+      for (j in seq_len(k - 1))
+        polygon(P$steps[[j]]$S[, 1], P$steps[[j]]$S[, 2],
+                border = "grey55", lty = 3)
+
+    ## current simplex
+    S <- st$S
+    polygon(S[, 1], S[, 2], border = "black", lwd = 2,
+            col = adjustcolor("white", alpha.f = 0.35))
+    points(st$cen[1], st$cen[2], pch = 3, col = "black", lwd = 2, cex = 1.1)
+    points(S[, 1], S[, 2], pch = 21, cex = 1.6, lwd = 2, bg = "white",
+           col = c(COL["best"], "grey30", COL["worst"]))
+    text(S[, 1], S[, 2], labels = c("B", "G", "W"), pos = 3, offset = 0.6,
+         font = 2, col = c(COL["best"], "grey30", COL["worst"]))
+
+    ## candidate points generated this iteration
+    if (!is.null(st$xr)) {
+      segments(S[3, 1], S[3, 2], st$xr[1], st$xr[2],
+               col = COL["refl"], lwd = 2, lty = 2)
+      points(st$xr[1], st$xr[2], pch = 19, col = COL["refl"], cex = 1.5)
+    }
+    if (!is.null(st$xe)) {
+      segments(st$xr[1], st$xr[2], st$xe[1], st$xe[2],
+               col = COL["exp"], lwd = 2, lty = 2)
+      points(st$xe[1], st$xe[2], pch = 19, col = COL["exp"], cex = 1.5)
+    }
+    if (!is.null(st$xc))
+      points(st$xc[1], st$xc[2], pch = 19, col = COL["con"], cex = 1.5)
+
+    ## the simplex that results
+    if (st$op != "converged") {
+      polygon(st$Sn[, 1], st$Sn[, 2], border = COL["new"], lwd = 3, lty = 2)
+      if (st$op == "shrink")
+        arrows(S[2:3, 1], S[2:3, 2], st$Sn[2:3, 1], st$Sn[2:3, 2],
+               col = COL["con"], lwd = 2, length = 0.10)
+    }
+
+    legend("topleft", cex = 0.85, bg = "#ffffffcc", box.col = NA,
+           pch = c(21, 21, 3, 19, 19, 19, NA),
+           lty = c(NA, NA, NA, NA, NA, NA, 2),
+           lwd = c(2, 2, 2, NA, NA, NA, 3),
+           col = c(COL["best"], COL["worst"], "black", COL["refl"],
+                   COL["exp"], COL["con"], COL["new"]),
+           legend = c("best vertex B", "worst vertex W",
+                      "centroid of B and G", "reflection", "expansion",
+                      "contraction / shrink", "next simplex"))
+  })
+
+  output$conv <- renderPlot({
+    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
+    fb <- sapply(P$steps, function(s) s$fS[1])
+    fw <- sapply(P$steps, function(s) s$fS[3])
+    par(mar = c(4, 4.5, 1.5, 1))
+    matplot(seq_len(P$n) - 1, cbind(fb, fw), type = "b", pch = 20, lty = 1,
+            col = c(COL["best"], COL["worst"]),
+            xlab = "iteration k", ylab = "f at simplex vertices")
+    abline(v = k - 1, col = "grey60", lty = 2)
+    legend("topright", bty = "n", cex = 0.9, lty = 1, pch = 20,
+           col = c(COL["best"], COL["worst"]), legend = c("best", "worst"))
+  })
+
+  output$info <- renderUI({
+    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
+    st <- P$steps[[k]]
+    fmt <- function(v, d = 4) formatC(v, format = "g", digits = d)
+    HTML(paste0(
+      "<hr><b>iteration</b> ", k - 1, " of ", P$n - 1, "<br>",
+      "<b>operation</b>: ", st$op, "<br><br>",
+      "<b>B</b> = (", fmt(st$S[1, 1]), ", ", fmt(st$S[1, 2]), "),  f = ",
+      fmt(st$fS[1], 6), "<br>",
+      "<b>G</b> = (", fmt(st$S[2, 1]), ", ", fmt(st$S[2, 2]), "),  f = ",
+      fmt(st$fS[2], 6), "<br>",
+      "<b>W</b> = (", fmt(st$S[3, 1]), ", ", fmt(st$S[3, 2]), "),  f = ",
+      fmt(st$fS[3], 6), "<br><br>",
+      "<b>simplex diameter</b> = ", fmt(st$dia), "<br>",
+      "<b>f range</b> = ", fmt(diff(range(st$fS))),
+      "<br><br><i>", P$note, "</i>"
+    ))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**Shinylive App Illustrating Nelder–Mead.** Reflection, expansion, contraction and shrink steps are colour-coded on the contour plot as the simplex moves.
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit06_MLE.html#sec-nelder-mead-app>.
+:::
+
+## Stochastic Gradient Descent
+
+### Motivation: Large $n$
+
+For iid data the log-likelihood and its gradient are **sums over observations**:
+$$
+\ell(\theta) = \sum_{i=1}^n \ell_i(\theta), \qquad \nabla\ell(\theta) = \sum_{i=1}^n \nabla\ell_i(\theta).
+$$
+
+Every method in the two previous sections needs the **full** gradient — an $O(np)$ pass through all the data — at every single iteration, and Newton needs $O(np^2)$ for the Hessian on top of that. With $n$ in the millions and $p$ in the millions, as in a large neural network, even one full gradient evaluation is expensive.
+
+The idea behind stochastic gradient descent is that $\nabla\ell_i(\theta)$ for a randomly chosen $i$ is an **unbiased estimate** of the average gradient,
+$$
+E_i\big[\nabla\ell_i(\theta)\big] = \frac{1}{n}\nabla\ell(\theta),
+$$
+so a noisy but cheap gradient estimate is often enough to make progress — the same Monte Carlo idea used elsewhere in this book, now applied to optimization rather than integration.
+
+### The SGD Algorithm
+
+For $t = 1, 2, \ldots$:
+
+1. Sample an index $i_t$ uniformly from $\{1, \ldots, n\}$ — or shuffle the data once and cycle through it, so that one full pass is called an **epoch**.
+2. Update in the ascent direction of that single observation's log-likelihood:
+$$
+\theta_{t+1} = \theta_t + \gamma_t\,\nabla\ell_{i_t}(\theta_t).
+$$
+
+**Mini-batch SGD** averages the gradient over a batch $B_t$ of $m$ observations (typically $m = 32$–$512$ in machine-learning practice, though far smaller batches suffice for the simple models in this book):
+$$
+\theta_{t+1} = \theta_t + \gamma_t\,\frac{1}{m}\sum_{i\in B_t}\nabla\ell_i(\theta_t),
+$$
+which reduces the variance of the gradient estimate by a factor of $1/m$ at $m$ times the per-step cost, and is what lets the computation vectorize efficiently or run on a GPU. The **learning rate** $\gamma_t$ plays the role that a line search played for the deterministic methods above — a line search itself would need a full pass over the data to evaluate $\ell$, defeating the purpose.
+
+### Learning Rate and Convergence
+
+Because each update uses a noisy gradient, a constant learning rate $\gamma$ makes $\theta_t$ **bounce around** the optimum indefinitely, with a variance proportional to $\gamma$. The classical result of Robbins and Monro (1951) is that $\theta_t$ converges to the optimum provided
+$$
+\sum_t \gamma_t = \infty \quad\text{and}\quad \sum_t \gamma_t^2 < \infty, \qquad\text{e.g. } \gamma_t = \frac{\gamma_0}{1 + t/t_0},
+$$
+the first condition allowing the iterate to travel arbitrarily far from its start, and the second forcing the noise to die out fast enough for it to settle.
+
+A learning rate that is too large causes divergence or persistent noise; one that is too small is painfully slow. Convergence is only **sublinear** — far slower than Newton's quadratic rate *per iteration* — but each SGD iteration costs $O(p)$ or $O(mp)$ rather than $O(np)$ for a full gradient or $O(np^2)$ for a Hessian, and early progress is often fast even when final convergence is not. Common refinements include **momentum** (averaging past gradients to damp the noise), **Adam** (per-coordinate adaptive learning rates), and **Polyak–Ruppert averaging** of the iterates, $\overline\theta_T = \tfrac1T\sum_{t\le T}\theta_t$, which restores the $\sqrt n$-efficiency of the MLE that the noisy path alone does not have.
+
+### Animation for Stochastic Gradient Descent {#sec-sgd-app}
+
+The app below trains a small one-hidden-layer neural network ($1 \to H \to 1$, so $3H+1$ parameters) by gradient ascent on the log-likelihood (equivalently, gradient descent on the mean squared error) under two data-generating processes — one inside the network's own model class, one outside it — and lets you compare a mini-batch run against a full-batch run sharing the same data, initial weights, and number of epochs.
+
+::: {#fig-sgd-app .content-visible when-format="html"}
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 830
+
+library(shiny)
+
+## ------------------------------------------------------------------- data
+## Two data-generating processes. The teacher network lies inside the
+## student's model class; the bumps do not.
+TEACH <- list(w = c(4, 3, 5), cc = c(4, 0, -5), v = c(1.0, -1.2, 0.8), b = 0)
+
+g_teacher <- function(x) {
+  Hm <- tanh(outer(x, TEACH$w) + rep(TEACH$cc, each = length(x)))
+  as.vector(Hm %*% TEACH$v + TEACH$b)
+}
+
+g_bumps <- function(x)
+  1.2 * exp(-9 * (x + 0.7)^2) - 1.0 * exp(-9 * (x - 0.8)^2)
+
+DGPS <- c("Teacher network (1 - 3 tanh - 1)" = "teacher",
+          "Two Gaussian bumps (outside the model class)" = "bumps")
+
+gtrue <- function(x, dgp)
+  if (identical(dgp, "bumps")) g_bumps(x) else g_teacher(x)
+
+XG <- seq(-2, 2, length.out = 300)
+
+make_data <- function(n, sigma, seed, dgp) {
+  set.seed(500 + seed)
+  x <- sort(runif(n, -2, 2))
+  list(x = x, y = gtrue(x, dgp) + rnorm(n, 0, sigma), n = n, dgp = dgp)
+}
+
+## ------------------------------------------------- network: 1 - H tanh - 1
+unpack <- function(p, H)
+  list(w = p[1:H], cc = p[H + (1:H)], v = p[2 * H + (1:H)], b = p[3 * H + 1])
+
+fnet <- function(p, x, H) {
+  P <- unpack(p, H)
+  Hm <- tanh(outer(x, P$w) + rep(P$cc, each = length(x)))
+  as.vector(Hm %*% P$v + P$b)
+}
+
+gnet <- function(p, x, y, H) {
+  n <- length(x); P <- unpack(p, H)
+  Hm <- tanh(outer(x, P$w) + rep(P$cc, each = n))
+  r <- as.vector(Hm %*% P$v + P$b) - y
+  S <- (1 - Hm^2) * outer(r, P$v)
+  c(as.vector(colSums(S * x)) / n,        # dw
+    as.vector(colSums(S)) / n,            # dc
+    as.vector(crossprod(Hm, r)) / n,      # dv
+    mean(r))                              # db
+}
+
+mse <- function(p, H, x, y) 0.5 * mean((fnet(p, x, H) - y)^2)
+
+init_p <- function(H, seed) {
+  set.seed(1000 + seed)
+  c(rnorm(H, 0, 2), rnorm(H, 0, 1.5), rnorm(H, 0, 0.7), 0)
+}
+
+## ---------------------------------------------------------------- training
+## m = batch size; m >= n is full-batch gradient descent.
+train <- function(p0, H, m, a, nepoch, seed, D) {
+  n <- D$n
+  m <- max(1, min(m, n))
+  B <- ceiling(n / m)                              # updates per epoch
+  nup <- B * nepoch
+  P <- matrix(NA_real_, nup + 1, length(p0))
+  L <- rep(NA_real_, nup + 1); EP <- rep(NA_real_, nup + 1)
+  IDX <- vector("list", nup + 1)
+  set.seed(seed)
+  p <- p0; k <- 0; bad <- FALSE
+  for (e in seq_len(nepoch)) {
+    perm <- if (B == 1) seq_len(n) else sample.int(n)
+    grp <- split(perm, ceiling(seq_len(n) / m))    # last batch may be smaller
+    for (b in seq_len(B)) {
+      k <- k + 1
+      idx <- grp[[b]]
+      P[k, ] <- p; IDX[[k]] <- idx
+      L[k] <- mse(p, H, D$x, D$y); EP[k] <- (k - 1) / B
+      p <- p - a * gnet(p, D$x[idx], D$y[idx], H)
+      if (any(!is.finite(p))) { bad <- TRUE; break }
+    }
+    if (bad) break
+  }
+  if (!bad) {
+    k <- k + 1
+    P[k, ] <- p; IDX[[k]] <- seq_len(n)
+    L[k] <- mse(p, H, D$x, D$y); EP[k] <- (k - 1) / B
+  }
+  n_rec <- max(1, k)
+  list(P = P[1:n_rec, , drop = FALSE], L = L[1:n_rec], EP = EP[1:n_rec],
+       IDX = IDX[1:n_rec], n = n_rec, B = B, m = m, diverged = bad)
+}
+
+## ------------------------------------------------------------ weight plot
+## Diverging ramp: blue = negative, red = positive, magnitude by saturation.
+DIV <- colorRampPalette(c("#08306B", "#2171B5", "#6BAED6", "#DEEBF7",
+                          "#F7F7F7",
+                          "#FEE0D2", "#FC9272", "#CB181D", "#67000D"))(201)
+
+## compander: maps v in [-wmax, wmax] to [-1, 1], boosting small values.
+tone <- function(v, wmax, k) {
+  u <- pmax(-1, pmin(1, v / wmax))
+  sign(u) * log1p(k * abs(u)) / log1p(k)
+}
+
+wcol <- function(v, wmax, k) DIV[round((tone(v, wmax, k) + 1) * 100) + 1]
+wlwd <- function(v, wmax, k) 0.8 + 6 * abs(tone(v, wmax, k))
+
+draw_net <- function(p, H, wmax, k, main) {
+  P <- unpack(p, H)
+  yh <- if (H == 1) 0.5 else seq(0.92, 0.10, length.out = H)
+  ix <- 0.05; hx <- 0.55; ox <- 1.05
+  nc <- max(1.4, min(4.4, 36 / H))
+  plot.new(); plot.window(c(-0.05, 1.2), c(-0.10, 1.02))
+  title(main = main, cex.main = 1.05)
+  for (j in 1:H)
+    segments(ix, 0.5, hx, yh[j], col = wcol(P$w[j], wmax, k),
+             lwd = wlwd(P$w[j], wmax, k), lend = 1)
+  for (j in 1:H)
+    segments(hx, yh[j], ox, 0.5, col = wcol(P$v[j], wmax, k),
+             lwd = wlwd(P$v[j], wmax, k), lend = 1)
+  points(ix, 0.5, pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
+  text(ix, 0.5, "x", font = 2)
+  points(rep(hx, H), yh, pch = 21, cex = nc, lwd = 1.4,
+         bg = wcol(P$cc, wmax, k))
+  if (H <= 10) text(rep(hx, H), yh, 1:H, cex = 0.65)
+  points(ox, 0.5, pch = 21, cex = 3.4, lwd = 1.6, bg = wcol(P$b, wmax, k))
+  text(ox, 0.5, "y", font = 2)
+
+  ## signed colour bar
+  xs <- seq(0.12, 0.98, length.out = 201)
+  rect(xs, -0.09, xs + diff(xs)[1], -0.035, col = DIV, border = NA)
+  lab <- formatC(wmax, format = "g", digits = 2)
+  text(c(0.12, 0.55, 0.98), -0.005,
+       c(paste0("-", lab), "0", paste0("+", lab)), cex = 0.72)
+}
+
+## --------------------------------------------------------------------- UI
+ui <- fluidPage(
+  fluidRow(
+    ## ---- column 1: training controls -----------------------------------
+    column(
+      3,
+      selectInput("dgp", "True curve", choices = DGPS, selected = "teacher"),
+      sliderInput("H", "Hidden neurons", min = 2, max = 16, value = 8,
+                  step = 1),
+      sliderInput("m", "Batch size m", min = 1, max = 400, value = 20,
+                  step = 1),
+      sliderInput("a", "Learning rate", min = 0.01, max = 0.60, value = 0.20,
+                  step = 0.01),
+      sliderInput("nep", "Epochs", min = 10, max = 300, value = 100, step = 10),
+      sliderInput("ctr", "Weight colour contrast", min = 1, max = 40,
+                  value = 12, step = 1),
+      checkboxInput("showgd", "Overlay the full-batch run", TRUE)
+    ),
+    ## ---- column 2: data generation, then playback ----------------------
+    column(
+      2,
+      div(
+        style = "margin-top:10px;",
+        tags$h5(tags$b("Data")),
+        sliderInput("n", "Sample size n", min = 40, max = 400, value = 200,
+                    step = 20),
+        sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40, value = 0.08,
+                    step = 0.01),
+        actionButton("newdata", "Regenerate a dataset",
+                     class = "btn-warning",
+                     style = "width:100%; margin-bottom:6px;"),
+
+        hr(style = "border-top:2px solid #999; margin:14px 0;"),
+
+        tags$h5(tags$b("Training")),
+        actionButton("play", "Play", class = "btn-primary btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("step", "Next", class = "btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("back", "Prev", class = "btn-lg",
+                     style = "width:100%;"),
+        checkboxInput("byepoch", "Advance a whole epoch", TRUE),
+        checkboxInput("autoplay", "Autoplay on change", FALSE),
+        actionButton("newinit", "New initial weights",
+                     style = "width:100%; margin-bottom:8px;"),
+        actionButton("newseed", "New batch sequence",
+                     style = "width:100%; margin-bottom:8px;"),
+        helpText("Both runs share the data, the initial weights and the",
+                 "number of epochs; only m differs.")
+      )
+    ),
+    ## ---- column 3: plots -----------------------------------------------
+    column(
+      7,
+      plotOutput("nets", height = "300px"),
+      plotOutput("fit", height = "340px"),
+      sliderInput("k", "Update k", min = 0, max = 1, value = 0, step = 1,
+                  width = "900px")
+    )
+  )
+)
+
+## ----------------------------------------------------------------- server
+server <- function(input, output, session) {
+
+  MAXUP <- 4000
+  dseed <- reactiveVal(1); wseed <- reactiveVal(1); bseed <- reactiveVal(1)
+  playing <- reactiveVal(FALSE)
+
+  observeEvent(input$newdata, dseed(dseed() + 1))
+  observeEvent(input$newinit, wseed(wseed() + 1))
+  observeEvent(input$newseed, bseed(bseed() + 1))
+
+  observeEvent(input$n, {
+    updateSliderInput(session, "m", max = input$n,
+                      value = min(input$m, input$n))
+  })
+
+  DAT <- reactive(make_data(input$n, input$sigma, dseed(), input$dgp))
+
+  runs <- reactive({
+    D <- DAT(); H <- input$H
+    m <- max(1, min(input$m, D$n))
+    B <- ceiling(D$n / m)
+    ne <- max(1, min(input$nep, floor(MAXUP / B)))
+    p0 <- init_p(H, wseed())
+    S <- train(p0, H, m, input$a, ne, bseed(), D)
+    G <- train(p0, H, D$n, input$a, ne, bseed(), D)
+    list(S = S, G = G, H = H, B = B, m = m, D = D, ne = ne,
+         capped = ne < input$nep,
+         wmax = max(0.2, quantile(abs(c(S$P, G$P)), 0.97, na.rm = TRUE)))
+  })
+
+  stride <- reactive(if (isTRUE(input$byepoch)) runs()$B else 1L)
+
+  observeEvent(runs(), {
+    updateSliderInput(session, "k", max = max(1, runs()$S$n - 1), value = 0)
+    playing(isTRUE(input$autoplay) && runs()$S$n > 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) playing(FALSE)
+    else {
+      if (as.integer(input$k) >= runs()$S$n - 1)
+        updateSliderInput(session, "k", value = 0)
+      playing(TRUE)
+    }
+  })
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       label = if (isTRUE(playing())) "Pause" else "Play")
+  })
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax <- isolate(runs()$S$n) - 1
+    k <- isolate(as.integer(input$k)); st <- isolate(stride())
+    if (k >= kmax) { playing(FALSE); return() }
+    invalidateLater(250, session)
+    updateSliderInput(session, "k", value = min(k + st, kmax))
+  })
+  observeEvent(input$step, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = min(as.integer(input$k) + stride(),
+                                  max(0, runs()$S$n - 1)))
+  })
+  observeEvent(input$back, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = max(as.integer(input$k) - stride(), 0))
+  })
+
+  cur <- reactive({
+    R <- runs()
+    k <- min(as.integer(input$k), R$S$n - 1) + 1L
+    ep <- R$S$EP[k]
+    kg <- max(1, min(R$G$n, floor(ep) + 1L))
+    list(R = R, k = k, kg = kg, ep = ep)
+  })
+
+  output$nets <- renderPlot({
+    C <- cur(); R <- C$R
+    msz <- length(R$S$IDX[[C$k]])
+    par(mfrow = c(1, if (isTRUE(input$showgd)) 2 else 1), mar = c(1, 1, 3, 1))
+    draw_net(R$S$P[C$k, ], R$H, R$wmax, input$ctr,
+             sprintf("m = %d (B = %d),  epoch %.2f", msz, R$B, C$ep))
+    if (isTRUE(input$showgd))
+      draw_net(R$G$P[C$kg, ], R$H, R$wmax, input$ctr,
+               sprintf("m = %d (full batch),  epoch %d", R$D$n, C$kg - 1L))
+  })
+
+  output$fit <- renderPlot({
+    C <- cur(); R <- C$R; D <- R$D
+    par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+
+    idx <- R$S$IDX[[C$k]]
+    plot(D$x, D$y, pch = 20, col = "grey75", cex = 0.9,
+         xlab = "x", ylab = "y", main = "fitted curve and current batch")
+    points(D$x[idx], D$y[idx], pch = 19, col = "#E8820C", cex = 1.2)
+    lines(XG, gtrue(XG, D$dgp), col = "red", lty = 2, lwd = 2)
+    lines(XG, fnet(R$S$P[C$k, ], XG, R$H), col = "#2E8B57", lwd = 2.5)
+    if (isTRUE(input$showgd))
+      lines(XG, fnet(R$G$P[C$kg, ], XG, R$H), col = "#7B3FBF", lwd = 2.5)
+    legend("topright", bty = "n", cex = 0.85,
+           lwd = c(2, 2.5, 2.5), lty = c(2, 1, 1),
+           col = c("red", "#2E8B57", "#7B3FBF"),
+           legend = c(if (identical(D$dgp, "bumps")) "true curve (bumps)"
+                      else "teacher network",
+                      paste0("m = ", R$m, " fit"), "full-batch fit"))
+
+    yl <- range(c(R$S$L, if (isTRUE(input$showgd)) R$G$L), na.rm = TRUE)
+    plot(R$S$EP, R$S$L, type = "l", log = "y", col = "#2E8B57", lwd = 2,
+         ylim = pmax(yl, 1e-7), xlab = "epoch (one pass over all n)",
+         ylab = "training loss (all n)", main = "loss per epoch")
+    if (isTRUE(input$showgd))
+      lines(R$G$EP, R$G$L, col = "#7B3FBF", lwd = 2)
+    abline(h = 0.5 * input$sigma^2, col = "grey55", lty = 3)
+    points(C$ep, R$S$L[C$k], pch = 19, col = "#E8820C", cex = 1.5)
+  })
+
+  output$info <- renderUI({
+    C <- cur(); R <- C$R; H <- R$H
+    P <- unpack(R$S$P[C$k, ], H)
+    fmt <- function(v, d = 3) formatC(v, format = "f", digits = d)
+    rows <- paste0(
+      "<tr><td>h", 1:H, "</td><td align='right'>", fmt(P$w),
+      "</td><td align='right'>", fmt(P$cc),
+      "</td><td align='right'>", fmt(P$v), "</td></tr>", collapse = "")
+    HTML(paste0(
+      "<hr><b>update</b> ", C$k - 1, " of ", R$S$n - 1,
+      "  (epoch ", fmt(C$ep, 2), ")<br>",
+      "<b>batch size m</b> = ", length(R$S$IDX[[C$k]]), " of ", R$D$n, "<br>",
+      "<b>updates per epoch</b> = ", R$B, "<br>",
+      "<b>parameters</b> = ", 3 * H + 1, "<br><br>",
+      "<b>loss, m = ", R$m, "</b> = ", fmt(R$S$L[C$k], 5), "<br>",
+      "<b>loss, full batch</b> = ", fmt(R$G$L[C$kg], 5), "<br>",
+      "<b>noise floor</b> &asymp; ", fmt(0.5 * input$sigma^2, 5), "<br>",
+      if (isTRUE(R$S$diverged))
+        "<b style='color:#C81E1E'>run diverged</b><br>" else "",
+      if (isTRUE(R$capped))
+        paste0("<i style='color:#C81E1E'>epochs capped at ", R$ne,
+               "</i><br>") else "",
+      "<br><table style='font-size:90%'>",
+      "<tr><th>unit</th><th>w</th><th>bias</th><th>v</th></tr>",
+      rows, "</table>",
+      "<br><i>output bias = ", fmt(P$b), "</i>"
+    ))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**Shinylive App for Stochastic Gradient Descent.** Compare a mini-batch run against a full-batch run sharing the same data and starting weights.
+
+:::
+
+::: {.content-visible unless-format="html"}
+This section contains a live, in-browser Shiny app that only runs in the HTML
+edition of this book. View it at
+<https://longhaisk.github.io/compstat/chapters/unit06_MLE.html#sec-sgd-app>.
+:::
+
+### Example: SGD for Logistic Regression in R
+
+Returning one last time to the running logistic-regression example, mini-batch SGD needs only the per-observation score already coded for Newton–Raphson, applied to a small random subset at each update:
+
+```{r}
+#| label: sgd-logistic
+sgd_logistic <- function(z, r, b0, gamma0 = 0.5, t0 = 100, epochs = 30, batch = 10) {
+  n <- length(z); b <- b0; t <- 0; path <- b0
+  for (e in 1:epochs) {
+    idx <- sample(n)
+    for (s in seq(1, n, by = batch)) {
+      i <- idx[s:min(s + batch - 1, n)]
+      t <- t + 1
+      u <- b[1] + b[2] * z[i]
+      p <- plogis(u)
+      grad <- c(sum(r[i] - p), sum(z[i] * (r[i] - p))) / length(i)
+      b <- b + gamma0 / (1 + t / t0) * grad
+      path <- rbind(path, b)
+    }
+  }
+  list(est = b, path = path)
+}
+
+set.seed(2)
+beta_true <- c(0, 1.5)                    # the parameters used to simulate data$z, data$r above
+sg <- sgd_logistic(data$z, data$r, c(0, 0))
+rbind(sgd = sg$est, nlm = logit_nlm$estimate, truth = beta_true)
+```
+
+### SGD Trajectory vs. Newton–Raphson
+
+```{r}
+#| label: fig-sgd-vs-newton
+#| fig-cap: "SGD (fine, noisy trajectory) versus Newton-Raphson (large steps, one per full pass through the data) converging to the same logistic-regression MLE."
+nr_path <- mle_logistic_nr(c(0, 0), 8, data$r, data$z)     # beta0, beta1, neg_loglike per Newton iteration
+m <- 10; per_epoch <- length(data$z) / m
+xs <- 0:(nrow(sg$path) - 1)
+xn <- (0:(nrow(nr_path) - 1)) * per_epoch
+
+matplot(xs, sg$path, type = "l", lty = 1, col = c(2, 4),
+        ylim = range(sg$path, nr_path[, 1:2]),
+        xlab = "mini-batch updates (one epoch = one full pass through the data)",
+        ylab = "coefficient",
+        main = expression(paste("SGD vs. Newton-Raphson: ", beta[0], " (red), ", beta[1], " (blue)")))
+matlines(xn, nr_path[, 1:2], type = "b", lty = 2, pch = 19, col = c(2, 4), lwd = 2)
+abline(h = logit_nlm$estimate, col = c(2, 4), lty = 3)
+abline(v = seq(0, max(xs), per_epoch), col = "grey85")
+legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
+       lty = c(1, 2, 3), pch = c(NA, 19, NA), bty = "n", cex = 0.85)
+```
+
+Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
+
+## Comparing All the Methods
+
+The chapter has covered a lot of ground, from bisection on a scalar score to stochastic gradient descent on millions of parameters. The three tables below collect it into a single reference: which method needs what, which R function to reach for, and how to choose among them for a given problem.
 
 ### Comparison
 
