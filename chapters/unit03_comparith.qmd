@@ -676,6 +676,106 @@ x <- c(1, 2, 3) + 1e10
 c(one_pass = var1(x), shifted = var_shifted(x), welford = var_welford(x), two_pass = var2(x))
 ```
 
+### Computing $\log(1-e^{-u})$: large + small and large − large together
+
+This kernel appears whenever a difference is taken on the log scale: for $a>b$,
+$$
+\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b>0,
+$$
+so evaluating $\log(1-e^{-u})$ accurately is the key step in computing the log of a difference. Written literally as `log(1 - exp(-u))`, it fails at **both** ends of the range, from the two failure modes introduced above:
+
+- **$u$ small.** $e^{-u}\approx 1$, so $1-e^{-u}$ is a **large − large** subtraction: the true value is $\approx u$, far below the roundoff already present in $e^{-u}$, so the leading digits cancel and little survives. For $u<2^{-53}$, `exp(-u)` itself rounds to exactly $1$ and the result is $-\infty$.
+- **$u$ large.** $e^{-u}$ is tiny, so $1-e^{-u}$ is a **large + small** addition: the small term is absorbed, `1 - exp(-u)` rounds to exactly $1$, and `log` returns $0$ instead of the true value $\approx -e^{-u}$.
+
+R provides two functions built precisely for arguments near the landmark $1$, each evaluating its series directly instead of forming the offending sum or difference: `expm1(x)` computes $e^{x}-1$ with full relative precision for small $x$, and `log1p(x)` computes $\log(1+x)$ with full relative precision for small $x$ (Section on avoiding large − large, above). Applied to $\log(1-e^{-u})$, each removes only **one** of the two failures, and neither removes the other:
+
+```{r}
+#| label: log1mexp-functions
+f_naive <- function(u) log(1 - exp(-u))     # both failures
+f_expm1 <- function(u) log(-expm1(-u))      # never forms the difference 1 - exp(-u)
+f_log1p <- function(u) log1p(-exp(-u))      # never forms the sum exp(-u)
+```
+
+`f_expm1` evaluates $-\operatorname{expm1}(-u)=1-e^{-u}$ without ever subtracting two numbers near $1$, which fixes **small** $u$; its outer `log` then receives a value near $u$, far from the landmark $1$, and is safe. `f_log1p` passes $-e^{-u}$ straight into `log1p`, which fixes **large** $u$; but for small $u$ that argument has already rounded to $-1$ before `log1p` ever sees it, so `f_log1p` fails exactly where `f_naive` does.
+
+```{r}
+#| label: log1mexp-table
+u <- c(1e-100, 1e-18, 1e-15, 1e-8, 1, 20, 50, 500)
+log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
+g <- function(x) formatC(x, format = "g", digits = 8)
+kable(data.frame(u = g(u), naive = g(f_naive(u)), expm1 = g(f_expm1(u)),
+                  log1p = g(f_log1p(u)), correct = g(log1mexp(u))),
+      caption = "log(1 - exp(-u)) by four methods, across eighteen orders of magnitude of u",
+      align = c("r", "r", "r", "r", "r"))
+```
+
+- For **small** $u$, `naive` tracks `log1p`: both lose digits and eventually collapse to $-\infty$; only `expm1` is correct.
+- For **large** $u$, `naive` tracks `expm1`: both collapse to $0$; only `log1p` is correct.
+- In the **middle** ($10^{-8}\le u\le 20$), all three agree, because $u$ is nowhere near either landmark.
+
+**Solution: branch between the two remedies.** Split at $u=\log 2$, where $e^{-u}=1/2$ is safely far from both traps, and use whichever incomplete remedy is valid on that side:
+
+```{r}
+#| label: log1mexp-branch
+log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
+```
+
+The same construction, named `log1mexp`, is shipped by several CRAN packages (including **copula** and **VGAM**), all tracing to Mächler (2012); `DPQ::logspace.sub(0, -u)` computes the same quantity by an equivalent route. Prefer a package function in production code, and write your own only to understand *why* it works.
+
+@fig-log1mexp shows the three implementations against `log1mexp` (grey reference), on a log scale for $u$: small $u$ on the left, where only `expm1` survives, and large $u$ on the right, where only `log1p` survives.
+
+```{r}
+#| label: fig-log1mexp
+#| fig-cap: "The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference."
+#| fig-width: 10
+#| fig-height: 4.2
+
+fin <- function(y) replace(y, !is.finite(y), NA)   # -Inf: the curve simply stops
+## for the right panel: place y < 0 on a log axis without changing its sign,
+## by plotting log10(-y) against a reversed axis labelled -10^k
+negpow <- function(y) {
+  out <- rep(NA_real_, length(y)); ok <- is.finite(y) & y < 0
+  out[ok] <- log10(-y[ok]); out
+}
+cols <- c(naive = "#D62728", expm1 = "#1F5FBF", log1p = "#D9A400")
+par(mfrow = c(1, 2), mar = c(4.2, 5.2, 2.6, 1), cex = 1.05)
+
+## left: small u, value plotted directly; jitter in units of the response
+u <- 10^seq(-20, 0, length.out = 400)
+jit <- c(0.9, 0, -0.9)
+plot(u, log1mexp(u), type = "n", log = "x", ylim = c(-52, 2),
+     xlab = expression(u), ylab = expression(log(1 - e^-u)),
+     main = expression("Small" ~ u * ": only expm1 survives"))
+u_dead <- max(u[!is.finite(f_naive(u))])
+rect(min(u), -60, u_dead, 10, col = adjustcolor("gray50", 0.12), border = NA)
+text(sqrt(min(u) * u_dead), -24, "naive, log1p\nreturn -Inf", col = "gray30", cex = 0.8)
+lines(u, log1mexp(u), lwd = 9, col = "gray87")
+lines(u, fin(f_naive(u)) + jit[1], lwd = 2.5, col = cols["naive"])
+lines(u, fin(f_expm1(u)) + jit[2], lwd = 2.5, col = cols["expm1"])
+lines(u, fin(f_log1p(u)) + jit[3], lwd = 2.5, col = cols["log1p"])
+legend("topleft", bty = "n", cex = 0.8, lwd = c(9, 2.5, 2.5, 2.5),
+       col = c("gray87", cols), legend = c("exact", "naive", "expm1", "log1p"))
+
+## right: large u, same quantity on a log-magnitude axis (note the reversed ylim);
+## jitter is now in powers of ten, so it must be applied after negpow()
+u <- 10^seq(0, log10(700), length.out = 400)
+jit <- c(7, 0, -7)
+k <- seq(0, -300, by = -60)
+plot(u, negpow(log1mexp(u)), type = "n", log = "x", ylim = c(3, -320), yaxt = "n",
+     xlab = expression(u), ylab = expression(log(1 - e^-u)),
+     main = expression("Large" ~ u * ": only log1p survives"))
+axis(2, at = k, labels = parse(text = paste0("-10^", k)), las = 1, cex.axis = 0.8)
+u_dead <- min(u[f_naive(u) >= 0])
+rect(u_dead, 10, max(u), -330, col = adjustcolor("gray50", 0.12), border = NA)
+text(u_dead * 1.3, -150, "naive, expm1\nreturn 0", adj = c(0, 0.5), col = "gray30", cex = 0.8)
+lines(u, negpow(log1mexp(u)), lwd = 9, col = "gray87")
+lines(u, negpow(f_naive(u)) + jit[1], lwd = 2.5, col = cols["naive"])
+lines(u, negpow(f_expm1(u)) + jit[2], lwd = 2.5, col = cols["expm1"])
+lines(u, negpow(f_log1p(u)) + jit[3], lwd = 2.5, col = cols["log1p"])
+legend("topleft", bty = "n", cex = 0.8, lwd = c(9, 2.5, 2.5, 2.5),
+       col = c("gray87", cols), legend = c("exact", "naive", "expm1", "log1p"))
+```
+
 ## Methods for Mitigating Overflow and Underflow Errors
 
 ### Where overflow and underflow arise in statistics
@@ -846,6 +946,15 @@ stable <- x - log_sum_exp(x)
 rbind(naive, stable, probabilities = exp(stable))
 ```
 
+**Software implementation.** The log-sum-exp trick is already implemented, tested, and optimized in the **matrixStats** package (a dependency of hundreds of CRAN/Bioconductor packages), so production code should call it rather than the version above:
+
+```{r}
+#| label: logsumexp-matrixStats
+#| message: false
+library(matrixStats)
+c(mine = log_sum_exp(c(2000, 2001, 2002)), matrixStats = logSumExp(c(2000, 2001, 2002)))
+```
+
 ### Differences on the log scale
 
 For $x > y > 0$ with $\ell_x = \log x$, $\ell_y = \log y$:
@@ -871,6 +980,52 @@ c(with_log1p = log_minus_exp(lx, ly), with_log = lx + log(1 - exp(ly - lx)), exa
 
 A statistical use of the difference formula is the survival function of a discrete distribution, $\log P(X > k) = \log\big(1 - P(X\le k)\big)$, when $P(X\le k)$ is available only as a log-probability close to $0$.
 
+Four extreme choices of $a,b$ show that every one of the four failure modes met in this chapter — overflow, cancellation, underflow, and absorption — can destroy a naive `log(exp(a) - exp(b))`, and that `log_minus_exp` survives all four because it never forms `exp(a)` or `exp(b)` when they would be out of range:
+
+```{r}
+#| label: logspace-sub-table
+a <- c(2000, 1e-20, -1000,    0)
+b <- c(1999,     0, -1001, -500)
+g <- function(x) formatC(x, format = "g", digits = 8)
+kable(data.frame(a = g(a), b = g(b), u = g(a - b),
+                  naive = g(log(exp(a) - exp(b))),
+                  log_minus_exp = g(mapply(log_minus_exp, a, b))),
+      caption = "log(exp(a) - exp(b)) by the naive expression and by log_minus_exp",
+      align = c("r", "r", "r", "r", "r"))
+```
+
+Reading down the naive column: $\log(e^{2000}-e^{1999})$ is `Inf - Inf`, `NaN` (overflow); $\log(e^{10^{-20}}-e^{0})$ is `1 - 1`, so $-\infty$ (cancellation, since $u=10^{-20}$ is tiny); $\log(e^{-1000}-e^{-1001})$ is `0 - 0`, so $-\infty$ (underflow, even though $u=1$ is not small); and $\log(e^{0}-e^{-500})$ silently returns $0$ because $e^{-500}\approx7\times10^{-218}$ is absorbed into $1$ before the subtraction (absorption). `log_minus_exp` is correct in all four rows, because it factors out $e^{a}$ and reduces every case to `log1p` evaluated at a safely bounded argument — even recovering the tiny but nonzero last entry. The same function is available as `DPQ::logspace.sub`, with `DPQ::logspace.add` as the corresponding stable version of $\log(e^{a}+e^{b})$ for a single pair (`logSumExp` above is the version for a whole vector).
+
+### A combined example: $\log\{1-\Phi(x)\}$ at both tails
+
+The rounding fix `log1mexp`, developed earlier for $\log(1-e^{-u})$, and the underflow fix of working on the log scale are often needed **together**. Consider $\log\{1-\Phi(10)\}$ and $\log\{1-\Phi(-10)\}$, where $\Phi$ is the standard normal CDF (`pnorm`):
+
+```{r}
+#| label: phi10-example
+c(naive    = log(1 - pnorm(10)),                          # pnorm(10) rounds to 1, so log(0) = -Inf
+  log1p    = log1p(-pnorm(10)),                            # log1p cannot recover digits already lost
+  log1mexp = log1mexp(-pnorm(10, log.p = TRUE)),           # complement taken in log space
+  stable   = pnorm(10, lower.tail = FALSE, log.p = TRUE))  # direct upper tail
+```
+
+The target is $\log\{1-\Phi(10)\}\approx-53.23$, since $1-\Phi(10)\approx7.6\times10^{-24}$ is far below machine epsilon. `naive` and `log1p` both start from `pnorm(10)`, which has already rounded to exactly $1$ before either function is called, so no reformulation of the *outer* expression can recover digits lost by **underflow** inside `pnorm` itself. `log1mexp` instead starts from $\ell=\log\Phi(10)\approx-7.6\times10^{-24}$, which R returns accurately, and computes
+$$
+\log\{1-\Phi(10)\} = \log(1-e^{\ell}) = \log(1-e^{-u}) = \texttt{log1mexp}(u), \qquad u=-\ell,
+$$
+where the tiny $u$ correctly selects the `expm1` branch derived above. `stable` computes $1-\Phi(10)$ directly with `lower.tail = FALSE` and returns its log without ever forming $\Phi(10)$.
+
+```{r}
+#| label: phi-neg10-example
+c(naive    = log(1 - pnorm(-10)),                           # 1 - 7.6e-24 rounds to 1, so log gives 0
+  log1p    = log1p(-pnorm(-10)),                             # pnorm(-10) is itself accurate
+  log1mexp = log1mexp(-pnorm(-10, log.p = TRUE)),
+  stable   = pnorm(-10, lower.tail = FALSE, log.p = TRUE))
+```
+
+Here $\Phi(-10)\approx7.6\times10^{-24}$ and the target $\log\{1-\Phi(-10)\}\approx-7.6\times10^{-24}$ is a tiny negative number rather than a large one. `naive` now fails for the opposite reason: the **subtraction** $1-7.6\times10^{-24}$ itself rounds to exactly $1$, destroying every significant digit — cancellation, not underflow. `log1p` succeeds here because its argument `pnorm(-10)` is accurate (a number near $0$ keeps full relative precision) and `log1p` evaluates $\log(1+x)$ by series without ever forming $1+x$. `log1mexp` is again correct, but now via its `log1p` branch: $\ell=\log\Phi(-10)\approx-53.23$, so $u=-\ell=53.23$ is large.
+
+The contrast between the two examples is the *location* of the loss: at $x=10$ the damage occurs inside `pnorm(10)` before `log1p` is ever reached; at $x=-10$ only the outer subtraction is unstable, which is exactly what `log1p` fixes. The general lesson is to stay on the log scale throughout — ask R for $\log\Phi(x)$ rather than $\Phi(x)$, and take the complement with `log1mexp`, which selects the correct branch automatically so that the tail direction never has to be diagnosed by hand.
+
 ## Summary
 
 - Integers occupy a fixed number of bits; exceeding $2^{31}-1$ gives `NA` in R.
@@ -878,8 +1033,9 @@ A statistical use of the difference formula is the survival function of a discre
 - Doubles store a sign, a 52-bit mantissa (about 16 decimal digits), and an 11-bit exponent (magnitudes $10^{-308}$ to $10^{308}$). Neighbouring doubles are spaced at a relative distance of about $\epsilon = 2^{-52}$; integers above $2^{53}$ are not all representable.
 - Overflow produces `Inf`, underflow produces `0`; the latter is silent and therefore more dangerous.
 
-- Roundoff error is amplified by adding large + small (fix: add small terms first, pairwise or compensated summation) and by subtracting large − large (fix: reformulate so that same-sign quantities of similar size are combined, as in $e^{-x} = 1/e^{x}$ and the two-pass variance).
-- Overflow and underflow are avoided by rewriting expressions so that exponentials have non-positive arguments, by using purpose-built functions (`log1p`, `expm1`, `lgamma`, `dnorm(log = TRUE)`), and by working on the log scale, where products become sums and sums are handled by the log-sum-exp trick.
+- Roundoff error is amplified by adding large + small (fix: add small terms first, pairwise or compensated summation) and by subtracting large − large (fix: reformulate so that same-sign quantities of similar size are combined, as in $e^{-x} = 1/e^{x}$ and the two-pass variance). Some quantities, such as $\log(1-e^{-u})$, suffer from **both** failure modes at opposite ends of their range and need a function like `log1mexp` that branches between two incomplete remedies (`expm1`, `log1p`).
+- Overflow and underflow are avoided by rewriting expressions so that exponentials have non-positive arguments, by using purpose-built functions (`log1p`, `expm1`, `lgamma`, `dnorm(log = TRUE)`), and by working on the log scale, where products become sums and sums are handled by the log-sum-exp trick (`log_sum_exp`/`matrixStats::logSumExp` for a vector, `log_minus_exp`/`DPQ::logspace.sub` for a difference of two).
+- Rounding and underflow fixes often compose: computing $\log\{1-\Phi(x)\}$ correctly at both tails needs `pnorm(x, log.p = TRUE)` to avoid underflow *and* `log1mexp` to avoid cancellation, in either order depending on the sign of $x$.
 
 ## Exercises
 
@@ -900,3 +1056,5 @@ so as to avoid underflow and overflow of $e^{x_j}$? Verify your formula against 
 **Question 4.** Write a function `log_dbinom(k, n, p)` that returns $\log\binom{n}{k}p^k(1-p)^{n-k}$ for $n = 10^5$ without overflow or underflow, using `lchoose` and `log1p`, and compare it with `dbinom(k, n, p, log = TRUE)`.
 
 **Question 5.** Implement Welford's algorithm for the sample covariance of two variables and check it against `cov()` on data shifted by $10^{10}$.
+
+**Question 6.** For a Poisson($\lambda$) random variable, $\log P(X > 0) = \log(1-e^{-\lambda})$. Using `log1mexp`, compute this for $\lambda = 10^{-12}$ and for $\lambda = 700$, and explain in each case which of `expm1` or `log1p` alone would have failed and why.
