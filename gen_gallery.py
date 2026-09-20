@@ -44,6 +44,9 @@ SKIP = {"index.qmd", "gallery.qmd"}
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
 HEADING_ID_RE = re.compile(r'\{#([\w-]+)\}')
 SPAN_ID_RE = re.compile(r'^\[\]\{#([\w-]+)\}\s*$')
+# A fenced-div opener that carries its own id, e.g. ":::: {#fig-foo-app ...}".
+# Some app sections anchor the id here instead of on the preceding heading.
+DIV_ID_RE = re.compile(r'^:{3,}\s*\{[^}]*#([\w-]+)[^}]*\}')
 CHUNK_START_RE = re.compile(r'^```\{(r|shinylive-r)[^}]*\}')
 KABLE_CAPTION_RE = re.compile(r'caption\s*=\s*(["\'])(.*?)\1')
 # A real chunk option always has exactly one space after "#|" (knitr/quarto
@@ -224,6 +227,9 @@ def parse_chapter(path):
             continue
 
         if line.strip().startswith(':::'):
+            dm = DIV_ID_RE.match(line.strip())
+            if dm:
+                pending_span_id = dm.group(1)
             i += 1
             continue
 
@@ -238,19 +244,19 @@ def parse_chapter(path):
 
 def render_gallery(chapters_data):
     lines = []
-    lines.append("# Figures, Tables, and Apps {.unnumbered}")
+    lines.append("# List of Figures, Tables, and Apps")
     lines.append("")
     lines.append("A consolidated index of every numbered figure and table in the book, plus "
                   "the interactive Shiny apps. Click any entry to jump to it in context.")
     lines.append("")
-    lines.append("## Interactive apps")
+    lines.append("## List of Shinylive Apps")
     lines.append("")
     for title, figs, tbls, apps in chapters_data:
         for sec_id, desc in apps:
             lines.append(f"* @{sec_id} (in *{title}*) — {desc}")
     lines.append("")
 
-    lines.append("## Figures")
+    lines.append("## List of Figures")
     lines.append("")
     for title, figs, tbls, apps in chapters_data:
         if not figs:
@@ -261,7 +267,7 @@ def render_gallery(chapters_data):
             lines.append(f"* @{label} — {cap}")
         lines.append("")
 
-    lines.append("## Tables")
+    lines.append("## List of Tables")
     lines.append("")
     for title, figs, tbls, apps in chapters_data:
         if not tbls:
@@ -283,19 +289,50 @@ def main():
 
     chapters_data = []
     n_fig = n_tbl = n_app = 0
+    seen_labels = {}  # label -> chapter title that first defined it
     for rel in chapter_files:
         path = ROOT / rel
         if not path.exists():
             print(f"WARNING: {rel} listed in _quarto.yml but not found on disk; skipped.",
                   file=sys.stderr)
             continue
+        # On a case-insensitive filesystem (e.g. default macOS) `path.exists()`
+        # can succeed even when the on-disk filename's case differs from the
+        # one written in _quarto.yml. That mismatch is harmless locally but
+        # means the chapter silently fails to resolve on a case-sensitive
+        # host (Linux CI, GitHub Pages) -- catch it here instead.
+        if path.name not in {p.name for p in path.parent.iterdir()}:
+            print(f"WARNING: {rel} in _quarto.yml does not match the on-disk "
+                  f"filename's case exactly; rename the file or fix the yml "
+                  f"entry, or this chapter will vanish from the gallery (and "
+                  f"the book) on a case-sensitive filesystem.", file=sys.stderr)
         title, figs, tbls, apps = parse_chapter(path)
         chapters_data.append((title, figs, tbls, apps))
         n_fig += len(figs); n_tbl += len(tbls); n_app += len(apps)
 
+        # @label must be unique across the whole book -- a collision silently
+        # makes Quarto's cross-reference resolve to whichever chapter renders
+        # first, so surface it here rather than let it hide in the HTML.
+        for label, _ in figs:
+            _check_duplicate(label, title, seen_labels)
+        for label, _ in tbls:
+            _check_duplicate(label, title, seen_labels)
+        for sec_id, _ in apps:
+            _check_duplicate(sec_id, title, seen_labels)
+
     OUTPUT.write_text(render_gallery(chapters_data), encoding="utf-8")
     print(f"gen_gallery: wrote {OUTPUT.name} — {n_fig} figures, {n_tbl} tables, "
           f"{n_app} interactive apps across {len(chapters_data)} chapters.", file=sys.stderr)
+
+
+def _check_duplicate(label, title, seen_labels):
+    prior = seen_labels.get(label)
+    if prior is not None and prior != title:
+        print(f"WARNING: label '{label}' is used in both '{prior}' and "
+              f"'{title}' -- @{label} will resolve ambiguously; rename one.",
+              file=sys.stderr)
+    else:
+        seen_labels[label] = title
 
 
 if __name__ == "__main__":
