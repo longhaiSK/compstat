@@ -43,10 +43,26 @@ SKIP = {"index.qmd", "gallery.qmd"}
 
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*)$')
 HEADING_ID_RE = re.compile(r'\{#([\w-]+)\}')
-SPAN_ID_RE = re.compile(r'^\[\]\{#([\w-]+)\}\s*$')
-# A fenced-div opener that carries its own id, e.g. ":::: {#fig-foo-app ...}".
-# Some app sections anchor the id here instead of on the preceding heading.
-DIV_ID_RE = re.compile(r'^:{3,}\s*\{[^}]*#([\w-]+)[^}]*\}')
+# Every shinylive app in this book is wrapped in a Pandoc "Figure Div":
+#   ::: {#fig-foo-app ...}
+#
+#   ```{shinylive-r}
+#   ...
+#   ```
+#
+#   **Caption.** More caption text.
+#
+#   :::
+# Quarto treats the trailing paragraph inside a `fig-`-id'd div as that
+# figure's caption, exactly like #| fig-cap does for a plain chunk -- so that
+# is where the app's real caption/label lives, not the id on the enclosing
+# heading (which is a separate, plain section anchor). An opener always
+# carries `{...}` attributes; a closer is always bare, so the two are told
+# apart by that rather than by counting colons (openers are usually ":::",
+# but a handful of legacy files use "::::").
+DIV_FENCE_RE = re.compile(r'^:{3,}')
+DIV_OPEN_RE = re.compile(r'^:{3,}\s*\{([^}]*)\}\s*$')
+DIV_ID_IN_ATTRS_RE = re.compile(r'#([\w-]+)')
 CHUNK_START_RE = re.compile(r'^```\{(r|shinylive-r)[^}]*\}')
 KABLE_CAPTION_RE = re.compile(r'caption\s*=\s*(["\'])(.*?)\1')
 # A real chunk option always has exactly one space after "#|" (knitr/quarto
@@ -101,8 +117,7 @@ def clean_caption(raw):
     return raw.strip()
 
 
-SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+(?=[A-Z(])')
-APP_HINT_RE = re.compile(r'\b(interactive|app|below|widget)\b', re.IGNORECASE)
+SENTENCE_SPLIT_RE = re.compile(r'(?<=[.!?])\s+(?=\*{0,2}[A-Z(])')
 
 
 def split_sentences(text):
@@ -112,15 +127,36 @@ def split_sentences(text):
     return [s.strip() for s in SENTENCE_SPLIT_RE.split(text) if s.strip()]
 
 
-def pick_app_description(sentences, fallback_paragraph):
-    for s in sentences:
-        if APP_HINT_RE.search(s):
-            return s
-    if fallback_paragraph:
-        found = split_sentences(fallback_paragraph)
-        if found:
-            return found[0]
-    return None
+def first_sentence(text):
+    """The gallery shows only a one-line teaser, not the full caption/paragraph."""
+    sentences = split_sentences(text)
+    return sentences[0] if sentences else text.strip()
+
+
+# Every app's Figure Div caption opens with a bold label -- "**Shinylive App
+# Illustrating X.** Real description follows." -- and that label is exactly
+# what the gallery lists, since it names the app the way the book's own
+# cross-references do. The period of that first sentence sits inside the
+# closing "**" rather than against whitespace, so split_sentences does not
+# see a sentence break there and would return the label glued to the
+# description that follows; match the leading bold run directly instead.
+LEADING_BOLD_RE = re.compile(r'^\*\*([^*]+)\*\*\s*[:.]?')
+
+
+def app_label_sentence(text):
+    """Return the bold label opening an app's Figure Div caption, or None.
+
+    The "**" markers are dropped so app entries read like the figure and
+    table entries around them, and the terminal punctuation is normalised to
+    a period whether it was written inside or outside the bold run.
+    """
+    if not text:
+        return None
+    m = LEADING_BOLD_RE.match(text.strip())
+    if not m:
+        return None
+    label = m.group(1).strip().rstrip(':.').strip()
+    return (label + '.') if label else None
 
 
 def strip_heading_text(raw_heading):
@@ -137,18 +173,22 @@ def parse_chapter(path):
     figs, tbls, apps = [], [], []
 
     last_heading_raw = ""
-    last_heading_id = None
-    pending_span_id = None
     paragraph_buffer = []
     last_paragraph = None
-    sentences_since_heading = []
+    div_stack = []      # id (or None) of each currently open ::: div, innermost last
+    pending_app = None  # the fig- div id a shinylive-r chunk was just found inside
 
     def flush_paragraph():
         nonlocal last_paragraph
         if paragraph_buffer:
             last_paragraph = ' '.join(paragraph_buffer).strip()
-            sentences_since_heading.extend(split_sentences(last_paragraph))
             paragraph_buffer.clear()
+
+    def current_fig_div():
+        for div_id in reversed(div_stack):
+            if div_id and div_id.startswith('fig-'):
+                return div_id
+        return None
 
     i = 0
     while i < n:
@@ -158,17 +198,34 @@ def parse_chapter(path):
         if hm:
             flush_paragraph()
             last_paragraph = None
-            sentences_since_heading = []
             last_heading_raw = line
-            idm = HEADING_ID_RE.search(line)
-            last_heading_id = idm.group(1) if idm else None
-            pending_span_id = None
             i += 1
             continue
 
-        sm = SPAN_ID_RE.match(line)
-        if sm:
-            pending_span_id = sm.group(1)
+        fm = DIV_FENCE_RE.match(line.strip())
+        if fm:
+            flush_paragraph()
+            om = DIV_OPEN_RE.match(line.strip())
+            if om:
+                idm = DIV_ID_IN_ATTRS_RE.search(om.group(1))
+                div_stack.append(idm.group(1) if idm else None)
+            else:
+                closed_id = div_stack.pop() if div_stack else None
+                if pending_app is not None and closed_id == pending_app:
+                    # We've just closed the fig- div a shinylive-r chunk was
+                    # found in; whatever paragraph immediately preceded this
+                    # closing fence is that Figure Div's caption, and its
+                    # leading bold label is the gallery entry.
+                    desc = app_label_sentence(last_paragraph)
+                    if desc is None:
+                        print(f"WARNING: {path.name}: app '{pending_app}' has no "
+                              f"bold '**...**' label opening its Figure Div "
+                              f"caption; falling back to the first sentence.",
+                              file=sys.stderr)
+                        desc = (first_sentence(last_paragraph) if last_paragraph
+                                else strip_heading_text(last_heading_raw))
+                    apps.append((pending_app, desc))
+                    pending_app = None
             i += 1
             continue
 
@@ -197,39 +254,29 @@ def parse_chapter(path):
             label = opts.get('label', '')
 
             if label.startswith('fig-') and 'fig-cap' in opts:
-                figs.append((label, clean_caption(opts['fig-cap'])))
+                figs.append((label, first_sentence(clean_caption(opts['fig-cap']))))
             elif label.startswith('tbl-'):
                 if 'tbl-cap' in opts:
-                    tbls.append((label, clean_caption(opts['tbl-cap'])))
+                    tbls.append((label, first_sentence(clean_caption(opts['tbl-cap']))))
                 else:
                     # kable()/gt() etc. sometimes carry the caption as a call
                     # argument (caption = "...") instead of a #| tbl-cap option.
                     cm = KABLE_CAPTION_RE.search('\n'.join(code_lines))
                     if cm:
-                        tbls.append((label, cm.group(2)))
+                        tbls.append((label, first_sentence(cm.group(2))))
                     else:
                         print(f"WARNING: {path.name}: table '{label}' has no "
                               f"tbl-cap option or caption= argument; skipped in gallery.",
                               file=sys.stderr)
 
             if engine == 'shinylive-r':
-                sec_id = last_heading_id or pending_span_id
-                if sec_id:
-                    desc = pick_app_description(sentences_since_heading, last_paragraph)
-                    if desc is None:
-                        desc = strip_heading_text(last_heading_raw)
-                    apps.append((sec_id, desc))
+                fig_id = current_fig_div()
+                if fig_id:
+                    pending_app = fig_id
                 else:
                     print(f"WARNING: {path.name}: shinylive app '{label}' near line "
-                          f"{start+1} has no #sec- anchor on its heading; skipped in gallery.",
-                          file=sys.stderr)
-            i += 1
-            continue
-
-        if line.strip().startswith(':::'):
-            dm = DIV_ID_RE.match(line.strip())
-            if dm:
-                pending_span_id = dm.group(1)
+                          f"{start+1} is not inside a '::: {{#fig-...}}' div; skipped "
+                          f"in gallery.", file=sys.stderr)
             i += 1
             continue
 
@@ -253,7 +300,7 @@ def render_gallery(chapters_data):
     lines.append("")
     for title, figs, tbls, apps in chapters_data:
         for sec_id, desc in apps:
-            lines.append(f"* @{sec_id} (in *{title}*) — {desc}")
+            lines.append(f"* @{sec_id} — {desc}")
     lines.append("")
 
     lines.append("## List of Figures")
