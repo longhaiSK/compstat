@@ -186,7 +186,8 @@ m
 #| echo: false
 #| fig-width: 9
 #| fig-height: 3.6
-#| fig-cap: 'Positive numbers at zoom $e=0$ (top, gap $0.1$) and $e=+1$ (bottom, gap $1$). Grey bands hold the crowded marks of all lower zooms ($e<0$, and $e\le 0$ in the bottom panel); overflow occurs only far to the right, beyond $9.9\times10^{9}$.'
+#| fig-cap: 'Illustrates how floating-point numbers are spaced on the real line in a toy number system: the gaps between representable numbers grow with magnitude, so precision is relative rather than absolute.
+#|   Positive numbers at zoom $e=0$ (top, gap $0.1$) and $e=+1$ (bottom, gap $1$). Grey bands hold the crowded marks of all lower zooms ($e<0$, and $e\le 0$ in the bottom panel); overflow occurs only far to the right, beyond $9.9\times10^{9}$.'
 par(mfrow = c(2, 1), mar = c(2.5, 1, 1.5, 1))
 m0 <- (10:99) / 10; m1 <- 10:99
 plot(NA, xlim = c(0, 10.5), ylim = c(0, 1), axes = FALSE, xlab = "", ylab = "",
@@ -549,7 +550,7 @@ fexp <- function(x, debug = FALSE) {
 
 test_vals <- c(10, 20, 60, -1, -10, -20, -50)
 res1 <- data.frame(x = test_vals, Built_in_Exp = exp(test_vals), Taylor_fexp = sapply(test_vals, fexp))
-kable(res1, caption = "Built-in exp() versus the naive Taylor series fexp()")
+kable(res1, caption = "Compares a naive Taylor-series implementation of the exponential function with the built-in exp() to show that the series is accurate for positive arguments but fails for negative ones. Built-in exp() versus the naive Taylor series fexp()")
 ```
 
 For positive $x$ the series is accurate to all printed digits. For $x = -10$ the answer is already off in the fourth digit, for $x = -20$ it is wrong in the first digit, and `fexp(-50)` yields a completely wrong, negative number. Running it in debug mode shows the massive terms cancelling each other out.
@@ -561,7 +562,7 @@ debug_summary <- rbind(
   head(debug_matrix, 10),
   matrix(NA, nrow = 1, ncol = 3, dimnames = list("...", colnames(debug_matrix))),
   tail(debug_matrix, 10))
-kable(debug_summary, caption = "Debug trace for fexp(-50) showing catastrophic cancellation")
+kable(debug_summary, caption = "Exposes the internals of the failing computation of exp(-50), showing that very large terms of alternating sign cancel and leave only roundoff error. Debug trace for fexp(-50) showing catastrophic cancellation")
 ```
 
 The largest terms reach about $10^{20}$; their roundoff errors are of order $10^{4}$, and the true answer $e^{-50}\approx 2\times10^{-22}$ is invisible beneath them.
@@ -581,7 +582,7 @@ fexp2 <- function(x) {
 
 test_vals_neg <- c(-10, -20, -50)
 res2 <- data.frame(x = test_vals_neg, Built_in_Exp = exp(test_vals_neg), Robust_fexp2 = sapply(test_vals_neg, fexp2))
-kable(res2, caption = "Robust fexp2() for negative arguments")
+kable(res2, caption = "Shows that reformulating the computation as 1/exp(|x|) removes the cancellation and restores accuracy for negative arguments. Robust fexp2() for negative arguments")
 ```
 
 The general principle: rearrange a formula so that quantities of similar magnitude and **the same sign** are combined, and avoid computing a small result as the difference of two large numbers.
@@ -646,7 +647,7 @@ The failure sets in gradually. The error of the one-pass formula is of order $\e
 #| label: tbl-variance-scan
 M <- 10^(0:10)
 res <- t(sapply(M, function(m) { x <- c(1, 2, 3) + m; c(M = m, one_pass = var1(x), two_pass = var2(x)) }))
-kable(res, caption = "One-pass versus two-pass variance as the data are shifted by M", digits = 6)
+kable(res, caption = "Demonstrates catastrophic cancellation in the one-pass variance formula, which breaks down when the data have a large mean, while the two-pass formula stays accurate. One-pass versus two-pass variance as the data are shifted by M", digits = 6)
 ```
 #### Fixes {-}
 - **Two-pass**: compute $\overline x$ first, then $\sum (x_i - \overline x)^2$. The deviations are small and of similar size, so no cancellation occurs. This is what `var()` does.
@@ -705,7 +706,7 @@ log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
 g <- function(x) formatC(x, format = "g", digits = 8)
 kable(data.frame(u = g(u), naive = g(f_naive(u)), expm1 = g(f_expm1(u)),
                   log1p = g(f_log1p(u)), correct = g(log1mexp(u))),
-      caption = "log(1 - exp(-u)) by four methods, across eighteen orders of magnitude of u",
+      caption = "Tabulates log(1 - exp(-u)) computed four ways to show numerically where each formula loses accuracy or fails. log(1 - exp(-u)) by four methods, across eighteen orders of magnitude of u",
       align = c("r", "r", "r", "r", "r"))
 ```
 
@@ -726,7 +727,8 @@ The same construction, named `log1mexp`, is shipped by several CRAN packages (in
 
 ```{r}
 #| label: fig-log1mexp
-#| fig-cap: "The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference."
+#| fig-cap: "Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u.
+#|   The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference."
 #| fig-width: 10
 #| fig-height: 4.2
 
@@ -990,7 +992,7 @@ g <- function(x) formatC(x, format = "g", digits = 8)
 kable(data.frame(a = g(a), b = g(b), u = g(a - b),
                   naive = g(log(exp(a) - exp(b))),
                   log_minus_exp = g(mapply(log_minus_exp, a, b))),
-      caption = "log(exp(a) - exp(b)) by the naive expression and by log_minus_exp",
+      caption = "Shows why log(exp(a) - exp(b)) should be computed on the log scale: the naive expression overflows for large a and b, whereas log_minus_exp stays finite and accurate. log(exp(a) - exp(b)) by the naive expression and by log_minus_exp",
       align = c("r", "r", "r", "r", "r"))
 ```
 
