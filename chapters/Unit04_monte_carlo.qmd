@@ -15,13 +15,17 @@ This chapter introduces Monte Carlo methods in two stages. The first half asks h
 
 ## Pseudo Random Numbers
 
-Computers generate "random" numbers using deterministic algorithms. One of the most common methods is the **Linear Congruential Generator (LCG)**. It produces a sequence of pseudo-random integers $X_n$ defined by the recurrence relation:
+A computer is deterministic, so it cannot produce truly random numbers. It produces **pseudo random numbers**: a deterministic sequence that *behaves* like independent $\mathrm{Unif}(0,1)$ draws. One of the most common methods is the **Linear Congruential Generator (LCG)**. It produces a sequence of pseudo-random integers $X_n$ defined by the recurrence relation:
 
 $$
 X_n = (a X_{n-1} + c) \pmod M
 $$
 
 where $X_0$ is the seed, $a$ is the multiplier, $c$ is the increment, and $M$ is the modulus. To get numbers in the interval $[0,1]$, we divide by $M-1$. In this example, we use the parameters $a = 7^5$, $c = 0$, and $M = 2^{31}-1$ (a minimal standard LCG).
+
+* The starting value $X_0$ is the **seed**. The same seed gives the same sequence, which makes simulations reproducible.
+* The sequence eventually repeats. A good generator has a very long period and passes statistical tests of uniformity and independence.
+* R's default generator is the Mersenne Twister, with period $2^{19937}-1$. All other distributions in R are built from $\mathrm{Unif}(0,1)$ draws.
 
 ```{r}
 #| label: fig-lcg-vs-runif
@@ -55,16 +59,94 @@ hist(a,xlab="Random Numbers",main="Built-in runif()")
 acf(a,main="Built-in acf")
 ```
 
+The trace shows no visible trend, drift or periodicity, the autocorrelations are negligible, and the histogram is flat. This is what "behaves like iid uniform" means in practice, although a convincing assessment requires formal tests of uniformity and serial correlation rather than a few plots of 500 values.
+
+### Seeds and Reproducibility
+
+Setting the seed restarts the generator at a fixed point of its sequence:
+
+```{r}
+#| label: seeds
+#| echo: true
+set.seed(1); runif(3)
+set.seed(1); runif(3)      # identical
+runif(3)                   # continues the sequence
+```
+
+Always call `set.seed()` at the top of a simulation study so that its results can be reproduced and debugged.
+
+### Generating $\mathrm{Unif}(a,b)$
+
+The simplest transformation of a uniform draw is a change of location and scale. If $U \sim \mathrm{Unif}(0,1)$, then $X = a + (b-a)\,U \sim \mathrm{Unif}(a,b)$, because
+
+$$
+P(X \le x) = P\!\left(U \le \frac{x-a}{b-a}\right) = \frac{x-a}{b-a}, \qquad a \le x \le b .
+$$
+
+```{r}
+#| label: fig-unif-ab
+#| echo: true
+#| fig-cap: "Shows the simplest transformation of uniform random numbers, a change of location and scale.
+#|   Histogram of $10{,}000$ draws of $2 + 3U$ with $U \\sim \\mathrm{Unif}(0,1)$, against the $\\mathrm{Unif}(2, 5)$ density $1/3$ (red)."
+u <- runif(10000); x <- 2 + 3 * u          # Unif(2, 5)
+hist(x, breaks = 30, freq = FALSE, main = TeX(r"($a + (b - a) U$ with $a = 2$, $b = 5$)"))
+abline(h = 1/3, col = 2, lwd = 2)
+```
+
 ## Inverting the CDF
 
-If we can generate uniform random variables $U \sim \text{Unif}(0,1)$, we can generate a random variable $X$ from any continuous distribution using the **Inverse Transform Method**. If $F(x)$ is the cumulative distribution function (CDF) of $X$, then $X = F^{-1}(U)$ has the desired distribution.
+If we can generate $U \sim \mathrm{Unif}(0,1)$, we can generate a random variable $X$ from any continuous distribution using the **inverse transform method**. Let $F_X$ be a continuous CDF with inverse (quantile function) $F_X^{-1}$.
 
-For an Exponential distribution with rate $\lambda = 1$, the CDF is $F(x) = 1 - e^{-x}$.
-Setting $U = 1 - e^{-x}$ and solving for $x$ gives:
+**Theorem.** If $U \sim \mathrm{Unif}(0,1)$, then $X = F_X^{-1}(U)$ has CDF $F_X$.
+
+**Proof.**
 
 $$
-x = -\ln(1-U)
+P(X \le x) = P\big(F_X^{-1}(U) \le x\big) = P\big(U \le F_X(x)\big) = F_X(x).
 $$
+
+Equivalently, by the change-of-variable formula with $u = F_X(x)$,
+
+$$
+f_X(x) = f_U\big(F_X(x)\big)\left\lvert\frac{du}{dx}\right\rvert = 1 \times f(x).
+$$
+
+The converse also holds: if $X \sim F_X$, then $F_X(X) \sim \mathrm{Unif}(0,1)$. This is the **probability integral transform**, which we will use for p-values in the section on hypothesis testing.
+
+```{r}
+#| label: fig-inverse-cdf-picture
+#| echo: false
+#| fig-cap: "Shows geometrically how the inverse-CDF method turns uniform draws into draws from a target distribution.
+#|   Three uniform values $u$ on the vertical axis are mapped through the $\\mathrm{Exp}(1)$ CDF to $x = F^{-1}(u)$ on the horizontal axis; where $F$ is steep (high density), an interval of $u$ values maps to a short interval of $x$, so more draws land there."
+curve(pexp(x, 1), 0, 5, lwd = 2, xlab = "x", ylab = "F(x)", main = TeX(r"($X = F^{-1}(U)$)"))
+u <- c(0.2, 0.6, 0.9); x <- qexp(u, 1)
+segments(0, u, x, u, col = 2, lty = 2); segments(x, 0, x, u, col = 4, lty = 2)
+points(x, u, pch = 19); axis(2, u, labels = paste0("u=", u), las = 1, cex.axis = 0.8)
+axis(1, x, labels = round(x, 2), cex.axis = 0.8)
+```
+
+### Example: The Exponential Distribution
+
+$X \sim \mathrm{Exp}(\lambda)$ has CDF $F_X(x) = 1 - e^{-\lambda x}$ for $x > 0$. Setting $u = 1 - e^{-\lambda x}$ and solving for $x$ gives
+
+$$
+x = F_X^{-1}(u) = -\frac{1}{\lambda}\log(1-u).
+$$
+
+Since $1 - U \sim \mathrm{Unif}(0,1)$ as well, we may use $X = -\log(U)/\lambda$.
+
+```{r}
+#| label: fig-exp-inverse-cdf
+#| echo: true
+#| fig-cap: "Verifies the inverse-CDF method on a distribution whose inverse CDF has a closed form.
+#|   Histogram of $10{,}000$ draws of $-\\log(U)/\\lambda$ with $\\lambda = 2$, against the $\\mathrm{Exp}(2)$ density (red)."
+lambda <- 2
+u <- runif(10000)
+x <- -log(u) / lambda
+hist(x, breaks = 40, freq = FALSE, main = "Exp(2) via the inverse CDF")
+curve(dexp(x, lambda), add = TRUE, col = 2, lwd = 2)
+c(sample_mean = mean(x), true_mean = 1 / lambda)
+```
 
 ## Shinylive App: Inverse CDF Sampling {#sec-inverse-cdf-app}
 
@@ -72,21 +154,51 @@ $$
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 620
+#| viewerHeight: 750
 #| code-fold: true
 
 library(shiny)
 
-lambda <- 1
-xmax   <- qexp(0.995, lambda)
-grid   <- seq(0, xmax, length.out = 400)
+## ---- distribution definitions -------------------------------------------
+## Each entry supplies the CDF, the inverse CDF, a plotting range, and a
+## routine that draws the true density.
 
+## Piecewise-constant density on [0, 1] with three equal pieces whose
+## heights are proportional to 1, 5, 10.  Normalising, (c/3)(1 + 5 + 10) = 1
+## gives c = 3/16, so the heights are 3/16, 15/16, 30/16 and the CDF passes
+## through (1/3, 1/16) and (2/3, 6/16).
+pw_h <- c(1, 5, 10) * 3 / 16    # densities on the three pieces
+pw_b <- c(0, 1/3, 2/3, 1)       # piece boundaries
+pw_F <- cumsum(c(0, pw_h / 3))  # CDF at the boundaries: 0, 1/16, 6/16, 1
+
+dists <- list(
+  "Exp(1)" = list(
+    xmax = qexp(0.995),
+    p    = function(x) pexp(x),
+    qinv = function(u) -log(1 - u),
+    dens = function() curve(dexp(x), add = TRUE, col = "steelblue", lwd = 2.5)
+  ),
+  "Piecewise constant (1 : 5 : 10)" = list(
+    xmax = 1,
+    p    = function(x) approx(pw_b, pw_F, xout = pmin(pmax(x, 0), 1))$y,
+    qinv = function(u) approx(pw_F, pw_b, xout = u)$y,
+    dens = function() {
+      segments(pw_b[-4], pw_h, pw_b[-1], pw_h, col = "steelblue", lwd = 2.5)
+      segments(pw_b[2:3], pw_h[1:2], pw_b[2:3], pw_h[2:3],
+               col = "steelblue", lwd = 2.5, lty = 3)
+    }
+  )
+)
+
+## ---- interface -----------------------------------------------------------
 ui <- fluidPage(
   sidebarLayout(
     sidebarPanel(
       width = 3,
-      sliderInput("n", "Points per step (n)", min = 1, max = 50, value = 10, step = 1),
-      sliderInput("speed", "Play interval (ms)", min = 200, max = 2000, value = 800, step = 100),
+      radioButtons("dist", "Target distribution",
+                   choices = names(dists), selected = names(dists)[1]),
+      sliderInput("n", "Points per step (n)", min = 1, max = 100, value = 50, step = 1),
+      sliderInput("speed", "Play interval (ms)", min = 200, max = 2000, value = 200, step = 100),
       actionButton("draw", "Draw more samples", class = "btn-primary", width = "100%"),
       br(), br(),
       actionButton("play", "Play", width = "100%"),
@@ -98,20 +210,33 @@ ui <- fluidPage(
     ),
     mainPanel(
       width = 9,
-      plotOutput("cdfPlot",  height = "280px"),
-      plotOutput("histPlot", height = "260px")
+      plotOutput("cdfPlot",  height = "350px"),
+      plotOutput("histPlot", height = "350px")
     )
   )
 )
 
+## ---- server --------------------------------------------------------------
 server <- function(input, output, session) {
 
   rv <- reactiveValues(x = numeric(0), u_last = numeric(0), x_last = numeric(0))
   playing <- reactiveVal(FALSE)
 
+  D    <- reactive(dists[[input$dist]])
+  grid <- reactive(seq(0, D()$xmax, length.out = 400))
+
+  clear <- function() {
+    rv$x <- numeric(0); rv$u_last <- numeric(0); rv$x_last <- numeric(0)
+  }
+
+  stop_play <- function() {
+    playing(FALSE)
+    updateActionButton(session, "play", label = "Play")
+  }
+
   draw_step <- function() {
     u  <- runif(input$n)
-    xs <- -log(1 - u) / lambda
+    xs <- D()$qinv(u)
     rv$u_last <- u
     rv$x_last <- xs
     rv$x      <- c(rv$x, xs)
@@ -119,16 +244,15 @@ server <- function(input, output, session) {
 
   observeEvent(input$draw, draw_step())
 
+  ## switching the target distribution restarts the sampling
+  observeEvent(input$dist, { stop_play(); clear() }, ignoreInit = TRUE)
+
   observeEvent(input$play, {
     playing(!playing())
     updateActionButton(session, "play", label = if (playing()) "Pause" else "Play")
   })
 
-  observeEvent(input$reset, {
-    playing(FALSE)
-    updateActionButton(session, "play", label = "Play")
-    rv$x <- numeric(0); rv$u_last <- numeric(0); rv$x_last <- numeric(0)
-  })
+  observeEvent(input$reset, { stop_play(); clear() })
 
   observe({
     if (playing()) {
@@ -141,12 +265,14 @@ server <- function(input, output, session) {
 
   output$moments <- renderText({
     if (length(rv$x) < 2) return("")
-    sprintf("sample mean = %.3f  (true = %.3f)", mean(rv$x), 1 / lambda)
+    truth <- if (input$dist == "Exp(1)") 1 else sum(pw_h / 3 * (pw_b[-4] + pw_b[-1]) / 2)
+    sprintf("sample mean = %.3f  (true = %.3f)", mean(rv$x), truth)
   })
 
   output$cdfPlot <- renderPlot({
+    xmax <- D()$xmax; g <- grid()
     par(mar = c(4, 4, 2.5, 1))
-    plot(grid, pexp(grid, lambda), type = "n", ylim = c(0, 1),
+    plot(g, D()$p(g), type = "n", ylim = c(0, 1),
          xlab = "x", ylab = "u = F(x)",
          main = "Draw u on the vertical axis, read x off the CDF")
     u <- rv$u_last; x <- rv$x_last
@@ -155,7 +281,7 @@ server <- function(input, output, session) {
       inside <- x <= xmax
       segments(x[inside], u[inside], x[inside], 0, col = "grey65")
     }
-    lines(grid, pexp(grid, lambda), col = "steelblue", lwd = 2.5)
+    lines(g, D()$p(g), col = "steelblue", lwd = 2.5)
     if (length(u) > 0) {
       points(pmin(x, xmax), u, pch = 16, col = "firebrick", cex = 1.1)
       rug(x[x <= xmax], side = 1, col = "firebrick", lwd = 2)
@@ -164,16 +290,18 @@ server <- function(input, output, session) {
   })
 
   output$histPlot <- renderPlot({
+    xmax <- D()$xmax
     par(mar = c(4, 4, 2.5, 1))
     if (length(rv$x) < 2) {
       plot.new()
       title(main = "Draw some samples to see the histogram")
       return(invisible())
     }
-    hist(rv$x, breaks = 30, freq = FALSE, col = "grey85", border = "white",
+    brk <- if (input$dist == "Exp(1)") 30 else seq(0, 1, length.out = 31)
+    hist(rv$x, breaks = brk, freq = FALSE, col = "grey85", border = "white",
          xlim = c(0, xmax), xlab = "x", ylab = "density",
-         main = "Accumulated draws vs. the true Exp(1) density")
-    curve(dexp(x, lambda), add = TRUE, col = "steelblue", lwd = 2.5)
+         main = "Accumulated draws vs. the true density")
+    D()$dens()
     abline(v = mean(rv$x), col = "firebrick", lwd = 2, lty = 2)
     legend("topright", bty = "n", lwd = 2, lty = c(1, 2),
            col = c("steelblue", "firebrick"),
@@ -184,65 +312,146 @@ server <- function(input, output, session) {
 shinyApp(ui, server)
 ```
 
-**Shinylive App Illustrating the Inverse CDF Method.** Demonstrates the inverse-CDF method for generating random numbers from a target distribution by transforming uniform draws. The app below draws samples one step at a time (or continuously via **Play**), showing on the top panel how each uniform draw $u$ maps through the CDF to a sample $x = F^{-1}(u)$, and on the bottom panel how those draws accumulate into a histogram against the true $\text{Exp}(1)$ density.
+**Shinylive App Illustrating the Inverse CDF Method.** Demonstrates the inverse-CDF method for generating random numbers from a target distribution by transforming uniform draws. The app below draws samples one step at a time (or continuously via **Play**), showing on the top panel how each uniform draw $u$ maps through the CDF to a sample $x = F^{-1}(u)$, and on the bottom panel how those draws accumulate into a histogram against the true density. Two targets are available: $\text{Exp}(1)$, and a piecewise-constant density on $[0,1]$ with heights in the ratio $1:5:10$, whose piecewise-linear CDF shows most clearly that steep parts of the CDF receive more draws.
 
 :::
 
 ## A Special Transformation for Generating Normal Samples
 
-The **Box-Muller Transform** is an elegant method for generating pairs of independent Standard Normal random variables from independent Uniform random variables. It relies on converting cartesian coordinates $(X,Y)$ into polar coordinates $(R, \theta)$.
+The normal CDF $\Phi$ has no closed-form inverse, so the inverse-CDF method is not directly usable. The **Box–Muller transform** instead generates *pairs* of independent standard normal variables from pairs of independent uniforms, by working in polar coordinates.
 
-If $X, Y \sim N(0,1)$ are independent, their squared radius $R^2 = X^2 + Y^2$ follows an Exponential distribution with rate $\lambda = 1/2$, and their angle $\theta$ is uniformly distributed over $[0, 2\pi]$. By generating $R$ and $\theta$, we can map them back to Normal variables:
+### Two Standard Normals in Polar Coordinates
+
+Write a pair $(Z_1, Z_2) \overset{iid}{\sim} N(0,1)$ in **polar coordinates**:
 
 $$
-X = R\cos(\theta) \quad \text{and} \quad Y = R\sin(\theta)
+Z_1 = R\cos\Theta, \qquad Z_2 = R\sin\Theta, \qquad R^2 = Z_1^2 + Z_2^2, \quad \Theta = \operatorname{atan2}(Z_2, Z_1).
 $$
+
+The joint density $\frac{1}{2\pi}e^{-(z_1^2+z_2^2)/2}$ depends on $(z_1, z_2)$ only through $r^2 = z_1^2 + z_2^2$, so it is **rotationally symmetric** about the origin. Consequently:
+
+* The angle $\Theta \sim \mathrm{Unif}(0, 2\pi)$, independently of $R$.
+* The squared radius $R^2 = Z_1^2 + Z_2^2 \sim \chi^2_2$, and $\chi^2_2$ **is** the exponential distribution with rate $1/2$:
+
+$$
+f_{\chi^2_2}(w) = \frac{1}{2}e^{-w/2}, \quad w > 0 \qquad\Longrightarrow\qquad R^2 \sim \mathrm{Exp}(\text{rate} = 1/2).
+$$
+
+Both $R^2$ and $\Theta$ **can** be generated by inverting a CDF.
+
+```{r}
+#| label: fig-normal-polar
+#| echo: false
+#| fig-width: 9
+#| fig-height: 5
+#| fig-cap: "Shows the two facts behind the Box-Muller transform: the angle of a pair of independent standard normals is uniform, and its squared radius is exponential.
+#|   $3000$ pairs $(Z_1, Z_2)$ of iid $N(0,1)$ draws (left), with red circles enclosing 50%, 90% and 99% of the points; the squared radius $R^2$ follows $\\mathrm{Exp}(1/2)$ (top right) and the angle $\\Theta$ is uniform on $(0, 2\\pi)$ (bottom right)."
+z1 <- rnorm(3000); z2 <- rnorm(3000); r2 <- z1^2 + z2^2; th <- atan2(z2, z1) %% (2 * pi)
+layout(matrix(c(1, 1, 2, 3), 2, 2), widths = c(1.1, 1)); par(pty = "s", mar = c(4, 4, 2, 1))
+plot(z1, z2, pch = 20, cex = 0.4, col = "grey40", asp = 1, xlab = TeX("$Z_1$"), ylab = TeX("$Z_2$"),
+     main = TeX("$(Z_1, Z_2)$ iid N(0,1)"))
+q <- sqrt(qchisq(c(0.5, 0.9, 0.99), 2))
+for (r in q) symbols(0, 0, circles = r, inches = FALSE, add = TRUE, fg = 2, lwd = 2)
+text(q + 0.25, 0.25, c("50%", "90%", "99%"), col = 2, cex = 0.8)
+par(pty = "m")
+hist(r2, breaks = 40, freq = FALSE, main = TeX("$R^2 = Z_1^2 + Z_2^2$"), xlab = "")
+curve(dexp(x, 1/2), add = TRUE, col = 2, lwd = 2); legend("topright", "Exp(rate 1/2)", col = 2, lwd = 2, bty = "n")
+hist(th, breaks = 24, freq = FALSE, main = TeX("$\\Theta$"), xlab = ""); abline(h = 1 / (2 * pi), col = 2, lwd = 2)
+```
+
+### The Box–Muller Transformation
+
+Reversing the picture, we **generate** $R^2$ and $\Theta$ and then rotate back to $(Z_1, Z_2)$:
+
+1. $R^2 \sim \mathrm{Exp}(1/2)$ by the inverse CDF: $F(w) = 1 - e^{-w/2}$, so $R^2 = -2\log U_1$, that is, $R = \sqrt{-2\log U_1}$.
+2. $\Theta \sim \mathrm{Unif}(0, 2\pi)$: $\Theta = 2\pi U_2$.
+3. $Z_1 = R\cos\Theta$ and $Z_2 = R\sin\Theta$.
+
+**Theorem (Box–Muller).** If $U_1, U_2 \overset{iid}{\sim} \mathrm{Unif}(0,1)$, then
+
+$$
+Z_1 = \sqrt{-2\log U_1}\,\cos(2\pi U_2), \qquad Z_2 = \sqrt{-2\log U_1}\,\sin(2\pi U_2)
+$$
+
+are independent $N(0,1)$ random variables. Two uniforms produce two normals, and $\mu + \sigma Z \sim N(\mu, \sigma^2)$ then gives any normal distribution.
 
 ```{r}
 #| label: fig-box-muller
 #| echo: true
 #| fig-cap: "Shows how uniform random numbers can be transformed into normal ones, and verifies the Box-Muller construction against R's rnorm().
 #|   Normal samples generated by the Box-Muller transform, compared with R's built-in `rnorm()`: histogram and QQ plot for each."
-gen_normal <- function(n)
-{
-    # calculates size of random samples (we generate pairs, so we need half)
-    size_sample <- ceiling(n/2)
-
-    # R^2 ~ Exp(1/2), so we take the square root to get R
-    R <- sqrt(2*rexp(size_sample))
-    theta <- runif(size_sample,0,2*pi)
-
-    X <- R*cos(theta)
-    Y <- R*sin(theta)
-
-    c(X,Y)[1:n]
+box_muller <- function(n) {
+  u1 <- runif(n); u2 <- runif(n)
+  r  <- sqrt(-2 * log(u1))            # R^2 ~ Exp(1/2), i.e. chi-square(2)
+  th <- 2 * pi * u2                   # Theta ~ Unif(0, 2 pi)
+  cbind(z1 = r * cos(th), z2 = r * sin(th))
 }
 
-normal_sample <- gen_normal(1000)
+z <- box_muller(500)
+normal_sample <- c(z)                 # 1000 draws: both coordinates of 500 pairs
 
 ## R's built-in generator for comparison
 nsample2 <- rnorm (1000)
 
 par(mfrow=c(2,2),mar=c(4,4,2,1))
-hist(normal_sample,main="Custom Normal")
-qqnorm(normal_sample, main="Custom QQ")
+hist(normal_sample,main="Box-Muller Normal")
+qqnorm(normal_sample, main="Box-Muller QQ")
 qqline(normal_sample)
 hist(nsample2, main="Built-in Normal")
 qqnorm(nsample2, main="Built-in QQ")
 qqline(nsample2)
+
+c(mean = mean(z), sd = sd(z), corr = cor(z)[1, 2])
 ```
 
-## Demonstration of CLT and LLN
+The two coordinates have mean near 0, standard deviation near 1, and are uncorrelated, as the theorem asserts.
 
-The **Law of Large Numbers (LLN)** states that as the sample size $n$ grows, the sample mean $\bar{X}_n$ converges to the expected value $\mu$:
+## Law of Large Numbers and Central Limit Theorem
+
+Monte Carlo estimates an expectation $\mu = E(g(X))$ by an average of simulated values,
+
 $$
-\bar{X}_n \to \mu \quad \text{as} \quad n \to \infty
+\hat\mu_n = \frac{1}{n}\sum_{i=1}^n g(X_i), \qquad X_i \overset{iid}{\sim} f .
 $$
 
-The **Central Limit Theorem (CLT)** states that the standardized sample mean converges in distribution to a Standard Normal $N(0,1)$:
+Two theorems justify this estimator and quantify its error.
+
+**Theorem (Strong Law of Large Numbers).** If $X_1, X_2, \ldots$ are iid with finite mean $\mu$, then
+
 $$
-Z = \frac{\bar{X}_n - \mu}{\sigma/\sqrt{n}} \xrightarrow{d} N(0,1) \quad \text{as} \quad n \to \infty
+P\left(\frac{X_1 + \cdots + X_n}{n} \to \mu\right) = 1 .
 $$
+
+The LLN guarantees that the average **converges** to the truth, but it does not say how fast.
+
+**Theorem (Central Limit Theorem).** If, in addition, the variance $\sigma^2$ is finite, then
+
+$$
+Z = \frac{\bar X_n - \mu}{\sigma/\sqrt n} \;\xrightarrow{d}\; N(0,1) \quad \text{as} \quad n \to \infty .
+$$
+
+The CLT gives the **error bound**: the Monte Carlo error is of order $\sigma/\sqrt n$.
+
+### Monte Carlo Error Bound from the CLT
+
+By the CLT, with confidence level 95%,
+
+$$
+P\!\left(\lvert\bar X_n - \mu\rvert \le 1.96\,\frac{\sigma}{\sqrt n}\right) \approx 0.95,
+$$
+
+so a 95% interval for $\mu$ is
+
+$$
+\bar X_n \pm 1.96\,\frac{s}{\sqrt n},
+$$
+
+where the unknown $\sigma$ is replaced by the sample standard deviation $s$ of the simulated values.
+
+* Halving the error requires **four times** as many samples, and each extra decimal digit of accuracy costs a **100-fold** increase in $n$.
+* The rate $n^{-1/2}$ does not depend on the dimension of $X$, which is why Monte Carlo beats numerical quadrature in high dimensions.
+
+### Demonstrations
 
 Here we draw from a Gamma distribution with shape parameter $\alpha = 2$ and rate $\beta = 1$. The theoretical mean is $\mu = \alpha/\beta = 2$, and the variance is $\sigma^2 = \alpha/\beta^2 = 2$.
 
@@ -273,6 +482,26 @@ plot(se.rep[,1], ylim = c(-3,3), type="b", log = "x", main="Demonstrating CLT", 
 for (i in 2:ncol(se.rep)) points(se.rep[,i], col = i, pch = i, type = "b")
 abline(h = c(0, -2, 2), lty = c(1,2,2), lwd=2)
 ```
+
+The running standardized means in the last panel only show that $Z$ stays on the $N(0,1)$ scale. To see its *distribution*, we repeat the experiment $N = 5000$ times: for each repetition we draw $n$ values from the skewed $\mathrm{Exp}(1)$ distribution and compute $(\bar X_n - 1)/(1/\sqrt n)$.
+
+```{r}
+#| label: fig-clt-exp
+#| echo: true
+#| fig-width: 10
+#| fig-height: 3.5
+#| fig-cap: "Shows the Central Limit Theorem as a statement about distributions: the standardized mean of skewed data becomes approximately normal as the sample size grows.
+#|   Histograms of $5000$ standardized means $(\\bar X_n - 1)\\sqrt n$ of $\\mathrm{Exp}(1)$ samples for $n = 2, 10, 100$, against the $N(0,1)$ density (red)."
+clt_demo <- function(n, N = 5000) replicate(N, (mean(rexp(n)) - 1) * sqrt(n))
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+for (n in c(2, 10, 100)) {
+  hist(clt_demo(n), breaks = 40, freq = FALSE, xlim = c(-4, 4),
+       main = TeX(sprintf(r"($n = %d$)", n)), xlab = "")
+  curve(dnorm, add = TRUE, col = 2, lwd = 2)
+}
+```
+
+The skewness of the exponential is still visible at $n = 2$ and $n = 10$, and has almost disappeared at $n = 100$.
 
 ## An Example of Monte Carlo for Estimating $\pi$
 
@@ -314,11 +543,15 @@ lines(cos(theta_seq), sin(theta_seq), col = "black", lwd = 2)
 #### The Monte Carlo Estimate
 
 If we define an indicator variable $I_i$ that equals 1 if the $i$-th dart lands in the circle and 0 otherwise, then $E[I_i] = \pi/4$.
-We define $Z_i = 4 \times I_i$, which gives $E[Z_i] = \pi$.
+We define $Z_i = 4 \times I_i$, which gives $E[Z_i] = \pi$ and
+
+$$
+\mathrm{Var}(Z_i) = 16 \cdot \frac{\pi}{4}\left(1 - \frac{\pi}{4}\right) \approx 2.70, \qquad \mathrm{SD}(Z_i) \approx 1.64 .
+$$
 
 Our Monte Carlo estimate $\hat{\pi}$ is the sample average of the $Z_i$ values:
 $$
-\hat{\pi} = \bar{Z} = \frac{1}{n}\sum_{i=1}^n Z_i
+\hat{\pi} = \bar{Z} = \frac{1}{n}\sum_{i=1}^n Z_i = 4 \times \frac{\#\{i: X_i^2 + Y_i^2 \le 1\}}{n}
 $$
 
 The Standard Error (SE) measures the uncertainty of our estimate. Using the sample standard deviation $S_Z$, the 95% margin of error is calculated as:
@@ -326,9 +559,11 @@ $$
 \text{Margin of Error} = 1.96 \times \text{SE} = 1.96 \times \frac{S_Z}{\sqrt{n}}
 $$
 
+The standard error is computed from the **same** simulated values as the estimate, at no extra cost, and should always be reported with a Monte Carlo estimate.
+
 #### Results by Sample Size
 
-We encapsulate the logic in a function and track how precision improves as $n$ increases. The table below outlines our findings.
+We encapsulate the logic in a function and track how precision improves as $n$ increases. The table below outlines our findings, including the actual error $\hat\pi - \pi$ and the theoretical margin of error $1.96 \times 1.64/\sqrt n$.
 
 ```{r}
 #| label: tbl-mc-pi-by-n
@@ -362,17 +597,47 @@ results_list <- lapply(sample_sizes, pi_est_mc)
 results_df <- data.frame(
   N = sapply(results_list, function(x) x$n),
   Estimate = sapply(results_list, function(x) x$pi.est),
+  Actual_Error = sapply(results_list, function(x) x$pi.est - pi),
   Error_Margin = sapply(results_list, function(x) x$error.95perc),
+  Theory_Margin = 1.96 * 1.64 / sqrt(sample_sizes),
   CI_Lower = sapply(results_list, function(x) x$ci.lower),
   CI_Upper = sapply(results_list, function(x) x$ci.upper)
 )
 
 ## Render the formatted table
 kable(results_df,
-      col.names = c("Sample Size (N)", "Estimated Pi", "95% Margin of Error", "Lower CI", "Upper CI"),
+      col.names = c("Sample Size (N)", "Estimated Pi", "Actual Error", "95% Margin of Error",
+                    "Theoretical Margin", "Lower CI", "Upper CI"),
       digits = 6,
       caption = "Shows how the accuracy of the Monte Carlo estimate of $\\pi$, as measured by its margin of error, improves with the number of points. Monte Carlo Estimation of Pi across different sample sizes")
 ```
+
+* The actual error is typically within the 95% margin of error, that is, within about 2 standard errors.
+* The margin of error shrinks by a factor of $\sqrt{k}$ when $n$ grows $k$-fold (a factor of 10 for each 100-fold increase), as the CLT predicts, and agrees with its theoretical value.
+
+#### Convergence of $\hat\pi_n$
+
+Following a single sequence of darts shows the same $n^{-1/2}$ behaviour as it unfolds.
+
+```{r}
+#| label: fig-mc-pi-convergence
+#| echo: true
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Shows the Monte Carlo error bound at work along a single simulation run: the running estimate of $\\pi$ stays within a band that narrows at rate $1/\\sqrt{n}$.
+#|   Running estimate $\\hat\\pi_n$ over $10^5$ darts (black), with the true value $\\pi$ (blue) and the band $\\pi \\pm 1.96 \\times 1.64/\\sqrt n$ (red, dashed)."
+set.seed(1)
+n <- 1e5; z <- 4 * (runif(n, -1, 1)^2 + runif(n, -1, 1)^2 <= 1)
+k <- 1:n; pihat <- cumsum(z) / k
+par(mar = c(4, 4.5, 0.5, 0.5), mgp = c(2.5, 0.8, 0))
+plot(k, pihat, type = "l", log = "x", ylim = c(2, 4),
+     xlab = "n (log scale)", ylab = expression(hat(pi)[n]))
+lines(k, pi + 1.96 * 1.64 / sqrt(k), lty = 2, col = 2)
+lines(k, pi - 1.96 * 1.64 / sqrt(k), lty = 2, col = 2)
+abline(h = pi, col = 4)
+```
+
+The running estimate stays inside the red band most of the time.
 
 ## Point Estimation
 
@@ -404,15 +669,23 @@ Risk functions are rarely available in closed form, but because they are expecta
 **The Monte Carlo Recipe:**
 
 1. Define a grid of $\theta$ values.
-2. For each $\theta$, generate $M$ independent datasets.
-3. Compute the estimate $\hat\theta^{(m)}$ for each dataset.
+2. For each $\theta$, generate $N$ independent datasets $X^{(j)} = (X_1^{(j)}, \ldots, X_n^{(j)})$, $j = 1, \ldots, N$.
+3. Compute the estimate $\hat\theta^{(j)} = \hat\theta(X^{(j)})$ for each dataset.
 4. Average the squared errors:
 
-$$\widehat{\mathrm{MSE}}_{\theta} = \frac{1}{M} \sum_{m=1}^{M} \left(\hat\theta^{(m)} - \theta\right)^{2}$$
+$$\widehat{\mathrm{MSE}}_{\theta} = \frac{1}{N} \sum_{j=1}^{N} \left(\hat\theta^{(j)} - \theta\right)^{2}$$
 
+The bias and variance are estimated from the same replicates:
 
+$$
+\widehat{\mathrm{bias}}_{\theta} = \overline{\hat\theta} - \theta, \qquad
+\widehat{\mathrm{Var}}_{\theta} = \frac{1}{N}\sum_{j=1}^N \big(\hat\theta^{(j)} - \overline{\hat\theta}\big)^2, \qquad
+\overline{\hat\theta} = \frac{1}{N}\sum_{j=1}^N \hat\theta^{(j)} .
+$$
 
-Because this represents an average of independent, identically distributed (i.i.d.) quantities, its standard error is $s/\sqrt{M}$, where $s^{2}$ is the sample variance of the squared errors. Always report the Monte Carlo error boundaries ($\widehat{\mathrm{MSE}}_{\theta} \pm 1.96\, s/\sqrt{M}$) to distinguish true differences in risk curves from mere simulation noise.
+Two sample sizes appear: $n$, the number of observations in each dataset, which is fixed by the problem; and $N$, the number of replicates, which we choose large enough that the Monte Carlo error is negligible.
+
+Because $\widehat{\mathrm{MSE}}_{\theta}$ is an average of independent, identically distributed (i.i.d.) quantities, its standard error is $s/\sqrt{N}$, where $s^{2}$ is the sample variance of the squared errors. Always report the Monte Carlo error boundaries ($\widehat{\mathrm{MSE}}_{\theta} \pm 1.96\, s/\sqrt{N}$) to distinguish true differences in risk curves from mere simulation noise.
 
 ### Two Estimators of Proportions
 
@@ -476,62 +749,181 @@ for (n in n_set)
 
 When $n$ is small, the smoothed estimator significantly outperforms the MLE across most of the parameter space. As $n$ grows, the curves converge, reflecting the asymptotic efficiency of the MLE. The exception occurs strictly at the extremes ($p \approx 0$ or $1$), where the shrinkage penalty overrides the variance reduction, making $\hat{p}_1$ superior. The confidence bands confirm this crossing is a true mathematical property, not simulation variance.
 
+### Mean, Median and Trimmed Mean
+
+The choice between estimators can also depend on the shape of the data distribution rather than on the parameter value. Consider estimating the centre $\theta = 0$ of a symmetric distribution from $n = 20$ observations with three estimators: the sample mean, the sample median, and the 10% trimmed mean, which averages the observations after discarding the smallest and largest 10%. We estimate their bias, variance and MSE from $N = 5000$ replicates, for normal data and for heavy-tailed $t_3$ data.
+
+```{r}
+#| label: tbl-mean-median-trim
+#| tbl-cap: "Compares three estimators of the centre of a symmetric distribution under normal and heavy-tailed data, to show that the best estimator depends on the data distribution.
+#|   Monte Carlo bias, variance and MSE of the mean, the median and the 10% trimmed mean, for $n = 20$ observations from $N(0,1)$ (top) and $t_3$ (bottom), with $N = 5000$ replicates."
+eval_est <- function(rdist, n = 20, N = 5000) {
+  est <- replicate(N, { x <- rdist(n); c(mean = mean(x), median = median(x), trim10 = mean(x, trim = 0.1)) })
+  rbind(bias = rowMeans(est), var = apply(est, 1, var), mse = rowMeans(est^2))
+}
+kable(rbind(eval_est(rnorm),                          # normal data
+            eval_est(function(n) rt(n, df = 3))),     # heavy-tailed t3 data
+      digits = 4,
+      col.names = c("mean", "median", "10% trimmed mean"),
+      caption = "Monte Carlo bias, variance and MSE: normal data (rows 1-3) and $t_3$ data (rows 4-6).")
+
+```
+
+All three estimators are unbiased by symmetry, so the comparison is decided by the variance. No estimator is best everywhere: the mean wins under normality, where it is the MLE, while the trimmed mean and the median win under heavy tails, where a few extreme observations inflate the variance of the mean. The trimmed mean is a good compromise, losing little under normality.
+
 ## Hypothesis Testing
 
-A hypothesis test maps data to a binary decision regarding a null hypothesis ($H_0$) versus an alternative ($H_1$). It relies on a test statistic $T(X)$, where extreme values serve as evidence against $H_0$.
+A hypothesis test maps data to a binary decision about a null hypothesis $H_0$ versus an alternative $H_1$. It is built from a test statistic $T$, whose large values are evidence against $H_0$. This section shows that both the error rates of a test and, when the null distribution is unknown, the p-value itself are expectations, and so can be estimated by Monte Carlo.
 
-* **Type I Error:** Rejecting a true $H_0$.
-* **Type II Error:** Failing to reject a false $H_0$.
-* **Power Function $\beta(\theta)$:** The probability of rejecting $H_0$. It represents the Type I error rate when $\theta \in H_0$, and the statistical power when $\theta \in H_1$.
-* **Size & Level:** The maximum Type I error probability across all parameters in $H_0$. A test has *level $\alpha$* if its size is at most $\alpha$.
+### The Two Types of Error
 
-The **p-value** repackages the test rule without locking into a fixed $\alpha$ in advance. It represents the probability of observing a test statistic at least as extreme as the one observed, assuming $H_0$ is true:
+A test rejects $H_0$ when the statistic $T$ exceeds a critical value $c_\alpha$. Crossing the decision with the truth gives four outcomes:
 
+|          | reject: $T > c_\alpha$      | do not reject: $T \le c_\alpha$      |
+|----------|---------------------|-----------------------|
+| $H_0$ true    | Type I error (false positive)   | true negative                    |
+| $H_1$ true    | true positive                  | Type II error (false negative)    |
 
-$$pv = \Pr_{H_0}\left(T(X^{*}) \ge T(x^{obs})\right)$$
+The two error rates of interest are the **size** and the **power**:
 
-A functional p-value must maintain **validity**: $\Pr_{H_0}(pv \le \alpha) \le \alpha$ for every $\alpha \in (0, 1)$. If $T$ possesses a continuous null distribution and is applied exactly, this inequality becomes an equality, meaning the p-values will follow a uniform distribution on $[0,1]$ under $H_0$.
+$$
+\text{size} = P(T > c_\alpha \mid H_0) = \alpha, \qquad \text{power} = P(T > c_\alpha \mid H_1) = 1 - \beta .
+$$
 
-**Diagnostic:** Simulate multiple datasets under $H_0$, compute the p-value for each, and plot the histogram.
+When $H_0$ is composite, the size is the largest type I error probability over all parameter values in $H_0$, and a test has *level $\alpha$* if its size is at most $\alpha$. Both size and power are probabilities, hence expectations of indicators, so both can be **estimated by Monte Carlo** once we can simulate data under $H_0$ and under $H_1$.
 
-* **Flat histogram:** The test is valid.
-* **Left-skewed (mass near 0):** The test is invalid and liberal; true size exceeds nominal level.
-* **Right-skewed (mass near 1):** The test is excessively conservative; sacrifices statistical power.
+### Estimating False and True Positive Rates by Monte Carlo
 
-P-values generally fail uniformity for two reasons:
+For a test that rejects when $T > c$, simulate $N$ data sets under $H_0$ and $N$ data sets under $H_1$, and compute $T$ on each:
 
-1. **Distributional Misspecification:** A foundational assumption (e.g., normality) fails, skewing the null distribution.
-2. **Optimization Bias (Data-dependent procedures):** The null distribution is computed assuming a fixed procedure, but the actual procedure was chosen by inspecting the data (e.g., feature selection).
+| replicate | $T^{(j)}_{H_0}$ | $I(T^{(j)}_{H_0} > c)$ | $T^{(j)}_{H_1}$ | $I(T^{(j)}_{H_1} > c)$ |
+|:---:|:---:|:---:|:---:|:---:|
+| 1 | $T^{(1)}_{H_0}$ | 0 | $T^{(1)}_{H_1}$ | 1 |
+| 2 | $T^{(2)}_{H_0}$ | 1 | $T^{(2)}_{H_1}$ | 1 |
+| $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ |
+| $N$ | $T^{(N)}_{H_0}$ | 0 | $T^{(N)}_{H_1}$ | 0 |
 
-### Permutation Tests
+The false and true positive rates are estimated by the averages of the two indicator columns:
 
-Permutation tests offer a non-parametric alternative when analytical assumptions are dubious. If the null hypothesis states two variables are independent, the exact null distribution can be mapped without assuming normality.
+$$
+\widehat{\text{FPR}}(c) = \frac{1}{N}\sum_{j=1}^N I\big(T^{(j)}_{H_0} > c\big), \qquad
+\widehat{\text{TPR}}(c) = \frac{1}{N}\sum_{j=1}^N I\big(T^{(j)}_{H_1} > c\big).
+$$
 
-Because the variables are independent under $H_0$, their labels can be scrambled without altering the joint distribution (exchangeability). The true p-value is simply the rank of the observed statistic among all permuted statistics:
+$\widehat{\text{FPR}}$ estimates the size (the type I error rate) and $\widehat{\text{TPR}}$ estimates the power, $1 - \beta$. To obtain a test of size $\alpha$ when the null distribution of $T$ is unknown, take $\hat c_\alpha$ to be the $(1-\alpha)$ sample quantile of $T^{(1)}_{H_0}, \ldots, T^{(N)}_{H_0}$; this replaces the null distribution of $T$ by its **empirical** distribution.
 
+### The p-value: A Probability Integral Transform of $T$ under $H_0$
 
-$$\widehat{pv} = \frac{1 + \#\{j : T^{(j)} \ge T^{obs}\}}{N + 1}$$
+The **p-value** repackages the test so that no $\alpha$ has to be fixed in advance. It is the probability, under $H_0$, of a statistic at least as extreme as the observed one:
 
-The $+1$ correction counts the observed dataset alongside the $N$ permutations, ensuring $\widehat{pv}$ remains mathematically valid for any finite $N$.
+$$
+\text{p-value}(t) = P(T \ge t \mid H_0) = 1 - F_{H_0}(t),
+$$
 
-### Example: The t-test on Non-Normal Observations
+that is, the **survival function** of $T$ under $H_0$ evaluated at $t^{obs}$. Rejecting when $\text{p-value}(t^{obs}) < \alpha$ is the same as rejecting when $t^{obs} > c_\alpha$.
 
-The standard Student's t-test assumes normally distributed data. Here, we test its robustness when exposed to heavy-tailed distributions. This highlights the first failure mode: applying the wrong null distribution to the test statistic.
+```{r}
+#| label: fig-pvalue-survival
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Shows that the p-value is a tail area of the null distribution of the test statistic, and equivalently the null survival function evaluated at the observed statistic.
+#|   Left: the null density of $T$ (here $\\chi^2_3$) with the p-value of $t^{obs} = 1.8$ shaded. Right: the survival function $1 - F_{H_0}(t)$, whose height at $t^{obs}$ is the same p-value."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+t0 <- 1.8
+curve(dchisq(x, 3), 0, 12, lwd = 2, xlab = TeX(r"($t$)"), ylab = "",
+      main = TeX(r"(density of $T$ under $H_0$)"))
+xx <- seq(t0, 12, length = 100)
+polygon(c(t0, xx, 12), c(0, dchisq(xx, 3), 0), col = "lightblue", border = NA)
+abline(v = t0, col = 2)
+text(t0 + 3, 0.15, "p-value = shaded area")
+curve(1 - pchisq(x, 3), 0, 12, lwd = 2, xlab = TeX(r"($t$)"), ylab = "",
+      main = TeX(r"(survival function $1 - F_{H_0}(t)$)"))
+abline(v = t0, col = 2); abline(h = 1 - pchisq(t0, 3), lty = 2)
 
-We simulate data using a t-distribution across varying degrees of freedom (df). Lower df creates heavier tails, with df=1 representing the Cauchy distribution.
+```
+
+### Uniformity of the p-value under $H_0$
+
+**Theorem.** If $T \mid H_0$ has a continuous CDF $F_{H_0}$, then $\text{p-value}(T) = 1 - F_{H_0}(T) \sim \mathrm{Unif}(0,1)$ under $H_0$.
+
+**Proof.** For $t \in (0,1)$,
+
+$$
+\begin{aligned}
+P\big(\text{p-value}(T) < t\big) &= P\big(1 - F_{H_0}(T) < t\big) = P\big(F_{H_0}(T) > 1 - t\big) \\
+&= P\big(T > F_{H_0}^{-1}(1-t)\big) = 1 - F_{H_0}\big(F_{H_0}^{-1}(1-t)\big) = t .
+\end{aligned}
+$$
+
+Two consequences follow.
+
+* $P(\text{p-value} < \alpha \mid H_0) = \alpha$ **exactly**, so rejecting when the p-value is below $\alpha$ gives a test of size $\alpha$.
+* A histogram of p-values simulated under $H_0$ should be flat. This is the standard **test of a test**: a histogram with excess mass near 0 means the test is liberal (its true size exceeds $\alpha$), and one with excess mass near 1 means it is conservative (it wastes power).
+
+### Monte Carlo Estimates of Size and Power
+
+Simulating $N$ data sets under $H_0$ and $N$ under $H_1$ and computing the p-value of each, the size and power at level $\alpha$ are estimated by the rejection rates
+
+$$
+\widehat{\text{size}} = \frac{1}{N}\sum_{j=1}^N I\big(\text{p-value}^{(j)}_{H_0} < \alpha\big), \qquad
+\widehat{\text{power}} = \frac{1}{N}\sum_{j=1}^N I\big(\text{p-value}^{(j)}_{H_1} < \alpha\big).
+$$
+
+Each estimate is a proportion, so its Monte Carlo standard error is $\sqrt{\hat p(1-\hat p)/N}$, about $0.003$ for a size near $0.05$ with $N = 5000$.
+
+Throughout this section, simulated p-values are displayed with the helper below. Its bins have width $\alpha$, so the first bar (in red) holds exactly the rejected data sets, and the legend reports the rejection rate: the estimated size under $H_0$, or the estimated power under $H_1$.
+
+```{r}
+#| label: hist-reject-fn
+hist_reject <- function(pv, main, alpha = 0.05) {
+  br <- seq(0, 1, by = alpha)                  # first bar = rejection region
+  ymax <- max(hist(pv, breaks = br, plot = FALSE)$counts)
+  hist(pv, breaks = br, main = main, xlab = "p-value",
+       ylim = c(0, 1.3 * ymax),                # headroom for the legend
+       col = ifelse(br[-1] <= alpha, "red", "grey80"))
+  abline(v = alpha, col = "red", lwd = 2, lty = 2)
+  legend("topright", bty = "n", fill = c("red", NA), border = c("black", NA),
+         lty = c(NA, 2), col = c(NA, "red"), lwd = c(NA, 2),
+         legend = c(sprintf("rejected: %.3f", mean(pv < alpha)),
+                    as.expression(bquote(alpha == .(alpha)))))
+}
+
+```
+
+### Example 1: The t-test under Different Data Settings
+
+The one-sample $t$-test of $H_0: \mu = 0$ assumes normally distributed observations. We first check it where that assumption holds, and then under heavy-tailed data, where it does not.
+
+#### Normal Data
+
+With $n = 20$ normal observations and $N = 5000$ simulated data sets, we compute the $t$-test p-value under $H_0: \mu = 0$ and under $H_1: \mu = 0.5$.
+
+```{r}
+#| label: fig-t-test-normal
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Illustrates the basic simulation check of a test: p-values are uniform under the null hypothesis and concentrate near 0 under the alternative.
+#|   p-values of the one-sample $t$-test for $n = 20$ normal observations under $H_0: \\mu = 0$ (left) and $H_1: \\mu = 0.5$ (right); red bars are the rejections at $\\alpha = 0.05$."
+pv_sim <- function(mu, n = 20, N = 5000) replicate(N, t.test(rnorm(n, mu))$p.value)
+pv0 <- pv_sim(0); pv1 <- pv_sim(0.5)
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(pv0, TeX(r"($H_0: \mu = 0$)"))
+hist_reject(pv1, TeX(r"($H_1: \mu = 0.5$)"))
+
+c(size = mean(pv0 < 0.05), power = mean(pv1 < 0.05),
+  exact_power = power.t.test(n = 20, delta = 0.5, sd = 1, type = "one.sample")$power)
+
+```
+
+Under $H_0$ the p-values are uniform; under $H_1$ they pile up near 0. The simulated power agrees with the exact power from `power.t.test()` to within Monte Carlo error.
+
+#### Heavy-tailed Data: Null Distribution Diagnostics
+
+We next simulate data from a $t$-distribution with $\nu$ degrees of freedom. Smaller $\nu$ gives heavier tails, and $\nu = 1$ is the Cauchy distribution, which has no mean. The function below simulates `N` data sets of size `n` at once and returns their $t$-test p-values.
 
 ```{r}
 #| label: t-test-functions
-t.test.pvalue <- function (x, mu = 0)
-{
-    if (!is.numeric(x) || !is.numeric(mu) || length(mu) != 1) { stop("Invalid argument") }
-    n <- length(x)
-    if (n < 2) { stop("Can't do a t test with less than two data points") }
-
-    t <- (mean(x) - mu) / sqrt(var(x) / n)
-    2 * pt (-abs(t), n - 1)
-}
-
 t.test.sim <- function (N, n, df, mu.true = 0, mu = 0)
 {
     X <- matrix(rt(n * N, df), n, N) + mu.true
@@ -540,223 +932,209 @@ t.test.sim <- function (N, n, df, mu.true = 0, mu = 0)
     2 * pt(-abs((m - mu) / sqrt(v / n)), n - 1)
 }
 
-hist.pv <- function (pv, n, df, bins = 20)
-{
-    hist(pv, nclass = bins, prob = TRUE, col = "grey90",
-         xlab = TeX(sprintf(r"($%d$ p-values, $n = %d$, $\nu = %d$)", length(pv), n, df)),
-         main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
-    abline(h = 1, col = 4, lwd = 2)
-}
+t_main <- function (n, df, mu.true = 0)
+    TeX(sprintf(r"($n = %d$, $\nu = %d$, $\mu = %g$)", n, df, mu.true))
 
-```
-
-#### Null Distribution Diagnostics
-
-We expect these histograms to sit perfectly flat against the blue uniform density line.
-
-```{r}
-#| label: t-test-settings
 N <- 2000
-bins <- 20
 
 ```
 
-**100 Degrees of Freedom (Nearly Normal)**
-With 100 df, the distribution is practically Normal. The p-values form a perfect uniform line, confirming validity.
+**100 degrees of freedom (nearly normal).** The data are practically normal, and the p-values are uniform for both $n = 2$ and $n = 20$.
 
 ```{r}
 #| label: fig-t-test-df100
-#| fig-cap: "Uses simulation to check the size of the t-test: under the null hypothesis a valid test gives uniform $p$-values, and here the data are nearly normal.
-#|   Null distribution of t-test p-values at df = 100 (nearly normal), for $n = 2$ and $n = 20$: uniform, as expected."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.pv(t.test.sim(N, 2, 100), n = 2, df = 100, bins)
-hist.pv(t.test.sim(N, 20, 100), n = 20, df = 100, bins)
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Uses simulation to check the size of the t-test: under the null hypothesis a valid test gives uniform p-values, and here the data are nearly normal.
+#|   Null distribution of $t$-test p-values at $\\nu = 100$ (nearly normal), for $n = 2$ and $n = 20$: uniform, as expected."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 2, 100), t_main(2, 100))
+hist_reject(t.test.sim(N, 20, 100), t_main(20, 100))
 
 ```
 
-**3 Degrees of Freedom (Heavy Tails)**
-Heavier tails warp the p-value distribution. The nominal Type I error rate is no longer perfectly calibrated, leading to false confidence.
+**3 degrees of freedom (heavy tails).** Heavier tails distort the p-value distribution, and the nominal type I error rate is no longer exactly calibrated.
 
 ```{r}
 #| label: fig-t-test-df3
-#| fig-cap: "Repeats the size check of the t-test for heavy-tailed data to show how violating the normality assumption distorts the $p$-values.
-#|   Null distribution of t-test p-values at df = 3 (heavy tails), for $n = 2$ and $n = 20$: the tails distort the p-value distribution away from uniform."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.pv(t.test.sim(N, 2, 3), n = 2, df = 3, bins)
-hist.pv(t.test.sim(N, 20, 3), n = 20, df = 3, bins)
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Repeats the size check of the t-test for heavy-tailed data to show how violating the normality assumption distorts the p-values.
+#|   Null distribution of $t$-test p-values at $\\nu = 3$ (heavy tails), for $n = 2$ and $n = 20$: the tails pull the p-value distribution away from uniform."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 2, 3), t_main(2, 3))
+hist_reject(t.test.sim(N, 20, 3), t_main(20, 3))
 
 ```
 
-**1 Degree of Freedom (Cauchy Distribution)**
-With an undefined mean and variance, extreme outliers dominate. The t-test entirely breaks down, clustering p-values near 1.0 and rendering the test virtually useless.
+**1 degree of freedom (Cauchy).** With no finite mean or variance, a single extreme observation dominates both $\bar X$ and $s$, which pushes $\lvert T\rvert$ toward 1 and the p-value toward the middle of $[0,1]$. The p-values are far from uniform and the rejection rate falls below $\alpha$: the test is conservative, and it does not improve as $n$ grows.
 
 ```{r}
 #| label: fig-t-test-df1
+#| fig-width: 10
+#| fig-height: 4
 #| fig-cap: "Pushes the size check to the extreme case of Cauchy data, which have no mean, to show where the t-test breaks down completely.
-#|   Null distribution of t-test p-values at df = 1 (Cauchy): the test breaks down completely, with p-values clustering near 1."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.pv(t.test.sim(N, 2, 1), n = 2, df = 1, bins)
-hist.pv(t.test.sim(N, 20, 1), n = 20, df = 1, bins)
+#|   Null distribution of $t$-test p-values at $\\nu = 1$ (Cauchy), for $n = 2$ and $n = 20$: the p-values bunch in the middle of $[0,1]$ and the rejection rate is below 0.05."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 2, 1), t_main(2, 1))
+hist_reject(t.test.sim(N, 20, 1), t_main(20, 1))
 
 ```
 
-**Increasing Sample Size ($n=30$)**
-As sample size scales, the Central Limit Theorem rescues the underlying math. The p-value distributions for df=5 and df=10 flatten back into uniformity.
+**Larger sample size ($n = 30$).** When the variance is finite, the Central Limit Theorem makes $\bar X$ nearly normal as $n$ grows, and the p-values for $\nu = 10$ and $\nu = 5$ are close to uniform again.
 
 ```{r}
 #| label: fig-t-test-n30
+#| fig-width: 10
+#| fig-height: 4
 #| fig-cap: "Shows that a larger sample size can rescue the t-test for heavy-tailed data, because the Central Limit Theorem makes the sample mean nearly normal.
-#|   Null distribution of t-test p-values at $n = 30$, df = 10 and df = 5: the Central Limit Theorem restores uniformity even with heavy-tailed data."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.pv(t.test.sim(N, 30, 10), n = 30, df = 10, bins)
-hist.pv(t.test.sim(N, 30, 5), n = 30, df = 5, bins)
+#|   Null distribution of $t$-test p-values at $n = 30$ for $\\nu = 10$ and $\\nu = 5$: close to uniform even with heavy-tailed data."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 30, 10), t_main(30, 10))
+hist_reject(t.test.sim(N, 30, 5), t_main(30, 5))
 
 ```
 
-#### Power of the t-test
+#### Heavy-tailed Data: Power
 
-Statistical power represents the ability to successfully detect a true effect. Here, we inject a true mean of $\mu = 0.5$ while testing against $H_0: \mu = 0$.
-
-```{r}
-#| label: hist-power-fn
-hist.power <- function (pv, n, df, mu.true)
-    hist(pv, nclass = 20, col = "grey90",
-         xlab = TeX(sprintf(r"($%d$ p-values, $n = %d$, $\nu = %d$, $\mu = %.1f$)",
-                            length(pv), n, df, mu.true)),
-         main = TeX(sprintf(r"(power at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
-
-```
+To estimate power, we shift the data to a true mean $\mu = 0.5$ while still testing $H_0: \mu = 0$. The rejection rate is now the power.
 
 ```{r}
 #| label: fig-t-test-power-df5
+#| fig-width: 10
+#| fig-height: 4
 #| fig-cap: "Uses simulation to estimate the power of the t-test, its ability to detect a true mean of 0.5, when the data are moderately heavy-tailed.
-#|   Power of the t-test at df = 5 against a true mean $\\mu = 0.5$, for $n = 30$ and $n = 60$."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.power(t.test.sim(N, 30, 5, mu.true = 0.5), n = 30, df = 5, mu.true = 0.5)
-hist.power(t.test.sim(N, 60, 5, mu.true = 0.5), n = 60, df = 5, mu.true = 0.5)
+#|   $t$-test p-values at $\\nu = 5$ with true mean $\\mu = 0.5$, for $n = 30$ and $n = 60$; the red rejection rate is the power."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 30, 5, mu.true = 0.5), t_main(30, 5, 0.5))
+hist_reject(t.test.sim(N, 60, 5, mu.true = 0.5), t_main(60, 5, 0.5))
 
 ```
 
 ```{r}
 #| label: fig-t-test-power-df3
+#| fig-width: 10
+#| fig-height: 4
 #| fig-cap: "Repeats the power study for heavier-tailed data to show how tail weight affects the ability of the t-test to detect a real effect.
-#|   Power of the t-test at df = 3 against a true mean $\\mu = 0.5$, for $n = 30$ and $n = 60$."
-par (mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
-hist.power(t.test.sim(N, 30, 3, mu.true = 0.5), n = 30, df = 3, mu.true = 0.5)
-hist.power(t.test.sim(N, 60, 3, mu.true = 0.5), n = 60, df = 3, mu.true = 0.5)
+#|   $t$-test p-values at $\\nu = 3$ with true mean $\\mu = 0.5$, for $n = 30$ and $n = 60$; the red rejection rate is the power."
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(t.test.sim(N, 30, 3, mu.true = 0.5), t_main(30, 3, 0.5))
+hist_reject(t.test.sim(N, 60, 3, mu.true = 0.5), t_main(60, 3, 0.5))
 
 ```
 
-### Example: A Permutation Test for Correlation
+Heavier tails inflate the sample variance and so cost power; doubling $n$ recovers much of it.
 
-When evaluating the correlation between variables $X$ and $Y$, dropping the analytical normality assumption in favor of a permutation test avoids the first failure mode entirely.
+### Monte Carlo for Calculating (Not Evaluating) a p-value
 
-**The Procedure:**
+So far Monte Carlo has been used to *evaluate* a test whose p-value is known in closed form. When $F_{H_0}$ is unknown, Monte Carlo can also *calculate* the p-value, by simulating $T$ under $H_0$:
 
-1. Calculate the observed correlation $\rho^{obs} = \hat\rho(X, Y)$.
-2. For $j = 1, \ldots, N$: randomly shuffle $Y$ to create $Y^{(j)}$, then calculate $\rho^{(j)} = \hat\rho(X, Y^{(j)})$.
-3. Calculate the permutation p-value as the proportion of shuffled correlations whose absolute value meets or exceeds the observed correlation.
+$$
+\widehat{\text{p-value}}(t^{obs}) = \frac{1 + \sum_{j=1}^N I\big(T^{(j)} \ge t^{obs}\big)}{N + 1}.
+$$
+
+The "$+1$" counts the observed statistic as one draw from $H_0$; it keeps the estimate above 0 and makes the test exactly valid for any finite $N$.
+
+As an example, we test $H_0: \mu = 0$ for $n = 15$ normal observations using $T = \lvert\bar X\rvert/(s/\sqrt n)$, pretending that we do not know its $t$-distribution.
+
+```{r}
+#| label: mc-pvalue
+x <- rnorm(15, mean = 0.6); tobs <- abs(mean(x)) / (sd(x) / sqrt(15))
+Tnull <- replicate(5000, { y <- rnorm(15); abs(mean(y)) / (sd(y) / sqrt(15)) })
+c(mc_pv = (1 + sum(Tnull >= tobs)) / 5001, exact_pv = 2 * pt(-tobs, df = 14))
+
+```
+
+This works only because the null hypothesis here fully specifies the distribution of the data. When it does not, as in a test of independence, a **permutation test** generates the null distribution from the data themselves.
+
+### Example 2: A Permutation Test for the Correlation Coefficient
+
+#### Setting and Procedure
+
+We observe pairs $(X_i, Y_i)$, $i = 1, \ldots, n$, and test $H_0: X \perp Y$ (which implies $\mathrm{corr}(X,Y) = 0$) with $T = \lvert\hat\rho\rvert$. Under $H_0$, **every pairing of the $X$ values with the $Y$ values is equally likely**, so the null distribution of $T$ is obtained by re-computing $T$ after randomly permuting $Y$:
+
+1. Compute $\rho^{obs} = \hat\rho(X, Y)$.
+2. For $j = 1, \ldots, m$: permute $Y$ to get $Y^{(j)}$, and compute $\rho^{(j)} = \hat\rho(X, Y^{(j)})$.
+3. Compute $\widehat{\text{p-value}} = \dfrac{1 + \# \{j : \lvert\rho^{(j)}\rvert \ge \lvert\rho^{obs}\rvert\}}{m+1}$.
+
+No normality assumption is needed; the null distribution is generated **from the data itself**.
+
+#### Replicated Data Sets by Permutation
+
+$X$ is held fixed, and each of the $m$ permutations re-shuffles the $Y$ column (shown for $n = 5$):
+
+|  | $X$ | observed $Y$ | $Y^{(1)}$ | $Y^{(2)}$ | $\cdots$ | $Y^{(m)}$ |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| $i = 1$ | $x_1$ | $y_1$ | $y_3$ | $y_5$ | $\cdots$ | $y_2$ |
+| $i = 2$ | $x_2$ | $y_2$ | $y_1$ | $y_4$ | $\cdots$ | $y_5$ |
+| $i = 3$ | $x_3$ | $y_3$ | $y_5$ | $y_1$ | $\cdots$ | $y_4$ |
+| $i = 4$ | $x_4$ | $y_4$ | $y_2$ | $y_3$ | $\cdots$ | $y_1$ |
+| $i = 5$ | $x_5$ | $y_5$ | $y_4$ | $y_2$ | $\cdots$ | $y_3$ |
+| **statistic** |  | $\rho^{obs}$ | $\rho^{(1)}$ | $\rho^{(2)}$ | $\cdots$ | $\rho^{(m)}$ |
+| **as extreme?** |  |  | $I(\lvert\rho^{(1)}\rvert \ge \lvert\rho^{obs}\rvert)$ | $I(\lvert\rho^{(2)}\rvert \ge \lvert\rho^{obs}\rvert)$ | $\cdots$ | $I(\lvert\rho^{(m)}\rvert \ge \lvert\rho^{obs}\rvert)$ |
+
+$\rho^{(1)}, \ldots, \rho^{(m)}$ are draws from the null distribution of $\hat\rho$. The p-value is $1$ plus the sum of the last row, divided by $m + 1$.
+
+#### Implementation in R
 
 ```{r}
 #| label: perm-cor
-perm.cor.test <- function (x, y, no.perm = 100)
-{
-    Yp <- replicate(no.perm, sample(y))          # n by no.perm permuted responses
-    permuted.abs.cor <- abs(as.vector(cor(x, Yp)))
-    real.cor <- cor(x, y)
-
-    list (rho = real.cor,
-          pv = (1 + sum(permuted.abs.cor >= abs(real.cor))) / (no.perm + 1),
-          perm.abs.cor = permuted.abs.cor)
+#| code-fold: false
+perm_cor_test <- function(x, y, m = 2000) {
+  robs <- cor(x, y)
+  rperm <- replicate(m, cor(x, sample(y)))
+  list(rho = robs, pv = (1 + sum(abs(rperm) >= abs(robs))) / (m + 1), rperm = rperm)
 }
 
 ```
 
-#### Performance on Non-Normal Dependent Data
+#### Evaluation under $H_0$ and $H_1$
 
-We generate non-normal exponential variables with a direct dependency. The observed $\vert{}\hat\rho\vert{}$ rests squarely in the far right tail of the randomized permutation distribution.
+We generate non-normal $(X, Y)$: independent under $H_0$, and $Y = 0.4X + \epsilon$ under $H_1$. We check that the permutation p-values are uniform with size $\alpha$ under $H_0$, and estimate the power under $H_1$. Each of the $N$ simulated data sets is analysed with its own complete permutation test:
 
-```{r}
-#| label: fig-perm-cor-illustration
-#| cache: true
-#| fig-width: 8
-#| fig-height: 4.5
-#| fig-cap: "Illustrates a permutation test for correlation, which builds the null distribution by shuffling one variable and so does not rely on normality.
-#|   Permutation distribution of $|\\hat\\rho|$ for non-normal, dependent data, with the observed correlation marked in red: it sits far in the right tail."
-par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
+| data set | data under $H_0$ (or $H_1$) | $\rho^{obs}$ | permutation test | p-value | reject? |
+|:---:|:---:|:---:|:-----:|:---:|:-----:|
+| $k = 1$ | $(X^{[1]}, Y^{[1]})$ | $\rho^{obs}_{1}$ | $m$ permutations of $Y^{[1]}$ | $pv_1$ | $I(pv_1 < \alpha)$ |
+| $k = 2$ | $(X^{[2]}, Y^{[2]})$ | $\rho^{obs}_{2}$ | $m$ permutations of $Y^{[2]}$ | $pv_2$ | $I(pv_2 < \alpha)$ |
+| $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ |
+| $k = N$ | $(X^{[N]}, Y^{[N]})$ | $\rho^{obs}_{N}$ | $m$ permutations of $Y^{[N]}$ | $pv_N$ | $I(pv_N < \alpha)$ |
+| **summary** |  |  |  | histogram | $\widehat{\text{size}}$ (or $\widehat{\text{power}}$) $= \frac{1}{N}\sum_k I(pv_k < \alpha)$ |
 
-x <- rexp(30); y <- 0.4 * x + rexp(30)     # non-normal, dependent
-out <- perm.cor.test(x, y, no.perm = 2000)
-
-hist(out$perm.abs.cor, breaks = 40, col = "grey90",
-     xlab = TeX(r"($|\hat{\rho}|$ from permuted data)"),
-     main = TeX(sprintf(r"(Permutation distribution of $|\hat{\rho}|$; $\hat{\rho}^{obs} = %.3f$)",
-                        out$rho)))
-abline(v = abs(out$rho), col = 2, lwd = 2)
-
-c(rho_obs = out$rho, perm_pv = out$pv, pearson_pv = cor.test(x, y)$p.value)
-
-```
-
-#### Evaluating Null Validity
-
-Under an identical, normal distribution, the permutation test perfectly mirrors a standard analytical test, maintaining true uniformity under $H_0$.
+Below, $N = 500$ and $m = 500$.
 
 ```{r}
-#| label: fig-perm-cor-normal-h0
+#| label: fig-perm-cor-size-power
 #| cache: true
-#| fig-width: 8
-#| fig-height: 4.5
-#| fig-cap: "Verifies by simulation that the permutation test for correlation has the correct size, that is, uniform $p$-values under the null hypothesis, when the data are normal.
-#|   Null distribution of the permutation-test p-value for correlation, normal data: perfectly uniform, as with a standard analytical test."
-test.perm.norm <- function (no.sim, no.perm, n = 20)
-    replicate(no.sim, perm.cor.test(rnorm(n), rnorm(n), no.perm)$pv)
-
-pv <- test.perm.norm(2000, 100)
-
-par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
-hist(pv, 20, prob = TRUE, col = "grey90",
-     xlab = TeX(r"($2000$ permutation p-values, normal data)"),
-     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv < 0.05))))
-abline(h = 1, col = 4, lwd = 2)
-
-```
-
-Crucially, when testing non-normal, entirely independent data, the permutation test remains flawless. The standard Pearson test (relying on a normal approximation) struggles, while the permutation test yields a perfect uniform distribution without needing normality.
-
-```{r}
-#| label: fig-perm-cor-nonnormal-h0
-#| cache: true
-#| fig-cap: "Compares the permutation test with the analytical Pearson test for correlation on non-normal data, to show the advantage of not depending on distributional assumptions.
-#|   Null distribution of p-values for independent, non-normal data: the permutation test (left) stays uniform while the Pearson test (right) struggles."
-res <- replicate(500, {
-  x <- rexp(30); y <- rexp(30)                    # independent, non-normal
-  c(perm    = perm.cor.test(x, y, no.perm = 500)$pv,
-    pearson = cor.test(x, y)$p.value)
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Verifies by simulation that the permutation test for correlation has the correct size without any normality assumption, and estimates its power.
+#|   Permutation p-values for non-normal $(X, Y)$: independent under $H_0$ (left), and $Y = 0.4X + \\epsilon$ under $H_1$ (right); red bars are the rejections at $\\alpha = 0.05$."
+sim_cor <- function(n = 30, b = 0) { x <- rexp(n); list(x = x, y = b * x + rexp(n)) }
+eval_perm_cor <- function(b, N = 500) replicate(N, {
+  d <- sim_cor(b = b)
+  perm_cor_test(d$x, d$y, m = 500)$pv
 })
+pv_cor0 <- eval_perm_cor(b = 0)      # H0: independent
+pv_cor1 <- eval_perm_cor(b = 0.4)    # H1: dependent
 
-par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-
-for (m in c("perm", "pearson")) {
-  hist(res[m, ], breaks = 20, prob = TRUE, col = "grey90",
-       xlab = TeX(sprintf(r"($500$ %s p-values under $H_0$)", m)),
-       main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(res[m, ] < 0.05))))
-  abline(h = 1, col = 4, lwd = 2)
-}
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(pv_cor0, "permutation p-values under H0")
+hist_reject(pv_cor1, "permutation p-values under H1")
 
 ```
 
-### Example: Variable Selection and Optimization Bias
+Under $H_0$ the permutation p-values are uniform on $[0,1]$ and the size is close to 0.05, with no distributional assumption on $(X, Y)$. Under $H_1$ they pile up near 0, and the proportion below 0.05 is the power.
 
-This section addresses the second failure mode: calculating a p-value as if the model was fixed in advance, when the model was actually chosen by actively querying the data (p-hacking).
+### Example 3: Permuation Correction for Post-Selection Linear Regression
 
-**The Scenario:** You have a response $Y$ and 20 candidate predictors, $X_1 \dots X_{20}$, with a sample size of $n=50$. You test the null hypothesis that $Y$ has no relationship with any $X$.
+#### Setting
 
-A deeply flawed but common practice is to:
+We have a response $Y$ and $p = 20$ candidate predictors $X_1, \ldots, X_{20}$, with $n = 50$, and want to test $H_0$: $Y$ is unrelated to **all** of the $X$'s. A common practice is to:
 
-1. Scan for the single predictor $X_{k^*}$ that happens to correlate highest with $Y$.
-2. Run a standard linear regression $Y \sim X_{k^*}$.
-3. Report the standard t-test p-value for the slope.
+1. Pick the predictor $X_{k^*}$ most correlated with $Y$.
+2. Fit $Y \sim X_{k^*}$ and report the usual $t$-test p-value for its slope.
+
+Is this a valid test of $H_0$? Does it have size $\alpha$?
 
 ```{r}
 #| label: test-lm-sel
@@ -767,182 +1145,265 @@ test_lm_sel <- function(y, X) {
 
 ```
 
-```{r}
-#| label: test-lm-sel-fast
-### two-sided p-value of the slope in a simple linear regression, vectorized in r
-cor_pvalue <- function(r, n) 2 * pt(-abs(r * sqrt((n - 2) / (1 - r^2))), n - 2)
-test_lm_sel_fast <- function(y, X) cor_pvalue(max(abs(cor(X, y))), length(y))
-sim_null <- function(n = 50, p = 20) list(y = rnorm(n), X = matrix(rnorm(n * p), n, p))
+The $t$-test p-value assumes that $X_{k^*}$ was **chosen in advance**. Selecting the best of 20 predictors *after* looking at the data means that, even under $H_0$, $\max_k \lvert\hat\rho_k\rvert$ tends to be large. The reported p-value ignores this selection.
 
-d <- sim_null()
-c(lm = test_lm_sel(d$y, d$X), fast = test_lm_sel_fast(d$y, d$X))   # identical
+#### Simulation for Evaluating `test_lm_sel`
+
+We simulate $N = 2000$ data sets with $Y = \beta X_1 + \epsilon$: $\beta = 0$ under $H_0$, and $\beta = 0.5$ under $H_1$.
+
+```{r}
+#| label: fig-test-lm-sel
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Demonstrates that choosing the best of many predictors using the data and then testing it as if it had been chosen in advance gives an invalid p-value.
+#|   p-values of `test_lm_sel` under $H_0$ (left) and $H_1: \\beta = 0.5$ (right); under $H_0$ they are far from uniform, with a rejection rate far above 0.05."
+sim_lm <- function(n = 50, p = 20, beta = 0) {
+  X <- matrix(rnorm(n * p), n, p); list(y = beta * X[, 1] + rnorm(n), X = X)
+}
+pv_sel0 <- replicate(2000, { d <- sim_lm(beta = 0);   test_lm_sel(d$y, d$X) })
+pv_sel1 <- replicate(2000, { d <- sim_lm(beta = 0.5); test_lm_sel(d$y, d$X) })
+
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(pv_sel0, "test_lm_sel p-values under H0")
+hist_reject(pv_sel1, "test_lm_sel p-values under H1")
 
 ```
 
-By intentionally fishing for the maximum correlation first, the naive test is overwhelmingly likely to discover "significant" correlations strictly out of random noise.
-
-```{r}
-#| label: fig-test-lm-sel-h0
-#| cache: true
-#| fig-width: 8
-#| fig-height: 4.5
-#| fig-cap: "Demonstrates optimization bias: when the best of many candidate predictors is chosen using the data and then tested as if it had been chosen in advance, the usual $p$-value is invalid.
-#|   Null distribution of the naive p-value after picking the best-correlated of 20 predictors: massively inflated near 0, showing the false-positive cascade from optimization bias."
-pv_sel <- replicate(2000, { d <- sim_null(); test_lm_sel_fast(d$y, d$X) })
-
-par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
-hist(pv_sel, breaks = 20, prob = TRUE, col = "grey90",
-     xlab = TeX(r"($2000$ naive p-values after selection, $H_0$ true)"),
-     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv_sel < 0.05))))
-abline(h = 1, col = 4, lwd = 2)
-
-```
-
-As the histogram proves, the false-positive rate under this naive approach explodes far above the accepted 0.05 threshold.
+The true size is far above 0.05: `test_lm_sel` rejects a true $H_0$ far too often. Under $H_0$ its p-value is **not** uniform, which is a general diagnostic for an invalid test. Its high rejection rate under $H_1$ is not real power, since the test does not have size $\alpha$.
 
 #### The Permutation Fix
 
-To repair the p-value, we must embed the *entire selection process* inside the permutation loop.
+The fix is to repeat the **whole procedure** (select the most correlated variable, fit the linear model, report its p-value) on permuted responses, and to compare the observed p-value with the permutation distribution of p-values:
 
-1. Record the naive p-value from the observed data.
-2. Shuffle $Y$, re-select the best predictor, and compute a new p-value. Repeat $N$ times.
-3. The true valid p-value is the proportion of permuted runs that beat the original observed run.
+1. Compute $p^{obs}$, the p-value of `test_lm_sel` on $(Y, X)$.
+2. For $j = 1, \ldots, m$: permute $Y$, and compute $p^{(j)}$, the p-value of `test_lm_sel` on $(Y^{(j)}, X)$, **re-doing the selection** each time.
+3. Compute $\widehat{\text{p-value}} = \dfrac{1 + \# \{j : p^{(j)} \le p^{obs}\}}{m+1}$, the proportion of permuted p-values at least as small as the observed one.
+
+The selected index $k^*(Y) = \arg\max_k \lvert\hat\rho(X_k, Y)\rvert$ is a function of the response, so each permuted $Y^{(j)}$ gets its **own** selected predictor $X_{k^*(Y^{(j)})}$, as @fig-perm-lm-sel-tree shows.
+
+```{r}
+#| label: fig-perm-lm-sel-tree
+#| fig-width: 16
+#| fig-height: 7.5
+#| fig-cap: "Shows why the selection step must be repeated inside the permutation loop: the selected predictor depends on the response, so every permuted response selects its own predictor.
+#|   Tree of the permutation test after variable selection: the fixed $X$ is paired with the observed $Y$ and with each permuted $Y^{(j)}$, each response selects its own predictor $X_{k^*(Y^{(j)})}$, and the resulting slope p-value $p^{(j)}$ is compared with $p^{obs}$."
+par(mar = c(0, 0, 0, 0))
+plot(NA, xlim = c(0, 13.2), ylim = c(0.2, 6.3), axes = FALSE, xlab = "", ylab = "")
+box_at <- function(x, y, lab, col = "grey95", w = 1, h = 0.36) {
+  rect(x - w, y - h, x + w, y + h, col = col, border = "grey40", lwd = 1.5)
+  text(x, y, lab, cex = 1.25)
+}
+arr <- function(x0, y0, x1, y1) arrows(x0, y0, x1, y1, length = 0.1, lwd = 1.5, col = "grey30")
+xs <- c(1.05, 3.6, 6.2, 8.8, 11.9)              # data, response, selection, p-value, compare
+ys <- c(5, 3.8, 2.6, 1.55, 0.6)                 # branches: observed, 1, 2, ..., m
+text(xs, 6.15, c("data", "response", "selected predictor", "p-value of slope", "as extreme?"),
+     font = 2, cex = 1.15)
+text(mean(xs[2:3]), 5.5, "max |cor|", cex = 1, col = "grey30")
+text(mean(xs[3:4]), 5.5, "lm t-test", cex = 1, col = "grey30")
+box_at(xs[1], 2.8, expression(atop(X ~ "fixed", (n %*% 20))), col = "lightyellow", h = 0.55)
+resp <- list(quote(Y), quote(Y^(1)), quote(Y^(2)), NULL, quote(Y^(m)))
+sel  <- list(quote(X[k^"*"*(Y)]), quote(X[k^"*"*(Y^(1))]), quote(X[k^"*"*(Y^(2))]), NULL,
+             quote(X[k^"*"*(Y^(m))]))
+pv   <- list(quote(p^obs), quote(p^(1)), quote(p^(2)), NULL, quote(p^(m)))
+cmp  <- list(NULL, quote(I(p^(1) <= p^obs)), quote(I(p^(2) <= p^obs)), NULL, quote(I(p^(m) <= p^obs)))
+for (b in c(1, 2, 3, 5)) {
+  fill <- if (b == 1) "lightblue" else "grey95"
+  arr(xs[1] + 1, 2.8, xs[2] - 1, ys[b])
+  box_at(xs[2], ys[b], as.expression(resp[[b]]), col = fill)
+  arr(xs[2] + 1, ys[b], xs[3] - 1, ys[b])
+  box_at(xs[3], ys[b], as.expression(sel[[b]]), col = fill)
+  arr(xs[3] + 1, ys[b], xs[4] - 1, ys[b])
+  box_at(xs[4], ys[b], as.expression(pv[[b]]), col = fill)
+  if (b > 1) {
+    arr(xs[4] + 1, ys[b], xs[5] - 1.2, ys[b])
+    box_at(xs[5], ys[b], as.expression(cmp[[b]]), col = "mistyrose", w = 1.2)
+  }
+}
+text(xs[2:5], ys[4] + 0.1, ":", cex = 2.2, font = 2)
+text(1.05, 4.3, "observed", col = "steelblue", cex = 1.05)
+text(1.05, 1.3, "permute Y", col = "grey30", cex = 1.05)
+
+```
+
+Keeping $X_{k^*(Y)}$ fixed and only permuting $Y$ would **not** reproduce the selection step, and the resulting test would still be invalid.
 
 ```{r}
 #| label: perm-lm-sel
-perm_lm_sel <- function(y, X, N = 500) {
-  n <- length(y)
-  pobs <- test_lm_sel_fast(y, X)
-
-  Yp <- replicate(N, sample(y))            # n by N permuted responses
-  rmax <- apply(abs(cor(X, Yp)), 2, max)   # selection redone in each column
-  pperm <- cor_pvalue(rmax, n)
-
-  (1 + sum(pperm <= pobs)) / (N + 1)
+#| code-fold: false
+perm_lm_sel <- function(y, X, m = 500) {
+  pobs <- test_lm_sel(y, X)
+  pperm <- replicate(m, test_lm_sel(sample(y), X))
+  (1 + sum(pperm <= pobs)) / (m + 1)
 }
 
 ```
+
+#### Evaluation under $H_0$ and $H_1$
+
+We simulate $(Y, X)$ from `sim_lm`, with $\beta = 0$ under $H_0$ and $\beta = 0.5$ under $H_1$, and run a complete permutation test on each data set:
+
+| data set | data under $H_0$ (or $H_1$) | $p^{obs}$ | permutation test | p-value | reject? |
+|:---:|:---:|:---:|:-----:|:---:|:-----:|
+| $k = 1$ | $(Y^{[1]}, X^{[1]})$ | $p^{obs}_{1}$ | $m$ permutations of $Y^{[1]}$ | $pv_1$ | $I(pv_1 < \alpha)$ |
+| $k = 2$ | $(Y^{[2]}, X^{[2]})$ | $p^{obs}_{2}$ | $m$ permutations of $Y^{[2]}$ | $pv_2$ | $I(pv_2 < \alpha)$ |
+| $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ | $\vdots$ |
+| $k = N$ | $(Y^{[N]}, X^{[N]})$ | $p^{obs}_{N}$ | $m$ permutations of $Y^{[N]}$ | $pv_N$ | $I(pv_N < \alpha)$ |
+| **summary** |  |  |  | histogram | $\widehat{\text{size}}$ (or $\widehat{\text{power}}$) $= \frac{1}{N}\sum_k I(pv_k < \alpha)$ |
+
+Below, $N = 300$ and $m = 500$.
 
 ```{r}
 #| label: fig-perm-lm-sel-size-power
 #| cache: true
-#| fig-width: 8
-#| fig-height: 4.5
-#| fig-cap: "Shows that a permutation test which repeats the whole selection step on each shuffled data set corrects for the selection and restores valid $p$-values.
-#|   Null distribution of the permutation-corrected p-value after variable selection: uniform again, restoring valid size."
-sim_alt <- function(n = 50, p = 20, beta = 0.5) {
-  X <- matrix(rnorm(n * p), n, p); list(y = beta * X[, 1] + rnorm(n), X = X)
-}
+#| fig-width: 10
+#| fig-height: 4
+#| fig-cap: "Shows that a permutation test which repeats the whole selection step on each shuffled data set restores valid p-values while keeping good power.
+#|   Permutation p-values after variable selection under $H_0$ (left) and $H_1: \\beta = 0.5$ (right): uniform with size near 0.05 under $H_0$, and concentrated near 0 under $H_1$."
+eval_perm_lm_sel <- function(beta, N = 300) replicate(N, {
+  d <- sim_lm(beta = beta)
+  perm_lm_sel(d$y, d$X, m = 500)
+})
+pv_perm0 <- eval_perm_lm_sel(beta = 0)      # H0: Y unrelated to X
+pv_perm1 <- eval_perm_lm_sel(beta = 0.5)    # H1: Y depends on X1
 
-pv_perm0 <- replicate(300, { d <- sim_null(); perm_lm_sel(d$y, d$X) })
-pv_perm1 <- replicate(300, { d <- sim_alt();  perm_lm_sel(d$y, d$X) })
-pv_sel1  <- replicate(300, { d <- sim_alt();  test_lm_sel_fast(d$y, d$X) })
-
-par (mfrow = c(1, 1), mar = c(4, 4, 3, 1))
-hist(pv_perm0, breaks = 20, prob = TRUE, col = "grey90",
-     xlab = TeX(r"($300$ permutation p-values, $H_0$ true)"),
-     main = TeX(sprintf(r"(size at $\alpha = 0.05$: $%.3f$)", mean(pv_perm0 < 0.05))))
-abline(h = 1, col = 4, lwd = 2)
-
-rbind(test_lm_sel = c(size = mean(pv_sel < 0.05),   power = mean(pv_sel1 < 0.05)),
-      permutation = c(size = mean(pv_perm0 < 0.05), power = mean(pv_perm1 < 0.05)))
+par(mfrow = c(1, 2), mar = c(4, 4, 2.5, 1))
+hist_reject(pv_perm0, "perm_lm_sel p-values under H0")
+hist_reject(pv_perm1, "perm_lm_sel p-values under H1")
 
 ```
 
-The permutation distribution restores the flat, uniform distribution. Because power can only be honestly compared between tests of the same size, the permutation test provides the mathematically sound baseline.
+Under $H_0$ the permutation p-values are uniform and the size is close to 0.05; under $H_1$ they pile up near 0, and the proportion below 0.05 is an honest power. The naive test rejects more often under $H_1$ only because it also rejects far too often under $H_0$: power comparisons are meaningful only **between tests of the same size**.
 
-### Example: A Power Regression Test
 
-The same optimization bias occurs when iterating through continuous power transformations (e.g., $X^{0.5}, X^2$) to maximize correlation between $X^q$ and $Y$. Because the selection rule adapts to the data, applying standard analytical p-values directly to the final "optimized" model will yield artificially inflated significance.
+### Advanced Computation-Intensive Tests
 
-We employ the same fix: encapsulate the entire search process inside the permutation randomization.
+The examples above exposed two ways in which a textbook p-value can be biased:
+
+1. **A misspecified null distribution.** The reference distribution is derived under assumptions (normality, known parameters, large samples) that the data do not satisfy, as for the $t$-test on heavy-tailed data.
+2. **A data-dependent procedure.** The statistic is the result of a search (over predictors, models, thresholds or tuning parameters), but its p-value is computed as if the final choice had been fixed in advance, as for `test_lm_sel`.
+
+Every method reviewed below corrects these biases with the same recipe: identify what is random under $H_0$, **re-generate data from $H_0$ by simulation or resampling, re-run the entire procedure on each replicate**, and read the p-value off the resulting reference distribution. The methods differ in how the null data are produced: by permutation when $H_0$ is an exchangeability hypothesis, by a parametric bootstrap from a fitted null model when $H_0$ leaves parameters unknown, and by resampling one variable given the others when $H_0$ is a conditional independence hypothesis.
+
+#### Monte Carlo Tests
+
+The idea of computing a p-value by ranking the observed statistic among statistics simulated under $H_0$ goes back to [Barnard (1963)](#barnard1963) and was developed by [Hope (1968)](#hope1968). If $T^{(1)}, \ldots, T^{(m)}$ are simulated under a **simple** null hypothesis, then under $H_0$ the observed $T$ is exchangeable with them, so
+
+$$
+\widehat{\text{p-value}} = \frac{1 + \#\{j : T^{(j)} \ge T^{obs}\}}{m + 1}
+$$
+
+gives an **exactly** valid test for any $m$, not just as $m \to \infty$. [Phipson and Smyth (2010)](#phipson2010) show that the tempting estimate $\#\{j : T^{(j)} \ge T^{obs}\}/m$ can be zero and is anti-conservative, which matters most when many tests are corrected for multiplicity. [Besag and Clifford (1989)](#besag1989) extend Monte Carlo tests to nulls that can only be simulated by MCMC, and [Besag and Clifford (1991)](#besag1991) give a sequential version that stops simulating early once the p-value is clearly large, saving most of the computation for unremarkable data.
+
+#### Parametric Bootstrap Tests with Estimated Parameters
+
+Most null hypotheses are composite: they specify a family of distributions but not its parameters. Plugging estimated parameters into a reference distribution derived for known parameters biases the test. The classic example is the Kolmogorov–Smirnov (KS) test of normality with the mean and variance estimated from the data. The fitted normal is closer to the data than the true normal, so the KS distance is too small and the test is **very conservative**. [Lilliefors (1967)](#lilliefors1967) tabulated the correct null distribution by Monte Carlo.
+
+The general remedy is the **parametric bootstrap test**: fit the model under $H_0$, simulate data sets from the fitted null model, **re-estimate the parameters on each simulated data set**, and recompute the statistic. For normality testing, the KS statistic of standardized data is location–scale invariant, so its null distribution does not depend on $(\mu, \sigma)$ at all, and simulating from $N(0,1)$ gives an exact Monte Carlo test. [Stute et al. (1993)](#stute1993) establish the validity of this bootstrap for general goodness-of-fit tests with estimated parameters.
 
 ```{r}
-#| label: power-regression-functions
-pow.matrix <- function (x, powers = seq(0.1, 4.0, by = 0.1))
-{
-    if (!is.vector(x, "numeric")) stop("Argument should be a numeric vector")
-    if (any(x < 0)) stop("Predictors must be non-negative")
-    outer(x, powers, "^")
+#| label: ks-normality-functions
+ks_stat <- function(x) {                       # KS distance to the fitted normal
+  z <- sort((x - mean(x)) / sd(x)); n <- length(z); p <- pnorm(z)
+  max(pmax((1:n) / n - p, p - (0:(n - 1)) / n))
 }
-
-pvalue.lm.pow <- function (Y, Xp)
-{
-    Y <- as.matrix(Y)
-    rmax <- apply(abs(cor(Xp, Y)), 2, max)
-    cor_pvalue(rmax, nrow(Y))
-}
-
-test.lm.power <- function (Xp, N)
-    pvalue.lm.pow(matrix(rnorm(nrow(Xp) * N), nrow(Xp), N), Xp)
-
-pvalue.perm.lm.pow <- function (y, Xp, no.perm = 100)
-{
-    actual <- pvalue.lm.pow(y, Xp)
-    permuted <- pvalue.lm.pow(replicate(no.perm, sample(y)), Xp)
-    (1 + sum(permuted <= actual)) / (no.perm + 1)
-}
-
-test.perm.power <- function (x, Xp, power.sim, N = 100, resid.std.dev = 1, no.perm = 99)
-{
-    n <- length(x)
-    vapply(1:N,
-           function(k) pvalue.perm.lm.pow(x^power.sim + rnorm(n, 0, resid.std.dev),
-                                          Xp, no.perm),
-           numeric(1))
+ks_naive <- function(x)                        # pretends (mean, sd) were known
+  suppressWarnings(ks.test(x, "pnorm", mean(x), sd(x))$p.value)
+ks_mc <- function(x, m = 200) {                # re-estimates (mean, sd) on each null data set
+  Dnull <- replicate(m, ks_stat(rnorm(length(x))))
+  (1 + sum(Dnull >= ks_stat(x))) / (m + 1)
 }
 
 ```
 
-#### Diagnostic Uniformity and Statistical Power
-
-As observed previously, the naive approach causes a massive false-positive cascade (left). The permutation algorithm absorbs the optimization phase, correcting the bias and yielding perfectly valid, uniform p-values (right).
-
 ```{r}
-#| label: fig-power-regression-h0
+#| label: fig-ks-normality
 #| cache: true
-#| fig-cap: "Extends the selection problem to choosing the best power transformation of a predictor, comparing the naive test with a permutation test that accounts for the search.
-#|   Null distribution of p-values for the best power transformation of $X$: naive selection (left) inflates the false-positive rate, while the permutation fix (right) restores uniformity."
-x <- exp(rnorm(20))
-Xp <- pow.matrix(x)
+#| fig-width: 12
+#| fig-height: 7
+#| fig-cap: "Shows how plugging estimated parameters into a textbook null distribution biases a goodness-of-fit test, and how a parametric bootstrap that re-estimates the parameters on every simulated data set removes the bias.
+#|   p-values of the KS normality test with estimated mean and variance for $n = 50$: the naive test (top) against the Monte Carlo test (bottom), for normal data ($H_0$), $t_3$ data and exponential data; red bars are the rejections at $\\alpha = 0.05$."
+eval_ks <- function(rdata, N = 1000) replicate(N, {
+  x <- rdata(); c(naive = ks_naive(x), mc = ks_mc(x))
+})
+ks_settings <- list("normal (H0)" = function() rnorm(50),
+                    "t3 (H1)"     = function() rt(50, df = 3),
+                    "exp (H1)"    = function() rexp(50))
+ks_pv <- lapply(ks_settings, eval_ks)
 
-naive.pv <- test.lm.power(Xp, 1000)
-perm.pv <- test.perm.power(x, Xp, power.sim = 0, N = 1000, no.perm = 99)
-
-par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-
-hist(naive.pv, nclass = 20, prob = TRUE, col = "grey90",
-     xlab = TeX(r"($1000$ naive p-values, $H_0$ true)"),
-     main = TeX(sprintf(r"(naive test, size $= %.3f$)", mean(naive.pv < 0.05))))
-abline(h = 1, col = 4, lwd = 2)
-
-hist(perm.pv, nclass = 20, prob = TRUE, col = "grey90",
-     xlab = TeX(r"($1000$ permutation p-values, $H_0$ true)"),
-     main = TeX(sprintf(r"(permutation test, size $= %.3f$)", mean(perm.pv < 0.05))))
-abline(h = 1, col = 4, lwd = 2)
+par(mfrow = c(2, 3), mar = c(4, 4, 2.5, 1))
+for (test in c("naive", "mc"))
+  for (s in names(ks_pv))
+    hist_reject(ks_pv[[s]][test, ], paste(test, "KS test:", s))
 
 ```
 
-With the size strictly regulated, we inject mathematical signals ($Y = X^{1.5} + \epsilon$ and $Y = X^{0.5} + \epsilon$) to observe statistical power dynamically capturing the non-linear true signals.
+Under $H_0$ the naive p-values pile up near 1 and almost never reject, while the Monte Carlo p-values are uniform. Because the naive test is so conservative, it also has little power against both heavy-tailed and skewed alternatives. Correcting the size recovers most of that power.
 
-```{r}
-#| label: fig-power-regression-power
-#| cache: true
-#| fig-cap: "Checks that the corrected permutation test still has good power to detect genuine nonlinear relationships, so that restoring validity does not cost too much sensitivity.
-#|   Power of the permutation test to detect $Y = X^{1.5} + \\epsilon$ (left) and $Y = X^{0.5} + \\epsilon$ (right) against the null of no relationship."
-perm.pv.alt1 <- test.perm.power(x, Xp, power.sim = 1.5, N = 1000, no.perm = 99)
-perm.pv.alt2 <- test.perm.power(x, Xp, power.sim = 0.5, N = 1000, no.perm = 99)
+Two guidelines from [Hall and Wilson (1991)](#hall1991) apply to every bootstrap test. First, resample from a distribution that **satisfies $H_0$** (for example, re-centre the data before resampling when testing a mean), not from the empirical distribution of the original data. Second, prefer an approximately **pivotal** statistic, such as a studentized one, whose null distribution depends little on the unknown parameters.
 
-par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+#### Maximum Statistics and Multiple Testing
 
-hist(perm.pv.alt1, nclass = 20, col = "grey90",
-     xlab = TeX(r"($1000$ permutation p-values)"),
-     main = TeX(sprintf(r"($H_1: y = x^{1.5} + \epsilon$, power $= %.3f$)",
-                        mean(perm.pv.alt1 < 0.05))))
+The selection example is one instance of a general problem: the reported statistic is the **maximum** of many statistics, $T_{\max} = \max_k T_k$, and each $T_k$ is referred to its own marginal null distribution. [Westfall and Young (1993)](#westfall1993) turned the permutation fix into a general method for multiple testing. Permuting the rows of the response jointly across all $K$ hypotheses and recording $\max_k T_k$ on each permutation gives adjusted p-values
 
-hist(perm.pv.alt2, nclass = 20, col = "grey90",
-     xlab = TeX(r"($1000$ permutation p-values)"),
-     main = TeX(sprintf(r"($H_1: y = x^{0.5} + \epsilon$, power $= %.3f$)",
-                        mean(perm.pv.alt2 < 0.05))))
+$$
+\tilde p_k = \frac{1 + \#\{j : \max_{l} T_l^{(j)} \ge T_k^{obs}\}}{m + 1},
+$$
 
-```
+which control the family-wise error rate. Unlike the Bonferroni correction, the **maxT** (and the analogous **minP**) procedure automatically accounts for the correlation among the $T_k$, and so is less conservative when the tests are dependent, as with nearby genes, voxels or genetic markers.
+
+**Scan statistics** follow the same pattern with a search over locations. The spatial scan statistic of [Kulldorff (1997)](#kulldorff1997) maximizes a likelihood ratio over many circular windows to find a disease cluster, and obtains its p-value by Monte Carlo replication of the whole search under a null of no clustering.
+
+#### Nuisance Parameters Identified Only under the Alternative
+
+In some problems the search is over a parameter that has no meaning under $H_0$. Examples are the unknown date of a structural break in a regression, the threshold of a threshold autoregression, and the location of an extra component in a mixture model. [Davies (1977)](#davies1977) showed that the natural statistic is then a supremum over the unidentified parameter, and that it does not have the usual $\chi^2$ distribution. [Andrews (1993)](#andrews1993) derived the asymptotic null distribution of the sup-Wald (sup-$F$) test for a change point at an unknown date. Because that distribution depends on the design, [Hansen (1996)](#hansen1996) proposed obtaining p-values by simulation.
+
+Testing the **number of components** of a mixture is a related case in which the regularity conditions for the likelihood ratio test fail because the null lies on the boundary of the parameter space. [McLachlan (1987)](#mclachlan1987) proposed calibrating the likelihood ratio statistic by a **parametric bootstrap**. Data sets are simulated from the fitted $g$-component model, and **both** the $g$- and $(g+1)$-component models are refitted on each one, since the maximization over the extra component is exactly the search that biases the naive $\chi^2$ reference.
+
+#### Calibrating Asymptotic Tests: The Double Bootstrap
+
+A test based on an asymptotic reference distribution has a level error that shrinks only slowly with $n$. [Beran (1988)](#beran1988) proposed **prepivoting**: transform the statistic by its own estimated (bootstrap) null CDF, which makes it closer to pivotal and reduces the level error. Iterating the idea gives the **double bootstrap**. The p-value $\hat p$ is computed by an inner bootstrap, and an outer bootstrap estimates the distribution of $\hat p$ under the fitted null model. The corrected p-value is $\Pr^*(\hat p^* \le \hat p)$, which is exactly the "p-value of a p-value" idea behind the permutation fix for variable selection. The cost is about $B_1 \times B_2$ model fits; [Davison and Hinkley (1997)](#davison1997) discuss the implementation and when the extra accuracy is worth it.
+
+#### Conditional Randomization Tests
+
+Permuting a response tests **marginal** independence. In regression we usually want to test whether $X_k$ is associated with $Y$ **given** the other covariates $X_{-k}$, which cannot be done by simply permuting $X_k$ when the covariates are correlated. The **conditional randomization test** of [Candès et al. (2018)](#candes2018) assumes the distribution of $X_k \mid X_{-k}$ is known or well estimated. It re-draws $X_k^{(j)}$ from that conditional distribution, recomputes any test statistic (for example, the absolute lasso coefficient of $X_k$, with the tuning parameter re-selected each time), and ranks the observed statistic among the simulated ones. The p-value is exactly valid for any statistic, however it was tuned, as long as the whole fitting procedure is repeated on every draw. The **model-X knockoffs** in the same paper replace the $m$ refits by a single fit with synthetic "knockoff" copies of all the covariates, which makes the idea feasible for thousands of variables.
+
+#### Testing the Performance of Tuned Predictive Models
+
+A cross-validated accuracy is itself an optimistically biased statistic when the classifier's features or tuning parameters were chosen on the same data. [Ojala and Garriga (2010)](#ojala2010) test whether a classifier has learned anything by permuting the class labels and re-running the **complete** pipeline of feature selection, tuning and cross-validation on each permuted data set. The permutation distribution of the accuracy then serves as its null distribution. Re-running only the final cross-validation step on permuted labels, with the features selected on the original labels, repeats the mistake of keeping $X_{k^*(Y)}$ fixed in the selection example.
+
+#### Summary
+
+| method | source of bias | how null data are generated | what is re-run on each replicate |
+|:---|:---|:---|:---|
+| Monte Carlo test | unknown null distribution | simulate from the simple $H_0$ | the statistic |
+| Parametric bootstrap (Lilliefors, mixtures) | parameters estimated from the data | simulate from the fitted null model | parameter estimation and the statistic |
+| Permutation maxT / minP | maximum over many tests | permute the response jointly | all $K$ statistics and their maximum |
+| Scan and sup-tests | search over locations or change points | simulate or permute under $H_0$ | the whole search |
+| Double bootstrap | slow asymptotics | nested bootstrap from the fitted null model | the inner bootstrap p-value |
+| Conditional randomization | correlated covariates, tuned fits | draw $X_k \mid X_{-k}$ | the full model fit, including tuning |
+| Permutation test of a classifier | feature selection and tuning | permute the labels | the complete training pipeline |
+
+The common lesson is the one from the variable-selection example: a resampling test is valid only if **everything that looked at the data** is repeated on every null replicate.
+
+#### References
+
+::: {#refs-advanced-tests}
+- []{#andrews1993}Andrews, D. W. K. (1993). Tests for parameter instability and structural change with unknown change point. *Econometrica*, 61(4), 821–856.
+- []{#barnard1963}Barnard, G. A. (1963). Discussion of "The spectral analysis of point processes" by M. S. Bartlett. *Journal of the Royal Statistical Society, Series B*, 25, 294.
+- []{#beran1988}Beran, R. (1988). Prepivoting test statistics: A bootstrap view of asymptotic refinements. *Journal of the American Statistical Association*, 83(403), 687–697.
+- []{#besag1989}Besag, J. and Clifford, P. (1989). Generalized Monte Carlo significance tests. *Biometrika*, 76(4), 633–642.
+- []{#besag1991}Besag, J. and Clifford, P. (1991). Sequential Monte Carlo p-values. *Biometrika*, 78(2), 301–304.
+- []{#candes2018}Candès, E., Fan, Y., Janson, L. and Lv, J. (2018). Panning for gold: 'Model-X' knockoffs for high dimensional controlled variable selection. *Journal of the Royal Statistical Society, Series B*, 80(3), 551–577.
+- []{#davies1977}Davies, R. B. (1977). Hypothesis testing when a nuisance parameter is present only under the alternative. *Biometrika*, 64(2), 247–254.
+- []{#davison1997}Davison, A. C. and Hinkley, D. V. (1997). *Bootstrap Methods and Their Application*. Cambridge University Press.
+- []{#hall1991}Hall, P. and Wilson, S. R. (1991). Two guidelines for bootstrap hypothesis testing. *Biometrics*, 47(2), 757–762.
+- []{#hansen1996}Hansen, B. E. (1996). Inference when a nuisance parameter is not identified under the null hypothesis. *Econometrica*, 64(2), 413–430.
+- []{#hope1968}Hope, A. C. A. (1968). A simplified Monte Carlo significance test procedure. *Journal of the Royal Statistical Society, Series B*, 30(3), 582–598.
+- []{#kulldorff1997}Kulldorff, M. (1997). A spatial scan statistic. *Communications in Statistics – Theory and Methods*, 26(6), 1481–1496.
+- []{#lilliefors1967}Lilliefors, H. W. (1967). On the Kolmogorov–Smirnov test for normality with mean and variance unknown. *Journal of the American Statistical Association*, 62(318), 399–402.
+- []{#mclachlan1987}McLachlan, G. J. (1987). On bootstrapping the likelihood ratio test statistic for the number of components in a normal mixture. *Applied Statistics*, 36(3), 318–324.
+- []{#ojala2010}Ojala, M. and Garriga, G. C. (2010). Permutation tests for studying classifier performance. *Journal of Machine Learning Research*, 11, 1833–1863.
+- []{#phipson2010}Phipson, B. and Smyth, G. K. (2010). Permutation p-values should never be zero: Calculating exact p-values when permutations are randomly drawn. *Statistical Applications in Genetics and Molecular Biology*, 9(1), Article 39.
+- []{#stute1993}Stute, W., González Manteiga, W. and Presedo Quindimil, M. (1993). Bootstrap based goodness-of-fit tests. *Metrika*, 40, 243–256.
+- []{#westfall1993}Westfall, P. H. and Young, S. S. (1993). *Resampling-Based Multiple Testing: Examples and Methods for p-Value Adjustment*. Wiley.
+:::
