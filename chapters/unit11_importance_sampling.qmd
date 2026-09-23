@@ -1117,6 +1117,134 @@ visible in the shape of the curve rather than only in a single summary
 number.
 
 
+## Example 4: Area of an Irregular Region
+
+The two fundamental estimators from [Fundamental Estimators] were stated for
+a generic unnormalized target $f$, but nothing in their derivation assumes
+$f$ is a likelihood or a density. Taking $f(\theta) = \mathbf 1_A(\theta)$,
+the indicator of a region $A \subset \mathbb R^2$, collapses $C_f = \int
+f(\theta)\,d\theta$ to $\text{Area}(A)$, and the ratio-of-normalizing-constants
+estimator $\widehat{C_f/C_g} = \frac1S\sum_s w_s$ becomes an importance-sampling
+estimator of that area. When $g$ is uniform on a bounding box, this is exactly
+the "throw darts and count hits" trick used earlier to estimate $\pi$ as the
+area of a circle — importance sampling only starts to matter once the region
+is irregular, or small relative to its bounding box, so that the choice of
+$g$ affects how many of the $S$ draws actually land somewhere useful.
+
+Consider a region built by a Boolean combination of two disks — a crescent
+$A = D_1 \setminus D_2$, where $D_1$ is the unit disk centred at the origin
+and $D_2$ is a disk of radius $r_2 = 0.9$ centred at $(d, 0)$ with $d = 0.3$,
+overlapping most of $D_1$. This is a **constructive solid geometry (CSG)**
+shape: testing whether a point lies in $A$ is a one-line computation, but the
+area of $A$ itself has no elementary formula once more than a couple of
+primitives are combined this way — exactly the situation CAD and engineering
+software face after a handful of Boolean operations on solids. Two circles
+are simple enough that a closed form still exists, from the standard
+circle-intersection formula; it is kept here only to check the Monte Carlo
+estimates against ground truth.
+
+```{r}
+#| label: crescent-functions
+r1 <- 1; r2 <- 0.9; d <- 0.3
+in_A <- function(x, y) (x^2 + y^2 <= r1^2) & ((x - d)^2 + y^2 > r2^2)
+
+### exact area of A, from the circle-circle intersection formula; used only
+### to check the Monte Carlo estimates below
+circle_intersection_area <- function(r1, r2, d) {
+    r1^2 * acos((d^2 + r1^2 - r2^2) / (2 * d * r1)) +
+    r2^2 * acos((d^2 + r2^2 - r1^2) / (2 * d * r2)) -
+    0.5 * sqrt((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2))
+}
+area_true <- pi * r1^2 - circle_intersection_area(r1, r2, d)
+
+### bounding box for the naive proposal: generous, with no attempt to hug A
+xlim <- c(-2, 2); ylim <- c(-2, 2)
+
+### importance-sampling estimate of Area(A) under one of two proposals:
+### "box" samples uniformly from the bounding box; "disk" samples uniformly
+### from D1, which is known to contain A even though A itself is not known
+### in closed form
+crescent_is <- function(proposal, S, seed) {
+    set.seed(seed)
+    if (proposal == "box") {
+        x <- runif(S, xlim[1], xlim[2]); y <- runif(S, ylim[1], ylim[2])
+        g <- 1 / ((xlim[2] - xlim[1]) * (ylim[2] - ylim[1]))
+    } else {
+        rr <- r1 * sqrt(runif(S)); th <- runif(S, 0, 2 * pi)
+        x <- rr * cos(th); y <- rr * sin(th)
+        g <- 1 / (pi * r1^2)
+    }
+    w <- in_A(x, y) / g
+    list(x = x, y = y, hit = in_A(x, y),
+         estimate = mean(w), me = 1.96 * sd(w) / sqrt(S), ess = ess(w))
+}
+```
+
+```{r}
+#| label: fig-crescent-darts
+#| echo: true
+#| fig-width: 10
+#| fig-height: 5
+#| fig-cap: "Compares a naive bounding-box proposal with a proposal matched to
+#|   the target's support for estimating the area of an irregular region.
+#|   1,500 darts thrown at the crescent $A = D_1 \\setminus D_2$ (outlined in
+#|   black) from a generous bounding box (left) and from $D_1$ itself (right);
+#|   blue points land in $A$, red points miss."
+res_box_vis  <- crescent_is("box",  1500, seed = 1)
+res_disk_vis <- crescent_is("disk", 1500, seed = 1)
+theta_seq <- seq(0, 2 * pi, length.out = 200)
+
+par(mfrow = c(1, 2))
+plot(res_box_vis$x, res_box_vis$y, asp = 1, pch = 20,
+     col = ifelse(res_box_vis$hit, "steelblue", "tomato"),
+     xlab = "x", ylab = "y",
+     main = paste(sum(res_box_vis$hit), "of 1500 hit A (box)"))
+rect(xlim[1], ylim[1], xlim[2], ylim[2], border = "black", lwd = 2)
+lines(r1 * cos(theta_seq), r1 * sin(theta_seq), lwd = 2)
+lines(d + r2 * cos(theta_seq), r2 * sin(theta_seq), lwd = 2)
+
+plot(res_disk_vis$x, res_disk_vis$y, asp = 1, pch = 20,
+     col = ifelse(res_disk_vis$hit, "steelblue", "tomato"),
+     xlab = "x", ylab = "y", xlim = xlim, ylim = ylim,
+     main = paste(sum(res_disk_vis$hit), "of 1500 hit A (disk)"))
+lines(r1 * cos(theta_seq), r1 * sin(theta_seq), lwd = 2)
+lines(d + r2 * cos(theta_seq), r2 * sin(theta_seq), lwd = 2)
+par(mfrow = c(1, 1))
+```
+
+```{r}
+#| label: tbl-crescent-is
+#| tbl-cap: "Shows that both proposals are unbiased for the true area, and
+#|   that only the effective sample size distinguishes them: the disk
+#|   proposal wastes draws only on $D_2$, while the box proposal also wastes
+#|   draws outside $D_1$ entirely.
+#|   Importance-sampling estimates of Area(A) with S = 5000, box versus disk
+#|   proposal."
+S <- 5000
+res_box  <- crescent_is("box",  S, seed = 1)
+res_disk <- crescent_is("disk", S, seed = 1)
+
+knitr::kable(data.frame(
+    proposal = c("Bounding box (naive)", "Disk $D_1$ (importance)"),
+    truth    = rep(area_true, 2),
+    estimate = c(res_box$estimate, res_disk$estimate),
+    ME      = c(res_box$me, res_disk$me),
+    ess_pct  = 100 * c(res_box$ess, res_disk$ess) / S
+), digits = 4, col.names = c("Proposal $g$", "True area", "Estimate", "M.E.", "ESS %"))
+```
+
+Both rows of @tbl-crescent-is are unbiased for the true area — importance
+sampling never needed to know $A$'s exact shape, only a proposal whose
+support covers it. What changes is efficiency: the box proposal's effective
+sample size is under 6% of $S$, because most darts land outside $D_1$
+entirely and carry weight zero, while the disk proposal's effective sample
+size is close to 28% of $S$ — five times larger, since every draw at least
+lands in $D_1$ and only the ones also landing in $D_2$ are wasted. The
+standard error falls by roughly the square root of that factor. Unlike
+@fig-missed-mode, no bias is at stake here — a bounding box that is too
+generous costs precision, not correctness — but the lesson is the same:
+match the proposal to where the target actually lives.
+
 ## Advanced Applications of Importance Sampling
 
 ### The physics: partition functions and free energy
