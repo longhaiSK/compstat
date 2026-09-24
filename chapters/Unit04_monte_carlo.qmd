@@ -156,64 +156,151 @@ c(sample_mean = mean(x), true_mean = 1 / lambda)
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 750
+#| viewerHeight: 830
 #| code-fold: true
 
 library(shiny)
 
 ## ---- distribution definitions -------------------------------------------
-## Each entry supplies the CDF, the inverse CDF, a plotting range, and a
-## routine that draws the true density.
+## Each constructor takes the parameters of a target distribution and returns
+## its CDF, inverse CDF, plotting range, support of the density, and a routine
+## that draws the true density (or pmf).
 
-## Piecewise-constant density on [0, 1] with three equal pieces whose
-## heights are proportional to 1, 5, 10.  Normalising, (c/3)(1 + 5 + 10) = 1
-## gives c = 3/16, so the heights are 3/16, 15/16, 30/16 and the CDF passes
-## through (1/3, 1/16) and (2/3, 6/16).
-pw_h <- c(1, 5, 10) * 3 / 16    # densities on the three pieces
-pw_b <- c(0, 1/3, 2/3, 1)       # piece boundaries
-pw_F <- cumsum(c(0, pw_h / 3))  # CDF at the boundaries: 0, 1/16, 6/16, 1
-
-dists <- list(
-  "Exp(1)" = list(
-    xmax = qexp(0.995),
-    p    = function(x) pexp(x),
-    qinv = function(u) -log(1 - u),
-    dens = function() curve(dexp(x), add = TRUE, col = "steelblue", lwd = 2.5)
-  ),
-  "Piecewise constant (1 : 5 : 10)" = list(
-    xmax = 1,
-    p    = function(x) approx(pw_b, pw_F, xout = pmin(pmax(x, 0), 1))$y,
-    qinv = function(u) approx(pw_F, pw_b, xout = u)$y,
-    dens = function() {
-      segments(pw_b[-4], pw_h, pw_b[-1], pw_h, col = "steelblue", lwd = 2.5)
-      segments(pw_b[2:3], pw_h[1:2], pw_b[2:3], pw_h[2:3],
-               col = "steelblue", lwd = 2.5, lty = 3)
-    }
-  )
+## Gamma(shape a, rate b); a = 1 gives the exponential distribution.  The
+## inverse CDF has no closed form except for a = 1, so qgamma() inverts the
+## CDF numerically.
+gamma_dist <- function(a, b) list(
+  discrete = FALSE,
+  xlim    = c(0, qgamma(0.995, a, b)),   # plotting range
+  support = c(0, Inf),                   # known range of the density
+  ## maximum of the true density (at the mode (a - 1)/b for a >= 1; the
+  ## density is unbounded at 0 for a < 1, so its value at the median is used)
+  fmax    = if (a >= 1) dgamma((a - 1) / b, a, b)
+            else dgamma(qgamma(0.5, a, b), a, b),
+  ## cap on the vertical range of the x histogram, so that the spike at 0
+  ## of an unbounded density does not flatten the rest of the plot
+  ycap    = if (a >= 1) Inf else 4 * dgamma(qgamma(0.5, a, b), a, b),
+  p    = function(x) pgamma(x, a, b),
+  qinv = function(u) qgamma(u, a, b),
+  dens = function() curve(dgamma(x, a, b), add = TRUE, col = "steelblue",
+                          lwd = 2.5, n = 400),
+  hist_breaks = function() 30,
+  mean = a / b
 )
 
+## Piecewise-constant density on [0, 1] with three equal pieces whose
+## heights are proportional to h = (h1, h2, h3).  Normalising,
+## (c/3)(h1 + h2 + h3) = 1 gives densities 3h / sum(h); the CDF is piecewise
+## linear through the cumulative masses at 0, 1/3, 2/3, 1.
+pw_dist <- function(h) {
+  hh <- 3 * h / sum(h)            # densities on the three pieces
+  bb <- c(0, 1/3, 2/3, 1)         # piece boundaries
+  Fb <- cumsum(c(0, hh / 3))      # CDF at the boundaries
+  list(
+    discrete = FALSE,
+    xlim    = c(0, 1),
+    support = c(0, 1),
+    fmax    = max(hh),
+    p    = function(x) approx(bb, Fb, xout = pmin(pmax(x, 0), 1))$y,
+    ## invert piece by piece: u in [Fb[k], Fb[k+1]) lies on piece k, where
+    ## F rises linearly with slope hh[k]; findInterval() skips pieces of
+    ## zero height, whose flat parts of the CDF receive no u
+    qinv = function(u) {
+      k <- findInterval(u, Fb, rightmost.closed = TRUE)
+      k <- pmin(pmax(k, 1), 3)
+      bb[k] + (u - Fb[k]) / hh[k]
+    },
+    dens = function() {
+      segments(bb[-4], hh, bb[-1], hh, col = "steelblue", lwd = 2.5)
+      segments(bb[2:3], hh[1:2], bb[2:3], hh[2:3],
+               col = "steelblue", lwd = 2.5, lty = 3)
+    },
+    hist_breaks = function() seq(0, 1, length.out = 31),
+    mean = sum(hh / 3 * (bb[-4] + bb[-1]) / 2)
+  )
+}
+
+## Binomial(m, p); the inverse CDF of a discrete distribution is the
+## generalised inverse F^{-1}(u) = min{x : F(x) >= u}, computed by qbinom().
+binom_dist <- function(m, p) list(
+  discrete = TRUE,
+  xlim    = c(-0.5, m + 0.5),
+  support = c(0, m),
+  fmax    = max(dbinom(0:m, m, p)),
+  p    = function(x) pbinom(x, m, p),
+  qinv = function(u) qbinom(u, m, p),
+  dens = function() {
+    xs <- 0:m
+    segments(xs, 0, xs, dbinom(xs, m, p), col = "steelblue", lwd = 2.5)
+    points(xs, dbinom(xs, m, p), pch = 16, col = "steelblue",
+           cex = if (m <= 30) 1.2 else 0.6)
+  },
+  hist_breaks = function() seq(-0.5, m + 0.5, by = 1),
+  mean = m * p
+)
+
+play_ms <- 200   # interval between steps while playing
+
 ## ---- interface -----------------------------------------------------------
+## a numeric parameter box, laid out side by side with the others of its group
+par_box <- function(id, label, value, ...)
+  div(style = "width: 130px;",
+      numericInput(id, label, value, width = "100%", ...))
+
+## the row of parameter boxes shown only while distribution `d` is selected
+par_row <- function(d, ...)
+  conditionalPanel(sprintf("input.dist == '%s'", d),
+                   div(style = "display: flex; flex-wrap: wrap; gap: 10px;", ...))
+
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+  actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+               style = "flex: 1; padding: 6px 0;")
+
 ui <- fluidPage(
+  wellPanel(
+    style = "padding: 10px 15px 0; margin-top: 10px;",
+    fluidRow(
+      column(4, selectInput(
+        "dist", "Target distribution",
+        choices = c("Gamma(a, b)"                  = "gamma",
+                    "Piecewise constant on [0, 1]" = "pw",
+                    "Binomial(m, p)"               = "binom"),
+        selected = "gamma", width = "100%")),
+      column(8,
+        par_row("gamma",
+          par_box("g_a", "shape a", 1, min = 0.1, step = 0.5),
+          par_box("g_b", "rate b",  1, min = 0.1, step = 0.5)),
+        par_row("pw",
+          par_box("pw_h1", "height h1", 1,  min = 0, step = 1),
+          par_box("pw_h2", "height h2", 5,  min = 0, step = 1),
+          par_box("pw_h3", "height h3", 10, min = 0, step = 1)),
+        par_row("binom",
+          par_box("b_m", "size m",        5,   min = 1, max = 100, step = 1),
+          par_box("b_p", "probability p", 0.5, min = 0, max = 1,   step = 0.05)))
+    )
+  ),
   sidebarLayout(
     sidebarPanel(
       width = 3,
-      radioButtons("dist", "Target distribution",
-                   choices = names(dists), selected = names(dists)[1]),
+      checkboxInput("use_surv", "Sample via survival function S(x) = 1 - F(x)",
+                    value = FALSE),
+      numericInput("N", "Total sample size (N)", value = 1000, min = 10,
+                   max = 100000, step = 100),
       sliderInput("n", "Points per step (n)", min = 1, max = 100, value = 50, step = 1),
-      sliderInput("speed", "Play interval (ms)", min = 200, max = 2000, value = 200, step = 100),
-      actionButton("draw", "Draw more samples", class = "btn-primary", width = "100%"),
-      br(), br(),
-      actionButton("play", "Play", width = "100%"),
-      br(), br(),
-      actionButton("reset", "Reset", width = "100%"),
+      div(style = "display: flex; gap: 4px;",
+          ctrl_btn("draw",  "forward-step", "Draw one step of n samples"),
+          ctrl_btn("play",  "play",         "Play", class = "btn-primary"),
+          ctrl_btn("pause", "pause",        "Pause"),
+          ctrl_btn("toend", "forward-fast", "To the end: draw all remaining samples"),
+          ctrl_btn("reset", "rotate-left",  "Reset")),
       hr(),
       strong(textOutput("count")),
       textOutput("moments")
     ),
     mainPanel(
       width = 9,
-      plotOutput("cdfPlot",  height = "350px"),
-      plotOutput("histPlot", height = "350px")
+      plotOutput("mainPlot", height = "700px")
     )
   )
 )
@@ -221,100 +308,211 @@ ui <- fluidPage(
 ## ---- server --------------------------------------------------------------
 server <- function(input, output, session) {
 
-  rv <- reactiveValues(x = numeric(0), u_last = numeric(0), x_last = numeric(0))
+  rv <- reactiveValues(x = numeric(0), u = numeric(0),
+                       u_last = numeric(0), x_last = numeric(0))
   playing <- reactiveVal(FALSE)
 
-  D    <- reactive(dists[[input$dist]])
-  grid <- reactive(seq(0, D()$xmax, length.out = 400))
+  ok <- function(v) !is.null(v) && length(v) == 1 && is.finite(v)
+
+  ## the selected target, built from its parameter boxes; invalid parameters
+  ## stop everything downstream with a message shown in the plot
+  D <- reactive({
+    req(input$dist)
+    switch(input$dist,
+      gamma = {
+        a <- input$g_a; b <- input$g_b
+        validate(need(ok(a) && ok(b) && a > 0 && b > 0,
+                      "Gamma: a and b must be positive."))
+        gamma_dist(a, b)
+      },
+      pw = {
+        h <- c(input$pw_h1, input$pw_h2, input$pw_h3)
+        validate(need(length(h) == 3 && all(is.finite(h)) && all(h >= 0) &&
+                        sum(h) > 0,
+                      "Piecewise constant: heights must be >= 0, not all 0."))
+        pw_dist(h)
+      },
+      binom = {
+        m <- input$b_m; p <- input$b_p
+        validate(need(ok(m) && ok(p) && m >= 1 && m <= 100 && m == round(m) &&
+                        p >= 0 && p <= 1,
+                      "Binomial: m must be an integer in 1..100 and p in [0, 1]."))
+        binom_dist(m, p)
+      })
+  })
+  grid <- reactive(seq(D()$xlim[1], D()$xlim[2], length.out = 400))
 
   clear <- function() {
-    rv$x <- numeric(0); rv$u_last <- numeric(0); rv$x_last <- numeric(0)
+    rv$x <- numeric(0); rv$u <- numeric(0)
+    rv$u_last <- numeric(0); rv$x_last <- numeric(0)
   }
 
-  stop_play <- function() {
-    playing(FALSE)
-    updateActionButton(session, "play", label = "Play")
-  }
+  stop_play <- function() playing(FALSE)
 
-  draw_step <- function() {
-    u  <- runif(input$n)
-    xs <- D()$qinv(u)
+  N_total <- function() {
+    N <- input$N
+    if (!ok(N) || N < 1) 1000 else round(N)
+  }
+  remaining <- function() max(0, N_total() - length(rv$x))
+
+  ## draw m points (default: one step of n, capped by the remaining budget)
+  draw_step <- function(m = min(input$n, remaining())) {
+    if (m <= 0) { stop_play(); return(invisible()) }
+    u  <- runif(m)
+    ## sampling via the survival function draws x = S^{-1}(u); since
+    ## S(x) = 1 - F(x), this is just F^{-1}(1 - u), and S(x) = u exactly,
+    ## so u_last can still be plotted directly against the survival curve.
+    xs <- if (input$use_surv) D()$qinv(1 - u) else D()$qinv(u)
     rv$u_last <- u
     rv$x_last <- xs
     rv$x      <- c(rv$x, xs)
+    rv$u      <- c(rv$u, u)
+    if (remaining() == 0) stop_play()
   }
 
   observeEvent(input$draw, draw_step())
 
-  ## switching the target distribution restarts the sampling
-  observeEvent(input$dist, { stop_play(); clear() }, ignoreInit = TRUE)
+  ## switching the target, changing its parameters, or toggling CDF/survival
+  ## restarts the sampling, since old draws would be shown against a new curve
+  observeEvent(D(), { stop_play(); clear() }, ignoreInit = TRUE)
+  observeEvent(input$use_surv, { stop_play(); clear() }, ignoreInit = TRUE)
 
-  observeEvent(input$play, {
-    playing(!playing())
-    updateActionButton(session, "play", label = if (playing()) "Pause" else "Play")
+  observeEvent(input$play,  if (remaining() > 0) playing(TRUE))
+  observeEvent(input$pause, stop_play())
+
+  ## "To the End": draw all remaining samples at once, skipping the
+  ## step-by-step display of the individual draws
+  observeEvent(input$toend, {
+    stop_play()
+    draw_step(remaining())
+    rv$u_last <- numeric(0); rv$x_last <- numeric(0)
   })
 
   observeEvent(input$reset, { stop_play(); clear() })
 
   observe({
     if (playing()) {
-      invalidateLater(input$speed, session)
+      invalidateLater(play_ms, session)
       isolate(draw_step())
     }
   })
 
-  output$count <- renderText(paste0("Total draws: ", length(rv$x)))
+  output$count <- renderText(paste0("Total draws: ", length(rv$x), " / ", N_total()))
 
   output$moments <- renderText({
     if (length(rv$x) < 2) return("")
-    truth <- if (input$dist == "Exp(1)") 1 else sum(pw_h / 3 * (pw_b[-4] + pw_b[-1]) / 2)
-    sprintf("sample mean = %.3f  (true = %.3f)", mean(rv$x), truth)
+    sprintf("sample mean = %.3f  (true = %.3f)", mean(rv$x), D()$mean)
   })
 
-  output$cdfPlot <- renderPlot({
-    xmax <- D()$xmax; g <- grid()
-    par(mar = c(4, 4, 2.5, 1))
-    plot(g, D()$p(g), type = "n", ylim = c(0, 1),
-         xlab = "x", ylab = "u = F(x)",
-         main = "Draw u on the vertical axis, read x off the CDF")
+  ## kernel density estimate restricted to the known support [lo, hi]:
+  ## the sample is reflected about each finite boundary, so that no mass
+  ## leaks outside the support and the estimate is not biased down near it
+  kde_bounded <- function(x, lo, hi, xl) {
+    bw <- bw.nrd0(x)
+    xx <- c(x, if (is.finite(lo)) 2 * lo - x, if (is.finite(hi)) 2 * hi - x)
+    d  <- density(xx, bw = bw, from = max(lo, xl[1]), to = min(hi, xl[2]), n = 512)
+    d$y <- d$y * length(xx) / length(x)
+    d
+  }
+
+  ## One figure with three aligned panels:
+  ##   top-left : histogram of all U_i on the margin of the u axis
+  ##   top-right: the CDF (or survival function) transformation
+  ##   bottom-right: histogram of all X_i, upside down and attached to the
+  ##                 x axis of the transformation plot (same x range)
+  ##   bottom-left: legend
+  output$mainPlot <- renderPlot({
+    xl <- D()$xlim; g <- grid()
+    disc   <- D()$discrete
+    use_s  <- input$use_surv
+    yvals  <- if (use_s) 1 - D()$p(g) else D()$p(g)
+    ylab   <- if (use_s) "u = S(x) = 1 - F(x)" else "u = F(x)"
+    main   <- if (use_s) "Draw u on the vertical axis, read x off the survival function"
+              else "Draw u on the vertical axis, read x off the CDF"
+
+    layout(matrix(c(1, 2, 4, 3), nrow = 2, byrow = TRUE),
+           widths = c(1.2, 5), heights = c(1, 1))
+
+    ## (1) histogram of U, attached to the left edge of the transformation
+    ## plot (same u range), bars growing leftwards
+    brk_u <- seq(0, 1, length.out = 21)
+    par(mar = c(0, 0.5, 3, 0))
+    dmax <- 1.5
+    if (length(rv$u) > 0) {
+      hu <- hist(rv$u, breaks = brk_u, plot = FALSE)
+      dmax <- max(dmax, hu$density)
+    }
+    plot.new(); plot.window(xlim = c(dmax, 0), ylim = c(0, 1), xaxs = "i")
+    if (length(rv$u) > 0)
+      rect(hu$density, brk_u[-length(brk_u)], 0, brk_u[-1],
+           col = "grey80", border = "white")
+    abline(v = 1, col = "steelblue", lty = 2)
+    mtext("hist of U", side = 3, line = 1.2, cex = 0.8)
+    mtext("1", side = 3, at = 1, line = 0.1, cex = 0.7, col = "steelblue")
+
+    ## (2) transformation plot; no bottom or left margin, so the X histogram
+    ## hangs directly from its x axis and the U histogram from its left
+    ## edge; the u axis is drawn on the right
+    par(mar = c(0, 0, 3, 4))
+    plot(g, yvals, type = "n", xlim = xl, ylim = c(0, 1), xaxt = "n",
+         yaxt = "n", xlab = "", ylab = "", main = main)
+    axis(1, labels = FALSE); axis(4)
+    mtext(ylab, side = 4, line = 2.5)
     u <- rv$u_last; x <- rv$x_last
     if (length(u) > 0) {
-      segments(0, u, pmin(x, xmax), u, col = "grey65")
-      inside <- x <= xmax
-      segments(x[inside], u[inside], x[inside], 0, col = "grey65")
+      xc <- pmin(x, xl[2])
+      segments(xl[1], u, xc, u, col = "grey65")
+      inside <- x <= xl[2]
+      segments(x[inside], u[inside], x[inside], par("usr")[3], col = "grey65")
     }
-    lines(g, D()$p(g), col = "steelblue", lwd = 2.5)
+    lines(g, yvals, col = "steelblue", lwd = 2.5,
+          type = if (disc) "s" else "l")
     if (length(u) > 0) {
-      points(pmin(x, xmax), u, pch = 16, col = "firebrick", cex = 1.1)
-      rug(x[x <= xmax], side = 1, col = "firebrick", lwd = 2)
-      points(rep(0, length(u)), u, pch = 16, col = "grey35", cex = 0.8)
+      points(xc, u, pch = 16, col = "firebrick", cex = 1.1)
+      points(rep(xl[1], length(u)), u, pch = 16, col = "grey35", cex = 0.8)
     }
-  })
 
-  output$histPlot <- renderPlot({
-    xmax <- D()$xmax
-    par(mar = c(4, 4, 2.5, 1))
+    ## (3) histogram of X, upside down, sharing the x range of panel (2)
+    par(mar = c(4, 0, 0, 4))
+    ylab_x <- if (disc) "proportion" else "density"
     if (length(rv$x) < 2) {
-      plot.new()
-      title(main = "Draw some samples to see the histogram")
-      return(invisible())
+      plot.new(); plot.window(xlim = xl, ylim = c(1, 0))
+      box(); axis(1); title(xlab = "x"); mtext(ylab_x, side = 4, line = 2.5)
+      text(mean(xl), 0.5, "Draw some samples to see the histogram of x", col = "grey40")
+    } else {
+      hx   <- hist(rv$x, breaks = D()$hist_breaks(), plot = FALSE)
+      kde  <- if (!disc) kde_bounded(rv$x, D()$support[1], D()$support[2], xl)
+      ymax <- 1.05 * max(hx$density, if (!disc) kde$y, D()$fmax)
+      if (!is.null(D()$ycap)) ymax <- min(ymax, D()$ycap)
+      plot.new(); plot.window(xlim = xl, ylim = c(ymax, 0), yaxs = "i")
+      rect(hx$breaks[-length(hx$breaks)], 0, hx$breaks[-1], hx$density,
+           col = "grey85", border = "white")
+      D()$dens()
+      if (!disc) lines(kde, col = "darkorange", lwd = 2)
+      abline(v = mean(rv$x), col = "firebrick", lwd = 2, lty = 2)
+      ## omit the 0 label, which would collide with the u = 0 label above
+      at <- pretty(c(0, ymax)); at <- at[at > 0 & at <= ymax]
+      box(); axis(1); axis(4, at = at)
+      title(xlab = "x"); mtext(ylab_x, side = 4, line = 2.5)
     }
-    brk <- if (input$dist == "Exp(1)") 30 else seq(0, 1, length.out = 31)
-    hist(rv$x, breaks = brk, freq = FALSE, col = "grey85", border = "white",
-         xlim = c(0, xmax), xlab = "x", ylab = "density",
-         main = "Accumulated draws vs. the true density")
-    D()$dens()
-    abline(v = mean(rv$x), col = "firebrick", lwd = 2, lty = 2)
-    legend("topright", bty = "n", lwd = 2, lty = c(1, 2),
-           col = c("steelblue", "firebrick"),
-           legend = c("true density", "sample mean"))
+
+    ## (4) legend in the empty bottom-left cell
+    par(mar = c(4, 0.5, 0, 0))
+    plot.new()
+    legend("center", bty = "n", cex = 0.85, lwd = 2, seg.len = 1.5,
+           lty = if (disc) c(1, 2) else c(1, 1, 2),
+           col = if (disc) c("steelblue", "firebrick")
+                 else c("steelblue", "darkorange", "firebrick"),
+           legend = if (disc) c("true pmf", "sample\nmean")
+                    else c("true\ndensity", "kernel\ndensity", "sample\nmean"),
+           y.intersp = 1.6)
   })
 }
 
 shinyApp(ui, server)
 ```
 
-**Shinylive App Illustrating the Inverse CDF Method.** Demonstrates the inverse-CDF method for generating random numbers from a target distribution by transforming uniform draws. The app below draws samples one step at a time (or continuously via **Play**), showing on the top panel how each uniform draw $u$ maps through the CDF to a sample $x = F^{-1}(u)$, and on the bottom panel how those draws accumulate into a histogram against the true density. Two targets are available: $\text{Exp}(1)$, and a piecewise-constant density on $[0,1]$ with heights in the ratio $1:5:10$, whose piecewise-linear CDF shows most clearly that steep parts of the CDF receive more draws.
+**Shinylive App Illustrating the Inverse CDF Method.** Demonstrates the inverse-CDF method for generating random numbers from a target distribution by transforming uniform draws. The target and its parameters are set in the panel at the top: $\text{Gamma}(a, b)$ with shape $a$ and rate $b$ (the default $a = b = 1$ is $\text{Exp}(1)$; for other shapes the inverse CDF has no closed form and is computed numerically); a piecewise-constant density on $[0,1]$ with three equal pieces of relative heights $h_1 : h_2 : h_3$ (default $1:5:10$), whose piecewise-linear CDF shows most clearly that steep parts of the CDF receive more draws; and the discrete $\text{Binomial}(m, p)$. The playback buttons draw one step of $n$ samples, play, pause, skip to the end (drawing all remaining samples at once without the animation), and reset; sampling stops at the total sample size $N$. The top panel of the plot shows how each uniform draw $u$ maps through the CDF (or the survival function $S = 1 - F$) to a sample $x$, with a histogram of all $U_i$ attached to the $u$ axis. Hanging upside down from the $x$ axis, the bottom panel shows how the draws accumulate into a histogram against the true density, together with a kernel density estimate of $X$ restricted to the known support of the density (by reflection at its boundaries).
 
 :::
 
