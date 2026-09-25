@@ -337,10 +337,9 @@ window.Quarto = {
   <li><a href="#implementation" id="toc-implementation" class="nav-link" data-scroll-target="#implementation"><span class="header-section-number">5.3.5.2</span> Implementation</a></li>
   <li><a href="#comparison-with-nlm-and-glm" id="toc-comparison-with-nlm-and-glm" class="nav-link" data-scroll-target="#comparison-with-nlm-and-glm"><span class="header-section-number">5.3.5.3</span> Comparison with <code>nlm</code> and <code>glm</code></a></li>
   </ul></li>
-  <li><a href="#sec-divergence" id="toc-sec-divergence" class="nav-link" data-scroll-target="#sec-divergence"><span class="header-section-number">5.3.6</span> Divergence</a>
+  <li><a href="#sec-divergence" id="toc-sec-divergence" class="nav-link" data-scroll-target="#sec-divergence"><span class="header-section-number">5.3.6</span> Enhancements to Multivariate Newton-Raphson Methods</a>
   <ul class="collapse">
-  <li><a href="#sec-nr-divergence-app" id="toc-sec-nr-divergence-app" class="nav-link" data-scroll-target="#sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> What goes wrong</a></li>
-  <li><a href="#enhancements-to-multivariate-newton-raphson-methods" id="toc-enhancements-to-multivariate-newton-raphson-methods" class="nav-link" data-scroll-target="#enhancements-to-multivariate-newton-raphson-methods"><span class="header-section-number">5.3.6.2</span> Enhancements to Multivariate Newton-Raphson Methods</a></li>
+  <li><a href="#sec-nr-divergence-app" id="toc-sec-nr-divergence-app" class="nav-link" data-scroll-target="#sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> Shinylive App for Safeguarded Newton-Raphson</a></li>
   </ul></li>
   </ul></li>
   <li><a href="#gradient-based-methods" id="toc-gradient-based-methods" class="nav-link" data-scroll-target="#gradient-based-methods"><span class="header-section-number">5.4</span> Gradient-Based Methods</a>
@@ -1618,11 +1617,12 @@ H(\theta) = \frac{\partial^2 \ell(\theta)}{\partial \theta \, \partial \theta^{\
 \quad (p \times p, \text{ the Hessian}).
 \]</span></p>
 <p>The negative Hessian <span class="math inline">\(J(\theta) = -H(\theta)\)</span> is the <strong>observed information matrix</strong>.</p>
-<p>Expand <span class="math inline">\(\ell\)</span> to second order about the current iterate <span class="math inline">\(\theta^{(k)}\)</span>: $$ () ;; (^{(k)})</p>
-<ul>
-<li>S(<sup>{(k)})</sup>{}(- ^{(k)})</li>
-<li>,(- <sup>{(k)})</sup>{} J(^{(k)}) ,(- ^{(k)}). $$</li>
-</ul>
+<p>Expand <span class="math inline">\(\ell\)</span> to second order about the current iterate <span class="math inline">\(\theta^{(k)}\)</span>:</p>
+<p><span class="math display">\[
+\ell(\theta) \;\approx\; \ell(\theta^{(k)})
++ S(\theta^{(k)})^{\top}(\theta - \theta^{(k)})
+- \tfrac{1}{2}\,(\theta - \theta^{(k)})^{\top} J(\theta^{(k)}) \,(\theta - \theta^{(k)}).
+\]</span></p>
 <p>This is a quadratic in <span class="math inline">\(\theta\)</span>. If <span class="math inline">\(J(\theta^{(k)})\)</span> is positive definite the quadratic has a unique maximum, found by setting its derivative to zero: <span class="math display">\[
 S(\theta^{(k)}) - J(\theta^{(k)})(\theta - \theta^{(k)}) = 0 .
 \]</span></p>
@@ -1862,17 +1862,18 @@ z            1.5034244  0.2089473  7.195234 6.235374e-13</code></pre>
 </section>
 </section>
 <section id="sec-divergence" class="level3" data-number="5.3.6">
-<h3 data-number="5.3.6" class="anchored" data-anchor-id="sec-divergence"><span class="header-section-number">5.3.6</span> Divergence</h3>
-<section id="sec-nr-divergence-app" class="level4" data-number="5.3.6.1">
-<h4 data-number="5.3.6.1" class="anchored" data-anchor-id="sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> What goes wrong</h4>
-<p>The quadratic approximation is trustworthy only in a neighbourhood of the current iterate. Starting from a large <span class="math inline">\(|\beta_1|\)</span>, nearly all fitted probabilities are pushed to <span class="math inline">\(0\)</span> or <span class="math inline">\(1\)</span>, so the weights <span class="math inline">\(p_i(1-p_i)\)</span> are essentially zero, <span class="math inline">\(J\)</span> is nearly singular, and <span class="math inline">\(J^{-1}\)</span> is enormous. The resulting step is huge, the new iterate lands far outside the region where the quadratic was a reasonable fit, and the process can oscillate or run off to infinity — even though the logistic log-likelihood is globally concave and has a unique maximum.</p>
-<p>Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step backward and forward through the iterations, jump to the end, or play the path as an animation over the contours of the negative log-likelihood. The orange arrow at the current iterate shows the direction of the gradient of the log-likelihood; because the two axes are drawn at different scales, it is perpendicular to the contours <em>as plotted</em>.</p>
-<p>Two standard safeguards can be switched on and compared against the plain iteration, which stays visible as a dashed grey path:</p>
+<h3 data-number="5.3.6" class="anchored" data-anchor-id="sec-divergence"><span class="header-section-number">5.3.6</span> Enhancements to Multivariate Newton-Raphson Methods</h3>
+<p>Newton–Raphson can diverge even on a well-behaved problem. Far from <span class="math inline">\(\hat\theta\)</span> the quadratic approximation is unreliable, and <span class="math inline">\(J_k = J(\theta^{(k)})\)</span> may be nearly singular or not positive definite, so the raw step <span class="math inline">\(\delta^{(k)} = J_k^{-1}S_k\)</span> can be enormous or fail to point uphill at all. The standard enhancements all keep the Newton idea and add a guard.</p>
 <ul>
-<li><p><strong>Line search.</strong> Instead of taking the full step <span class="math inline">\(\beta - J^{-1}S\)</span>, take <span class="math inline">\(\beta - s\,J^{-1}S\)</span> and halve <span class="math inline">\(s\)</span> from <span class="math inline">\(1\)</span> until the Armijo condition <span class="math inline">\(\ell_-(\beta - s\,J^{-1}S) \le \ell_-(\beta) - c_1 s\,S^\top J^{-1}S\)</span> holds, where <span class="math inline">\(\ell_-\)</span> is the negative log-likelihood and <span class="math inline">\(c_1 = 10^{-4}\)</span>. Because <span class="math inline">\(J\)</span> is positive definite the Newton direction is a descent direction, so such an <span class="math inline">\(s\)</span> always exists.</p></li>
-<li><p><strong>Robustification of the Hessian.</strong> Replace <span class="math inline">\(J\)</span> by a nearby positive definite matrix whose condition number is capped at <span class="math inline">\(10^3\)</span>, either by adding a ridge <span class="math inline">\(\lambda I\)</span> (the Levenberg–Marquardt modification) or by flooring the eigenvalues of <span class="math inline">\(J\)</span> at <span class="math inline">\(10^{-3}\lambda_{\max}\)</span>.</p></li>
+<li><p><strong>Step halving (line search).</strong> Move <span class="math inline">\(\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}\)</span>, starting at <span class="math inline">\(s = 1\)</span> and halving until the log-likelihood increases by enough — the <strong>Armijo condition</strong> <span class="math inline">\(\ell(\theta^{(k)} + s\,\delta^{(k)}) \ge \ell(\theta^{(k)}) + c_1 s\,S_k^\top\delta^{(k)}\)</span> with a tiny <span class="math inline">\(c_1\)</span> (say <span class="math inline">\(10^{-4}\)</span>). Near the maximum <span class="math inline">\(s = 1\)</span> passes on the first try, so fast local convergence is untouched.</p></li>
+<li><p><strong>Ridging (Levenberg–Marquardt).</strong> Replace <span class="math inline">\(J_k\)</span> by <span class="math inline">\(J_k + \tau\mathbb{I}\)</span>, with <span class="math inline">\(\tau \ge 0\)</span> just large enough to make it positive definite. This repairs indefiniteness and shortens the step; as <span class="math inline">\(\tau\)</span> grows the direction rotates from Newton toward plain gradient ascent, and <span class="math inline">\(\tau = 0\)</span> wherever <span class="math inline">\(J_k\)</span> is already well behaved. This is roughly what <code>nlm</code> does internally.</p></li>
+<li><p><strong>Trust regions.</strong> Maximise the quadratic approximation only within <span class="math inline">\(\|\theta - \theta^{(k)}\| \le \Delta_k\)</span>, growing or shrinking <span class="math inline">\(\Delta_k\)</span> according to how well the quadratic predicted the realised change. This is <code>nlminb</code> and the <code>PORT</code> routines.</p></li>
+<li><p><strong>Better parameterisation and starting values.</strong> Often the cheapest fix. Centring and scaling the covariates improves the conditioning of <span class="math inline">\(J\)</span>, and for GLMs the null-model fit is a reliable start — which is what <code>glm</code> uses when <code>start</code> is not supplied.</p></li>
 </ul>
-<p>The two safeguards fix different things, and the app makes the distinction concrete. Robustification keeps <span class="math inline">\(J^{-1}\)</span> finite, so the iteration no longer halts with a singular information matrix, but it does nothing about the <em>length</em> of the step: from <span class="math inline">\((0,5)\)</span> the modified iteration still runs off to infinity. The line search is what caps the step, and from every starting point in the plotted window it alone restores convergence to <span class="math inline">\(\hat\beta = (-0.27, 1.50)\)</span>. Robustification earns its keep when the Hessian is genuinely indefinite — far from a maximum in a non-concave problem — where without it the “Newton” direction may not even point uphill. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
+<p>Combining the first two gives <strong>safeguarded Newton</strong>: at each iteration form a positive definite <span class="math inline">\(\tilde J_k\)</span>, solve <span class="math inline">\(\tilde J_k\,\delta^{(k)} = S_k\)</span>, then backtrack on <span class="math inline">\(s\)</span>. Both guards switch themselves off near a well-behaved maximum, so the method keeps Newton’s fast local convergence while still making progress from remote starting values.</p>
+<section id="sec-nr-divergence-app" class="level4" data-number="5.3.6.1">
+<h4 data-number="5.3.6.1" class="anchored" data-anchor-id="sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> Shinylive App for Safeguarded Newton-Raphson</h4>
+<p>Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation over the contours of the negative log-likelihood. The orange arrow shows the direction of the gradient of the log-likelihood. Switching on either safeguard keeps the plain iteration visible as a dashed grey path for comparison; the details of each iteration, and the reason the run ended, are reported under the plot.</p>
 <div id="fig-nr-divergence-app" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-nr-divergence-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
@@ -1881,7 +1882,7 @@ z            1.5034244  0.2089473  7.195234 6.235374e-13</code></pre>
 #|   Please set `embed-resources: false` in your metadata.
 #| label: nr-divergence-app
 #| standalone: true
-#| viewerHeight: 900
+#| viewerHeight: 760
 
 library(shiny)
 
@@ -1912,11 +1913,6 @@ cond_num &lt;- function(J) {
     if (min(e) &lt;= 0) Inf else max(e) / min(e)
 }
 
-### ---------- contour grid (computed once) ----------------------------------
-B0 &lt;- seq(-3, 3, by = 0.1)
-B1 &lt;- seq(-8, 8, by = 0.2)
-Z &lt;- outer(B0, B1, Vectorize(function(a, b) negll(c(a, b))))
-
 ### ---------- robustification of the Hessian --------------------------------
 ## Replace J by a nearby positive definite matrix whose condition number is at
 ## most 1/tau, so that J^{-1} stays bounded and the step remains a descent
@@ -1933,6 +1929,11 @@ robustify &lt;- function(J, method, tau = 1e-3) {
         ev$vectors %*% (pmax(ev$values, tau * lmax) * t(ev$vectors))
     }
 }
+
+### ---------- contour grid (computed once) ----------------------------------
+B0 &lt;- seq(-3, 3, by = 0.1)
+B1 &lt;- seq(-8, 8, by = 0.2)
+Z &lt;- outer(B0, B1, Vectorize(function(a, b) negll(c(a, b))))
 
 ### ---------- Newton-Raphson path -------------------------------------------
 ## Returns the iterates with their negll, gradient, accepted step length and the
@@ -1999,16 +2000,9 @@ ui &lt;- fluidPage(
                         c("none (full Newton step)" = "none",
                           "backtracking (Armijo)"   = "armijo")),
             selectInput("robust", "robustification of the Hessian",
-                        c("none (observed information)"    = "none",
-                          "ridge (Levenberg-Marquardt)"    = "ridge",
-                          "eigenvalue flooring"            = "eigen")),
-            helpText(HTML(paste(
-                "The line search controls the &lt;i&gt;length&lt;/i&gt; of the step; the",
-                "robustification controls its &lt;i&gt;direction&lt;/i&gt;, by keeping the",
-                "Hessian positive definite and well conditioned. The logistic",
-                "information matrix is already positive semi-definite, so here",
-                "robustification alone only cures the numerical breakdown",
-                "&amp;mdash; it is the line search that stops the overshoot."))),
+                        c("none (observed information)" = "none",
+                          "ridge (Levenberg-Marquardt)" = "ridge",
+                          "eigenvalue flooring"         = "eigen")),
             checkboxInput("compare", "overlay the plain Newton-Raphson path",
                           TRUE),
             checkboxInput("autoplay", "autoplay when the start changes", TRUE),
@@ -2022,17 +2016,20 @@ ui &lt;- fluidPage(
                 ctrl_btn("step",  "forward-step",  "One step forward"),
                 ctrl_btn("toend", "forward-fast",  "To the end")),
             hr(),
-            htmlOutput("info"),
-            helpText("Try (0, 3) and then (0, 5) with both safeguards off: the ",
-                     "second start makes the information matrix nearly ",
-                     "singular, so the first step overshoots badly. Then turn ",
-                     "on the line search, or the robustification, or both."),
-            tableOutput("tab")
+            helpText("Try the starting values (0, 3) and then (0, 5), first ",
+                     "with both safeguards off, then with each in turn. From ",
+                     "(0, 5) the plain iteration stops because the ",
+                     "information matrix goes numerically singular; the ",
+                     "robustification is what keeps it invertible.")
         ),
         mainPanel(
             width = 8,
             plotOutput("contour", click = "click", height = "450px"),
-            plotOutput("trace", height = "220px")
+            ## details of the iterations, shown under the plot
+            hr(),
+            div(style = "max-width: 560px;",
+                tableOutput("tab"),
+                htmlOutput("note"))
         )
     )
 )
@@ -2165,129 +2162,41 @@ server &lt;- function(input, output, session) {
                col = leg$col, legend = leg$txt)
     })
 
-    output$trace &lt;- renderPlot({
-        P &lt;- path()$P; kk &lt;- k() + 1L
-        RP &lt;- ref()
-        yy &lt;- c(P[, 3], if (!is.null(RP)) RP$P[, 3])
-        yy &lt;- yy[is.finite(yy) &amp; yy &gt; 0]
-        ## a diverging path can raise negll by several orders of magnitude, in
-        ## which case a log scale is the only way to see both curves at once
-        uselog &lt;- length(yy) &gt; 1 &amp;&amp; max(yy) &gt; 100 * min(yy)
-        par(mar = c(4, 4, 1, 1))
-        plot(0:(nrow(P) - 1), P[, 3], type = "n",
-             xlim = c(0, max(1, nrow(P) - 1, if (!is.null(RP)) RP$n - 1)),
-             ylim = range(yy), log = if (uselog) "y" else "",
-             xlab = "iteration",
-             ylab = if (uselog) "negative log-likelihood (log scale)"
-                    else "negative log-likelihood")
-        if (!is.null(RP)) {
-            Q &lt;- RP$P[seq_len(min(kk, RP$n)), , drop = FALSE]
-            lines(0:(nrow(Q) - 1), Q[, 3], type = "b", pch = 19, cex = 0.7,
-                  lty = 2, col = "grey45")
-        }
-        lines(0:(kk - 1), P[1:kk, 3], type = "b", pch = 19, col = "steelblue")
-        points(kk - 1, P[kk, 3], pch = 21, bg = "firebrick", cex = 1.6)
-    })
+    ## one decimal throughout; a diverging run reaches values that would
+    ## otherwise be far too wide, so those switch to one-decimal scientific
+    f1 &lt;- function(x) ifelse(!is.finite(x), "",
+              ifelse(abs(x) &gt;= 1e5 | (x != 0 &amp; abs(x) &lt; 1e-3),
+                     formatC(x, format = "e", digits = 1),
+                     formatC(x, format = "f", digits = 1)))
 
-    output$info &lt;- renderUI({
-        R &lt;- path(); kk &lt;- k() + 1L
-        fmt &lt;- function(v, d = 4) formatC(v, format = "g", digits = d)
-        cur &lt;- R$P[kk, ]
-        RP &lt;- ref()
-        HTML(paste0(
-            "&lt;b&gt;iteration&lt;/b&gt; ", kk - 1, " of ", R$n - 1, "&lt;br&gt;",
-            "&lt;b&gt;&amp;beta;&lt;/b&gt; = (", fmt(cur[1]), ", ", fmt(cur[2]), ")&lt;br&gt;",
-            "&lt;b&gt;||gradient||&lt;/b&gt; = ", fmt(sqrt(sum(cur[4:5]^2))), "&lt;br&gt;",
-            "&lt;b&gt;cond(J)&lt;/b&gt; = ", fmt(cur[7], 3),
-            if (is.finite(cur[6]))
-                paste0("&lt;br&gt;&lt;b&gt;step length&lt;/b&gt; = ", fmt(cur[6], 3)),
-            "&lt;br&gt;&lt;i&gt;", if (kk == R$n) R$note else "", "&lt;/i&gt;",
-            if (!is.null(RP))
-                paste0("&lt;br&gt;&lt;i&gt;plain NR: ", RP$note, "&lt;/i&gt;")))
+    ## why the run ended, shown as one line under the table
+    output$note &lt;- renderUI({
+        R &lt;- path(); RP &lt;- ref()
+        if (k() + 1 &lt; R$n) return(NULL)
+        HTML(paste0("&lt;i&gt;", R$note,
+                    if (!is.null(RP)) paste0("; plain Newton-Raphson: ",
+                                             RP$note),
+                    "&lt;/i&gt;"))
     })
 
     output$tab &lt;- renderTable({
         P &lt;- path()$P[seq_len(k() + 1), , drop = FALSE]
-        d &lt;- data.frame(iteration = seq_len(nrow(P)) - 1,
-                        beta0 = P[, 1], beta1 = P[, 2], negll = P[, 3],
-                        step = P[, 6], `cond(J)` = P[, 7],
-                        check.names = FALSE)
+        d &lt;- data.frame(iteration = as.character(seq_len(nrow(P)) - 1),
+                        beta0 = f1(P[, 1]), beta1 = f1(P[, 2]),
+                        negll = f1(P[, 3]), step = f1(P[, 6]),
+                        `cond(J)` = f1(P[, 7]),
+                        check.names = FALSE, stringsAsFactors = FALSE)
         tail(d, 5)
-    }, digits = 4, rownames = FALSE, na = "")
+    }, rownames = FALSE, align = "r", width = "100%")
 }
 
 shinyApp(ui, server)</code></pre>
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-nr-divergence-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;5.17: <strong>Shinylive App Illustrating Newton–Raphson Divergence.</strong> Shows how Newton-Raphson can diverge on a logistic-regression likelihood when started far from the maximum, how the path depends on the starting value, and how a line search and a robustified Hessian change it. Click the contour plot to choose a starting value, then step, play, or jump through the iterations; the orange arrow shows the gradient direction, and the dashed grey path is the plain iteration shown for comparison.
+Figure&nbsp;5.17: <strong>Safeguarded Newton-Raphson.</strong> Shows how the full Newton-Raphson step diverges on a logistic-regression likelihood started far from the maximum, and how backtracking on the step length rescues the same starting value. The iterates are traced over the contours of the negative log-likelihood, with the orange arrow marking the gradient direction at the current iterate and the unsafeguarded path left in place as a dashed grey curve for comparison.
 </figcaption>
 </figure>
 </div>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Reproducing this figure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>The chunk above uses the <a href="https://github.com/quarto-ext/shinylive">shinylive</a> extension, which compiles the app to WebAssembly so that it runs in the reader’s browser with no Shiny server. Install it once per project with</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb67"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="ex">quarto</span> add quarto-ext/shinylive</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>and add <code>filters: [shinylive]</code> to the document or project YAML. Only packages available in webR may be used inside the app, so the code above is restricted to base R and <code>shiny</code>.</p>
-</div>
-</div>
-</section>
-<section id="enhancements-to-multivariate-newton-raphson-methods" class="level4" data-number="5.3.6.2">
-<h4 data-number="5.3.6.2" class="anchored" data-anchor-id="enhancements-to-multivariate-newton-raphson-methods"><span class="header-section-number">5.3.6.2</span> Enhancements to Multivariate Newton-Raphson Methods</h4>
-<p>The divergence is not a defect of the Newton direction but of the Newton <em>step length</em>. The standard remedies all keep the direction and control the distance.</p>
-<p><strong>Step halving (backtracking).</strong> Take <span class="math inline">\(\delta^{(k)}\)</span> as usual but move <span class="math inline">\(\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}\)</span>, starting from <span class="math inline">\(s = 1\)</span> and halving until the log-likelihood actually increases. This costs a few extra function evaluations, never damages quadratic convergence near the maximum (where <span class="math inline">\(s = 1\)</span> is accepted on the first try), and rescues most divergent runs. Toggle it in the app above to see the effect.</p>
-<p><strong>Ridging (Levenberg–Marquardt).</strong> Replace <span class="math inline">\(J\)</span> by <span class="math inline">\(J + \lambda \mathbb{I}\)</span> with <span class="math inline">\(\lambda &gt; 0\)</span>. Large <span class="math inline">\(\lambda\)</span> shrinks the step toward a small gradient step; <span class="math inline">\(\lambda \to 0\)</span> recovers Newton. This also repairs indefiniteness, and is the approach <code>nlm</code> takes internally.</p>
-<p><strong>Trust regions.</strong> Maximise the quadratic approximation subject to <span class="math inline">\(\|\theta - \theta^{(k)}\| \le \Delta_k\)</span>, adapting <span class="math inline">\(\Delta_k\)</span> according to how well the quadratic predicted the realised change. This is <code>nlminb</code> and the <code>PORT</code> routines.</p>
-<p><strong>Reparameterisation and good starts.</strong> Often the cheapest fix. Centring and scaling covariates improves conditioning of <span class="math inline">\(J\)</span> substantially, and for GLMs the null-model fit is a reliable starting point — which is what <code>glm</code> uses when <code>start</code> is not supplied.</p>
-<p>Two more precise versions of these ideas are worth stating explicitly, since together they make up what is sometimes called <strong>safeguarded Newton</strong> — not “Newton–Raphson” in the textbook sense, and not what <code>nlm()</code> runs internally, which globalises with a trust region instead.</p>
-<p><strong>A principled choice of ridge.</strong> Write <span class="math inline">\(\delta_k = J_k^{-1}S_k\)</span> for the raw Newton step at <span class="math inline">\(\theta_k\)</span> (with <span class="math inline">\(J_k = J(\theta_k)\)</span>, <span class="math inline">\(S_k = S(\theta_k)\)</span>). Two things can go wrong once <span class="math inline">\(\theta_k\)</span> is far from <span class="math inline">\(\hat\theta\)</span>: the direction may not ascend at all, since <span class="math inline">\(S_k^\top \delta_k = S_k^\top J_k^{-1}S_k &gt; 0\)</span> requires <span class="math inline">\(J_k \succ 0\)</span>, which need not hold where <span class="math inline">\(\ell\)</span> is not concave; and even when <span class="math inline">\(J_k \succ 0\)</span>, the full step can overshoot, since the quadratic model is trustworthy only near <span class="math inline">\(\theta_k\)</span>. Ridging replaces <span class="math inline">\(J_k\)</span> by <span class="math display">\[
-\tilde J_k = J_k + \tau I, \qquad \tau = \max\!\big(0,\ \delta - \lambda_{\min}(J_k)\big), \qquad \delta = 10^{-3}\,\lambda_{\max}(J_k),
-\]</span> which shifts every eigenvalue of <span class="math inline">\(J_k\)</span> by <span class="math inline">\(\tau\)</span> while leaving its eigenvectors unchanged. As <span class="math inline">\(\tau \to \infty\)</span> the resulting direction <span class="math inline">\(\tilde J_k^{-1}S_k\)</span> rotates toward <span class="math inline">\(S_k\)</span> itself — plain gradient ascent — so ridging interpolates continuously between Newton and steepest ascent. An alternative, <strong>spectral modification</strong>, decomposes <span class="math inline">\(J_k = V\Lambda V^\top\)</span> and replaces each eigenvalue <span class="math inline">\(\lambda_i\)</span> by <span class="math inline">\(\max(|\lambda_i|, \delta)\)</span>: this reverses negative-curvature directions rather than merely damping them, pushing the step away from a saddle instead of just slowing it down. Wherever <span class="math inline">\(J_k \succ 0\)</span> already, both reduce to <span class="math inline">\(\tau = 0\)</span> and <span class="math inline">\(\tilde J_k = J_k\)</span>, so the safeguard is inactive exactly where it is not needed.</p>
-<p><strong>A precise stopping rule for step halving: the Armijo condition.</strong> Accepting the halved step <span class="math inline">\(\theta_k + s\,\delta_k\)</span> the first time the log-likelihood merely fails to decrease is workable but crude. The standard criterion instead requires a <strong>sufficient</strong> increase, <span class="math display">\[
-\ell(\theta_k + s\,\delta_k) \ \ge\ \ell(\theta_k) + c_1\, s\, S_k^\top \delta_k, \qquad c_1 = 10^{-4},
-\]</span> tested at <span class="math inline">\(s = 1, \rho, \rho^2, \ldots\)</span> for a fixed <span class="math inline">\(\rho \in (0,1)\)</span> (e.g.&nbsp;<span class="math inline">\(\rho = \tfrac12\)</span>) until it holds. Because <span class="math inline">\(c_1\)</span> is tiny, <span class="math inline">\(s = 1\)</span> passes immediately whenever the ordinary Newton step already improves <span class="math inline">\(\ell\)</span>, so quadratic convergence near <span class="math inline">\(\hat\theta\)</span> is untouched. A companion <strong>curvature (Wolfe) condition</strong>, <span class="math display">\[
-S(\theta_k + s\,\delta_k)^\top \delta_k \ \le\ c_2\, S_k^\top \delta_k, \qquad c_2 = 0.9,
-\]</span> additionally rules out steps that are cut <em>too</em> short — something plain backtracking, which only ever shrinks <span class="math inline">\(s\)</span>, cannot enforce on its own. This second condition matters less for Newton itself than for the gradient-only methods of the next section, where it is exactly what keeps the BFGS update well defined.</p>
-<div class="callout callout-style-simple callout-note no-icon">
-<div class="callout-body d-flex">
-<div class="callout-icon-container">
-<i class="callout-icon no-icon"></i>
-</div>
-<div class="callout-body-container">
-<p><strong>The safeguarded step, in full.</strong> At <span class="math inline">\(\theta_k\)</span>: compute <span class="math inline">\(S_k\)</span> and <span class="math inline">\(J_k\)</span>; form <span class="math inline">\(\tilde J_k \succ 0\)</span> by ridging or spectral modification; solve <span class="math inline">\(\tilde J_k\,\delta_k = S_k\)</span>; choose <span class="math inline">\(s_k\)</span> from <span class="math inline">\(s_0 = 1\)</span> by backtracking against the Armijo condition; set <span class="math inline">\(\theta_{k+1} = \theta_k + s_k\,\delta_k\)</span>.</p>
-</div>
-</div>
-</div>
-<p>Both safeguards switch themselves off automatically near a well-behaved maximum, and stay active only where they are needed:</p>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th style="text-align: left;"></th>
-<th style="text-align: left;">near the maximum</th>
-<th style="text-align: left;">far away / indefinite</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">ridge <span class="math inline">\(\tau\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(0\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(&gt; 0\)</span>, direction rotates toward <span class="math inline">\(S_k\)</span></td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">step <span class="math inline">\(s_k\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(1\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(&lt; 1\)</span></td>
-</tr>
-</tbody>
-</table>
-<p>so quadratic convergence is retained locally while sufficient increase at every iteration guarantees progress from remote starting points — the combination that step halving, ridging, trust regions, and good starting values each approximate in the plainer forms described above.</p>
 </section>
 </section>
 </section>
@@ -2353,15 +2262,15 @@ Table&nbsp;5.2: Organizes the optimization methods of this chapter by how much d
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb68"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a>grad_descent <span class="ot">&lt;-</span> <span class="cf">function</span>(f, gr, x0, <span class="at">maxit =</span> <span class="dv">1000</span>, <span class="at">tol =</span> <span class="fl">1e-8</span>) {</span>
-<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>  path <span class="ot">&lt;-</span> x0</span>
-<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>maxit) {</span>
-<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">gr</span>(x0); a <span class="ot">&lt;-</span> <span class="fu">optimize</span>(<span class="cf">function</span>(a) <span class="fu">f</span>(x0 <span class="sc">+</span> a <span class="sc">*</span> d), <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">10</span>))<span class="sc">$</span>minimum   <span class="co"># exact line search</span></span>
-<span id="cb68-5"><a href="#cb68-5" aria-hidden="true" tabindex="-1"></a>    x1 <span class="ot">&lt;-</span> x0 <span class="sc">+</span> a <span class="sc">*</span> d; path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, x1)</span>
-<span id="cb68-6"><a href="#cb68-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>((x1 <span class="sc">-</span> x0)<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&lt;</span> tol) <span class="cf">break</span></span>
-<span id="cb68-7"><a href="#cb68-7" aria-hidden="true" tabindex="-1"></a>    x0 <span class="ot">&lt;-</span> x1 }</span>
-<span id="cb68-8"><a href="#cb68-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">par =</span> x1, <span class="at">iter =</span> k, <span class="at">path =</span> path)</span>
-<span id="cb68-9"><a href="#cb68-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a>grad_descent <span class="ot">&lt;-</span> <span class="cf">function</span>(f, gr, x0, <span class="at">maxit =</span> <span class="dv">1000</span>, <span class="at">tol =</span> <span class="fl">1e-8</span>) {</span>
+<span id="cb67-2"><a href="#cb67-2" aria-hidden="true" tabindex="-1"></a>  path <span class="ot">&lt;-</span> x0</span>
+<span id="cb67-3"><a href="#cb67-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>maxit) {</span>
+<span id="cb67-4"><a href="#cb67-4" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">gr</span>(x0); a <span class="ot">&lt;-</span> <span class="fu">optimize</span>(<span class="cf">function</span>(a) <span class="fu">f</span>(x0 <span class="sc">+</span> a <span class="sc">*</span> d), <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">10</span>))<span class="sc">$</span>minimum   <span class="co"># exact line search</span></span>
+<span id="cb67-5"><a href="#cb67-5" aria-hidden="true" tabindex="-1"></a>    x1 <span class="ot">&lt;-</span> x0 <span class="sc">+</span> a <span class="sc">*</span> d; path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, x1)</span>
+<span id="cb67-6"><a href="#cb67-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>((x1 <span class="sc">-</span> x0)<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&lt;</span> tol) <span class="cf">break</span></span>
+<span id="cb67-7"><a href="#cb67-7" aria-hidden="true" tabindex="-1"></a>    x0 <span class="ot">&lt;-</span> x1 }</span>
+<span id="cb67-8"><a href="#cb67-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">par =</span> x1, <span class="at">iter =</span> k, <span class="at">path =</span> path)</span>
+<span id="cb67-9"><a href="#cb67-9" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 </section>
@@ -2396,21 +2305,21 @@ d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k,
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a>conj_grad <span class="ot">&lt;-</span> <span class="cf">function</span>(f, gr, x0, <span class="at">maxit =</span> <span class="dv">1000</span>, <span class="at">tol =</span> <span class="fl">1e-8</span>, <span class="at">restart =</span> <span class="fu">length</span>(x0)) {</span>
-<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a>  g0 <span class="ot">&lt;-</span> <span class="fu">gr</span>(x0); d <span class="ot">&lt;-</span> <span class="sc">-</span>g0; path <span class="ot">&lt;-</span> x0</span>
-<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>maxit) {</span>
-<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a>    a <span class="ot">&lt;-</span> <span class="fu">optimize</span>(<span class="cf">function</span>(a) <span class="fu">f</span>(x0 <span class="sc">+</span> a <span class="sc">*</span> d), <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">10</span>))<span class="sc">$</span>minimum</span>
-<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a>    x1 <span class="ot">&lt;-</span> x0 <span class="sc">+</span> a <span class="sc">*</span> d; g1 <span class="ot">&lt;-</span> <span class="fu">gr</span>(x1); path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, x1)</span>
-<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>(g1<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&lt;</span> tol) <span class="cf">break</span></span>
-<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a>    beta <span class="ot">&lt;-</span> <span class="cf">if</span> (k <span class="sc">%%</span> restart <span class="sc">==</span> <span class="dv">0</span>) <span class="dv">0</span> <span class="cf">else</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">sum</span>(g1 <span class="sc">*</span> (g1 <span class="sc">-</span> g0)) <span class="sc">/</span> <span class="fu">sum</span>(g0<span class="sc">^</span><span class="dv">2</span>))   <span class="co"># Polak-Ribiere+</span></span>
-<span id="cb69-8"><a href="#cb69-8" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="sc">-</span>g1 <span class="sc">+</span> beta <span class="sc">*</span> d; x0 <span class="ot">&lt;-</span> x1; g0 <span class="ot">&lt;-</span> g1 }</span>
-<span id="cb69-9"><a href="#cb69-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">par =</span> x1, <span class="at">iter =</span> k, <span class="at">path =</span> path)</span>
-<span id="cb69-10"><a href="#cb69-10" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb69-11"><a href="#cb69-11" aria-hidden="true" tabindex="-1"></a>cg <span class="ot">&lt;-</span> <span class="fu">conj_grad</span>(fq, gq, <span class="fu">c</span>(<span class="dv">2</span>, <span class="sc">-</span><span class="fl">1.8</span>))</span>
-<span id="cb69-12"><a href="#cb69-12" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">pty =</span> <span class="st">"s"</span>, <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb69-13"><a href="#cb69-13" aria-hidden="true" tabindex="-1"></a><span class="fu">contour</span>(s, s, <span class="sc">-</span>z, <span class="at">nlevels =</span> <span class="dv">15</span>, <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"conjugate gradient, %d iterations"</span>, cg<span class="sc">$</span>iter))</span>
-<span id="cb69-14"><a href="#cb69-14" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(gd<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">col =</span> <span class="dv">2</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>); <span class="fu">lines</span>(cg<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">col =</span> <span class="dv">4</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb69-15"><a href="#cb69-15" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="fu">c</span>(<span class="st">"gradient descent"</span>, <span class="st">"conjugate gradient"</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">bty =</span> <span class="st">"n"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb68"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb68-1"><a href="#cb68-1" aria-hidden="true" tabindex="-1"></a>conj_grad <span class="ot">&lt;-</span> <span class="cf">function</span>(f, gr, x0, <span class="at">maxit =</span> <span class="dv">1000</span>, <span class="at">tol =</span> <span class="fl">1e-8</span>, <span class="at">restart =</span> <span class="fu">length</span>(x0)) {</span>
+<span id="cb68-2"><a href="#cb68-2" aria-hidden="true" tabindex="-1"></a>  g0 <span class="ot">&lt;-</span> <span class="fu">gr</span>(x0); d <span class="ot">&lt;-</span> <span class="sc">-</span>g0; path <span class="ot">&lt;-</span> x0</span>
+<span id="cb68-3"><a href="#cb68-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>maxit) {</span>
+<span id="cb68-4"><a href="#cb68-4" aria-hidden="true" tabindex="-1"></a>    a <span class="ot">&lt;-</span> <span class="fu">optimize</span>(<span class="cf">function</span>(a) <span class="fu">f</span>(x0 <span class="sc">+</span> a <span class="sc">*</span> d), <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">10</span>))<span class="sc">$</span>minimum</span>
+<span id="cb68-5"><a href="#cb68-5" aria-hidden="true" tabindex="-1"></a>    x1 <span class="ot">&lt;-</span> x0 <span class="sc">+</span> a <span class="sc">*</span> d; g1 <span class="ot">&lt;-</span> <span class="fu">gr</span>(x1); path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, x1)</span>
+<span id="cb68-6"><a href="#cb68-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>(g1<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&lt;</span> tol) <span class="cf">break</span></span>
+<span id="cb68-7"><a href="#cb68-7" aria-hidden="true" tabindex="-1"></a>    beta <span class="ot">&lt;-</span> <span class="cf">if</span> (k <span class="sc">%%</span> restart <span class="sc">==</span> <span class="dv">0</span>) <span class="dv">0</span> <span class="cf">else</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">sum</span>(g1 <span class="sc">*</span> (g1 <span class="sc">-</span> g0)) <span class="sc">/</span> <span class="fu">sum</span>(g0<span class="sc">^</span><span class="dv">2</span>))   <span class="co"># Polak-Ribiere+</span></span>
+<span id="cb68-8"><a href="#cb68-8" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="sc">-</span>g1 <span class="sc">+</span> beta <span class="sc">*</span> d; x0 <span class="ot">&lt;-</span> x1; g0 <span class="ot">&lt;-</span> g1 }</span>
+<span id="cb68-9"><a href="#cb68-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">par =</span> x1, <span class="at">iter =</span> k, <span class="at">path =</span> path)</span>
+<span id="cb68-10"><a href="#cb68-10" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb68-11"><a href="#cb68-11" aria-hidden="true" tabindex="-1"></a>cg <span class="ot">&lt;-</span> <span class="fu">conj_grad</span>(fq, gq, <span class="fu">c</span>(<span class="dv">2</span>, <span class="sc">-</span><span class="fl">1.8</span>))</span>
+<span id="cb68-12"><a href="#cb68-12" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">pty =</span> <span class="st">"s"</span>, <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb68-13"><a href="#cb68-13" aria-hidden="true" tabindex="-1"></a><span class="fu">contour</span>(s, s, <span class="sc">-</span>z, <span class="at">nlevels =</span> <span class="dv">15</span>, <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"conjugate gradient, %d iterations"</span>, cg<span class="sc">$</span>iter))</span>
+<span id="cb68-14"><a href="#cb68-14" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(gd<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">col =</span> <span class="dv">2</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>); <span class="fu">lines</span>(cg<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">col =</span> <span class="dv">4</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb68-15"><a href="#cb68-15" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="fu">c</span>(<span class="st">"gradient descent"</span>, <span class="st">"conjugate gradient"</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">bty =</span> <span class="st">"n"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-conjugate-gradient" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -2433,13 +2342,13 @@ Figure&nbsp;5.19: Shows how conjugate gradient repairs the zig-zag behaviour of 
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a>negll_fn  <span class="ot">&lt;-</span> <span class="cf">function</span>(b) <span class="fu">neg_logp_logistic</span>(b, data<span class="sc">$</span>z, data<span class="sc">$</span>r)</span>
-<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>neggr_fn  <span class="ot">&lt;-</span> <span class="cf">function</span>(b) <span class="fu">lik_score_info</span>(b, data<span class="sc">$</span>r, data<span class="sc">$</span>z)<span class="sc">$</span>neg_score</span>
-<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb70-4"><a href="#cb70-4" aria-hidden="true" tabindex="-1"></a>fits <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">NM   =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>),</span>
-<span id="cb70-5"><a href="#cb70-5" aria-hidden="true" tabindex="-1"></a>             <span class="at">CG   =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, neggr_fn, <span class="at">method =</span> <span class="st">"CG"</span>),</span>
-<span id="cb70-6"><a href="#cb70-6" aria-hidden="true" tabindex="-1"></a>             <span class="at">BFGS =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, neggr_fn, <span class="at">method =</span> <span class="st">"BFGS"</span>, <span class="at">hessian =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb70-7"><a href="#cb70-7" aria-hidden="true" tabindex="-1"></a><span class="fu">t</span>(<span class="fu">sapply</span>(fits, <span class="cf">function</span>(f) <span class="fu">c</span>(f<span class="sc">$</span>par, <span class="at">f_evals =</span> f<span class="sc">$</span>counts[<span class="dv">1</span>], <span class="at">g_evals =</span> f<span class="sc">$</span>counts[<span class="dv">2</span>])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a>negll_fn  <span class="ot">&lt;-</span> <span class="cf">function</span>(b) <span class="fu">neg_logp_logistic</span>(b, data<span class="sc">$</span>z, data<span class="sc">$</span>r)</span>
+<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a>neggr_fn  <span class="ot">&lt;-</span> <span class="cf">function</span>(b) <span class="fu">lik_score_info</span>(b, data<span class="sc">$</span>r, data<span class="sc">$</span>z)<span class="sc">$</span>neg_score</span>
+<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a>fits <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">NM   =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>),</span>
+<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a>             <span class="at">CG   =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, neggr_fn, <span class="at">method =</span> <span class="st">"CG"</span>),</span>
+<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a>             <span class="at">BFGS =</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), negll_fn, neggr_fn, <span class="at">method =</span> <span class="st">"BFGS"</span>, <span class="at">hessian =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a><span class="fu">t</span>(<span class="fu">sapply</span>(fits, <span class="cf">function</span>(f) <span class="fu">c</span>(f<span class="sc">$</span>par, <span class="at">f_evals =</span> f<span class="sc">$</span>counts[<span class="dv">1</span>], <span class="at">g_evals =</span> f<span class="sc">$</span>counts[<span class="dv">2</span>])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                         f_evals.function g_evals.gradient
@@ -2449,7 +2358,7 @@ BFGS -0.2725326 1.503425               31                9</code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb72"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb72-1"><a href="#cb72-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">solve</span>(fits<span class="sc">$</span>BFGS<span class="sc">$</span>hessian)))     <span class="co"># SEs from the numerically computed Hessian at the optimum</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb71"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">solve</span>(fits<span class="sc">$</span>BFGS<span class="sc">$</span>hessian)))     <span class="co"># SEs from the numerically computed Hessian at the optimum</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0.1797399 0.2089537</code></pre>
@@ -2844,7 +2753,7 @@ Figure&nbsp;5.20: <strong>Shinylive App Comparing Gradient Descent and Newton-Ra
 </figcaption>
 </figure>
 </div>
-<p>The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (<a href="#sec-nr-divergence-app" class="quarto-xref"><span>Section 5.3.6.1</span></a>); see the callout there for how to reproduce a shinylive app of your own.</p>
+<p>The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (<a href="#sec-nr-divergence-app" class="quarto-xref"><span>Section 5.3.6.1</span></a>).</p>
 </section>
 </section>
 <section id="neldermead-simplex-method" class="level2" data-number="5.5">
@@ -2858,8 +2767,8 @@ Figure&nbsp;5.20: <strong>Shinylive App Comparing Gradient Descent and Newton-Ra
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb75"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb75-1"><a href="#cb75-1" aria-hidden="true" tabindex="-1"></a>rosen <span class="ot">&lt;-</span> <span class="cf">function</span>(v) (<span class="dv">1</span> <span class="sc">-</span> v[<span class="dv">1</span>])<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">100</span> <span class="sc">*</span> (v[<span class="dv">2</span>] <span class="sc">-</span> v[<span class="dv">1</span>]<span class="sc">^</span><span class="dv">2</span>)<span class="sc">^</span><span class="dv">2</span>       <span class="co"># Rosenbrock "banana", min at (1, 1)</span></span>
-<span id="cb75-2"><a href="#cb75-2" aria-hidden="true" tabindex="-1"></a>nm <span class="ot">&lt;-</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="fl">1.2</span>, <span class="dv">1</span>), rosen, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>); <span class="fu">c</span>(nm<span class="sc">$</span>par, <span class="at">evals =</span> nm<span class="sc">$</span>counts[<span class="st">"function"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb74"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a>rosen <span class="ot">&lt;-</span> <span class="cf">function</span>(v) (<span class="dv">1</span> <span class="sc">-</span> v[<span class="dv">1</span>])<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">100</span> <span class="sc">*</span> (v[<span class="dv">2</span>] <span class="sc">-</span> v[<span class="dv">1</span>]<span class="sc">^</span><span class="dv">2</span>)<span class="sc">^</span><span class="dv">2</span>       <span class="co"># Rosenbrock "banana", min at (1, 1)</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a>nm <span class="ot">&lt;-</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="fl">1.2</span>, <span class="dv">1</span>), rosen, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>); <span class="fu">c</span>(nm<span class="sc">$</span>par, <span class="at">evals =</span> nm<span class="sc">$</span>counts[<span class="st">"function"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                              evals.function 
@@ -3633,27 +3542,27 @@ Figure&nbsp;5.22: <strong>Shinylive App for Stochastic Gradient Descent.</strong
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb79"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb79-1"><a href="#cb79-1" aria-hidden="true" tabindex="-1"></a>sgd_logistic <span class="ot">&lt;-</span> <span class="cf">function</span>(z, r, b0, <span class="at">gamma0 =</span> <span class="fl">0.5</span>, <span class="at">t0 =</span> <span class="dv">100</span>, <span class="at">epochs =</span> <span class="dv">30</span>, <span class="at">batch =</span> <span class="dv">10</span>) {</span>
-<span id="cb79-2"><a href="#cb79-2" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(z); b <span class="ot">&lt;-</span> b0; t <span class="ot">&lt;-</span> <span class="dv">0</span>; path <span class="ot">&lt;-</span> b0</span>
-<span id="cb79-3"><a href="#cb79-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (e <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>epochs) {</span>
-<span id="cb79-4"><a href="#cb79-4" aria-hidden="true" tabindex="-1"></a>    idx <span class="ot">&lt;-</span> <span class="fu">sample</span>(n)</span>
-<span id="cb79-5"><a href="#cb79-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (s <span class="cf">in</span> <span class="fu">seq</span>(<span class="dv">1</span>, n, <span class="at">by =</span> batch)) {</span>
-<span id="cb79-6"><a href="#cb79-6" aria-hidden="true" tabindex="-1"></a>      i <span class="ot">&lt;-</span> idx[s<span class="sc">:</span><span class="fu">min</span>(s <span class="sc">+</span> batch <span class="sc">-</span> <span class="dv">1</span>, n)]</span>
-<span id="cb79-7"><a href="#cb79-7" aria-hidden="true" tabindex="-1"></a>      t <span class="ot">&lt;-</span> t <span class="sc">+</span> <span class="dv">1</span></span>
-<span id="cb79-8"><a href="#cb79-8" aria-hidden="true" tabindex="-1"></a>      u <span class="ot">&lt;-</span> b[<span class="dv">1</span>] <span class="sc">+</span> b[<span class="dv">2</span>] <span class="sc">*</span> z[i]</span>
-<span id="cb79-9"><a href="#cb79-9" aria-hidden="true" tabindex="-1"></a>      p <span class="ot">&lt;-</span> <span class="fu">plogis</span>(u)</span>
-<span id="cb79-10"><a href="#cb79-10" aria-hidden="true" tabindex="-1"></a>      grad <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sum</span>(r[i] <span class="sc">-</span> p), <span class="fu">sum</span>(z[i] <span class="sc">*</span> (r[i] <span class="sc">-</span> p))) <span class="sc">/</span> <span class="fu">length</span>(i)</span>
-<span id="cb79-11"><a href="#cb79-11" aria-hidden="true" tabindex="-1"></a>      b <span class="ot">&lt;-</span> b <span class="sc">+</span> gamma0 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> t <span class="sc">/</span> t0) <span class="sc">*</span> grad</span>
-<span id="cb79-12"><a href="#cb79-12" aria-hidden="true" tabindex="-1"></a>      path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, b)</span>
-<span id="cb79-13"><a href="#cb79-13" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb79-14"><a href="#cb79-14" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb79-15"><a href="#cb79-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">est =</span> b, <span class="at">path =</span> path)</span>
-<span id="cb79-16"><a href="#cb79-16" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb79-17"><a href="#cb79-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb79-18"><a href="#cb79-18" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2</span>)</span>
-<span id="cb79-19"><a href="#cb79-19" aria-hidden="true" tabindex="-1"></a>beta_true <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.5</span>)                    <span class="co"># the parameters used to simulate data$z, data$r above</span></span>
-<span id="cb79-20"><a href="#cb79-20" aria-hidden="true" tabindex="-1"></a>sg <span class="ot">&lt;-</span> <span class="fu">sgd_logistic</span>(data<span class="sc">$</span>z, data<span class="sc">$</span>r, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>))</span>
-<span id="cb79-21"><a href="#cb79-21" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(<span class="at">sgd =</span> sg<span class="sc">$</span>est, <span class="at">nlm =</span> logit_nlm<span class="sc">$</span>estimate, <span class="at">truth =</span> beta_true)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb78"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a>sgd_logistic <span class="ot">&lt;-</span> <span class="cf">function</span>(z, r, b0, <span class="at">gamma0 =</span> <span class="fl">0.5</span>, <span class="at">t0 =</span> <span class="dv">100</span>, <span class="at">epochs =</span> <span class="dv">30</span>, <span class="at">batch =</span> <span class="dv">10</span>) {</span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(z); b <span class="ot">&lt;-</span> b0; t <span class="ot">&lt;-</span> <span class="dv">0</span>; path <span class="ot">&lt;-</span> b0</span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (e <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>epochs) {</span>
+<span id="cb78-4"><a href="#cb78-4" aria-hidden="true" tabindex="-1"></a>    idx <span class="ot">&lt;-</span> <span class="fu">sample</span>(n)</span>
+<span id="cb78-5"><a href="#cb78-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (s <span class="cf">in</span> <span class="fu">seq</span>(<span class="dv">1</span>, n, <span class="at">by =</span> batch)) {</span>
+<span id="cb78-6"><a href="#cb78-6" aria-hidden="true" tabindex="-1"></a>      i <span class="ot">&lt;-</span> idx[s<span class="sc">:</span><span class="fu">min</span>(s <span class="sc">+</span> batch <span class="sc">-</span> <span class="dv">1</span>, n)]</span>
+<span id="cb78-7"><a href="#cb78-7" aria-hidden="true" tabindex="-1"></a>      t <span class="ot">&lt;-</span> t <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb78-8"><a href="#cb78-8" aria-hidden="true" tabindex="-1"></a>      u <span class="ot">&lt;-</span> b[<span class="dv">1</span>] <span class="sc">+</span> b[<span class="dv">2</span>] <span class="sc">*</span> z[i]</span>
+<span id="cb78-9"><a href="#cb78-9" aria-hidden="true" tabindex="-1"></a>      p <span class="ot">&lt;-</span> <span class="fu">plogis</span>(u)</span>
+<span id="cb78-10"><a href="#cb78-10" aria-hidden="true" tabindex="-1"></a>      grad <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sum</span>(r[i] <span class="sc">-</span> p), <span class="fu">sum</span>(z[i] <span class="sc">*</span> (r[i] <span class="sc">-</span> p))) <span class="sc">/</span> <span class="fu">length</span>(i)</span>
+<span id="cb78-11"><a href="#cb78-11" aria-hidden="true" tabindex="-1"></a>      b <span class="ot">&lt;-</span> b <span class="sc">+</span> gamma0 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> t <span class="sc">/</span> t0) <span class="sc">*</span> grad</span>
+<span id="cb78-12"><a href="#cb78-12" aria-hidden="true" tabindex="-1"></a>      path <span class="ot">&lt;-</span> <span class="fu">rbind</span>(path, b)</span>
+<span id="cb78-13"><a href="#cb78-13" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb78-14"><a href="#cb78-14" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb78-15"><a href="#cb78-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">est =</span> b, <span class="at">path =</span> path)</span>
+<span id="cb78-16"><a href="#cb78-16" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb78-17"><a href="#cb78-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-18"><a href="#cb78-18" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">2</span>)</span>
+<span id="cb78-19"><a href="#cb78-19" aria-hidden="true" tabindex="-1"></a>beta_true <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.5</span>)                    <span class="co"># the parameters used to simulate data$z, data$r above</span></span>
+<span id="cb78-20"><a href="#cb78-20" aria-hidden="true" tabindex="-1"></a>sg <span class="ot">&lt;-</span> <span class="fu">sgd_logistic</span>(data<span class="sc">$</span>z, data<span class="sc">$</span>r, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb78-21"><a href="#cb78-21" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(<span class="at">sgd =</span> sg<span class="sc">$</span>est, <span class="at">nlm =</span> logit_nlm<span class="sc">$</span>estimate, <span class="at">truth =</span> beta_true)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>            [,1]     [,2]
@@ -3668,21 +3577,21 @@ truth  0.0000000 1.500000</code></pre>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb81"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a>nr_path <span class="ot">&lt;-</span> <span class="fu">mle_logistic_nr</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="dv">8</span>, data<span class="sc">$</span>r, data<span class="sc">$</span>z)     <span class="co"># beta0, beta1, neg_loglike per Newton iteration</span></span>
-<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="dv">10</span>; per_epoch <span class="ot">&lt;-</span> <span class="fu">length</span>(data<span class="sc">$</span>z) <span class="sc">/</span> m</span>
-<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a>xs <span class="ot">&lt;-</span> <span class="dv">0</span><span class="sc">:</span>(<span class="fu">nrow</span>(sg<span class="sc">$</span>path) <span class="sc">-</span> <span class="dv">1</span>)</span>
-<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a>xn <span class="ot">&lt;-</span> (<span class="dv">0</span><span class="sc">:</span>(<span class="fu">nrow</span>(nr_path) <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">*</span> per_epoch</span>
-<span id="cb81-5"><a href="#cb81-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb81-6"><a href="#cb81-6" aria-hidden="true" tabindex="-1"></a><span class="fu">matplot</span>(xs, sg<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lty =</span> <span class="dv">1</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>),</span>
-<span id="cb81-7"><a href="#cb81-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylim =</span> <span class="fu">range</span>(sg<span class="sc">$</span>path, nr_path[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]),</span>
-<span id="cb81-8"><a href="#cb81-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">xlab =</span> <span class="st">"mini-batch updates (one epoch = one full pass through the data)"</span>,</span>
-<span id="cb81-9"><a href="#cb81-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylab =</span> <span class="st">"coefficient"</span>,</span>
-<span id="cb81-10"><a href="#cb81-10" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"SGD vs. Newton-Raphson: "</span>, beta[<span class="dv">0</span>], <span class="st">" (red), "</span>, beta[<span class="dv">1</span>], <span class="st">" (blue)"</span>)))</span>
-<span id="cb81-11"><a href="#cb81-11" aria-hidden="true" tabindex="-1"></a><span class="fu">matlines</span>(xn, nr_path[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb81-12"><a href="#cb81-12" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> logit_nlm<span class="sc">$</span>estimate, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb81-13"><a href="#cb81-13" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="fu">max</span>(xs), per_epoch), <span class="at">col =</span> <span class="st">"grey85"</span>)</span>
-<span id="cb81-14"><a href="#cb81-14" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"right"</span>, <span class="fu">c</span>(<span class="st">"SGD (mini-batch)"</span>, <span class="st">"Newton (per full pass)"</span>, <span class="st">"MLE"</span>),</span>
-<span id="cb81-15"><a href="#cb81-15" aria-hidden="true" tabindex="-1"></a>       <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>), <span class="at">pch =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="dv">19</span>, <span class="cn">NA</span>), <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb80"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a>nr_path <span class="ot">&lt;-</span> <span class="fu">mle_logistic_nr</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="dv">8</span>, data<span class="sc">$</span>r, data<span class="sc">$</span>z)     <span class="co"># beta0, beta1, neg_loglike per Newton iteration</span></span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="dv">10</span>; per_epoch <span class="ot">&lt;-</span> <span class="fu">length</span>(data<span class="sc">$</span>z) <span class="sc">/</span> m</span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a>xs <span class="ot">&lt;-</span> <span class="dv">0</span><span class="sc">:</span>(<span class="fu">nrow</span>(sg<span class="sc">$</span>path) <span class="sc">-</span> <span class="dv">1</span>)</span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a>xn <span class="ot">&lt;-</span> (<span class="dv">0</span><span class="sc">:</span>(<span class="fu">nrow</span>(nr_path) <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">*</span> per_epoch</span>
+<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a><span class="fu">matplot</span>(xs, sg<span class="sc">$</span>path, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lty =</span> <span class="dv">1</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>),</span>
+<span id="cb80-7"><a href="#cb80-7" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylim =</span> <span class="fu">range</span>(sg<span class="sc">$</span>path, nr_path[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]),</span>
+<span id="cb80-8"><a href="#cb80-8" aria-hidden="true" tabindex="-1"></a>        <span class="at">xlab =</span> <span class="st">"mini-batch updates (one epoch = one full pass through the data)"</span>,</span>
+<span id="cb80-9"><a href="#cb80-9" aria-hidden="true" tabindex="-1"></a>        <span class="at">ylab =</span> <span class="st">"coefficient"</span>,</span>
+<span id="cb80-10"><a href="#cb80-10" aria-hidden="true" tabindex="-1"></a>        <span class="at">main =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"SGD vs. Newton-Raphson: "</span>, beta[<span class="dv">0</span>], <span class="st">" (red), "</span>, beta[<span class="dv">1</span>], <span class="st">" (blue)"</span>)))</span>
+<span id="cb80-11"><a href="#cb80-11" aria-hidden="true" tabindex="-1"></a><span class="fu">matlines</span>(xn, nr_path[, <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb80-12"><a href="#cb80-12" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">h =</span> logit_nlm<span class="sc">$</span>estimate, <span class="at">col =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">4</span>), <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb80-13"><a href="#cb80-13" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="fu">max</span>(xs), per_epoch), <span class="at">col =</span> <span class="st">"grey85"</span>)</span>
+<span id="cb80-14"><a href="#cb80-14" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"right"</span>, <span class="fu">c</span>(<span class="st">"SGD (mini-batch)"</span>, <span class="st">"Newton (per full pass)"</span>, <span class="st">"MLE"</span>),</span>
+<span id="cb80-15"><a href="#cb80-15" aria-hidden="true" tabindex="-1"></a>       <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>), <span class="at">pch =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="dv">19</span>, <span class="cn">NA</span>), <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-sgd-vs-newton" class="quarto-float quarto-figure quarto-figure-center anchored">

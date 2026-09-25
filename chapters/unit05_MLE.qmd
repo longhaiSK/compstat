@@ -1021,9 +1021,9 @@ The negative Hessian $J(\theta) = -H(\theta)$ is the **observed information
 matrix**.
 
 Expand $\ell$ to second order about the current iterate $\theta^{(k)}$:
+
 $$
 \ell(\theta) \;\approx\; \ell(\theta^{(k)})
-
  + S(\theta^{(k)})^{\top}(\theta - \theta^{(k)})
  - \tfrac{1}{2}\,(\theta - \theta^{(k)})^{\top} J(\theta^{(k)}) \,(\theta - \theta^{(k)}).
 $$
@@ -1264,60 +1264,61 @@ $u_i + (r_i - p_i)/\{p_i(1-p_i)\}$ on $X$ with weights $p_i(1-p_i)$, giving
 algorithm but a different arrangement of the same one, and it explains why
 `glm` reports "Fisher Scoring iterations" in its output.
 
-### Divergence {#sec-divergence}
+### Enhancements to Multivariate Newton-Raphson Methods {#sec-divergence}
 
-#### What goes wrong {#sec-nr-divergence-app}
+Newton–Raphson can diverge even on a well-behaved problem. Far from
+$\hat\theta$ the quadratic approximation is unreliable, and $J_k = J(\theta^{(k)})$
+may be nearly singular or not positive definite, so the raw step
+$\delta^{(k)} = J_k^{-1}S_k$ can be enormous or fail to point uphill at all. The
+standard enhancements all keep the Newton idea and add a guard.
 
-The quadratic approximation is trustworthy only in a neighbourhood of the
-current iterate. Starting from a large $|\beta_1|$, nearly all fitted
-probabilities are pushed to $0$ or $1$, so the weights $p_i(1-p_i)$ are
-essentially zero, $J$ is nearly singular, and $J^{-1}$ is enormous. The
-resulting step is huge, the new iterate lands far outside the region where the
-quadratic was a reasonable fit, and the process can oscillate or run off to
-infinity — even though the logistic log-likelihood is globally concave and has a
-unique maximum.
+* **Step halving (line search).** Move $\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}$,
+starting at $s = 1$ and halving until the log-likelihood increases by enough —
+the **Armijo condition**
+$\ell(\theta^{(k)} + s\,\delta^{(k)}) \ge \ell(\theta^{(k)}) + c_1 s\,S_k^\top\delta^{(k)}$
+with a tiny $c_1$ (say $10^{-4}$). Near the maximum $s = 1$ passes on the first
+try, so fast local convergence is untouched.
 
-Click in the contour plot (or type values) to choose a starting point, then
-use the playback buttons to step backward and forward through the iterations,
-jump to the end, or play the path as an animation over the contours of the
-negative log-likelihood. The orange arrow at the current iterate shows the
-direction of the gradient of the log-likelihood; because the two axes are drawn
-at different scales, it is perpendicular to the contours *as plotted*.
+* **Ridging (Levenberg–Marquardt).** Replace $J_k$ by $J_k + \tau\mathbb{I}$, with
+$\tau \ge 0$ just large enough to make it positive definite. This repairs
+indefiniteness and shortens the step; as $\tau$ grows the direction rotates from
+Newton toward plain gradient ascent, and $\tau = 0$ wherever $J_k$ is already
+well behaved. This is roughly what `nlm` does internally.
 
-Two standard safeguards can be switched on and compared against the plain
-iteration, which stays visible as a dashed grey path:
+* **Trust regions.** Maximise the quadratic approximation only within
+$\|\theta - \theta^{(k)}\| \le \Delta_k$, growing or shrinking $\Delta_k$
+according to how well the quadratic predicted the realised change. This is
+`nlminb` and the `PORT` routines.
 
-*   **Line search.** Instead of taking the full step $\beta - J^{-1}S$, take
-    $\beta - s\,J^{-1}S$ and halve $s$ from $1$ until the Armijo condition
-    $\ell_-(\beta - s\,J^{-1}S) \le \ell_-(\beta) - c_1 s\,S^\top J^{-1}S$
-    holds, where $\ell_-$ is the negative log-likelihood and $c_1 = 10^{-4}$.
-    Because $J$ is positive definite the Newton direction is a descent
-    direction, so such an $s$ always exists.
+* **Better parameterisation and starting values.** Often the cheapest fix.
+Centring and scaling the covariates improves the conditioning of $J$, and for
+GLMs the null-model fit is a reliable start — which is what `glm` uses when
+`start` is not supplied.
 
-*   **Robustification of the Hessian.** Replace $J$ by a nearby positive
-    definite matrix whose condition number is capped at $10^3$, either by
-    adding a ridge $\lambda I$ (the Levenberg--Marquardt modification) or by
-    flooring the eigenvalues of $J$ at $10^{-3}\lambda_{\max}$.
+Combining the first two gives **safeguarded Newton**: at each iteration form a
+positive definite $\tilde J_k$, solve $\tilde J_k\,\delta^{(k)} = S_k$, then
+backtrack on $s$. Both guards switch themselves off near a well-behaved
+maximum, so the method keeps Newton's fast local convergence while still making
+progress from remote starting values.
 
-The two safeguards fix different things, and the app makes the distinction
-concrete. Robustification keeps $J^{-1}$ finite, so the iteration no longer
-halts with a singular information matrix, but it does nothing about the
-*length* of the step: from $(0,5)$ the modified iteration still runs off to
-infinity. The line search is what caps the step, and from every starting point
-in the plotted window it alone restores convergence to
-$\hat\beta = (-0.27, 1.50)$. Robustification earns its keep when the Hessian
-is genuinely indefinite — far from a maximum in a non-concave problem — where
-without it the "Newton" direction may not even point uphill. This app runs live
-only in the HTML edition of this book; readers of other formats can follow the
-link below it.
+#### Shinylive App for Safeguarded Newton-Raphson {#sec-nr-divergence-app}
 
-::::: {.content-visible when-format="html"}
+Click in the contour plot (or type values) to choose a starting point, then use
+the playback buttons to step through the iterations or play the path as an
+animation over the contours of the negative log-likelihood. The orange arrow
+shows the direction of the gradient of the log-likelihood. Switching on either
+safeguard keeps the plain iteration visible as a dashed grey path for
+comparison; the details of each iteration, and the reason the run ended, are
+reported under the plot.
+
+
+:::: {.content-visible when-format="html"}
 ::: {#fig-nr-divergence-app}
 
 ```{shinylive-r}
 #| label: nr-divergence-app
 #| standalone: true
-#| viewerHeight: 900
+#| viewerHeight: 760
 
 library(shiny)
 
@@ -1348,11 +1349,6 @@ cond_num <- function(J) {
     if (min(e) <= 0) Inf else max(e) / min(e)
 }
 
-### ---------- contour grid (computed once) ----------------------------------
-B0 <- seq(-3, 3, by = 0.1)
-B1 <- seq(-8, 8, by = 0.2)
-Z <- outer(B0, B1, Vectorize(function(a, b) negll(c(a, b))))
-
 ### ---------- robustification of the Hessian --------------------------------
 ## Replace J by a nearby positive definite matrix whose condition number is at
 ## most 1/tau, so that J^{-1} stays bounded and the step remains a descent
@@ -1369,6 +1365,11 @@ robustify <- function(J, method, tau = 1e-3) {
         ev$vectors %*% (pmax(ev$values, tau * lmax) * t(ev$vectors))
     }
 }
+
+### ---------- contour grid (computed once) ----------------------------------
+B0 <- seq(-3, 3, by = 0.1)
+B1 <- seq(-8, 8, by = 0.2)
+Z <- outer(B0, B1, Vectorize(function(a, b) negll(c(a, b))))
 
 ### ---------- Newton-Raphson path -------------------------------------------
 ## Returns the iterates with their negll, gradient, accepted step length and the
@@ -1435,16 +1436,9 @@ ui <- fluidPage(
                         c("none (full Newton step)" = "none",
                           "backtracking (Armijo)"   = "armijo")),
             selectInput("robust", "robustification of the Hessian",
-                        c("none (observed information)"    = "none",
-                          "ridge (Levenberg-Marquardt)"    = "ridge",
-                          "eigenvalue flooring"            = "eigen")),
-            helpText(HTML(paste(
-                "The line search controls the <i>length</i> of the step; the",
-                "robustification controls its <i>direction</i>, by keeping the",
-                "Hessian positive definite and well conditioned. The logistic",
-                "information matrix is already positive semi-definite, so here",
-                "robustification alone only cures the numerical breakdown",
-                "&mdash; it is the line search that stops the overshoot."))),
+                        c("none (observed information)" = "none",
+                          "ridge (Levenberg-Marquardt)" = "ridge",
+                          "eigenvalue flooring"         = "eigen")),
             checkboxInput("compare", "overlay the plain Newton-Raphson path",
                           TRUE),
             checkboxInput("autoplay", "autoplay when the start changes", TRUE),
@@ -1458,17 +1452,20 @@ ui <- fluidPage(
                 ctrl_btn("step",  "forward-step",  "One step forward"),
                 ctrl_btn("toend", "forward-fast",  "To the end")),
             hr(),
-            htmlOutput("info"),
-            helpText("Try (0, 3) and then (0, 5) with both safeguards off: the ",
-                     "second start makes the information matrix nearly ",
-                     "singular, so the first step overshoots badly. Then turn ",
-                     "on the line search, or the robustification, or both."),
-            tableOutput("tab")
+            helpText("Try the starting values (0, 3) and then (0, 5), first ",
+                     "with both safeguards off, then with each in turn. From ",
+                     "(0, 5) the plain iteration stops because the ",
+                     "information matrix goes numerically singular; the ",
+                     "robustification is what keeps it invertible.")
         ),
         mainPanel(
             width = 8,
             plotOutput("contour", click = "click", height = "450px"),
-            plotOutput("trace", height = "220px")
+            ## details of the iterations, shown under the plot
+            hr(),
+            div(style = "max-width: 560px;",
+                tableOutput("tab"),
+                htmlOutput("note"))
         )
     )
 )
@@ -1601,65 +1598,41 @@ server <- function(input, output, session) {
                col = leg$col, legend = leg$txt)
     })
 
-    output$trace <- renderPlot({
-        P <- path()$P; kk <- k() + 1L
-        RP <- ref()
-        yy <- c(P[, 3], if (!is.null(RP)) RP$P[, 3])
-        yy <- yy[is.finite(yy) & yy > 0]
-        ## a diverging path can raise negll by several orders of magnitude, in
-        ## which case a log scale is the only way to see both curves at once
-        uselog <- length(yy) > 1 && max(yy) > 100 * min(yy)
-        par(mar = c(4, 4, 1, 1))
-        plot(0:(nrow(P) - 1), P[, 3], type = "n",
-             xlim = c(0, max(1, nrow(P) - 1, if (!is.null(RP)) RP$n - 1)),
-             ylim = range(yy), log = if (uselog) "y" else "",
-             xlab = "iteration",
-             ylab = if (uselog) "negative log-likelihood (log scale)"
-                    else "negative log-likelihood")
-        if (!is.null(RP)) {
-            Q <- RP$P[seq_len(min(kk, RP$n)), , drop = FALSE]
-            lines(0:(nrow(Q) - 1), Q[, 3], type = "b", pch = 19, cex = 0.7,
-                  lty = 2, col = "grey45")
-        }
-        lines(0:(kk - 1), P[1:kk, 3], type = "b", pch = 19, col = "steelblue")
-        points(kk - 1, P[kk, 3], pch = 21, bg = "firebrick", cex = 1.6)
-    })
+    ## one decimal throughout; a diverging run reaches values that would
+    ## otherwise be far too wide, so those switch to one-decimal scientific
+    f1 <- function(x) ifelse(!is.finite(x), "",
+              ifelse(abs(x) >= 1e5 | (x != 0 & abs(x) < 1e-3),
+                     formatC(x, format = "e", digits = 1),
+                     formatC(x, format = "f", digits = 1)))
 
-    output$info <- renderUI({
-        R <- path(); kk <- k() + 1L
-        fmt <- function(v, d = 4) formatC(v, format = "g", digits = d)
-        cur <- R$P[kk, ]
-        RP <- ref()
-        HTML(paste0(
-            "<b>iteration</b> ", kk - 1, " of ", R$n - 1, "<br>",
-            "<b>&beta;</b> = (", fmt(cur[1]), ", ", fmt(cur[2]), ")<br>",
-            "<b>||gradient||</b> = ", fmt(sqrt(sum(cur[4:5]^2))), "<br>",
-            "<b>cond(J)</b> = ", fmt(cur[7], 3),
-            if (is.finite(cur[6]))
-                paste0("<br><b>step length</b> = ", fmt(cur[6], 3)),
-            "<br><i>", if (kk == R$n) R$note else "", "</i>",
-            if (!is.null(RP))
-                paste0("<br><i>plain NR: ", RP$note, "</i>")))
+    ## why the run ended, shown as one line under the table
+    output$note <- renderUI({
+        R <- path(); RP <- ref()
+        if (k() + 1 < R$n) return(NULL)
+        HTML(paste0("<i>", R$note,
+                    if (!is.null(RP)) paste0("; plain Newton-Raphson: ",
+                                             RP$note),
+                    "</i>"))
     })
 
     output$tab <- renderTable({
         P <- path()$P[seq_len(k() + 1), , drop = FALSE]
-        d <- data.frame(iteration = seq_len(nrow(P)) - 1,
-                        beta0 = P[, 1], beta1 = P[, 2], negll = P[, 3],
-                        step = P[, 6], `cond(J)` = P[, 7],
-                        check.names = FALSE)
+        d <- data.frame(iteration = as.character(seq_len(nrow(P)) - 1),
+                        beta0 = f1(P[, 1]), beta1 = f1(P[, 2]),
+                        negll = f1(P[, 3]), step = f1(P[, 6]),
+                        `cond(J)` = f1(P[, 7]),
+                        check.names = FALSE, stringsAsFactors = FALSE)
         tail(d, 5)
-    }, digits = 4, rownames = FALSE, na = "")
+    }, rownames = FALSE, align = "r", width = "100%")
 }
 
 shinyApp(ui, server)
 ```
 
-**Shinylive App Illustrating Newton–Raphson Divergence.** Shows how Newton-Raphson can diverge on a logistic-regression likelihood when started far from the maximum, how the path depends on the starting value, and how a line search and a robustified Hessian change it. Click the contour plot to choose a starting value, then step, play, or jump
-through the iterations; the orange arrow shows the gradient direction, and the dashed grey path is the plain iteration shown for comparison.
+**Safeguarded Newton-Raphson.** Shows how the full Newton-Raphson step diverges on a logistic-regression likelihood started far from the maximum, and how backtracking on the step length rescues the same starting value. The iterates are traced over the contours of the negative log-likelihood, with the orange arrow marking the gradient direction at the current iterate and the unsafeguarded path left in place as a dashed grey curve for comparison.
 
 :::
-:::::
+::::
 
 ::: {.content-visible unless-format="html"}
 This section contains a live, in-browser Shiny app that only runs in the HTML
@@ -1668,81 +1641,6 @@ edition of this book. View it at
 
 :::
 
-::: {.callout-note}
-
-#### Reproducing this figure
-The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive)
-extension, which compiles the app to WebAssembly so that it runs in the reader's
-browser with no Shiny server. Install it once per project with
-
-```bash
-quarto add quarto-ext/shinylive
-```
-
-and add `filters: [shinylive]` to the document or project YAML. Only packages
-available in webR may be used inside the app, so the code above is restricted to
-base R and `shiny`.
-
-:::
-
-#### Enhancements to Multivariate Newton-Raphson Methods
-
-The divergence is not a defect of the Newton direction but of the Newton *step
-length*. The standard remedies all keep the direction and control the distance.
-
-**Step halving (backtracking).** Take $\delta^{(k)}$ as usual but move
-$\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}$, starting from $s = 1$ and
-halving until the log-likelihood actually increases. This costs a few extra
-function evaluations, never damages quadratic convergence near the maximum
-(where $s = 1$ is accepted on the first try), and rescues most divergent runs.
-Toggle it in the app above to see the effect.
-
-**Ridging (Levenberg–Marquardt).** Replace $J$ by $J + \lambda \mathbb{I}$ with
-$\lambda > 0$. Large $\lambda$ shrinks the step toward a small gradient step;
-$\lambda \to 0$ recovers Newton. This also repairs indefiniteness, and is the
-approach `nlm` takes internally.
-
-**Trust regions.** Maximise the quadratic approximation subject to
-$\|\theta - \theta^{(k)}\| \le \Delta_k$, adapting $\Delta_k$ according to how
-well the quadratic predicted the realised change. This is `nlminb` and the
-`PORT` routines.
-
-**Reparameterisation and good starts.** Often the cheapest fix. Centring and
-scaling covariates improves conditioning of $J$ substantially, and for GLMs
-the null-model fit is a reliable starting point — which is what `glm` uses when
-`start` is not supplied.
-
-Two more precise versions of these ideas are worth stating explicitly, since together they make up what is sometimes called **safeguarded Newton** — not "Newton–Raphson" in the textbook sense, and not what `nlm()` runs internally, which globalises with a trust region instead.
-
-**A principled choice of ridge.** Write $\delta_k = J_k^{-1}S_k$ for the raw Newton step at $\theta_k$ (with $J_k = J(\theta_k)$, $S_k = S(\theta_k)$). Two things can go wrong once $\theta_k$ is far from $\hat\theta$: the direction may not ascend at all, since $S_k^\top \delta_k = S_k^\top J_k^{-1}S_k > 0$ requires $J_k \succ 0$, which need not hold where $\ell$ is not concave; and even when $J_k \succ 0$, the full step can overshoot, since the quadratic model is trustworthy only near $\theta_k$. Ridging replaces $J_k$ by
-$$
-\tilde J_k = J_k + \tau I, \qquad \tau = \max\!\big(0,\ \delta - \lambda_{\min}(J_k)\big), \qquad \delta = 10^{-3}\,\lambda_{\max}(J_k),
-$$
-which shifts every eigenvalue of $J_k$ by $\tau$ while leaving its eigenvectors unchanged. As $\tau \to \infty$ the resulting direction $\tilde J_k^{-1}S_k$ rotates toward $S_k$ itself — plain gradient ascent — so ridging interpolates continuously between Newton and steepest ascent. An alternative, **spectral modification**, decomposes $J_k = V\Lambda V^\top$ and replaces each eigenvalue $\lambda_i$ by $\max(|\lambda_i|, \delta)$: this reverses negative-curvature directions rather than merely damping them, pushing the step away from a saddle instead of just slowing it down. Wherever $J_k \succ 0$ already, both reduce to $\tau = 0$ and $\tilde J_k = J_k$, so the safeguard is inactive exactly where it is not needed.
-
-**A precise stopping rule for step halving: the Armijo condition.** Accepting the halved step $\theta_k + s\,\delta_k$ the first time the log-likelihood merely fails to decrease is workable but crude. The standard criterion instead requires a **sufficient** increase,
-$$
-\ell(\theta_k + s\,\delta_k) \ \ge\ \ell(\theta_k) + c_1\, s\, S_k^\top \delta_k, \qquad c_1 = 10^{-4},
-$$
-tested at $s = 1, \rho, \rho^2, \ldots$ for a fixed $\rho \in (0,1)$ (e.g. $\rho = \tfrac12$) until it holds. Because $c_1$ is tiny, $s = 1$ passes immediately whenever the ordinary Newton step already improves $\ell$, so quadratic convergence near $\hat\theta$ is untouched. A companion **curvature (Wolfe) condition**,
-$$
-S(\theta_k + s\,\delta_k)^\top \delta_k \ \le\ c_2\, S_k^\top \delta_k, \qquad c_2 = 0.9,
-$$
-additionally rules out steps that are cut *too* short — something plain backtracking, which only ever shrinks $s$, cannot enforce on its own. This second condition matters less for Newton itself than for the gradient-only methods of the next section, where it is exactly what keeps the BFGS update well defined.
-
-::: {.callout-note appearance="minimal"}
-**The safeguarded step, in full.** At $\theta_k$: compute $S_k$ and $J_k$; form $\tilde J_k \succ 0$ by ridging or spectral modification; solve $\tilde J_k\,\delta_k = S_k$; choose $s_k$ from $s_0 = 1$ by backtracking against the Armijo condition; set $\theta_{k+1} = \theta_k + s_k\,\delta_k$.
-
-:::
-
-Both safeguards switch themselves off automatically near a well-behaved maximum, and stay active only where they are needed:
-
-| | near the maximum | far away / indefinite |
-|:--|:--|:--|
-| ridge $\tau$ | $0$ | $> 0$, direction rotates toward $S_k$ |
-| step $s_k$ | $1$ | $< 1$ |
-
-so quadratic convergence is retained locally while sufficient increase at every iteration guarantees progress from remote starting points — the combination that step halving, ridging, trust regions, and good starting values each approximate in the plainer forms described above.
 
 ## Gradient-Based Methods
 
@@ -2256,7 +2154,7 @@ edition of this book. View it at
 
 :::
 
-The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (@sec-nr-divergence-app); see the callout there for how to reproduce a shinylive app of your own.
+The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (@sec-nr-divergence-app).
 
 ## Nelder–Mead (Simplex Method)
 
