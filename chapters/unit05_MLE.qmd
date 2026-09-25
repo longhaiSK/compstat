@@ -1279,21 +1279,76 @@ $\ell(\theta^{(k)} + s\,\delta^{(k)}) \ge \ell(\theta^{(k)}) + c_1 s\,S_k^\top\d
 with a tiny $c_1$ (say $10^{-4}$). Near the maximum $s = 1$ passes on the first
 try, so fast local convergence is untouched.
 
+  The condition asks for more than a higher value of $\ell$. Written as
+  $$
+  \underbrace{\ell(\theta^{(k)} + s\,\delta^{(k)}) - \ell(\theta^{(k)})}_{\text{actual gain}}
+  \;\ge\; c_1 \cdot \underbrace{s\,S_k^\top\delta^{(k)}}_{\text{gain predicted by the tangent plane}},
+  $$
+  it says that the gain must be at least a fixed fraction of what the slope
+  promises for a step of that length. (When $J_k$ is positive definite,
+  $S_k^\top\delta^{(k)} = S_k^\top J_k^{-1} S_k > 0$, so the right-hand side is a
+  genuine gain.) Asking only for *some* increase is not enough, because the
+  gains can shrink so fast that the iterates stall at a point that is not a
+  maximum. For $\ell(\theta) = -\theta^2$, the sequence
+  $\theta^{(k)} = (-1)^k(1 + 2^{-k})$ raises $\ell$ at every step and moves
+  uphill each time, yet it bounces towards $\pm 1$, where the score is $\mp 2$,
+  never $0$. With $\delta = S = -2\theta$ the Armijo condition reduces to
+  $s \le 1 - c_1$, and the overshooting steps need $s \to 1$, so they are
+  rejected. Armijo only forbids steps that are too long for the gain they
+  deliver. Starting at $s = 1$ and halving only when the test fails is what
+  keeps the accepted steps from being needlessly short.
+
 * **Ridging (Levenberg–Marquardt).** Replace $J_k$ by $J_k + \tau\mathbb{I}$, with
 $\tau \ge 0$ just large enough to make it positive definite. This repairs
 indefiniteness and shortens the step; as $\tau$ grows the direction rotates from
 Newton toward plain gradient ascent, and $\tau = 0$ wherever $J_k$ is already
 well behaved. This is roughly what `nlm` does internally.
 
+  A simple rule takes $\tau = \max\{0,\ \epsilon - \lambda_{\min}(J_k)\}$,
+  which lifts the smallest eigenvalue of $J_k$ to a small positive $\epsilon$.
+  A modified Cholesky factorisation achieves the same without an
+  eigendecomposition. Since $\delta^{(k)}(\tau) = (J_k + \tau\mathbb{I})^{-1}S_k$
+  has length decreasing in $\tau$, ridging also acts as a step-length control,
+  and with a positive definite matrix the direction satisfies
+  $S_k^\top\delta^{(k)} > 0$, so a line search along it is guaranteed to find an
+  increase. A related guard for GLMs is **Fisher scoring**: the expected
+  information $I(\theta) = X^\top W X$ is positive semi-definite at every
+  $\theta$, and positive definite whenever $X$ has full column rank and all
+  weights are positive, so the ridge is rarely needed at all.
+
 * **Trust regions.** Maximise the quadratic approximation only within
 $\|\theta - \theta^{(k)}\| \le \Delta_k$, growing or shrinking $\Delta_k$
 according to how well the quadratic predicted the realised change. This is
 `nlminb` and the `PORT` routines.
 
+  The quality of the prediction is measured by the ratio
+  $$
+  \rho_k = \frac{\ell(\theta^{(k)} + \delta) - \ell(\theta^{(k)})}
+                {S_k^\top\delta - \tfrac12\,\delta^\top J_k\,\delta},
+  $$
+  actual gain over the gain predicted by the quadratic model. A typical rule
+  rejects the step if $\rho_k$ is small or negative and shrinks $\Delta_k$
+  (say by a factor of four); it accepts the step and keeps $\Delta_k$ when
+  $\rho_k$ is moderate; and it doubles $\Delta_k$ when $\rho_k \ge 3/4$ and the
+  step reached the boundary. The constrained subproblem has the solution
+  $\delta = (J_k + \tau\mathbb{I})^{-1}S_k$ for some $\tau \ge 0$, so a trust
+  region is ridging with $\tau$ chosen by the step length rather than the other
+  way round. Unlike a line search, it first fixes how far to go and then
+  chooses the direction. That makes it robust when $J_k$ is indefinite:
+  at a saddle point, where the Newton step points the wrong way, it still
+  moves uphill.
+
 * **Better parameterisation and starting values.** Often the cheapest fix.
-Centring and scaling the covariates improves the conditioning of $J$, and for
-GLMs the null-model fit is a reliable start — which is what `glm` uses when
-`start` is not supplied.
+Centring and scaling the covariates improves the conditioning of $J$.
+Parameters with natural bounds are better optimised on an unconstrained scale
+— $\log\sigma$ rather than $\sigma$, $\operatorname{logit} p$ rather than $p$ —
+which removes steps that leave the parameter space and usually makes $\ell$
+closer to quadratic. Good starting values come from a simpler fit: method of
+moments estimates, a least-squares fit, or the null model with an intercept
+only. `glm` sidesteps the choice altogether: it starts from fitted means rather
+than coefficients, taking $\mu_i^{(0)} = (y_i + 0.5)/2$ for binary data, which
+are always inside $(0, 1)$, and it therefore never begins in the flat region
+where the weights $p_i(1-p_i)$ vanish.
 
 Combining the first two gives **safeguarded Newton**: at each iteration form a
 positive definite $\tilde J_k$, solve $\tilde J_k\,\delta^{(k)} = S_k$, then
@@ -1762,7 +1817,7 @@ All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `o
 
 ### Animation: Comparing the Optimizers {#sec-gradient-methods-app}
 
-Press play to watch safeguarded Newton, gradient descent, conjugate gradient, and BFGS attack the same objective from the same start, on six test functions ranging from a well-conditioned quadratic to Rastrigin's many local minima. Click anywhere in the contour panel to try a different starting point.
+The app below runs safeguarded Newton, gradient descent, conjugate gradient, and BFGS on six test functions, ranging from a well-conditioned quadratic to Rastrigin's many local minima. Its controls match those of the safeguarded Newton–Raphson app (@sec-nr-divergence-app). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, $-\nabla f$. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search, are listed under the plot.
 
 ::::: {.content-visible when-format="html"}
 ::: {#fig-gradient-methods-app}
@@ -1950,41 +2005,55 @@ expand_box <- function(xlim, ylim, pin) {
 }
 
 ## --------------------------------------------------------------------- UI
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+  actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+               style = "flex: 1; padding: 6px 0;")
+
 ui <- fluidPage(
-  fluidRow(
-    ## ---- column 1: controls -------------------------------------------
-    column(
-      3,
-      selectInput("alg", "Algorithm", ALGS),
-      selectInput("fn", "Objective function",
+  sidebarLayout(
+    sidebarPanel(
+      width = 4,
+      selectInput("fn", "objective function",
                   setNames(names(FNS), sapply(FNS, `[[`, "label"))),
-      sliderInput("k", "Iteration k", min = 0, max = 1, value = 0, step = 1),
-      checkboxInput("showpath", "Show the whole path", TRUE),
-      htmlOutput("info")
+      selectInput("alg", "algorithm", ALGS),
+      div(style = "display: flex; gap: 10px;",
+          div(style = "flex: 1;",
+              numericInput("x1", HTML("starting x<sub>1</sub>"),
+                           value = FNS[[1]]$start[1], step = 0.5,
+                           width = "100%")),
+          div(style = "flex: 1;",
+              numericInput("x2", HTML("starting x<sub>2</sub>"),
+                           value = FNS[[1]]$start[2], step = 0.5,
+                           width = "100%"))),
+      helpText("Or click inside the contour plot to choose a new ",
+               "starting value."),
+      selectInput("compare", "overlay the path of",
+                  c("none" = "none", ALGS)),
+      checkboxInput("autoplay", "autoplay when the start changes", TRUE),
+      sliderInput("k", "iteration", min = 0, max = 1, value = 0, step = 1),
+      div(style = "display: flex; gap: 4px;",
+          ctrl_btn("first", "backward-fast", "Back to the start"),
+          ctrl_btn("back",  "backward-step", "One step back"),
+          ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
+          ctrl_btn("pause", "pause",         "Pause"),
+          ctrl_btn("step",  "forward-step",  "One step forward"),
+          ctrl_btn("toend", "forward-fast",  "To the end")),
+      hr(),
+      helpText("Try gradient descent on the Rosenbrock banana, overlaid ",
+               "with BFGS or safeguarded Newton: gradient descent zig-zags ",
+               "across the curved valley, while the curvature-aware methods ",
+               "follow it. On Himmelblau and Rastrigin, click different ",
+               "starting points to see which minimum each method finds.")
     ),
-    ## ---- column 2: playback -------------------------------------------
-    column(
-      2,
-      div(
-        style = "margin-top:26px;",
-        actionButton("play", "Play", class = "btn-primary btn-lg",
-                     style = "width:100%; margin-bottom:10px;"),
-        actionButton("step", "Next", class = "btn-lg",
-                     style = "width:100%; margin-bottom:10px;"),
-        actionButton("back", "Prev", class = "btn-lg",
-                     style = "width:100%;"),
-        hr(),
-        checkboxInput("autoplay", "Autoplay on Changing Initial", TRUE),
-        actionButton("reset", "Reset initial",
-                     style = "width:100%; margin-bottom:8px;"),
-        helpText("Click inside the contour plot to choose a new initial value.")
-      )
-    ),
-    ## ---- column 3: plots ----------------------------------------------
-    column(
-      7,
-      plotOutput("contour", click = "click", height = "540px"),
-      plotOutput("conv", height = "190px")
+    mainPanel(
+      width = 8,
+      plotOutput("contour", click = "click", height = "500px"),
+      ## details of the iterations, shown under the plot
+      hr(),
+      div(style = "max-width: 560px;",
+          tableOutput("tab"),
+          htmlOutput("note"))
     )
   )
 )
@@ -1993,66 +2062,70 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 
   FN <- reactive(FNS[[input$fn]])
-  start <- reactiveVal(FNS[[1]]$start)
   playing <- reactiveVal(FALSE)
+  play_ms <- 900
 
-  observeEvent(input$fn, start(FNS[[input$fn]]$start))
-  observeEvent(input$reset, start(FN()$start))
+  set_start <- function(p) {
+    updateNumericInput(session, "x1", value = round(p[1], 2))
+    updateNumericInput(session, "x2", value = round(p[2], 2))
+  }
+
+  ## a new objective moves the start to its default; clicking the contour
+  ## plot moves it to the clicked point
+  observeEvent(input$fn, set_start(FNS[[input$fn]]$start), ignoreInit = TRUE)
   observeEvent(input$click, {
     p <- c(input$click$x, input$click$y)
-    if (all(is.finite(p))) start(p)
+    if (all(is.finite(p))) set_start(p)
   })
 
-  path <- reactive({
-    req(start())
-    run_alg(input$alg, FN(), start())
+  start <- reactive({
+    req(is.finite(input$x1), is.finite(input$x2))
+    c(input$x1, input$x2)
   })
 
+  path <- reactive(run_alg(input$alg, FN(), start()))
+
+  ## a second algorithm from the same start, shown for comparison
+  ref <- reactive({
+    if (input$compare == "none" || input$compare == input$alg) return(NULL)
+    run_alg(input$compare, FN(), start())
+  })
+
+  ## current iteration, clamped to the length of the path
+  k <- reactive(min(as.integer(input$k), path()$n - 1))
+
+  ## a new path restarts the display at iteration 0
   observeEvent(path(), {
     updateSliderInput(session, "k", max = max(1, path()$n - 1), value = 0)
     playing(isTRUE(input$autoplay) && path()$n > 1)
   })
 
-  observeEvent(input$play, {
-    if (isTRUE(playing())) {
-      playing(FALSE)
-    } else {
-      if (as.integer(input$k) >= path()$n - 1)
-        updateSliderInput(session, "k", value = 0)
-      playing(TRUE)
-    }
-  })
+  go_to <- function(i) {
+    updateSliderInput(session, "k", value = max(0, min(i, path()$n - 1)))
+  }
 
-  observeEvent(playing(), {
-    updateActionButton(session, "play",
-                       label = if (isTRUE(playing())) "Pause" else "Play")
+  observeEvent(input$play, {
+    if (k() >= path()$n - 1) go_to(0)
+    if (path()$n > 1) playing(TRUE)
   })
+  observeEvent(input$pause, playing(FALSE))
+  observeEvent(input$step,  { playing(FALSE); go_to(k() + 1) })
+  observeEvent(input$back,  { playing(FALSE); go_to(k() - 1) })
+  observeEvent(input$first, { playing(FALSE); go_to(0) })
+  observeEvent(input$toend, { playing(FALSE); go_to(path()$n - 1) })
 
   observe({
     if (!isTRUE(playing())) return()
-    kmax <- isolate(path()$n) - 1
-    k <- isolate(as.integer(input$k))
-    if (k >= kmax) { playing(FALSE); return() }
-    invalidateLater(900, session)
-    updateSliderInput(session, "k", value = k + 1)
-  })
-
-  observeEvent(input$step, {
-    playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = min(as.integer(input$k) + 1, max(0, path()$n - 1)))
-  })
-
-  observeEvent(input$back, {
-    playing(FALSE)
-    updateSliderInput(session, "k", value = max(as.integer(input$k) - 1, 0))
+    kk <- isolate(k())
+    if (kk >= isolate(path()$n) - 1) { playing(FALSE); return() }
+    invalidateLater(play_ms, session)
+    isolate(go_to(kk + 1))
   })
 
   output$contour <- renderPlot({
-    FNc <- FN(); P <- path()
-    k <- min(as.integer(input$k), P$n - 1) + 1L
+    FNc <- FN(); P <- path(); RP <- ref(); kk <- k() + 1L
 
-    par(mar = c(4, 4, 2.5, 1))
+    par(mar = c(7, 4, 2, 1))                 # room for the legend below
     plot.new()
     bx <- expand_box(FNc$xlim, FNc$ylim, par("pin"))
     plot.window(xlim = bx$xlim, ylim = bx$ylim, xaxs = "i", yaxs = "i")
@@ -2062,87 +2135,108 @@ server <- function(input, output, session) {
     z  <- outer(xs, ys, FNc$fv)
     zf <- z[is.finite(z)]
     lv <- unique(quantile(zf, probs = seq(0, 1, length.out = 30)^1.7))
-    zr <- matrix(rank(z, na.last = "keep", ties.method = "average"),
-                 nrow = length(xs))
-
-    image(xs, ys, zr, add = TRUE,
-          col = colorRampPalette(c("#f7fbff", "#9ec4e3"))(128))
-    contour(xs, ys, z, levels = lv, add = TRUE,
-            col = "grey45", drawlabels = FALSE)
+    contour(xs, ys, z, levels = lv, add = TRUE, col = "grey70",
+            drawlabels = FALSE)
     axis(1); axis(2); box()
-    title(main = paste0(names(ALGS)[ALGS == input$alg], "  |  ", FNc$label),
-          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1.0)
+    title(main = paste0(names(ALGS)[ALGS == input$alg], " on ",
+                        sub("^\\([a-f]\\) ", "", FNc$label)),
+          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1)
+    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 3, col = "darkgreen",
+           lwd = 2, cex = 1.2)
 
-    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 8, col = "red",
-           cex = 1.3, lwd = 2)
-
-    if (isTRUE(input$showpath) && k > 1)
-      lines(P$X[1:k, 1], P$X[1:k, 2], col = "grey25", lty = 2)
-    points(P$X[1:k, 1], P$X[1:k, 2], pch = 20, col = "grey35", cex = 0.9)
-
-    xk <- P$X[k, ]; gk <- P$G[k, ]; gn <- sqrt(sum(gk^2))
-    L <- 0.09 * diff(bx$xlim)                      # fixed display length
-    if (gn > 0) {
-      u <- -gk / gn
-      arrows(xk[1], xk[2], xk[1] + L * u[1], xk[2] + L * u[2],
-             col = "grey45", lwd = 3, length = 0.10)
-      arrows(xk[1], xk[2], xk[1] - gk[1], xk[2] - gk[2],
-             col = "#E8820C", lwd = 3, length = 0.13)
+    ## the comparison path, drawn underneath
+    if (!is.null(RP)) {
+      Q <- RP$X[seq_len(min(kk, RP$n)), , drop = FALSE]
+      if (nrow(Q) > 1) lines(Q[, 1], Q[, 2], col = "grey45", lwd = 2, lty = 2)
+      points(Q[, 1], Q[, 2], pch = 21, bg = "grey85", col = "grey45",
+             cex = 0.9)
     }
-    if (k < P$n) {
-      arrows(xk[1], xk[2], P$X[k + 1, 1], P$X[k + 1, 2],
-             col = "#2E8B57", lwd = 3, length = 0.13)
-      points(P$X[k + 1, 1], P$X[k + 1, 2], pch = 21, bg = "white",
-             col = "#2E8B57", cex = 1.2)
-    }
-    points(xk[1], xk[2], pch = 19, col = "black", cex = 1.3)
 
-    legend("topleft", lwd = 3, cex = 0.9, bg = "#ffffffcc", box.col = NA,
-           col = c("grey45", "#E8820C", "#2E8B57"),
-           legend = c(expression(-nabla * f(x[k])~"(direction only)"),
-                      expression(-nabla * f(x[k])~"(actual length)"),
-                      expression(alpha[k] * d[k]~"(step taken)")))
+    X <- P$X
+    if (kk > 1) lines(X[1:kk, 1], X[1:kk, 2], col = "steelblue", lwd = 2)
+    points(X[1:kk, 1], X[1:kk, 2], pch = 21, bg = "steelblue", cex = 1.1)
+
+    cur <- X[kk, ]
+    inside <- cur[1] >= bx$xlim[1] && cur[1] <= bx$xlim[2] &&
+              cur[2] >= bx$ylim[1] && cur[2] <= bx$ylim[2]
+    if (inside) {
+      ## Arrow along -grad f (steepest descent), of fixed length on screen.
+      ## The gradient is a covector, so its on-screen components are obtained
+      ## by multiplying by the units-per-inch factors; the box is widened to
+      ## the device aspect ratio, so here the two factors agree anyway.
+      g <- -P$G[kk, ]
+      upi <- c(diff(par("usr")[1:2]) / par("pin")[1],
+               diff(par("usr")[3:4]) / par("pin")[2])
+      gs <- g * upi
+      if (sqrt(sum(g^2)) > 1e-6 && sqrt(sum(gs^2)) > 0) {
+        d <- 0.45 * gs / sqrt(sum(gs^2)) * upi              # 0.45 inch long
+        arrows(cur[1], cur[2], cur[1] + d[1], cur[2] + d[2],
+               col = "#E8820C", lwd = 3, length = 0.09)
+      }
+      points(cur[1], cur[2], pch = 21, bg = "firebrick", cex = 1.8)
+    } else {
+      mtext(sprintf("current iterate (%.3g, %.3g) is off the plotted region",
+                    cur[1], cur[2]), side = 3, line = -1.5,
+            col = "firebrick", cex = 0.9)
+    }
+
+    leg <- list(txt = c("current iterate", "minimum",
+                        "steepest descent (direction)"),
+                pch = c(21, 3, NA), bg = c("firebrick", NA, NA),
+                lwd = c(NA, 2, 3), lty = c(NA, NA, 1),
+                col = c("black", "darkgreen", "#E8820C"))
+    if (!is.null(RP)) {
+      leg$txt <- c(leg$txt, names(ALGS)[ALGS == input$compare])
+      leg$pch <- c(leg$pch, NA); leg$bg <- c(leg$bg, NA)
+      leg$lwd <- c(leg$lwd, 2);  leg$lty <- c(leg$lty, 2)
+      leg$col <- c(leg$col, "grey45")
+    }
+    ## legend under the x axis label, so that it never covers the path
+    y0 <- grconvertY(grconvertY(par("usr")[3], "user", "inches") -
+                     3.2 * par("csi"), "inches", "user")
+    legend(mean(par("usr")[1:2]), y0, xjust = 0.5, yjust = 1, xpd = NA,
+           ncol = 2, bty = "n", cex = 0.85,
+           pch = leg$pch, pt.bg = leg$bg, lwd = leg$lwd, lty = leg$lty,
+           col = leg$col, legend = leg$txt)
   })
 
-  output$conv <- renderPlot({
-    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
-    gn <- sqrt(rowSums(P$G^2))
-    gn[!is.finite(gn) | gn <= 0] <- NA
-    par(mar = c(4, 4.5, 1.5, 1))
-    plot(seq_len(P$n) - 1, gn, type = "b", pch = 20, log = "y",
-         xlab = "iteration k", ylab = expression("||" * nabla * f * "||"),
-         col = "grey40")
-    points(k - 1, gn[k], pch = 19, col = "#E8820C", cex = 1.6)
+  ## compact numbers: fixed with three decimals, switching to scientific
+  ## for very large or very small values
+  f3 <- function(x) ifelse(!is.finite(x), "",
+          ifelse(abs(x) >= 1e5 | (x != 0 & abs(x) < 1e-3),
+                 formatC(x, format = "e", digits = 1),
+                 formatC(x, format = "f", digits = 3)))
+
+  ## why the run ended, shown as one line under the table
+  output$note <- renderUI({
+    P <- path(); RP <- ref()
+    if (k() + 1 < P$n) return(NULL)
+    HTML(paste0("<i>", P$note,
+                if (!is.null(RP)) paste0("; ", names(ALGS)[ALGS == input$compare],
+                                         ": ", RP$note, " after ", RP$n - 1,
+                                         " iterations"),
+                "</i>"))
   })
 
-  output$info <- renderUI({
-    P <- path(); k <- min(as.integer(input$k), P$n - 1) + 1L
-    xk <- P$X[k, ]; gk <- P$G[k, ]; gn <- sqrt(sum(gk^2))
-    ang <- NA
-    if (k < P$n) {
-      sk <- P$X[k + 1, ] - xk
-      cs <- sum(-gk * sk) / (gn * sqrt(sum(sk^2)))
-      ang <- acos(max(-1, min(1, cs))) * 180 / pi
-    }
-    fmt <- function(v, d = 4) formatC(v, format = "g", digits = d)
-    HTML(paste0(
-      "<hr><b>iteration</b> ", k - 1, " of ", P$n - 1, "<br>",
-      "<b>x<sub>k</sub></b> = (", fmt(xk[1]), ", ", fmt(xk[2]), ")<br>",
-      "<b>f(x<sub>k</sub>)</b> = ", fmt(P$F[k], 6), "<br>",
-      "<b>||grad||</b> = ", fmt(gn), "<br>",
-      "<b>step size &alpha;<sub>k</sub></b> = ",
-      if (k < P$n) fmt(P$A[k]) else "&ndash;", "<br>",
-      "<b>angle(grey, green)</b> = ",
-      if (is.na(ang)) "&ndash;" else paste0(fmt(ang, 3), "&deg;"),
-      "<br><br><i>", P$note, "</i>"
-    ))
-  })
+  output$tab <- renderTable({
+    P <- path(); kk <- k() + 1L
+    ## the step length that led to each iterate (none for the start)
+    a_in <- c(NA, P$A)[seq_len(P$n)]
+    i <- seq_len(kk)
+    d <- data.frame(iteration = as.character(i - 1),
+                    x1 = f3(P$X[i, 1]), x2 = f3(P$X[i, 2]),
+                    f = f3(P$F[i]),
+                    `||grad||` = f3(sqrt(rowSums(P$G[i, , drop = FALSE]^2))),
+                    step = f3(a_in[i]),
+                    check.names = FALSE, stringsAsFactors = FALSE)
+    tail(d, 5)
+  }, rownames = FALSE, align = "r", width = "100%")
 }
 
 shinyApp(ui, server)
 ```
 
-**Shinylive App Comparing Gradient Descent and Newton-Raphson Optimization Algorithms.** Lets you compare the paths that gradient descent and Newton-Raphson take on the same objective, to see how curvature information affects speed and stability. Choose an algorithm and objective, then step or play through the iterations.
+**Shinylive App Comparing Gradient Descent and Newton-Raphson Optimization Algorithms.** Lets you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.
 
 :::
 :::::

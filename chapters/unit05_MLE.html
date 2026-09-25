@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-09-24">
+<meta name="dcterms.date" content="2026-09-25">
 
 <title>5&nbsp; Optimization for Maximum Likelihood Estimation – Elements of Statistical Computation</title>
 <style>
@@ -399,7 +399,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 24, 2026</p>
+      <p class="date">September 25, 2026</p>
     </div>
   </div>
   
@@ -1844,7 +1844,7 @@ Figure&nbsp;5.16: Shows the simulated logistic-regression data used as a running
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb62-1"><a href="#cb62-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">solve</span>(logit_nlm<span class="sc">$</span>hessian)))   <span class="co"># asymptotic standard errors</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>[1] 0.1797391 0.2089673</code></pre>
+<pre><code>[1] 0.1797390 0.2089674</code></pre>
 </div>
 </div>
 <div class="cell">
@@ -1865,10 +1865,19 @@ z            1.5034244  0.2089473  7.195234 6.235374e-13</code></pre>
 <h3 data-number="5.3.6" class="anchored" data-anchor-id="sec-divergence"><span class="header-section-number">5.3.6</span> Enhancements to Multivariate Newton-Raphson Methods</h3>
 <p>Newton–Raphson can diverge even on a well-behaved problem. Far from <span class="math inline">\(\hat\theta\)</span> the quadratic approximation is unreliable, and <span class="math inline">\(J_k = J(\theta^{(k)})\)</span> may be nearly singular or not positive definite, so the raw step <span class="math inline">\(\delta^{(k)} = J_k^{-1}S_k\)</span> can be enormous or fail to point uphill at all. The standard enhancements all keep the Newton idea and add a guard.</p>
 <ul>
-<li><p><strong>Step halving (line search).</strong> Move <span class="math inline">\(\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}\)</span>, starting at <span class="math inline">\(s = 1\)</span> and halving until the log-likelihood increases by enough — the <strong>Armijo condition</strong> <span class="math inline">\(\ell(\theta^{(k)} + s\,\delta^{(k)}) \ge \ell(\theta^{(k)}) + c_1 s\,S_k^\top\delta^{(k)}\)</span> with a tiny <span class="math inline">\(c_1\)</span> (say <span class="math inline">\(10^{-4}\)</span>). Near the maximum <span class="math inline">\(s = 1\)</span> passes on the first try, so fast local convergence is untouched.</p></li>
-<li><p><strong>Ridging (Levenberg–Marquardt).</strong> Replace <span class="math inline">\(J_k\)</span> by <span class="math inline">\(J_k + \tau\mathbb{I}\)</span>, with <span class="math inline">\(\tau \ge 0\)</span> just large enough to make it positive definite. This repairs indefiniteness and shortens the step; as <span class="math inline">\(\tau\)</span> grows the direction rotates from Newton toward plain gradient ascent, and <span class="math inline">\(\tau = 0\)</span> wherever <span class="math inline">\(J_k\)</span> is already well behaved. This is roughly what <code>nlm</code> does internally.</p></li>
-<li><p><strong>Trust regions.</strong> Maximise the quadratic approximation only within <span class="math inline">\(\|\theta - \theta^{(k)}\| \le \Delta_k\)</span>, growing or shrinking <span class="math inline">\(\Delta_k\)</span> according to how well the quadratic predicted the realised change. This is <code>nlminb</code> and the <code>PORT</code> routines.</p></li>
-<li><p><strong>Better parameterisation and starting values.</strong> Often the cheapest fix. Centring and scaling the covariates improves the conditioning of <span class="math inline">\(J\)</span>, and for GLMs the null-model fit is a reliable start — which is what <code>glm</code> uses when <code>start</code> is not supplied.</p></li>
+<li><p><strong>Step halving (line search).</strong> Move <span class="math inline">\(\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}\)</span>, starting at <span class="math inline">\(s = 1\)</span> and halving until the log-likelihood increases by enough — the <strong>Armijo condition</strong> <span class="math inline">\(\ell(\theta^{(k)} + s\,\delta^{(k)}) \ge \ell(\theta^{(k)}) + c_1 s\,S_k^\top\delta^{(k)}\)</span> with a tiny <span class="math inline">\(c_1\)</span> (say <span class="math inline">\(10^{-4}\)</span>). Near the maximum <span class="math inline">\(s = 1\)</span> passes on the first try, so fast local convergence is untouched.</p>
+<p>The condition asks for more than a higher value of <span class="math inline">\(\ell\)</span>. Written as <span class="math display">\[
+\underbrace{\ell(\theta^{(k)} + s\,\delta^{(k)}) - \ell(\theta^{(k)})}_{\text{actual gain}}
+\;\ge\; c_1 \cdot \underbrace{s\,S_k^\top\delta^{(k)}}_{\text{gain predicted by the tangent plane}},
+\]</span> it says that the gain must be at least a fixed fraction of what the slope promises for a step of that length. (When <span class="math inline">\(J_k\)</span> is positive definite, <span class="math inline">\(S_k^\top\delta^{(k)} = S_k^\top J_k^{-1} S_k &gt; 0\)</span>, so the right-hand side is a genuine gain.) Asking only for <em>some</em> increase is not enough, because the gains can shrink so fast that the iterates stall at a point that is not a maximum. For <span class="math inline">\(\ell(\theta) = -\theta^2\)</span>, the sequence <span class="math inline">\(\theta^{(k)} = (-1)^k(1 + 2^{-k})\)</span> raises <span class="math inline">\(\ell\)</span> at every step and moves uphill each time, yet it bounces towards <span class="math inline">\(\pm 1\)</span>, where the score is <span class="math inline">\(\mp 2\)</span>, never <span class="math inline">\(0\)</span>. With <span class="math inline">\(\delta = S = -2\theta\)</span> the Armijo condition reduces to <span class="math inline">\(s \le 1 - c_1\)</span>, and the overshooting steps need <span class="math inline">\(s \to 1\)</span>, so they are rejected. Armijo only forbids steps that are too long for the gain they deliver. Starting at <span class="math inline">\(s = 1\)</span> and halving only when the test fails is what keeps the accepted steps from being needlessly short.</p></li>
+<li><p><strong>Ridging (Levenberg–Marquardt).</strong> Replace <span class="math inline">\(J_k\)</span> by <span class="math inline">\(J_k + \tau\mathbb{I}\)</span>, with <span class="math inline">\(\tau \ge 0\)</span> just large enough to make it positive definite. This repairs indefiniteness and shortens the step; as <span class="math inline">\(\tau\)</span> grows the direction rotates from Newton toward plain gradient ascent, and <span class="math inline">\(\tau = 0\)</span> wherever <span class="math inline">\(J_k\)</span> is already well behaved. This is roughly what <code>nlm</code> does internally.</p>
+<p>A simple rule takes <span class="math inline">\(\tau = \max\{0,\ \epsilon - \lambda_{\min}(J_k)\}\)</span>, which lifts the smallest eigenvalue of <span class="math inline">\(J_k\)</span> to a small positive <span class="math inline">\(\epsilon\)</span>. A modified Cholesky factorisation achieves the same without an eigendecomposition. Since <span class="math inline">\(\delta^{(k)}(\tau) = (J_k + \tau\mathbb{I})^{-1}S_k\)</span> has length decreasing in <span class="math inline">\(\tau\)</span>, ridging also acts as a step-length control, and with a positive definite matrix the direction satisfies <span class="math inline">\(S_k^\top\delta^{(k)} &gt; 0\)</span>, so a line search along it is guaranteed to find an increase. A related guard for GLMs is <strong>Fisher scoring</strong>: the expected information <span class="math inline">\(I(\theta) = X^\top W X\)</span> is positive semi-definite at every <span class="math inline">\(\theta\)</span>, and positive definite whenever <span class="math inline">\(X\)</span> has full column rank and all weights are positive, so the ridge is rarely needed at all.</p></li>
+<li><p><strong>Trust regions.</strong> Maximise the quadratic approximation only within <span class="math inline">\(\|\theta - \theta^{(k)}\| \le \Delta_k\)</span>, growing or shrinking <span class="math inline">\(\Delta_k\)</span> according to how well the quadratic predicted the realised change. This is <code>nlminb</code> and the <code>PORT</code> routines.</p>
+<p>The quality of the prediction is measured by the ratio <span class="math display">\[
+\rho_k = \frac{\ell(\theta^{(k)} + \delta) - \ell(\theta^{(k)})}
+              {S_k^\top\delta - \tfrac12\,\delta^\top J_k\,\delta},
+\]</span> actual gain over the gain predicted by the quadratic model. A typical rule rejects the step if <span class="math inline">\(\rho_k\)</span> is small or negative and shrinks <span class="math inline">\(\Delta_k\)</span> (say by a factor of four); it accepts the step and keeps <span class="math inline">\(\Delta_k\)</span> when <span class="math inline">\(\rho_k\)</span> is moderate; and it doubles <span class="math inline">\(\Delta_k\)</span> when <span class="math inline">\(\rho_k \ge 3/4\)</span> and the step reached the boundary. The constrained subproblem has the solution <span class="math inline">\(\delta = (J_k + \tau\mathbb{I})^{-1}S_k\)</span> for some <span class="math inline">\(\tau \ge 0\)</span>, so a trust region is ridging with <span class="math inline">\(\tau\)</span> chosen by the step length rather than the other way round. Unlike a line search, it first fixes how far to go and then chooses the direction. That makes it robust when <span class="math inline">\(J_k\)</span> is indefinite: at a saddle point, where the Newton step points the wrong way, it still moves uphill.</p></li>
+<li><p><strong>Better parameterisation and starting values.</strong> Often the cheapest fix. Centring and scaling the covariates improves the conditioning of <span class="math inline">\(J\)</span>. Parameters with natural bounds are better optimised on an unconstrained scale — <span class="math inline">\(\log\sigma\)</span> rather than <span class="math inline">\(\sigma\)</span>, <span class="math inline">\(\operatorname{logit} p\)</span> rather than <span class="math inline">\(p\)</span> — which removes steps that leave the parameter space and usually makes <span class="math inline">\(\ell\)</span> closer to quadratic. Good starting values come from a simpler fit: method of moments estimates, a least-squares fit, or the null model with an intercept only. <code>glm</code> sidesteps the choice altogether: it starts from fitted means rather than coefficients, taking <span class="math inline">\(\mu_i^{(0)} = (y_i + 0.5)/2\)</span> for binary data, which are always inside <span class="math inline">\((0, 1)\)</span>, and it therefore never begins in the flat region where the weights <span class="math inline">\(p_i(1-p_i)\)</span> vanish.</p></li>
 </ul>
 <p>Combining the first two gives <strong>safeguarded Newton</strong>: at each iteration form a positive definite <span class="math inline">\(\tilde J_k\)</span>, solve <span class="math inline">\(\tilde J_k\,\delta^{(k)} = S_k\)</span>, then backtrack on <span class="math inline">\(s\)</span>. Both guards switch themselves off near a well-behaved maximum, so the method keeps Newton’s fast local convergence while still making progress from remote starting values.</p>
 <section id="sec-nr-divergence-app" class="level4" data-number="5.3.6.1">
@@ -2368,7 +2377,7 @@ BFGS -0.2725326 1.503425               31                9</code></pre>
 </section>
 <section id="sec-gradient-methods-app" class="level3" data-number="5.4.6">
 <h3 data-number="5.4.6" class="anchored" data-anchor-id="sec-gradient-methods-app"><span class="header-section-number">5.4.6</span> Animation: Comparing the Optimizers</h3>
-<p>Press play to watch safeguarded Newton, gradient descent, conjugate gradient, and BFGS attack the same objective from the same start, on six test functions ranging from a well-conditioned quadratic to Rastrigin’s many local minima. Click anywhere in the contour panel to try a different starting point.</p>
+<p>The app below runs safeguarded Newton, gradient descent, conjugate gradient, and BFGS on six test functions, ranging from a well-conditioned quadratic to Rastrigin’s many local minima. Its controls match those of the safeguarded Newton–Raphson app (<a href="#sec-nr-divergence-app" class="quarto-xref"><span>Section 5.3.6.1</span></a>). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, <span class="math inline">\(-\nabla f\)</span>. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search, are listed under the plot.</p>
 <div id="fig-gradient-methods-app" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-gradient-methods-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
@@ -2557,41 +2566,55 @@ expand_box &lt;- function(xlim, ylim, pin) {
 }
 
 ## --------------------------------------------------------------------- UI
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn &lt;- function(id, icon_name, title, class = "btn-default")
+  actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+               style = "flex: 1; padding: 6px 0;")
+
 ui &lt;- fluidPage(
-  fluidRow(
-    ## ---- column 1: controls -------------------------------------------
-    column(
-      3,
-      selectInput("alg", "Algorithm", ALGS),
-      selectInput("fn", "Objective function",
+  sidebarLayout(
+    sidebarPanel(
+      width = 4,
+      selectInput("fn", "objective function",
                   setNames(names(FNS), sapply(FNS, `[[`, "label"))),
-      sliderInput("k", "Iteration k", min = 0, max = 1, value = 0, step = 1),
-      checkboxInput("showpath", "Show the whole path", TRUE),
-      htmlOutput("info")
+      selectInput("alg", "algorithm", ALGS),
+      div(style = "display: flex; gap: 10px;",
+          div(style = "flex: 1;",
+              numericInput("x1", HTML("starting x&lt;sub&gt;1&lt;/sub&gt;"),
+                           value = FNS[[1]]$start[1], step = 0.5,
+                           width = "100%")),
+          div(style = "flex: 1;",
+              numericInput("x2", HTML("starting x&lt;sub&gt;2&lt;/sub&gt;"),
+                           value = FNS[[1]]$start[2], step = 0.5,
+                           width = "100%"))),
+      helpText("Or click inside the contour plot to choose a new ",
+               "starting value."),
+      selectInput("compare", "overlay the path of",
+                  c("none" = "none", ALGS)),
+      checkboxInput("autoplay", "autoplay when the start changes", TRUE),
+      sliderInput("k", "iteration", min = 0, max = 1, value = 0, step = 1),
+      div(style = "display: flex; gap: 4px;",
+          ctrl_btn("first", "backward-fast", "Back to the start"),
+          ctrl_btn("back",  "backward-step", "One step back"),
+          ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
+          ctrl_btn("pause", "pause",         "Pause"),
+          ctrl_btn("step",  "forward-step",  "One step forward"),
+          ctrl_btn("toend", "forward-fast",  "To the end")),
+      hr(),
+      helpText("Try gradient descent on the Rosenbrock banana, overlaid ",
+               "with BFGS or safeguarded Newton: gradient descent zig-zags ",
+               "across the curved valley, while the curvature-aware methods ",
+               "follow it. On Himmelblau and Rastrigin, click different ",
+               "starting points to see which minimum each method finds.")
     ),
-    ## ---- column 2: playback -------------------------------------------
-    column(
-      2,
-      div(
-        style = "margin-top:26px;",
-        actionButton("play", "Play", class = "btn-primary btn-lg",
-                     style = "width:100%; margin-bottom:10px;"),
-        actionButton("step", "Next", class = "btn-lg",
-                     style = "width:100%; margin-bottom:10px;"),
-        actionButton("back", "Prev", class = "btn-lg",
-                     style = "width:100%;"),
-        hr(),
-        checkboxInput("autoplay", "Autoplay on Changing Initial", TRUE),
-        actionButton("reset", "Reset initial",
-                     style = "width:100%; margin-bottom:8px;"),
-        helpText("Click inside the contour plot to choose a new initial value.")
-      )
-    ),
-    ## ---- column 3: plots ----------------------------------------------
-    column(
-      7,
-      plotOutput("contour", click = "click", height = "540px"),
-      plotOutput("conv", height = "190px")
+    mainPanel(
+      width = 8,
+      plotOutput("contour", click = "click", height = "500px"),
+      ## details of the iterations, shown under the plot
+      hr(),
+      div(style = "max-width: 560px;",
+          tableOutput("tab"),
+          htmlOutput("note"))
     )
   )
 )
@@ -2600,66 +2623,70 @@ ui &lt;- fluidPage(
 server &lt;- function(input, output, session) {
 
   FN &lt;- reactive(FNS[[input$fn]])
-  start &lt;- reactiveVal(FNS[[1]]$start)
   playing &lt;- reactiveVal(FALSE)
+  play_ms &lt;- 900
 
-  observeEvent(input$fn, start(FNS[[input$fn]]$start))
-  observeEvent(input$reset, start(FN()$start))
+  set_start &lt;- function(p) {
+    updateNumericInput(session, "x1", value = round(p[1], 2))
+    updateNumericInput(session, "x2", value = round(p[2], 2))
+  }
+
+  ## a new objective moves the start to its default; clicking the contour
+  ## plot moves it to the clicked point
+  observeEvent(input$fn, set_start(FNS[[input$fn]]$start), ignoreInit = TRUE)
   observeEvent(input$click, {
     p &lt;- c(input$click$x, input$click$y)
-    if (all(is.finite(p))) start(p)
+    if (all(is.finite(p))) set_start(p)
   })
 
-  path &lt;- reactive({
-    req(start())
-    run_alg(input$alg, FN(), start())
+  start &lt;- reactive({
+    req(is.finite(input$x1), is.finite(input$x2))
+    c(input$x1, input$x2)
   })
 
+  path &lt;- reactive(run_alg(input$alg, FN(), start()))
+
+  ## a second algorithm from the same start, shown for comparison
+  ref &lt;- reactive({
+    if (input$compare == "none" || input$compare == input$alg) return(NULL)
+    run_alg(input$compare, FN(), start())
+  })
+
+  ## current iteration, clamped to the length of the path
+  k &lt;- reactive(min(as.integer(input$k), path()$n - 1))
+
+  ## a new path restarts the display at iteration 0
   observeEvent(path(), {
     updateSliderInput(session, "k", max = max(1, path()$n - 1), value = 0)
     playing(isTRUE(input$autoplay) &amp;&amp; path()$n &gt; 1)
   })
 
-  observeEvent(input$play, {
-    if (isTRUE(playing())) {
-      playing(FALSE)
-    } else {
-      if (as.integer(input$k) &gt;= path()$n - 1)
-        updateSliderInput(session, "k", value = 0)
-      playing(TRUE)
-    }
-  })
+  go_to &lt;- function(i) {
+    updateSliderInput(session, "k", value = max(0, min(i, path()$n - 1)))
+  }
 
-  observeEvent(playing(), {
-    updateActionButton(session, "play",
-                       label = if (isTRUE(playing())) "Pause" else "Play")
+  observeEvent(input$play, {
+    if (k() &gt;= path()$n - 1) go_to(0)
+    if (path()$n &gt; 1) playing(TRUE)
   })
+  observeEvent(input$pause, playing(FALSE))
+  observeEvent(input$step,  { playing(FALSE); go_to(k() + 1) })
+  observeEvent(input$back,  { playing(FALSE); go_to(k() - 1) })
+  observeEvent(input$first, { playing(FALSE); go_to(0) })
+  observeEvent(input$toend, { playing(FALSE); go_to(path()$n - 1) })
 
   observe({
     if (!isTRUE(playing())) return()
-    kmax &lt;- isolate(path()$n) - 1
-    k &lt;- isolate(as.integer(input$k))
-    if (k &gt;= kmax) { playing(FALSE); return() }
-    invalidateLater(900, session)
-    updateSliderInput(session, "k", value = k + 1)
-  })
-
-  observeEvent(input$step, {
-    playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = min(as.integer(input$k) + 1, max(0, path()$n - 1)))
-  })
-
-  observeEvent(input$back, {
-    playing(FALSE)
-    updateSliderInput(session, "k", value = max(as.integer(input$k) - 1, 0))
+    kk &lt;- isolate(k())
+    if (kk &gt;= isolate(path()$n) - 1) { playing(FALSE); return() }
+    invalidateLater(play_ms, session)
+    isolate(go_to(kk + 1))
   })
 
   output$contour &lt;- renderPlot({
-    FNc &lt;- FN(); P &lt;- path()
-    k &lt;- min(as.integer(input$k), P$n - 1) + 1L
+    FNc &lt;- FN(); P &lt;- path(); RP &lt;- ref(); kk &lt;- k() + 1L
 
-    par(mar = c(4, 4, 2.5, 1))
+    par(mar = c(7, 4, 2, 1))                 # room for the legend below
     plot.new()
     bx &lt;- expand_box(FNc$xlim, FNc$ylim, par("pin"))
     plot.window(xlim = bx$xlim, ylim = bx$ylim, xaxs = "i", yaxs = "i")
@@ -2669,87 +2696,108 @@ server &lt;- function(input, output, session) {
     z  &lt;- outer(xs, ys, FNc$fv)
     zf &lt;- z[is.finite(z)]
     lv &lt;- unique(quantile(zf, probs = seq(0, 1, length.out = 30)^1.7))
-    zr &lt;- matrix(rank(z, na.last = "keep", ties.method = "average"),
-                 nrow = length(xs))
-
-    image(xs, ys, zr, add = TRUE,
-          col = colorRampPalette(c("#f7fbff", "#9ec4e3"))(128))
-    contour(xs, ys, z, levels = lv, add = TRUE,
-            col = "grey45", drawlabels = FALSE)
+    contour(xs, ys, z, levels = lv, add = TRUE, col = "grey70",
+            drawlabels = FALSE)
     axis(1); axis(2); box()
-    title(main = paste0(names(ALGS)[ALGS == input$alg], "  |  ", FNc$label),
-          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1.0)
+    title(main = paste0(names(ALGS)[ALGS == input$alg], " on ",
+                        sub("^\\([a-f]\\) ", "", FNc$label)),
+          xlab = expression(x[1]), ylab = expression(x[2]), cex.main = 1)
+    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 3, col = "darkgreen",
+           lwd = 2, cex = 1.2)
 
-    points(FNc$xstar[, 1], FNc$xstar[, 2], pch = 8, col = "red",
-           cex = 1.3, lwd = 2)
-
-    if (isTRUE(input$showpath) &amp;&amp; k &gt; 1)
-      lines(P$X[1:k, 1], P$X[1:k, 2], col = "grey25", lty = 2)
-    points(P$X[1:k, 1], P$X[1:k, 2], pch = 20, col = "grey35", cex = 0.9)
-
-    xk &lt;- P$X[k, ]; gk &lt;- P$G[k, ]; gn &lt;- sqrt(sum(gk^2))
-    L &lt;- 0.09 * diff(bx$xlim)                      # fixed display length
-    if (gn &gt; 0) {
-      u &lt;- -gk / gn
-      arrows(xk[1], xk[2], xk[1] + L * u[1], xk[2] + L * u[2],
-             col = "grey45", lwd = 3, length = 0.10)
-      arrows(xk[1], xk[2], xk[1] - gk[1], xk[2] - gk[2],
-             col = "#E8820C", lwd = 3, length = 0.13)
+    ## the comparison path, drawn underneath
+    if (!is.null(RP)) {
+      Q &lt;- RP$X[seq_len(min(kk, RP$n)), , drop = FALSE]
+      if (nrow(Q) &gt; 1) lines(Q[, 1], Q[, 2], col = "grey45", lwd = 2, lty = 2)
+      points(Q[, 1], Q[, 2], pch = 21, bg = "grey85", col = "grey45",
+             cex = 0.9)
     }
-    if (k &lt; P$n) {
-      arrows(xk[1], xk[2], P$X[k + 1, 1], P$X[k + 1, 2],
-             col = "#2E8B57", lwd = 3, length = 0.13)
-      points(P$X[k + 1, 1], P$X[k + 1, 2], pch = 21, bg = "white",
-             col = "#2E8B57", cex = 1.2)
-    }
-    points(xk[1], xk[2], pch = 19, col = "black", cex = 1.3)
 
-    legend("topleft", lwd = 3, cex = 0.9, bg = "#ffffffcc", box.col = NA,
-           col = c("grey45", "#E8820C", "#2E8B57"),
-           legend = c(expression(-nabla * f(x[k])~"(direction only)"),
-                      expression(-nabla * f(x[k])~"(actual length)"),
-                      expression(alpha[k] * d[k]~"(step taken)")))
+    X &lt;- P$X
+    if (kk &gt; 1) lines(X[1:kk, 1], X[1:kk, 2], col = "steelblue", lwd = 2)
+    points(X[1:kk, 1], X[1:kk, 2], pch = 21, bg = "steelblue", cex = 1.1)
+
+    cur &lt;- X[kk, ]
+    inside &lt;- cur[1] &gt;= bx$xlim[1] &amp;&amp; cur[1] &lt;= bx$xlim[2] &amp;&amp;
+              cur[2] &gt;= bx$ylim[1] &amp;&amp; cur[2] &lt;= bx$ylim[2]
+    if (inside) {
+      ## Arrow along -grad f (steepest descent), of fixed length on screen.
+      ## The gradient is a covector, so its on-screen components are obtained
+      ## by multiplying by the units-per-inch factors; the box is widened to
+      ## the device aspect ratio, so here the two factors agree anyway.
+      g &lt;- -P$G[kk, ]
+      upi &lt;- c(diff(par("usr")[1:2]) / par("pin")[1],
+               diff(par("usr")[3:4]) / par("pin")[2])
+      gs &lt;- g * upi
+      if (sqrt(sum(g^2)) &gt; 1e-6 &amp;&amp; sqrt(sum(gs^2)) &gt; 0) {
+        d &lt;- 0.45 * gs / sqrt(sum(gs^2)) * upi              # 0.45 inch long
+        arrows(cur[1], cur[2], cur[1] + d[1], cur[2] + d[2],
+               col = "#E8820C", lwd = 3, length = 0.09)
+      }
+      points(cur[1], cur[2], pch = 21, bg = "firebrick", cex = 1.8)
+    } else {
+      mtext(sprintf("current iterate (%.3g, %.3g) is off the plotted region",
+                    cur[1], cur[2]), side = 3, line = -1.5,
+            col = "firebrick", cex = 0.9)
+    }
+
+    leg &lt;- list(txt = c("current iterate", "minimum",
+                        "steepest descent (direction)"),
+                pch = c(21, 3, NA), bg = c("firebrick", NA, NA),
+                lwd = c(NA, 2, 3), lty = c(NA, NA, 1),
+                col = c("black", "darkgreen", "#E8820C"))
+    if (!is.null(RP)) {
+      leg$txt &lt;- c(leg$txt, names(ALGS)[ALGS == input$compare])
+      leg$pch &lt;- c(leg$pch, NA); leg$bg &lt;- c(leg$bg, NA)
+      leg$lwd &lt;- c(leg$lwd, 2);  leg$lty &lt;- c(leg$lty, 2)
+      leg$col &lt;- c(leg$col, "grey45")
+    }
+    ## legend under the x axis label, so that it never covers the path
+    y0 &lt;- grconvertY(grconvertY(par("usr")[3], "user", "inches") -
+                     3.2 * par("csi"), "inches", "user")
+    legend(mean(par("usr")[1:2]), y0, xjust = 0.5, yjust = 1, xpd = NA,
+           ncol = 2, bty = "n", cex = 0.85,
+           pch = leg$pch, pt.bg = leg$bg, lwd = leg$lwd, lty = leg$lty,
+           col = leg$col, legend = leg$txt)
   })
 
-  output$conv &lt;- renderPlot({
-    P &lt;- path(); k &lt;- min(as.integer(input$k), P$n - 1) + 1L
-    gn &lt;- sqrt(rowSums(P$G^2))
-    gn[!is.finite(gn) | gn &lt;= 0] &lt;- NA
-    par(mar = c(4, 4.5, 1.5, 1))
-    plot(seq_len(P$n) - 1, gn, type = "b", pch = 20, log = "y",
-         xlab = "iteration k", ylab = expression("||" * nabla * f * "||"),
-         col = "grey40")
-    points(k - 1, gn[k], pch = 19, col = "#E8820C", cex = 1.6)
+  ## compact numbers: fixed with three decimals, switching to scientific
+  ## for very large or very small values
+  f3 &lt;- function(x) ifelse(!is.finite(x), "",
+          ifelse(abs(x) &gt;= 1e5 | (x != 0 &amp; abs(x) &lt; 1e-3),
+                 formatC(x, format = "e", digits = 1),
+                 formatC(x, format = "f", digits = 3)))
+
+  ## why the run ended, shown as one line under the table
+  output$note &lt;- renderUI({
+    P &lt;- path(); RP &lt;- ref()
+    if (k() + 1 &lt; P$n) return(NULL)
+    HTML(paste0("&lt;i&gt;", P$note,
+                if (!is.null(RP)) paste0("; ", names(ALGS)[ALGS == input$compare],
+                                         ": ", RP$note, " after ", RP$n - 1,
+                                         " iterations"),
+                "&lt;/i&gt;"))
   })
 
-  output$info &lt;- renderUI({
-    P &lt;- path(); k &lt;- min(as.integer(input$k), P$n - 1) + 1L
-    xk &lt;- P$X[k, ]; gk &lt;- P$G[k, ]; gn &lt;- sqrt(sum(gk^2))
-    ang &lt;- NA
-    if (k &lt; P$n) {
-      sk &lt;- P$X[k + 1, ] - xk
-      cs &lt;- sum(-gk * sk) / (gn * sqrt(sum(sk^2)))
-      ang &lt;- acos(max(-1, min(1, cs))) * 180 / pi
-    }
-    fmt &lt;- function(v, d = 4) formatC(v, format = "g", digits = d)
-    HTML(paste0(
-      "&lt;hr&gt;&lt;b&gt;iteration&lt;/b&gt; ", k - 1, " of ", P$n - 1, "&lt;br&gt;",
-      "&lt;b&gt;x&lt;sub&gt;k&lt;/sub&gt;&lt;/b&gt; = (", fmt(xk[1]), ", ", fmt(xk[2]), ")&lt;br&gt;",
-      "&lt;b&gt;f(x&lt;sub&gt;k&lt;/sub&gt;)&lt;/b&gt; = ", fmt(P$F[k], 6), "&lt;br&gt;",
-      "&lt;b&gt;||grad||&lt;/b&gt; = ", fmt(gn), "&lt;br&gt;",
-      "&lt;b&gt;step size &amp;alpha;&lt;sub&gt;k&lt;/sub&gt;&lt;/b&gt; = ",
-      if (k &lt; P$n) fmt(P$A[k]) else "&amp;ndash;", "&lt;br&gt;",
-      "&lt;b&gt;angle(grey, green)&lt;/b&gt; = ",
-      if (is.na(ang)) "&amp;ndash;" else paste0(fmt(ang, 3), "&amp;deg;"),
-      "&lt;br&gt;&lt;br&gt;&lt;i&gt;", P$note, "&lt;/i&gt;"
-    ))
-  })
+  output$tab &lt;- renderTable({
+    P &lt;- path(); kk &lt;- k() + 1L
+    ## the step length that led to each iterate (none for the start)
+    a_in &lt;- c(NA, P$A)[seq_len(P$n)]
+    i &lt;- seq_len(kk)
+    d &lt;- data.frame(iteration = as.character(i - 1),
+                    x1 = f3(P$X[i, 1]), x2 = f3(P$X[i, 2]),
+                    f = f3(P$F[i]),
+                    `||grad||` = f3(sqrt(rowSums(P$G[i, , drop = FALSE]^2))),
+                    step = f3(a_in[i]),
+                    check.names = FALSE, stringsAsFactors = FALSE)
+    tail(d, 5)
+  }, rownames = FALSE, align = "r", width = "100%")
 }
 
 shinyApp(ui, server)</code></pre>
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-gradient-methods-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;5.20: <strong>Shinylive App Comparing Gradient Descent and Newton-Raphson Optimization Algorithms.</strong> Lets you compare the paths that gradient descent and Newton-Raphson take on the same objective, to see how curvature information affects speed and stability. Choose an algorithm and objective, then step or play through the iterations.
+Figure&nbsp;5.20: <strong>Shinylive App Comparing Gradient Descent and Newton-Raphson Optimization Algorithms.</strong> Lets you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.
 </figcaption>
 </figure>
 </div>
