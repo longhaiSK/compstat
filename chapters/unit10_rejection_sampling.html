@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-09-25">
+<meta name="dcterms.date" content="2026-09-26">
 
 <title>10&nbsp; Rejection Sampling – Elements of Statistical Computation</title>
 <style>
@@ -83,11 +83,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/num_eq.js"></script>
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/merge-toc.js"></script>
 <link href="../site_libs/quarto-contrib/custombook-1.0.0/bookstyles.css" rel="stylesheet">
-<meta name="shinylive:serviceworker_dir" content="..">
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
-<link href="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
-<link href="../site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -342,7 +337,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 25, 2026</p>
+      <p class="date">September 26, 2026</p>
     </div>
   </div>
   
@@ -503,97 +498,7 @@ Table&nbsp;10.1: Verifies the rejection sampler for the normal distribution by c
 <p>Roughly 3 in 4 proposals are kept — a tight, efficient envelope, and the benchmark against which the next example’s Cauchy envelope should be judged.</p>
 <section id="sec-rejection-app" class="level3" data-number="10.2.1">
 <h3 data-number="10.2.1" class="anchored" data-anchor-id="sec-rejection-app"><span class="header-section-number">10.2.1</span> Shinylive App for Envelope Tightness in Rejection Sampling</h3>
-<p>Dragging <span class="math inline">\(c\)</span> below <span class="math inline">\(1\)</span> shows what an <em>invalid</em> envelope looks like — the target pokes through it, and rejection sampling would silently under-represent that region. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<div id="fig-rejection-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-rejection-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: envelope-tightness-app
-#| standalone: true
-#| viewerHeight: 660
-
-library(shiny)
-
-f_demo &lt;- function(x) exp(-x^2 / 2)
-g_demo &lt;- function(x, c) c * exp(0.5 - abs(x))
-rlaplace &lt;- function(n) { u &lt;- runif(n); ifelse(u &lt; 0.5, log(2 * u), -log(2 * (1 - u))) }
-
-ui &lt;- fluidPage(
-    titlePanel("Shinylive App for Envelope Tightness in Rejection Sampling"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            sliderInput("c", "envelope scale c (g = c * e^(1/2 - |x|))",
-                        min = 0.6, max = 3, value = 1.2, step = 0.05),
-            helpText("c &gt;= 1 keeps g above f everywhere: a valid, if looser, ",
-                     "envelope. c &lt; 1 breaks the envelope condition near ",
-                     "|x| = 1, where the target actually exceeds it."),
-            actionButton("resample", "draw new points"),
-            tableOutput("tab")
-        ),
-        mainPanel(
-            width = 8,
-            plotOutput("scatter", height = "440px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    pts &lt;- eventReactive(list(input$c, input$resample), {
-        set.seed(input$resample + 1)
-        N &lt;- 500
-        x &lt;- rlaplace(N)
-        v &lt;- runif(N) * g_demo(x, input$c)
-        list(x = x, v = v, acc = v &lt; f_demo(x))
-    })
-
-    output$scatter &lt;- renderPlot({
-        p &lt;- pts()
-        xs &lt;- seq(-6, 6, length.out = 500)
-        par(mar = c(4, 4, 2, 1))
-        plot(xs, g_demo(xs, input$c), type = "l", lwd = 3, col = "steelblue",
-             ylim = c(0, max(2.2, 1.05 * input$c * exp(0.5))),
-             xlab = "x", ylab = "v", main = sprintf("c = %.2f", input$c))
-        lines(xs, f_demo(xs), lwd = 3, col = "firebrick")
-        bad &lt;- f_demo(xs) &gt; g_demo(xs, input$c)
-        if (any(bad)) lines(xs[bad], f_demo(xs)[bad], col = "black", lwd = 5)
-        points(p$x[!p$acc], p$v[!p$acc], pch = 4, col = adjustcolor("gray40", 0.6), cex = 0.7)
-        points(p$x[p$acc], p$v[p$acc], pch = 19, col = adjustcolor("firebrick", 0.7), cex = 0.7)
-        legend("topright", bty = "n", lwd = c(3, 3, 5), col = c("firebrick", "steelblue", "black"),
-               legend = c("target f", "envelope g", "f exceeds g here: envelope invalid"))
-    })
-
-    output$tab &lt;- renderTable({
-        p &lt;- pts()
-        data.frame(quantity = c("theoretical acceptance", "observed acceptance", "envelope valid?"),
-                   value = c(sprintf("%.3f", 0.7602 / input$c), sprintf("%.3f", mean(p$acc)),
-                             ifelse(input$c &gt;= 1, "yes", "NO (c &lt; 1)")))
-    }, colnames = FALSE)
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-rejection-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;10.2: <strong>Shinylive App Illustrating Envelope Tightness in Rejection Sampling.</strong> Shows how the tightness of the envelope determines the efficiency of rejection sampling: a looser envelope still gives exact draws but rejects more of them. The app below scales the envelope by a factor <span class="math inline">\(c \ge 1\)</span>, <span class="math inline">\(g_c(x) = c\, e^{1/2-|x|}\)</span>: larger <span class="math inline">\(c\)</span> keeps the envelope valid but wastes more draws (acceptance rate <span class="math inline">\(= 0.760/c\)</span>).
-</figcaption>
-</figure>
-</div>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Reproducing this figure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>The chunk above uses the <a href="https://github.com/quarto-ext/shinylive">shinylive</a> extension, compiled to WebAssembly so it runs in the reader’s browser with no Shiny server (<code>quarto add quarto-ext/shinylive</code>, then <code>filters: [shinylive]</code> in the document or project YAML). Only base R and <code>shiny</code> are available inside the app.</p>
-</div>
-</div>
+<p>There is a <a href="../shinyliveapps_compstat/app_rejection.html">shinylive app</a> to show how the tightness of the envelope determines the efficiency of rejection sampling: a looser envelope still gives exact draws but rejects more of them.</p>
 </section>
 </section>
 <section id="example-2-sampling-a-gamma-distribution" class="level2" data-number="10.3">
@@ -602,10 +507,10 @@ Figure&nbsp;10.2: <strong>Shinylive App Illustrating Envelope Tightness in Rejec
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log of a function that is (for alpha &gt; 2) always above the Gamma(alpha, 1) log-density</span></span>
-<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>log_g_gamma <span class="ot">&lt;-</span> <span class="cf">function</span>(x, alpha) {</span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>    (alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">*</span> (<span class="fu">log</span>(alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">-</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">+</span> (x <span class="sc">-</span> (alpha <span class="sc">-</span> <span class="dv">1</span>))<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> alpha <span class="sc">-</span> <span class="dv">1</span>))</span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log of a function that is (for alpha &gt; 2) always above the Gamma(alpha, 1) log-density</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>log_g_gamma <span class="ot">&lt;-</span> <span class="cf">function</span>(x, alpha) {</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>    (alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">*</span> (<span class="fu">log</span>(alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">-</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">+</span> (x <span class="sc">-</span> (alpha <span class="sc">-</span> <span class="dv">1</span>))<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> alpha <span class="sc">-</span> <span class="dv">1</span>))</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <section id="where-the-envelope-comes-from" class="level3" data-number="10.3.1">
@@ -614,11 +519,11 @@ Figure&nbsp;10.2: <strong>Shinylive App Illustrating Envelope Tightness in Rejec
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>x_check <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.1</span>, <span class="dv">10</span>, <span class="at">by =</span> <span class="fl">0.37</span>)</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>alpha_check <span class="ot">&lt;-</span> <span class="fl">3.3</span></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>log_f_Y <span class="ot">&lt;-</span> <span class="fu">dcauchy</span>((x_check <span class="sc">-</span> (alpha_check <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha_check <span class="sc">-</span> <span class="dv">1</span>), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">log</span>(<span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha_check <span class="sc">-</span> <span class="dv">1</span>))</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="fu">range</span>(<span class="fu">log_g_gamma</span>(x_check, alpha_check) <span class="sc">-</span> log_f_Y)   <span class="co"># constant across x confirms the claim</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>x_check <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.1</span>, <span class="dv">10</span>, <span class="at">by =</span> <span class="fl">0.37</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>alpha_check <span class="ot">&lt;-</span> <span class="fl">3.3</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>log_f_Y <span class="ot">&lt;-</span> <span class="fu">dcauchy</span>((x_check <span class="sc">-</span> (alpha_check <span class="sc">-</span> <span class="dv">1</span>)) <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha_check <span class="sc">-</span> <span class="dv">1</span>), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">log</span>(<span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha_check <span class="sc">-</span> <span class="dv">1</span>))</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="fu">range</span>(<span class="fu">log_g_gamma</span>(x_check, alpha_check) <span class="sc">-</span> log_f_Y)   <span class="co"># constant across x confirms the claim</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.621804 1.621804</code></pre>
@@ -628,10 +533,10 @@ Figure&nbsp;10.2: <strong>Shinylive App Illustrating Envelope Tightness in Rejec
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>alphas_check <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">1.1</span>, <span class="fl">1.5</span>, <span class="fl">1.9</span>, <span class="fl">1.99</span>, <span class="fl">2.0</span>, <span class="fl">2.01</span>, <span class="fl">2.1</span>, <span class="fl">2.5</span>, <span class="dv">3</span>, <span class="fl">4.5</span>)</span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>xv <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">1e-6</span>, <span class="dv">60</span>, <span class="at">length.out =</span> <span class="fl">2e4</span>)</span>
-<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>gaps <span class="ot">&lt;-</span> <span class="fu">vapply</span>(alphas_check, <span class="cf">function</span>(a) <span class="fu">min</span>(<span class="fu">log_g_gamma</span>(xv, a) <span class="sc">-</span> <span class="fu">dgamma</span>(xv, a, <span class="at">log =</span> <span class="cn">TRUE</span>)), <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
-<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">alpha =</span> alphas_check, <span class="at">min_log_gap =</span> gaps, <span class="at">envelope_valid =</span> gaps <span class="sc">&gt;=</span> <span class="dv">0</span>), <span class="at">digits =</span> <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>alphas_check <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">1.1</span>, <span class="fl">1.5</span>, <span class="fl">1.9</span>, <span class="fl">1.99</span>, <span class="fl">2.0</span>, <span class="fl">2.01</span>, <span class="fl">2.1</span>, <span class="fl">2.5</span>, <span class="dv">3</span>, <span class="fl">4.5</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>xv <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">1e-6</span>, <span class="dv">60</span>, <span class="at">length.out =</span> <span class="fl">2e4</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>gaps <span class="ot">&lt;-</span> <span class="fu">vapply</span>(alphas_check, <span class="cf">function</span>(a) <span class="fu">min</span>(<span class="fu">log_g_gamma</span>(xv, a) <span class="sc">-</span> <span class="fu">dgamma</span>(xv, a, <span class="at">log =</span> <span class="cn">TRUE</span>)), <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">alpha =</span> alphas_check, <span class="at">min_log_gap =</span> gaps, <span class="at">envelope_valid =</span> gaps <span class="sc">&gt;=</span> <span class="dv">0</span>), <span class="at">digits =</span> <span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-envelope-threshold" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -714,18 +619,18 @@ Table&nbsp;10.2: Checks that a proposed envelope really lies above the target de
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>sample_gamma_rej <span class="ot">&lt;-</span> <span class="cf">function</span>(n, alpha, <span class="at">max_tries =</span> <span class="fl">2e6</span>) {</span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>); tries <span class="ot">&lt;-</span> <span class="dv">0</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> (<span class="fu">length</span>(out) <span class="sc">&lt;</span> n) {</span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (tries <span class="sc">&gt;</span> max_tries) <span class="fu">stop</span>(<span class="st">"acceptance rate too low for this alpha: envelope is too loose"</span>)</span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>        m <span class="ot">&lt;-</span> n <span class="sc">-</span> <span class="fu">length</span>(out)</span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">rcauchy</span>(m) <span class="sc">*</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">+</span> (alpha <span class="sc">-</span> <span class="dv">1</span>)</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>        tries <span class="ot">&lt;-</span> tries <span class="sc">+</span> m</span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>        keep <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">runif</span>(m)) <span class="sc">&lt;</span> <span class="fu">dgamma</span>(x, <span class="at">shape =</span> alpha, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_g_gamma</span>(x, alpha)</span>
-<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>        out <span class="ot">&lt;-</span> <span class="fu">c</span>(out, x[keep])</span>
-<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">structure</span>(out[<span class="fu">seq_len</span>(n)], <span class="at">accept.rate =</span> n <span class="sc">/</span> tries)</span>
-<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>sample_gamma_rej <span class="ot">&lt;-</span> <span class="cf">function</span>(n, alpha, <span class="at">max_tries =</span> <span class="fl">2e6</span>) {</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>); tries <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> (<span class="fu">length</span>(out) <span class="sc">&lt;</span> n) {</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (tries <span class="sc">&gt;</span> max_tries) <span class="fu">stop</span>(<span class="st">"acceptance rate too low for this alpha: envelope is too loose"</span>)</span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>        m <span class="ot">&lt;-</span> n <span class="sc">-</span> <span class="fu">length</span>(out)</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">rcauchy</span>(m) <span class="sc">*</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> alpha <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">+</span> (alpha <span class="sc">-</span> <span class="dv">1</span>)</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>        tries <span class="ot">&lt;-</span> tries <span class="sc">+</span> m</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>        keep <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">runif</span>(m)) <span class="sc">&lt;</span> <span class="fu">dgamma</span>(x, <span class="at">shape =</span> alpha, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_g_gamma</span>(x, alpha)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>        out <span class="ot">&lt;-</span> <span class="fu">c</span>(out, x[keep])</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">structure</span>(out[<span class="fu">seq_len</span>(n)], <span class="at">accept.rate =</span> n <span class="sc">/</span> tries)</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 </section>
@@ -734,15 +639,15 @@ Table&nbsp;10.2: Checks that a proposed envelope really lies above the target de
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>alphas_test <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">2.1</span>, <span class="fl">2.5</span>, <span class="fl">4.5</span>)</span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>gamma_tests <span class="ot">&lt;-</span> <span class="fu">lapply</span>(alphas_test, <span class="cf">function</span>(a) <span class="fu">sample_gamma_rej</span>(<span class="dv">2000</span>, a))</span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">alpha =</span> alphas_test,</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">accept_rate =</span> <span class="fu">vapply</span>(gamma_tests, attr, <span class="fu">numeric</span>(<span class="dv">1</span>), <span class="st">"accept.rate"</span>),</span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">ks_stat =</span> <span class="fu">mapply</span>(<span class="cf">function</span>(x, a) <span class="fu">suppressWarnings</span>(<span class="fu">ks.test</span>(x, <span class="st">"pgamma"</span>, a))<span class="sc">$</span>statistic,</span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>                      gamma_tests, alphas_test)</span>
-<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>), <span class="at">digits =</span> <span class="dv">4</span>, <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"alpha"</span>, <span class="st">"acceptance rate"</span>, <span class="st">"KS statistic vs true Gamma"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>alphas_test <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">2.1</span>, <span class="fl">2.5</span>, <span class="fl">4.5</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>gamma_tests <span class="ot">&lt;-</span> <span class="fu">lapply</span>(alphas_test, <span class="cf">function</span>(a) <span class="fu">sample_gamma_rej</span>(<span class="dv">2000</span>, a))</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">alpha =</span> alphas_test,</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">accept_rate =</span> <span class="fu">vapply</span>(gamma_tests, attr, <span class="fu">numeric</span>(<span class="dv">1</span>), <span class="st">"accept.rate"</span>),</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">ks_stat =</span> <span class="fu">mapply</span>(<span class="cf">function</span>(x, a) <span class="fu">suppressWarnings</span>(<span class="fu">ks.test</span>(x, <span class="st">"pgamma"</span>, a))<span class="sc">$</span>statistic,</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>                      gamma_tests, alphas_test)</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>), <span class="at">digits =</span> <span class="dv">4</span>, <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"alpha"</span>, <span class="st">"acceptance rate"</span>, <span class="st">"KS statistic vs true Gamma"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-gamma-tests" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -785,13 +690,13 @@ Table&nbsp;10.3: Shows how the efficiency of the Gamma rejection sampler, measur
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>    a <span class="ot">&lt;-</span> alphas_test[i]</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">qqplot</span>(gamma_tests[[i]], <span class="fu">rgamma</span>(<span class="dv">2000</span>, a), <span class="at">xlab =</span> <span class="st">"rejection sample"</span>, <span class="at">ylab =</span> <span class="st">"rgamma sample"</span>,</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>           <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"alpha = %g (accept %.1f%%)"</span>, a, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">attr</span>(gamma_tests[[i]], <span class="st">"accept.rate"</span>)))</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">abline</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    a <span class="ot">&lt;-</span> alphas_test[i]</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">qqplot</span>(gamma_tests[[i]], <span class="fu">rgamma</span>(<span class="dv">2000</span>, a), <span class="at">xlab =</span> <span class="st">"rejection sample"</span>, <span class="at">ylab =</span> <span class="st">"rgamma sample"</span>,</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>           <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"alpha = %g (accept %.1f%%)"</span>, a, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">attr</span>(gamma_tests[[i]], <span class="st">"accept.rate"</span>)))</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">abline</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-gamma-tests" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -800,7 +705,7 @@ Table&nbsp;10.3: Shows how the efficiency of the Gamma rejection sampler, measur
 <img src="unit10_rejection_sampling_files/figure-html/fig-gamma-tests-1.png" class="img-fluid figure-img" width="960">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-gamma-tests-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;10.3: Verifies that the Gamma rejection sampler produces draws from the correct distribution. Q-Q plots of rejection-sampled draws against the true Gamma(alpha,1) quantiles, for three of the test cases: the envelope produces exact draws regardless of alpha, only the cost per draw changes.
+Figure&nbsp;10.2: Verifies that the Gamma rejection sampler produces draws from the correct distribution. Q-Q plots of rejection-sampled draws against the true Gamma(alpha,1) quantiles, for three of the test cases: the envelope produces exact draws regardless of alpha, only the cost per draw changes.
 </figcaption>
 </figure>
 </div>
@@ -810,95 +715,7 @@ Figure&nbsp;10.3: Verifies that the Gamma rejection sampler produces draws from 
 </section>
 <section id="sec-gamma-rejection-app" class="level3" data-number="10.3.4">
 <h3 data-number="10.3.4" class="anchored" data-anchor-id="sec-gamma-rejection-app"><span class="header-section-number">10.3.4</span> Shinylive App for Rejection Sampling from a Gamma Density with a Cauchy Envelope</h3>
-<p>Drag <span class="math inline">\(\alpha\)</span> below <span class="math inline">\(2\)</span> and the target pokes through the envelope, as in <a href="#tbl-envelope-threshold" class="quarto-xref">Table&nbsp;<span>10.2</span></a>; the crossing is a modest one for this particular envelope, so the histogram only dips slightly short of the curve in the affected region rather than breaking outright, but the sampler is no longer drawing from the exact target. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<div id="fig-gamma-rejection-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-gamma-rejection-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: gamma-envelope-app
-#| standalone: true
-#| viewerHeight: 610
-
-library(shiny)
-
-log_g_gamma &lt;- function(x, alpha) {
-    (alpha - 1) * (log(alpha - 1) - 1) - log(1 + (x - (alpha - 1))^2 / (2 * alpha - 1))
-}
-g_gamma &lt;- function(x, alpha) exp(log_g_gamma(x, alpha))
-
-ui &lt;- fluidPage(
-    titlePanel("Shinylive App for Rejection Sampling from a Gamma Density with a Cauchy Envelope"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("alpha", "shape alpha (target: Gamma(alpha, 1))",
-                        min = 1.1, max = 8, value = 3, step = 0.05),
-            helpText("The envelope is only valid (g &gt;= f everywhere) for ",
-                     "alpha &gt; 2. Below alpha = 2 the target pokes through ",
-                     "the envelope near the mode, and the histogram falls ",
-                     "slightly short of the true density there."),
-            actionButton("resample", "draw new sample")
-        ),
-        mainPanel(
-            width = 9,
-            plotOutput("panels", height = "420px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    draws &lt;- eventReactive(list(input$alpha, input$resample), {
-        set.seed(input$resample + 1)
-        a &lt;- input$alpha; n &lt;- 2000
-        out &lt;- numeric(0); tries &lt;- 0; max_tries &lt;- 2e6
-        while (length(out) &lt; n &amp;&amp; tries &lt; max_tries) {
-            m &lt;- n - length(out)
-            x &lt;- rcauchy(m) * sqrt(2 * a - 1) + (a - 1)
-            tries &lt;- tries + m
-            keep &lt;- log(runif(m)) &lt; dgamma(x, a, log = TRUE) - log_g_gamma(x, a)
-            out &lt;- c(out, x[keep])
-        }
-        list(x = out[seq_len(min(n, length(out)))], accept = length(out) / tries)
-    })
-
-    output$panels &lt;- renderPlot({
-        d &lt;- draws(); a &lt;- input$alpha
-        hi &lt;- max(15, qgamma(0.999, a) * 1.3)
-        xs &lt;- seq(1e-3, hi, length.out = 500)
-        ymax &lt;- max(dgamma(xs, a), na.rm = TRUE) * 1.6   # scale to the target's
-        # peak, not the envelope's: g touches f at the mode but can be much
-        # looser far from it (especially for alpha far above 2), which would
-        # otherwise blow up the y-axis and hide the interesting region
-
-        par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
-
-        plot(xs, g_gamma(xs, a), type = "l", lwd = 3, col = "steelblue",
-             ylim = c(0, ymax), xlab = "x", ylab = "density",
-             main = sprintf("target vs. envelope (alpha = %.2f)", a))
-        lines(xs, dgamma(xs, a), lwd = 3, col = "firebrick")
-        bad &lt;- dgamma(xs, a) &gt; g_gamma(xs, a)
-        if (any(bad)) lines(xs[bad], dgamma(xs, a)[bad], col = "black", lwd = 5)
-        legend("topright", bty = "n", lwd = c(3, 3, 5), col = c("firebrick", "steelblue", "black"),
-               legend = c("target f", "envelope g", "f &gt; g: invalid"))
-
-        hist(d$x, breaks = 30, freq = FALSE, col = "steelblue", border = "white",
-             xlim = c(0, hi), xlab = "x",
-             main = sprintf("%d draws (accept rate %.1f%%)", length(d$x), 100 * d$accept))
-        curve(dgamma(x, a), add = TRUE, lwd = 3, col = "firebrick")
-        legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true Gamma density")
-    })
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-gamma-rejection-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;10.4: <strong>Shinylive App Illustrating Rejection Sampling from a Gamma Density with a Cauchy Envelope.</strong> Shows how the efficiency of rejection sampling for the Gamma distribution changes with the shape parameter while the draws remain exact. The app below shows the target <span class="math inline">\(f(x)=\text{Gamma}(\alpha,1)\)</span> density against the Cauchy-based envelope <span class="math inline">\(g(x)=\exp(\texttt{log\_g\_gamma}(x,\alpha))\)</span> as <span class="math inline">\(\alpha\)</span> is dragged (left), and a histogram of 2000 fresh rejection-sampled draws against the true density (right) — an exact match whenever the envelope is valid.
-</figcaption>
-</figure>
-</div>
+<p>There is a <a href="../shinyliveapps_compstat/app_gamma-rejection.html">shinylive app</a> to show how the efficiency of rejection sampling for the Gamma distribution changes with the shape parameter while the draws remain exact.</p>
 </section>
 </section>
 <section id="adaptive-rejection-sampling-for-log-concave-targets" class="level2" data-number="10.4">
@@ -927,39 +744,39 @@ Figure&nbsp;10.4: <strong>Shinylive App Illustrating Rejection Sampling from a G
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="do">### direct rejection sampling for a truncated normal: draw from N(0,1),</span></span>
-<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="do">### keep values inside [lb, ub]; vectorized batch-and-refill</span></span>
-<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>sample_tnorm_drs <span class="ot">&lt;-</span> <span class="cf">function</span>(n, <span class="at">lb =</span> <span class="sc">-</span><span class="cn">Inf</span>, <span class="at">ub =</span> <span class="cn">Inf</span>) {</span>
-<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>)</span>
-<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> (<span class="fu">length</span>(out) <span class="sc">&lt;</span> n) {</span>
-<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n <span class="sc">-</span> <span class="fu">length</span>(out))</span>
-<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>        out <span class="ot">&lt;-</span> <span class="fu">c</span>(out, x[x <span class="sc">&gt;=</span> lb <span class="sc">&amp;</span> x <span class="sc">&lt;=</span> ub])</span>
-<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>    out</span>
-<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a><span class="do">### adaptive rejection sampling via the ars package</span></span>
-<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>sample_tnorm_ars <span class="ot">&lt;-</span> <span class="cf">function</span>(n, lb, ub) {</span>
-<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>    logf <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>    fprima <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="sc">-</span>x</span>
-<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ars</span>(n, <span class="at">f =</span> logf, <span class="at">fprima =</span> fprima, <span class="at">x =</span> <span class="fu">c</span>(lb, (lb <span class="sc">+</span> ub) <span class="sc">/</span> <span class="dv">2</span>, ub),</span>
-<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>        <span class="at">lb =</span> <span class="cn">TRUE</span>, <span class="at">ub =</span> <span class="cn">TRUE</span>, <span class="at">xlb =</span> lb, <span class="at">xub =</span> ub)</span>
-<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="do">### direct rejection sampling for a truncated normal: draw from N(0,1),</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="do">### keep values inside [lb, ub]; vectorized batch-and-refill</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>sample_tnorm_drs <span class="ot">&lt;-</span> <span class="cf">function</span>(n, <span class="at">lb =</span> <span class="sc">-</span><span class="cn">Inf</span>, <span class="at">ub =</span> <span class="cn">Inf</span>) {</span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>)</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> (<span class="fu">length</span>(out) <span class="sc">&lt;</span> n) {</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(n <span class="sc">-</span> <span class="fu">length</span>(out))</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>        out <span class="ot">&lt;-</span> <span class="fu">c</span>(out, x[x <span class="sc">&gt;=</span> lb <span class="sc">&amp;</span> x <span class="sc">&lt;=</span> ub])</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>    out</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="do">### adaptive rejection sampling via the ars package</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>sample_tnorm_ars <span class="ot">&lt;-</span> <span class="cf">function</span>(n, lb, ub) {</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>    logf <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>    fprima <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="sc">-</span>x</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ars</span>(n, <span class="at">f =</span> logf, <span class="at">fprima =</span> fprima, <span class="at">x =</span> <span class="fu">c</span>(lb, (lb <span class="sc">+</span> ub) <span class="sc">/</span> <span class="dv">2</span>, ub),</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>        <span class="at">lb =</span> <span class="cn">TRUE</span>, <span class="at">ub =</span> <span class="cn">TRUE</span>, <span class="at">xlb =</span> lb, <span class="at">xub =</span> ub)</span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">4</span>)</span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>windows <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">5</span>, <span class="sc">-</span><span class="dv">4</span>), <span class="fu">c</span>(<span class="sc">-</span><span class="dv">50</span>, <span class="sc">-</span><span class="dv">40</span>), <span class="fu">c</span>(<span class="dv">100</span>, <span class="dv">110</span>))</span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>timing <span class="ot">&lt;-</span> <span class="fu">lapply</span>(windows, <span class="cf">function</span>(w) {</span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    t_ars <span class="ot">&lt;-</span> <span class="fu">system.time</span>(<span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>]))[<span class="st">"elapsed"</span>]</span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    t_naive <span class="ot">&lt;-</span> <span class="cf">if</span> (w[<span class="dv">1</span>] <span class="sc">&gt;</span> <span class="sc">-</span><span class="dv">10</span> <span class="sc">&amp;&amp;</span> w[<span class="dv">2</span>] <span class="sc">&lt;</span> <span class="dv">10</span>) <span class="fu">system.time</span>(<span class="fu">sample_tnorm_drs</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>]))[<span class="st">"elapsed"</span>] <span class="cf">else</span> <span class="cn">NA</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="at">lb =</span> w[<span class="dv">1</span>], <span class="at">ub =</span> w[<span class="dv">2</span>], <span class="at">ars_seconds =</span> t_ars, <span class="at">naive_seconds =</span> t_naive)</span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>})</span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">do.call</span>(rbind, timing), <span class="at">digits =</span> <span class="dv">4</span>,</span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"lower bound"</span>, <span class="st">"upper bound"</span>, <span class="st">"ars (s)"</span>, <span class="st">"naive rejection (s)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">4</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>windows <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">5</span>, <span class="sc">-</span><span class="dv">4</span>), <span class="fu">c</span>(<span class="sc">-</span><span class="dv">50</span>, <span class="sc">-</span><span class="dv">40</span>), <span class="fu">c</span>(<span class="dv">100</span>, <span class="dv">110</span>))</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>timing <span class="ot">&lt;-</span> <span class="fu">lapply</span>(windows, <span class="cf">function</span>(w) {</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    t_ars <span class="ot">&lt;-</span> <span class="fu">system.time</span>(<span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>]))[<span class="st">"elapsed"</span>]</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    t_naive <span class="ot">&lt;-</span> <span class="cf">if</span> (w[<span class="dv">1</span>] <span class="sc">&gt;</span> <span class="sc">-</span><span class="dv">10</span> <span class="sc">&amp;&amp;</span> w[<span class="dv">2</span>] <span class="sc">&lt;</span> <span class="dv">10</span>) <span class="fu">system.time</span>(<span class="fu">sample_tnorm_drs</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>]))[<span class="st">"elapsed"</span>] <span class="cf">else</span> <span class="cn">NA</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="at">lb =</span> w[<span class="dv">1</span>], <span class="at">ub =</span> w[<span class="dv">2</span>], <span class="at">ars_seconds =</span> t_ars, <span class="at">naive_seconds =</span> t_naive)</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">do.call</span>(rbind, timing), <span class="at">digits =</span> <span class="dv">4</span>,</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>             <span class="at">col.names =</span> <span class="fu">c</span>(<span class="st">"lower bound"</span>, <span class="st">"upper bound"</span>, <span class="st">"ars (s)"</span>, <span class="st">"naive rejection (s)"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-ars-timing" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -981,19 +798,19 @@ Table&nbsp;10.4: Compares the cost of adaptive rejection sampling with that of n
 <tr class="odd">
 <td style="text-align: right;">-5</td>
 <td style="text-align: right;">-4</td>
-<td style="text-align: right;">0.005</td>
-<td style="text-align: right;">2.26</td>
+<td style="text-align: right;">0.003</td>
+<td style="text-align: right;">1.923</td>
 </tr>
 <tr class="even">
 <td style="text-align: right;">-50</td>
 <td style="text-align: right;">-40</td>
-<td style="text-align: right;">0.016</td>
+<td style="text-align: right;">0.006</td>
 <td style="text-align: right;">NA</td>
 </tr>
 <tr class="odd">
 <td style="text-align: right;">100</td>
 <td style="text-align: right;">110</td>
-<td style="text-align: right;">0.007</td>
+<td style="text-align: right;">0.003</td>
 <td style="text-align: right;">NA</td>
 </tr>
 </tbody>
@@ -1007,34 +824,34 @@ Table&nbsp;10.4: Compares the cost of adaptive rejection sampling with that of n
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive</span></span>
-<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="do">### difference underflows to 0 for windows far out in either tail</span></span>
-<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>log_pnorm_diff <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
-<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) {</span>
-<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">log.p =</span> <span class="cn">TRUE</span>); log_pl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_pl <span class="sc">-</span> log_pu))</span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) {</span>
-<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>        log_su <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_su <span class="sc">-</span> log_sl))</span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
-<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(<span class="fu">pnorm</span>(ub) <span class="sc">-</span> <span class="fu">pnorm</span>(lb))</span>
-<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a>tnorm_density <span class="ot">&lt;-</span> <span class="cf">function</span>(x, lb, ub) <span class="fu">exp</span>(<span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
-<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">5</span>)</span>
-<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> windows) {</span>
-<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> <span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>])</span>
-<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hist</span>(x, <span class="at">breaks =</span> <span class="dv">25</span>, <span class="at">freq =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
-<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>         <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"[%g, %g]"</span>, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">xlab =</span> <span class="st">"x"</span>)</span>
-<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">curve</span>(<span class="fu">tnorm_density</span>(x, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">300</span>)</span>
-<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">identical</span>(w, windows[[<span class="dv">1</span>]])) {</span>
-<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>,</span>
-<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="st">"true density"</span>)</span>
-<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="do">### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="do">### difference underflows to 0 for windows far out in either tail</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>log_pnorm_diff <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">log.p =</span> <span class="cn">TRUE</span>); log_pl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_pl <span class="sc">-</span> log_pu))</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>        log_su <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_su <span class="sc">-</span> log_sl))</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(<span class="fu">pnorm</span>(ub) <span class="sc">-</span> <span class="fu">pnorm</span>(lb))</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>tnorm_density <span class="ot">&lt;-</span> <span class="cf">function</span>(x, lb, ub) <span class="fu">exp</span>(<span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">5</span>)</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (w <span class="cf">in</span> windows) {</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> <span class="fu">sample_tnorm_ars</span>(n, w[<span class="dv">1</span>], w[<span class="dv">2</span>])</span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>    <span class="fu">hist</span>(x, <span class="at">breaks =</span> <span class="dv">25</span>, <span class="at">freq =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>         <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"[%g, %g]"</span>, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">xlab =</span> <span class="st">"x"</span>)</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">curve</span>(<span class="fu">tnorm_density</span>(x, w[<span class="dv">1</span>], w[<span class="dv">2</span>]), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">300</span>)</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">identical</span>(w, windows[[<span class="dv">1</span>]])) {</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>,</span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="st">"true density"</span>)</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-ars" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -1043,7 +860,7 @@ Table&nbsp;10.4: Compares the cost of adaptive rejection sampling with that of n
 <img src="unit10_rejection_sampling_files/figure-html/fig-ars-1.png" class="img-fluid figure-img" width="960">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ars-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;10.5: Verifies that adaptive rejection sampling produces draws from the correct truncated normal distribution, even far out in the tail. Histograms of adaptive-rejection-sampled draws against the true truncated-normal density (red), in three increasingly extreme truncation windows: ars matches the target exactly regardless of where the window sits, only the cost per draw changes (<a href="#tbl-ars-timing" class="quarto-xref">Table&nbsp;<span>10.4</span></a>).
+Figure&nbsp;10.3: Verifies that adaptive rejection sampling produces draws from the correct truncated normal distribution, even far out in the tail. Histograms of adaptive-rejection-sampled draws against the true truncated-normal density (red), in three increasingly extreme truncation windows: ars matches the target exactly regardless of where the window sits, only the cost per draw changes (<a href="#tbl-ars-timing" class="quarto-xref">Table&nbsp;<span>10.4</span></a>).
 </figcaption>
 </figure>
 </div>
@@ -1052,267 +869,7 @@ Figure&nbsp;10.5: Verifies that adaptive rejection sampling produces draws from 
 </section>
 <section id="sec-ars-app" class="level3" data-number="10.4.4">
 <h3 data-number="10.4.4" class="anchored" data-anchor-id="sec-ars-app"><span class="header-section-number">10.4.4</span> Shinylive App for Adaptive Rejection Sampling</h3>
-<p>The <code>ars</code> package above is a black box: it returns samples but not the sequence of hulls it built along the way. The top panel shows <span class="math inline">\(\log f\)</span> against the current hull (in log scale the hull is exactly piecewise-<em>linear</em>, since it is built from tangent lines), marking the most recent candidate as accepted (green dot) or rejected (black x, becoming a new tangent point). The bottom panel is a histogram of the accepted draws so far against the true truncated normal density. Controls: the target sample size, and the truncation limits <span class="math inline">\([l, u]\)</span> (changing the limits restarts the run). This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<div id="fig-ars-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-ars-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: ars-hull-app
-#| standalone: true
-#| viewerHeight: 860
-
-library(shiny)
-
-h &lt;- function(x) -x^2 / 2          # log unnormalized N(0,1) density
-hprime &lt;- function(x) -x
-
-build_hull &lt;- function(xs, lb, ub) {
-    xs &lt;- sort(xs)
-    hx &lt;- h(xs); hpx &lt;- hprime(xs)
-    k &lt;- length(xs)
-    z &lt;- numeric(k + 1); z[1] &lt;- lb; z[k + 1] &lt;- ub
-    if (k &gt; 1) for (i in 1:(k - 1)) {
-        z[i + 1] &lt;- (hx[i + 1] - hx[i] - xs[i + 1] * hpx[i + 1] + xs[i] * hpx[i]) /
-            (hpx[i] - hpx[i + 1])
-    }
-    list(x = xs, hx = hx, hp = hpx, z = z)
-}
-
-### log-area under the exponential of a single tangent-line piece, between its
-### breakpoints -- computed entirely in log space so it stays finite even far
-### out in the tail, where exp(hull value) itself would underflow to exactly 0
-log_piece_area &lt;- function(hull, j) {
-    a &lt;- hull$hx[j]; b &lt;- hull$hp[j]; xj &lt;- hull$x[j]
-    lo &lt;- hull$z[j]; hi &lt;- hull$z[j + 1]
-    val_lo &lt;- a + b * (lo - xj); val_hi &lt;- a + b * (hi - xj)
-    if (abs(b) &lt; 1e-10) return(val_lo + log(hi - lo))
-    m &lt;- max(val_lo, val_hi); d &lt;- min(val_lo, val_hi)
-    m + log1p(-exp(d - m)) - log(abs(b))
-}
-
-### draw one point from the piecewise-exponential envelope: pick a piece
-### proportional to its area, then invert its (exponential) CDF within it --
-### both steps done on the log scale for the same underflow-safety reason
-sample_hull &lt;- function(hull) {
-    k &lt;- length(hull$x)
-    log_areas &lt;- vapply(seq_len(k), function(j) log_piece_area(hull, j), numeric(1))
-    log_areas[!is.finite(log_areas)] &lt;- -Inf
-    areas &lt;- exp(log_areas - max(log_areas))    # relative areas, safely in (0, 1]
-    j &lt;- sample.int(k, 1, prob = areas)
-    a &lt;- hull$hx[j]; b &lt;- hull$hp[j]; xj &lt;- hull$x[j]
-    lo &lt;- hull$z[j]; hi &lt;- hull$z[j + 1]
-    U &lt;- runif(1)
-    if (abs(b) &lt; 1e-10) {
-        x &lt;- lo + U * (hi - lo)
-        logg &lt;- a
-    } else {
-        val_lo &lt;- a + b * (lo - xj); val_hi &lt;- a + b * (hi - xj)
-        m &lt;- max(val_lo, val_hi)
-        val_x &lt;- m + log((1 - U) * exp(val_lo - m) + U * exp(val_hi - m))
-        x &lt;- xj + (val_x - a) / b
-        logg &lt;- val_x
-    }
-    list(x = x, logg = logg)
-}
-
-### piecewise-linear hull value (log scale) at a vector of x's
-hull_val &lt;- function(hull, xgrid) {
-    j &lt;- findInterval(xgrid, hull$z, rightmost.closed = TRUE)
-    j &lt;- pmax(1, pmin(j, length(hull$x)))
-    hull$hx[j] + hull$hp[j] * (xgrid - hull$x[j])
-}
-
-init_hull &lt;- function(lb, ub) {
-    x_init &lt;- sort(unique(pmin(pmax(c(lb + 0.25 * (ub - lb), (lb + ub) / 2,
-                                       ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
-    build_hull(x_init, lb, ub)
-}
-
-### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
-### where "mode" is the peak of the density *within* the truncation window --
-### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
-### window is then entirely on one side of the peak, so the density is
-### monotonic and highest right at that edge). A wide window far out in the
-### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
-### mostly-flat, uninformative sliver near that one edge.
-smart_xlim &lt;- function(lb, ub) {
-    m &lt;- if (lb &gt;= 0) lb else if (ub &lt;= 0) ub else 0
-    c(max(lb, m - 2), min(ub, m + 2))
-}
-
-### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
-### difference underflows to 0 for windows far out in either tail
-log_pnorm_diff &lt;- function(lb, ub) {
-    if (ub &lt;= 0) {
-        log_pu &lt;- pnorm(ub, log.p = TRUE); log_pl &lt;- pnorm(lb, log.p = TRUE)
-        log_pu + log1p(-exp(log_pl - log_pu))
-    } else if (lb &gt;= 0) {
-        log_su &lt;- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
-        log_sl &lt;- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
-        log_sl + log1p(-exp(log_su - log_sl))
-    } else {
-        log(pnorm(ub) - pnorm(lb))
-    }
-}
-tnorm_density &lt;- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
-
-ui &lt;- fluidPage(
-    titlePanel("Shinylive App for Adaptive Rejection Sampling"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            numericInput("n", "sample size (target)", value = 200, min = 1, step = 10),
-            numericInput("l", "lower limit l", value = -2, step = 0.1),
-            numericInput("u", "upper limit u", value = 2, step = 0.1),
-            fluidRow(
-                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
-                column(6, actionButton("next_step", "Next ↷", width = "100%"))
-            ),
-            br(),
-            actionButton("restart", "↺ Restart", width = "100%"),
-            helpText("Each step draws one candidate from the current hull. ",
-                     "Accepted points (green) join the histogram; rejected ",
-                     "points (black x) become new tangent lines, tightening ",
-                     "the hull. Changing the limits restarts the run."),
-            textOutput("status")
-        ),
-        mainPanel(
-            width = 9,
-            plotOutput("panels", height = "620px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    rv &lt;- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
-                          lb = -2, ub = 2, done = FALSE, playing = FALSE,
-                          last_x = NULL, last_accept = NA)
-
-    reset_run &lt;- function() {
-        lb &lt;- if (!is.null(input$l) &amp;&amp; !is.na(input$l)) input$l else -2
-        ub &lt;- if (!is.null(input$u) &amp;&amp; !is.na(input$u)) input$u else 2
-        if (ub - lb &lt; 0.05) ub &lt;- lb + 0.05      # guard against a degenerate window
-        rv$hull &lt;- init_hull(lb, ub)
-        rv$samples &lt;- numeric(0)
-        rv$tries &lt;- 0
-        rv$lb &lt;- lb; rv$ub &lt;- ub
-        rv$target_n &lt;- if (!is.null(input$n) &amp;&amp; !is.na(input$n) &amp;&amp; input$n &gt;= 1) input$n else 200
-        rv$done &lt;- FALSE
-        rv$playing &lt;- FALSE
-        rv$last_x &lt;- NULL; rv$last_accept &lt;- NA
-        updateActionButton(session, "play_pause", label = "▶ Play")
-    }
-    isolate(reset_run())
-
-    do_step &lt;- function() {
-        if (rv$done) return(invisible(NULL))
-        draw &lt;- sample_hull(rv$hull)
-        x &lt;- draw$x; logg &lt;- draw$logg; logf &lt;- h(x)
-        rv$tries &lt;- rv$tries + 1
-        accept &lt;- log(runif(1)) &lt; logf - logg
-        rv$last_x &lt;- x; rv$last_accept &lt;- accept
-        if (accept) {
-            rv$samples &lt;- c(rv$samples, x)
-        } else {
-            rv$hull &lt;- build_hull(sort(c(rv$hull$x, x)), rv$lb, rv$ub)
-        }
-        if (length(rv$samples) &gt;= rv$target_n) {
-            rv$done &lt;- TRUE
-            rv$playing &lt;- FALSE
-            updateActionButton(session, "play_pause", label = "▶ Play")
-        }
-    }
-
-    observeEvent(input$l, { reset_run() }, ignoreInit = TRUE)
-    observeEvent(input$u, { reset_run() }, ignoreInit = TRUE)
-    observeEvent(input$restart, { reset_run() })
-
-    observeEvent(input$n, {
-        req(input$n)
-        rv$target_n &lt;- input$n
-        if (length(rv$samples) &lt; rv$target_n) rv$done &lt;- FALSE
-    }, ignoreInit = TRUE)
-
-    observeEvent(input$play_pause, {
-        if (rv$done) return()
-        rv$playing &lt;- !rv$playing
-        updateActionButton(session, "play_pause",
-                            label = if (rv$playing) "⏸ Pause" else "▶ Play")
-    })
-
-    observeEvent(input$next_step, {
-        rv$playing &lt;- FALSE
-        updateActionButton(session, "play_pause", label = "▶ Play")
-        do_step()
-    })
-
-    ### auto-advance one step every 120ms while playing
-    observe({
-        if (isTRUE(rv$playing) &amp;&amp; !rv$done) {
-            invalidateLater(120, session)
-            isolate(do_step())
-        }
-    })
-
-    output$status &lt;- renderText({
-        sprintf("%d / %d samples accepted  |  %d proposals so far  |  %d tangent points",
-                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
-    })
-
-    output$panels &lt;- renderPlot({
-        hull &lt;- rv$hull; lb &lt;- rv$lb; ub &lt;- rv$ub
-        dl &lt;- smart_xlim(lb, ub)
-        xg &lt;- seq(dl[1], dl[2], length.out = 400)
-        hull_log &lt;- hull_val(hull, xg); target_log &lt;- h(xg)
-
-        par(mfrow = c(2, 1), mar = c(4, 4, 3, 1))
-
-        plot(xg, hull_log, type = "l", lwd = 2, col = "steelblue",
-             ylim = range(c(hull_log, target_log)), xlab = "x",
-             ylab = "log density (unnormalized)",
-             main = sprintf("log target vs. hull (%d tangent points)", length(hull$x)))
-        lines(xg, target_log, lwd = 2, col = "firebrick")
-        points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
-        abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
-        abline(v = c(lb, ub), col = "darkorange", lty = 2)
-        if (!is.null(rv$last_x)) {
-            points(rv$last_x, h(rv$last_x), pch = if (rv$last_accept) 19 else 4,
-                   col = if (rv$last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
-        }
-        legend("bottomleft", bty = "n", cex = 0.85,
-               lwd = c(2, 2, 1, NA, NA), lty = c(1, 1, 2, NA, NA), pch = c(NA, NA, NA, 19, 4),
-               col = c("steelblue", "firebrick", "darkorange", "forestgreen", "black"),
-               legend = c("log hull", "log target", "truncation limits", "last: accepted", "last: rejected"))
-
-        if (length(rv$samples) == 0) {
-            plot(0, 0, type = "n", xlim = dl, ylim = c(0, 1), xlab = "x", ylab = "",
-                 main = "no samples accepted yet")
-        } else {
-            ### scale the bin count so ~30 bins fall within the *visible* view,
-            ### not the full [lb, ub] window -- otherwise a wide window (e.g.
-            ### [100, 200] zoomed to [100, 102]) puts everything in one giant bin
-            n_bins &lt;- min(5000, max(30, ceiling(30 * (ub - lb) / (dl[2] - dl[1]))))
-            breaks &lt;- seq(lb, ub, length.out = n_bins + 1)
-            hist(rv$samples, breaks = breaks, freq = FALSE, col = "steelblue", border = "white",
-                 xlim = dl, xlab = "x",
-                 main = sprintf("%d / %d samples%s", length(rv$samples), rv$target_n,
-                                 if (rv$done) "  (done)" else ""))
-            curve(tnorm_density(x, lb, ub), add = TRUE, lwd = 3, col = "firebrick", n = 300)
-            legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
-        }
-    })
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ars-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;10.6: <strong>Shinylive App Illustrating Adaptive Rejection Sampling.</strong> Shows how adaptive rejection sampling improves its envelope automatically, so that it becomes more efficient as sampling proceeds. The app below reimplements the same idea directly — start with a few tangent lines to <span class="math inline">\(\log f\)</span>, sample from the piecewise-exponential envelope they define, and whenever a candidate is <em>rejected</em>, add it as a new tangent point and rebuild the hull — one candidate at a time, so every step of the mechanism is visible. <strong>Next</strong> advances a single candidate; <strong>Play</strong> advances automatically.
-</figcaption>
-</figure>
-</div>
+<p>There is a <a href="../shinyliveapps_compstat/app_ars.html">shinylive app</a> to show how adaptive rejection sampling improves its envelope automatically, so that it becomes more efficient as sampling proceeds.</p>
 </section>
 </section>
 <section id="summary" class="level2" data-number="10.5">

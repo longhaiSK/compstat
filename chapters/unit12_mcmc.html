@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-09-25">
+<meta name="dcterms.date" content="2026-09-26">
 
 <title>12&nbsp; Markov Chain Monte Carlo – Elements of Statistical Computation</title>
 <style>
@@ -83,11 +83,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/num_eq.js"></script>
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/merge-toc.js"></script>
 <link href="../site_libs/quarto-contrib/custombook-1.0.0/bookstyles.css" rel="stylesheet">
-<meta name="shinylive:serviceworker_dir" content="..">
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
-<link href="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
-<link href="../site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -352,7 +347,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 25, 2026</p>
+      <p class="date">September 26, 2026</p>
     </div>
   </div>
   
@@ -963,120 +958,7 @@ Figure&nbsp;12.6: Compares Hamiltonian Monte Carlo with random-walk Metropolis o
 </section>
 <section id="sec-hmc-app" class="level3" data-number="12.4.4">
 <h3 data-number="12.4.4" class="anchored" data-anchor-id="sec-hmc-app"><span class="header-section-number">12.4.4</span> Shinylive App for Hamiltonian Monte Carlo Tuning</h3>
-<p>Leapfrog step size <span class="math inline">\(\epsilon\)</span> and step count <span class="math inline">\(L\)</span> both need tuning: too large an <span class="math inline">\(\epsilon\)</span> makes the discretized trajectory unstable (rejections rise sharply); too small an <span class="math inline">\(L\)</span> reduces HMC to a random walk; too large an <span class="math inline">\(L\)</span> lets the trajectory turn back on itself and waste computation. This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<div id="fig-hmc-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-hmc-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: hmc-tuning-app
-#| standalone: true
-#| viewerHeight: 860
-
-library(shiny)
-
-Sigma &lt;- matrix(c(1, 0.98, 0.98, 1), 2)
-Sinv  &lt;- solve(Sigma)
-log_pi_corr  &lt;- function(z) -0.5 * sum(z * (Sinv %*% z))
-grad_pi_corr &lt;- function(z) -as.vector(Sinv %*% z)
-
-hmc &lt;- function(log_pi, grad_log_pi, theta, eps, L, iters) {
-    d &lt;- length(theta)
-    out &lt;- matrix(NA_real_, iters, d); n_acc &lt;- 0
-    for (t in seq_len(iters)) {
-        p0 &lt;- rnorm(d)
-        th &lt;- theta; p &lt;- p0 + eps / 2 * grad_log_pi(th)
-        for (l in seq_len(L)) {
-            th &lt;- th + eps * p
-            if (l &lt; L) p &lt;- p + eps * grad_log_pi(th)
-        }
-        p &lt;- p + eps / 2 * grad_log_pi(th)
-        H0 &lt;- -log_pi(theta) + 0.5 * sum(p0^2)
-        H1 &lt;- -log_pi(th)    + 0.5 * sum(p^2)
-        if (log(runif(1)) &lt; H0 - H1) { theta &lt;- th; n_acc &lt;- n_acc + 1 }
-        out[t, ] &lt;- theta
-    }
-    attr(out, "accept_rate") &lt;- n_acc / iters
-    out
-}
-
-ui &lt;- fluidPage(
-    titlePanel("Shinylive App for Hamiltonian Monte Carlo Tuning"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            sliderInput("eps", "leapfrog step size (epsilon)", min = 0.01, max = 1, value = 0.05, step = 0.01),
-            sliderInput("L", "number of leapfrog steps (L)", min = 1, max = 60, value = 30, step = 1),
-            sliderInput("iters", "iterations", min = 200, max = 3000, value = 1000, step = 200),
-            helpText("Target: bivariate normal with correlation 0.98. Try eps = 0.05, ",
-                     "L = 30 (efficient), then eps = 0.5 (unstable, low acceptance), ",
-                     "then L = 2 (random-walk-like, high autocorrelation)."),
-            tableOutput("tab")
-        ),
-        mainPanel(
-            width = 8,
-            plotOutput("traj", height = "360px"),
-            plotOutput("acfplot", height = "220px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    fit &lt;- reactive({
-        set.seed(1)
-        hmc(log_pi_corr, grad_pi_corr, theta = c(-2, -2), eps = input$eps, L = input$L, iters = input$iters)
-    })
-
-    output$traj &lt;- renderPlot({
-        d &lt;- fit()
-        g &lt;- seq(-3.5, 3.5, length.out = 60)
-        Z &lt;- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
-        par(mar = c(4, 4, 2, 1))
-        contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60",
-                xlab = expression(theta[1]), ylab = expression(theta[2]),
-                main = sprintf("accept rate: %.2f", attr(d, "accept_rate")))
-        k &lt;- min(100, nrow(d))
-        lines(d[1:k, ], col = "steelblue", lwd = 1.2)
-        points(d[1:k, ], pch = 19, cex = 0.5, col = "steelblue")
-    })
-
-    output$acfplot &lt;- renderPlot({
-        d &lt;- fit()
-        par(mar = c(4, 4, 1, 1))
-        acf(d[, 1], lag.max = 60, col = "steelblue", main = "autocorrelation of theta_1")
-    })
-
-    output$tab &lt;- renderTable({
-        d &lt;- fit()
-        data.frame(quantity = c("acceptance rate", "mean theta_1", "sd theta_1"),
-                   value = c(attr(d, "accept_rate"), mean(d[, 1]), sd(d[, 1])))
-    }, digits = 3, rownames = FALSE)
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-hmc-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;12.7: <strong>Shinylive App Illustrating Hamiltonian Monte Carlo Tuning.</strong> Lets you tune the step size and number of leapfrog steps of Hamiltonian Monte Carlo to see how they affect its exploration of a correlated target. The app below runs the <code>hmc()</code> function above on the same correlated target and lets you vary <span class="math inline">\(\epsilon\)</span> and <span class="math inline">\(L\)</span> directly.
-</figcaption>
-</figure>
-</div>
-<div class="callout callout-style-default callout-note callout-titled">
-<div class="callout-header d-flex align-content-center">
-<div class="callout-icon-container">
-<i class="callout-icon"></i>
-</div>
-<div class="callout-title-container flex-fill">
-<span class="screen-reader-only">Note</span>Reproducing this figure
-</div>
-</div>
-<div class="callout-body-container callout-body">
-<p>The chunk above uses the <a href="https://github.com/quarto-ext/shinylive">shinylive</a> extension, which compiles the app to WebAssembly so it runs in the reader’s browser with no Shiny server. Install it once per project with</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="ex">quarto</span> add quarto-ext/shinylive</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>and add <code>filters: [shinylive]</code> to the document or project YAML. Only packages available in webR may be used inside the app, so the code above is restricted to base R and <code>shiny</code>.</p>
-</div>
-</div>
+<p>There is a <a href="../shinyliveapps_compstat/app_hmc.html">shinylive app</a> to let you tune the step size and number of leapfrog steps of Hamiltonian Monte Carlo to see how they affect its exploration of a correlated target.</p>
 </section>
 </section>
 <section id="stan-and-probabilistic-programming" class="level2" data-number="12.5">
@@ -1091,50 +973,50 @@ Figure&nbsp;12.7: <strong>Shinylive App Illustrating Hamiltonian Monte Carlo Tun
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>stan_normal_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="st">data {</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[n] x;</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu0;</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; sigma0;</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; alpha;</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; w;</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="st">parameters {</span></span>
-<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu;</span></span>
-<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; sigma2;</span></span>
-<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a><span class="st">model {</span></span>
-<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a><span class="st">  mu ~ normal(mu0, sqrt(sigma0));</span></span>
-<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a><span class="st">  sigma2 ~ inv_gamma(alpha / 2, alpha * w / 2);</span></span>
-<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a><span class="st">  x ~ normal(mu, sqrt(sigma2));</span></span>
-<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>stan_normal_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="st">data {</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[n] x;</span></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu0;</span></span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; sigma0;</span></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; alpha;</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; w;</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a><span class="st">parameters {</span></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu;</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; sigma2;</span></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="st">model {</span></span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a><span class="st">  mu ~ normal(mu0, sqrt(sigma0));</span></span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a><span class="st">  sigma2 ~ inv_gamma(alpha / 2, alpha * w / 2);</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a><span class="st">  x ~ normal(mu, sqrt(sigma2));</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>fit_stan <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">model_code =</span> stan_normal_code,</span>
-<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="fu">length</span>(x), <span class="at">x =</span> x, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">sigma0 =</span> <span class="fl">1e10</span>, <span class="at">alpha =</span> <span class="fl">1e-5</span>, <span class="at">w =</span> <span class="fl">1e-5</span>),</span>
-<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">5</span>, <span class="at">refresh =</span> <span class="dv">0</span></span>
-<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>fit_stan <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    <span class="at">model_code =</span> stan_normal_code,</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="fu">length</span>(x), <span class="at">x =</span> x, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">sigma0 =</span> <span class="fl">1e10</span>, <span class="at">alpha =</span> <span class="fl">1e-5</span>, <span class="at">w =</span> <span class="fl">1e-5</span>),</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">5</span>, <span class="at">refresh =</span> <span class="dv">0</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>stan_summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_stan, <span class="at">pars =</span> <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"sigma2"</span>))<span class="sc">$</span>summary</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>stan_sigma_draws <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">as.matrix</span>(fit_stan, <span class="at">pars =</span> <span class="st">"sigma2"</span>)[, <span class="dv">1</span>])</span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>three_way <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"Gibbs"</span>, <span class="st">"Metropolis-Hastings"</span>, <span class="st">"Stan (NUTS)"</span>),</span>
-<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_mu =</span> <span class="fu">c</span>(<span class="fu">mean</span>(mu_g), <span class="fu">mean</span>(mh_long<span class="sc">$</span>mu[keep_mh]), stan_summary[<span class="st">"mu"</span>, <span class="st">"mean"</span>]),</span>
-<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">sd_mu   =</span> <span class="fu">c</span>(<span class="fu">sd</span>(mu_g), <span class="fu">sd</span>(mh_long<span class="sc">$</span>mu[keep_mh]), stan_summary[<span class="st">"mu"</span>, <span class="st">"sd"</span>]),</span>
-<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_sigma =</span> <span class="fu">c</span>(<span class="fu">mean</span>(sd_g), <span class="fu">mean</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">mean</span>(stan_sigma_draws)),</span>
-<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">sd_sigma   =</span> <span class="fu">c</span>(<span class="fu">sd</span>(sd_g), <span class="fu">sd</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">sd</span>(stan_sigma_draws))</span>
-<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(three_way, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"l"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>stan_summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_stan, <span class="at">pars =</span> <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"sigma2"</span>))<span class="sc">$</span>summary</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>stan_sigma_draws <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">as.matrix</span>(fit_stan, <span class="at">pars =</span> <span class="st">"sigma2"</span>)[, <span class="dv">1</span>])</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>three_way <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"Gibbs"</span>, <span class="st">"Metropolis-Hastings"</span>, <span class="st">"Stan (NUTS)"</span>),</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_mu =</span> <span class="fu">c</span>(<span class="fu">mean</span>(mu_g), <span class="fu">mean</span>(mh_long<span class="sc">$</span>mu[keep_mh]), stan_summary[<span class="st">"mu"</span>, <span class="st">"mean"</span>]),</span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">sd_mu   =</span> <span class="fu">c</span>(<span class="fu">sd</span>(mu_g), <span class="fu">sd</span>(mh_long<span class="sc">$</span>mu[keep_mh]), stan_summary[<span class="st">"mu"</span>, <span class="st">"sd"</span>]),</span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_sigma =</span> <span class="fu">c</span>(<span class="fu">mean</span>(sd_g), <span class="fu">mean</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">mean</span>(stan_sigma_draws)),</span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">sd_sigma   =</span> <span class="fu">c</span>(<span class="fu">sd</span>(sd_g), <span class="fu">sd</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">sd</span>(stan_sigma_draws))</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(three_way, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"l"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-stan-vs-hand" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -1170,9 +1052,9 @@ Table&nbsp;12.4: Validates Stan’s sampler against the samplers written by hand
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Stan (NUTS)</td>
-<td style="text-align: right;">10.132</td>
-<td style="text-align: right;">0.326</td>
-<td style="text-align: right;">2.295</td>
+<td style="text-align: right;">10.137</td>
+<td style="text-align: right;">0.329</td>
+<td style="text-align: right;">2.301</td>
 <td style="text-align: right;">0.245</td>
 </tr>
 </tbody>
@@ -1193,60 +1075,52 @@ h_t^{\text{raw}} \sim N(0,1), \qquad h_t = \mu + \phi(h_{t-1}-\mu) + \tau\, h_t^
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>stan_sv_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="st">data {</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="st">  int&lt;lower=0&gt; T;</span></span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] y;</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="st">parameters {</span></span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu;</span></span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=-1,upper=1&gt; phi;</span></span>
-<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0.01&gt; tausq;</span></span>
-<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="st">  real h0_raw;</span></span>
-<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] h_raw;</span></span>
-<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a><span class="st">transformed parameters {</span></span>
-<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; tau = sqrt(tausq);</span></span>
-<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a><span class="st">  real h0 = mu + tau * h0_raw;</span></span>
-<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] h;</span></span>
-<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a><span class="st">  h[1] = mu + phi * (h0 - mu) + tau * h_raw[1];</span></span>
-<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a><span class="st">  for (t in 2:T)</span></span>
-<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a><span class="st">    h[t] = mu + phi * (h[t - 1] - mu) + tau * h_raw[t];</span></span>
-<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a><span class="st">model {</span></span>
-<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a><span class="st">  mu ~ normal(-10, 5);</span></span>
-<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a><span class="st">  phi ~ uniform(-1, 1);</span></span>
-<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a><span class="st">  tausq ~ inv_gamma(2.5, 0.025);</span></span>
-<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a><span class="st">  h0_raw ~ std_normal();</span></span>
-<span id="cb23-26"><a href="#cb23-26" aria-hidden="true" tabindex="-1"></a><span class="st">  h_raw ~ std_normal();</span></span>
-<span id="cb23-27"><a href="#cb23-27" aria-hidden="true" tabindex="-1"></a><span class="st">  y ~ normal(0, exp(h / 2));</span></span>
-<span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
-<span id="cb23-29"><a href="#cb23-29" aria-hidden="true" tabindex="-1"></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>stan_sv_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="st">data {</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="st">  int&lt;lower=0&gt; T;</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] y;</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="st">parameters {</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="st">  real mu;</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=-1,upper=1&gt; phi;</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0.01&gt; tausq;</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="st">  real h0_raw;</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] h_raw;</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="st">transformed parameters {</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="st">  real&lt;lower=0&gt; tau = sqrt(tausq);</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a><span class="st">  real h0 = mu + tau * h0_raw;</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a><span class="st">  vector[T] h;</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a><span class="st">  h[1] = mu + phi * (h0 - mu) + tau * h_raw[1];</span></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a><span class="st">  for (t in 2:T)</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a><span class="st">    h[t] = mu + phi * (h[t - 1] - mu) + tau * h_raw[t];</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a><span class="st">model {</span></span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a><span class="st">  mu ~ normal(-10, 5);</span></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a><span class="st">  phi ~ uniform(-1, 1);</span></span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a><span class="st">  tausq ~ inv_gamma(2.5, 0.025);</span></span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a><span class="st">  h0_raw ~ std_normal();</span></span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a><span class="st">  h_raw ~ std_normal();</span></span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a><span class="st">  y ~ normal(0, exp(h / 2));</span></span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a><span class="st">}</span></span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">6</span>)</span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>N <span class="ot">&lt;-</span> <span class="dv">200</span>; mu_sv <span class="ot">&lt;-</span> <span class="dv">3</span>; phi_sv <span class="ot">&lt;-</span> <span class="fl">0.3</span>; tau_sv <span class="ot">&lt;-</span> <span class="dv">1</span>; h0_sv <span class="ot">&lt;-</span> <span class="dv">2</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fu">numeric</span>(N); y <span class="ot">&lt;-</span> <span class="fu">numeric</span>(N)</span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>h[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, mu_sv <span class="sc">+</span> phi_sv <span class="sc">*</span> (h0_sv <span class="sc">-</span> mu_sv), tau_sv)</span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>N) h[i] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, mu_sv <span class="sc">+</span> phi_sv <span class="sc">*</span> (h[i <span class="sc">-</span> <span class="dv">1</span>] <span class="sc">-</span> mu_sv), tau_sv)</span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>N) y[t] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fu">exp</span>(h[t] <span class="sc">/</span> <span class="dv">2</span>))</span>
-<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>fit_sv <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">model_code =</span> stan_sv_code, <span class="at">data =</span> <span class="fu">list</span>(<span class="at">y =</span> y, <span class="at">T =</span> N),</span>
-<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">chains =</span> <span class="dv">2</span>, <span class="at">iter =</span> <span class="dv">1000</span>, <span class="at">warmup =</span> <span class="dv">500</span>, <span class="at">seed =</span> <span class="dv">6</span>, <span class="at">refresh =</span> <span class="dv">0</span></span>
-<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">6</span>)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>N <span class="ot">&lt;-</span> <span class="dv">200</span>; mu_sv <span class="ot">&lt;-</span> <span class="dv">3</span>; phi_sv <span class="ot">&lt;-</span> <span class="fl">0.3</span>; tau_sv <span class="ot">&lt;-</span> <span class="dv">1</span>; h0_sv <span class="ot">&lt;-</span> <span class="dv">2</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fu">numeric</span>(N); y <span class="ot">&lt;-</span> <span class="fu">numeric</span>(N)</span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>h[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, mu_sv <span class="sc">+</span> phi_sv <span class="sc">*</span> (h0_sv <span class="sc">-</span> mu_sv), tau_sv)</span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>N) h[i] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, mu_sv <span class="sc">+</span> phi_sv <span class="sc">*</span> (h[i <span class="sc">-</span> <span class="dv">1</span>] <span class="sc">-</span> mu_sv), tau_sv)</span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>N) y[t] <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, <span class="dv">0</span>, <span class="fu">exp</span>(h[t] <span class="sc">/</span> <span class="dv">2</span>))</span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>fit_sv <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">model_code =</span> stan_sv_code, <span class="at">data =</span> <span class="fu">list</span>(<span class="at">y =</span> y, <span class="at">T =</span> N),</span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">chains =</span> <span class="dv">2</span>, <span class="at">iter =</span> <span class="dv">1000</span>, <span class="at">warmup =</span> <span class="dv">500</span>, <span class="at">seed =</span> <span class="dv">6</span>, <span class="at">refresh =</span> <span class="dv">0</span></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: There were 1 divergent transitions after warmup. See
-https://mc-stan.org/misc/warnings.html#divergent-transitions-after-warmup
-to find out why this is a problem and how to eliminate them.</code></pre>
-</div>
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: Examine the pairs() plot to diagnose sampling problems</code></pre>
-</div>
 <div class="cell-output cell-output-stderr">
 <pre><code>Warning: Bulk Effective Samples Size (ESS) is too low, indicating posterior means and medians may be unreliable.
 Running the chains for more iterations may help. See
@@ -1256,15 +1130,15 @@ https://mc-stan.org/misc/warnings.html#bulk-ess</code></pre>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(y, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">xlab =</span> <span class="st">"t"</span>, <span class="at">ylab =</span> <span class="st">"y"</span>, <span class="at">main =</span> <span class="st">"simulated returns"</span>)</span>
-<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>sv_summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_sv, <span class="at">pars =</span> <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"phi"</span>, <span class="st">"tau"</span>))<span class="sc">$</span>summary</span>
-<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(<span class="fu">as.matrix</span>(fit_sv, <span class="at">pars =</span> <span class="st">"phi"</span>), <span class="at">breaks =</span> <span class="dv">30</span>, <span class="at">col =</span> <span class="st">"gray85"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
-<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"posterior of phi (true 0.3)"</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(phi))</span>
-<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> phi_sv, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(<span class="fu">as.matrix</span>(fit_sv, <span class="at">pars =</span> <span class="st">"tau"</span>), <span class="at">breaks =</span> <span class="dv">30</span>, <span class="at">col =</span> <span class="st">"gray85"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
-<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"posterior of tau (true 1)"</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(tau))</span>
-<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> tau_sv, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(y, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">xlab =</span> <span class="st">"t"</span>, <span class="at">ylab =</span> <span class="st">"y"</span>, <span class="at">main =</span> <span class="st">"simulated returns"</span>)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>sv_summary <span class="ot">&lt;-</span> <span class="fu">summary</span>(fit_sv, <span class="at">pars =</span> <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"phi"</span>, <span class="st">"tau"</span>))<span class="sc">$</span>summary</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(<span class="fu">as.matrix</span>(fit_sv, <span class="at">pars =</span> <span class="st">"phi"</span>), <span class="at">breaks =</span> <span class="dv">30</span>, <span class="at">col =</span> <span class="st">"gray85"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"posterior of phi (true 0.3)"</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(phi))</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> phi_sv, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="fu">hist</span>(<span class="fu">as.matrix</span>(fit_sv, <span class="at">pars =</span> <span class="st">"tau"</span>), <span class="at">breaks =</span> <span class="dv">30</span>, <span class="at">col =</span> <span class="st">"gray85"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="st">"posterior of tau (true 1)"</span>, <span class="at">xlab =</span> <span class="fu">expression</span>(tau))</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v =</span> tau_sv, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="fig-stan-sv" class="quarto-float quarto-figure quarto-figure-center anchored">
@@ -1273,7 +1147,7 @@ https://mc-stan.org/misc/warnings.html#bulk-ess</code></pre>
 <img src="unit12_mcmc_files/figure-html/fig-stan-sv-1.png" class="img-fluid figure-img" width="960">
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-stan-sv-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;12.8: Shows a stochastic-volatility model fitted with Stan: the simulated data and the posteriors of the two parameters of interest. Simulated stochastic-volatility data (left) and posteriors of the persistence phi and innovation scale tau under the non-centred parameterization (true values 0.3 and 1, red lines): both intervals are wide, reflecting genuine weak identification from a single 200-point series, but both cover the truth.
+Figure&nbsp;12.7: Shows a stochastic-volatility model fitted with Stan: the simulated data and the posteriors of the two parameters of interest. Simulated stochastic-volatility data (left) and posteriors of the persistence phi and innovation scale tau under the non-centred parameterization (true values 0.3 and 1, red lines): both intervals are wide, reflecting genuine weak identification from a single 200-point series, but both cover the truth.
 </figcaption>
 </figure>
 </div>
@@ -1282,9 +1156,9 @@ Figure&nbsp;12.8: Shows a stochastic-volatility model fitted with Stan: the simu
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a>sv_tbl <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">variable =</span> <span class="fu">rownames</span>(sv_summary), sv_summary[, <span class="fu">c</span>(<span class="st">"mean"</span>, <span class="st">"sd"</span>, <span class="st">"Rhat"</span>, <span class="st">"n_eff"</span>)],</span>
-<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a>                      <span class="at">row.names =</span> <span class="cn">NULL</span>, <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(sv_tbl, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"l"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>sv_tbl <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">variable =</span> <span class="fu">rownames</span>(sv_summary), sv_summary[, <span class="fu">c</span>(<span class="st">"mean"</span>, <span class="st">"sd"</span>, <span class="st">"Rhat"</span>, <span class="st">"n_eff"</span>)],</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>                      <span class="at">row.names =</span> <span class="cn">NULL</span>, <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(sv_tbl, <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"l"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div id="tbl-stan-sv" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
@@ -1306,24 +1180,24 @@ Table&nbsp;12.5: Reports the convergence diagnostics and posterior summaries of 
 <tbody>
 <tr class="odd">
 <td style="text-align: left;">mu</td>
-<td style="text-align: right;">3.033</td>
-<td style="text-align: right;">0.198</td>
-<td style="text-align: right;">0.999</td>
-<td style="text-align: right;">831.822</td>
+<td style="text-align: right;">3.039</td>
+<td style="text-align: right;">0.216</td>
+<td style="text-align: right;">1.005</td>
+<td style="text-align: right;">394.177</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">phi</td>
-<td style="text-align: right;">0.566</td>
-<td style="text-align: right;">0.255</td>
-<td style="text-align: right;">1.006</td>
-<td style="text-align: right;">193.490</td>
+<td style="text-align: right;">0.603</td>
+<td style="text-align: right;">0.232</td>
+<td style="text-align: right;">1.003</td>
+<td style="text-align: right;">166.911</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">tau</td>
-<td style="text-align: right;">0.621</td>
-<td style="text-align: right;">0.207</td>
-<td style="text-align: right;">1.001</td>
-<td style="text-align: right;">250.807</td>
+<td style="text-align: right;">0.618</td>
+<td style="text-align: right;">0.203</td>
+<td style="text-align: right;">1.002</td>
+<td style="text-align: right;">202.156</td>
 </tr>
 </tbody>
 </table>

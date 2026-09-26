@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.37">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Stochastic Gradient Descent – Shinylive Apps for Statistical Computation</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<link href="./app_mixture.html" rel="next">
+<link href="./app_nelder-mead.html" rel="prev">
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-7f8f88aac4f3542376d5c11b86a4c14d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-b8b6674ab88819f1dcfb3c0c8250f7e6.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<meta name="shinylive:serviceworker_dir" content=".">
+<script src="site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
+<script src="site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
+<link href="site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
+<link href="site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
+<script id="quarto-search-options" type="application/json">{
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="nav-sidebar floating quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./app_nr-divergence.html">Optimization for Maximum Likelihood Estimation</a></li><li class="breadcrumb-item"><a href="./app_sgd.html">Stochastic Gradient Descent</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-full">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="./">Shinylive Apps for Statistical Computation</a> 
+    </div>
+      </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">All apps</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Random Numbers and Monte Carlo Methods</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_inverse-cdf.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Inverse CDF Method</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Optimization for Maximum Likelihood Estimation</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_nr-divergence.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Safeguarded Newton-Raphson</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_gradient-methods.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Comparing Gradient Descent and Newton-Raphson Optimization Algorithms</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_nelder-mead.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Nelder–Mead</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_sgd.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Stochastic Gradient Descent</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">EM Algorithms</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_mixture.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The EM Algorithm for a Normal Mixture</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Introduction to Bayesian Inference</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_bayes-explorer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Conjugate Bayesian Updating</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Numerical Quadrature</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_missed-mode-nq.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">A Quadrature Grid Missing the Posterior Mode</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Laplace Approximation</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_laplace-transform.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Adaptive Gauss–Hermite Quadrature</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Rejection Sampling</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_rejection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Envelope Tightness in Rejection Sampling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_gamma-rejection.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Rejection Sampling from a Gamma Density with a Cauchy Envelope</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_ars.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Adaptive Rejection Sampling</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">Importance Sampling</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_missed-mode.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">The Failure of Importance Sampling</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_t-is.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Importance Sampling of a Student-t Interval</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_marlik.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Sorted Importance Weights</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Markov Chain Monte Carlo</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./app_hmc.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Hamiltonian Monte Carlo Tuning</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    
+<!-- main -->
+<main class="content column-page-right" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./app_nr-divergence.html">Optimization for Maximum Likelihood Estimation</a></li><li class="breadcrumb-item"><a href="./app_sgd.html">Stochastic Gradient Descent</a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title">Stochastic Gradient Descent</h1>
+<p class="subtitle lead">Optimization for Maximum Likelihood Estimation</p>
+</div>
+
+
+
+<div class="quarto-title-meta column-page-right">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- Moved out of chapters/unit05_MLE.qmd on 2026-09-26 by gen_shinyapps.py, which
+     also lifted the "About the app" notes from that section. The app no
+     longer exists in the book, so THIS FILE IS NOW ITS ONLY COPY --
+     edit it here, and re-render with: quarto render shinyliveapps_compstat -->
+<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
+#|   shinylive does not work in self-contained HTML documents.
+#|   Please set `embed-resources: false` in your metadata.
+#| standalone: true
+#| viewerHeight: 890
+library(shiny)
+
+## ------------------------------------------------------------------- data
+## Two data-generating processes. The teacher network lies inside the
+## student's model class; the bumps do not.
+TEACH &lt;- list(w = c(4, 3, 5), cc = c(4, 0, -5), v = c(1.0, -1.2, 0.8), b = 0)
+
+g_teacher &lt;- function(x) {
+  Hm &lt;- tanh(outer(x, TEACH$w) + rep(TEACH$cc, each = length(x)))
+  as.vector(Hm %*% TEACH$v + TEACH$b)
+}
+
+g_bumps &lt;- function(x)
+  1.2 * exp(-9 * (x + 0.7)^2) - 1.0 * exp(-9 * (x - 0.8)^2)
+
+DGPS &lt;- c("Teacher network (1 - 3 tanh - 1)" = "teacher",
+          "Two Gaussian bumps (outside the model class)" = "bumps")
+
+gtrue &lt;- function(x, dgp)
+  if (identical(dgp, "bumps")) g_bumps(x) else g_teacher(x)
+
+XG &lt;- seq(-2, 2, length.out = 300)
+
+make_data &lt;- function(n, sigma, seed, dgp) {
+  set.seed(500 + seed)
+  x &lt;- sort(runif(n, -2, 2))
+  list(x = x, y = gtrue(x, dgp) + rnorm(n, 0, sigma), n = n, dgp = dgp)
+}
+
+## ------------------------------------------------- network: 1 - H tanh - 1
+unpack &lt;- function(p, H)
+  list(w = p[1:H], cc = p[H + (1:H)], v = p[2 * H + (1:H)], b = p[3 * H + 1])
+
+fnet &lt;- function(p, x, H) {
+  P &lt;- unpack(p, H)
+  Hm &lt;- tanh(outer(x, P$w) + rep(P$cc, each = length(x)))
+  as.vector(Hm %*% P$v + P$b)
+}
+
+gnet &lt;- function(p, x, y, H) {
+  n &lt;- length(x); P &lt;- unpack(p, H)
+  Hm &lt;- tanh(outer(x, P$w) + rep(P$cc, each = n))
+  r &lt;- as.vector(Hm %*% P$v + P$b) - y
+  S &lt;- (1 - Hm^2) * outer(r, P$v)
+  c(as.vector(colSums(S * x)) / n,        # dw
+    as.vector(colSums(S)) / n,            # dc
+    as.vector(crossprod(Hm, r)) / n,      # dv
+    mean(r))                              # db
+}
+
+mse &lt;- function(p, H, x, y) 0.5 * mean((fnet(p, x, H) - y)^2)
+
+init_p &lt;- function(H, seed) {
+  set.seed(1000 + seed)
+  c(rnorm(H, 0, 2), rnorm(H, 0, 1.5), rnorm(H, 0, 0.7), 0)
+}
+
+## ---------------------------------------------------------------- training
+## m = batch size; m &gt;= n is full-batch gradient descent.
+train &lt;- function(p0, H, m, a, nepoch, seed, D) {
+  n &lt;- D$n
+  m &lt;- max(1, min(m, n))
+  B &lt;- ceiling(n / m)                              # updates per epoch
+  nup &lt;- B * nepoch
+  P &lt;- matrix(NA_real_, nup + 1, length(p0))
+  L &lt;- rep(NA_real_, nup + 1); EP &lt;- rep(NA_real_, nup + 1)
+  IDX &lt;- vector("list", nup + 1)
+  set.seed(seed)
+  p &lt;- p0; k &lt;- 0; bad &lt;- FALSE
+  for (e in seq_len(nepoch)) {
+    perm &lt;- if (B == 1) seq_len(n) else sample.int(n)
+    grp &lt;- split(perm, ceiling(seq_len(n) / m))    # last batch may be smaller
+    for (b in seq_len(B)) {
+      k &lt;- k + 1
+      idx &lt;- grp[[b]]
+      P[k, ] &lt;- p; IDX[[k]] &lt;- idx
+      L[k] &lt;- mse(p, H, D$x, D$y); EP[k] &lt;- (k - 1) / B
+      p &lt;- p - a * gnet(p, D$x[idx], D$y[idx], H)
+      if (any(!is.finite(p))) { bad &lt;- TRUE; break }
+    }
+    if (bad) break
+  }
+  if (!bad) {
+    k &lt;- k + 1
+    P[k, ] &lt;- p; IDX[[k]] &lt;- seq_len(n)
+    L[k] &lt;- mse(p, H, D$x, D$y); EP[k] &lt;- (k - 1) / B
+  }
+  n_rec &lt;- max(1, k)
+  list(P = P[1:n_rec, , drop = FALSE], L = L[1:n_rec], EP = EP[1:n_rec],
+       IDX = IDX[1:n_rec], n = n_rec, B = B, m = m, diverged = bad)
+}
+
+## ------------------------------------------------------------ weight plot
+## Diverging ramp: blue = negative, red = positive, magnitude by saturation.
+DIV &lt;- colorRampPalette(c("#08306B", "#2171B5", "#6BAED6", "#DEEBF7",
+                          "#F7F7F7",
+                          "#FEE0D2", "#FC9272", "#CB181D", "#67000D"))(201)
+
+## compander: maps v in [-wmax, wmax] to [-1, 1], boosting small values.
+tone &lt;- function(v, wmax, k) {
+  u &lt;- pmax(-1, pmin(1, v / wmax))
+  sign(u) * log1p(k * abs(u)) / log1p(k)
+}
+
+wcol &lt;- function(v, wmax, k) DIV[round((tone(v, wmax, k) + 1) * 100) + 1]
+wlwd &lt;- function(v, wmax, k) 0.8 + 6 * abs(tone(v, wmax, k))
+
+draw_net &lt;- function(p, H, wmax, k, main) {
+  P &lt;- unpack(p, H)
+  yh &lt;- if (H == 1) 0.5 else seq(0.92, 0.10, length.out = H)
+  ix &lt;- 0.05; hx &lt;- 0.55; ox &lt;- 1.05
+  nc &lt;- max(1.4, min(4.4, 36 / H))
+  plot.new(); plot.window(c(-0.05, 1.2), c(-0.10, 1.02))
+  title(main = main, cex.main = 1.05)
+  for (j in 1:H)
+    segments(ix, 0.5, hx, yh[j], col = wcol(P$w[j], wmax, k),
+             lwd = wlwd(P$w[j], wmax, k), lend = 1)
+  for (j in 1:H)
+    segments(hx, yh[j], ox, 0.5, col = wcol(P$v[j], wmax, k),
+             lwd = wlwd(P$v[j], wmax, k), lend = 1)
+  points(ix, 0.5, pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
+  text(ix, 0.5, "x", font = 2)
+  points(rep(hx, H), yh, pch = 21, cex = nc, lwd = 1.4,
+         bg = wcol(P$cc, wmax, k))
+  if (H &lt;= 10) text(rep(hx, H), yh, 1:H, cex = 0.65)
+  points(ox, 0.5, pch = 21, cex = 3.4, lwd = 1.6, bg = wcol(P$b, wmax, k))
+  text(ox, 0.5, "y", font = 2)
+
+  ## signed colour bar
+  xs &lt;- seq(0.12, 0.98, length.out = 201)
+  rect(xs, -0.09, xs + diff(xs)[1], -0.035, col = DIV, border = NA)
+  lab &lt;- formatC(wmax, format = "g", digits = 2)
+  text(c(0.12, 0.55, 0.98), -0.005,
+       c(paste0("-", lab), "0", paste0("+", lab)), cex = 0.72)
+}
+
+## --------------------------------------------------------------------- UI
+ui &lt;- fluidPage(
+  titlePanel("Shinylive App for Stochastic Gradient Descent"),
+  fluidRow(
+    ## ---- column 1: training controls -----------------------------------
+    column(
+      3,
+      selectInput("dgp", "True curve", choices = DGPS, selected = "teacher"),
+      sliderInput("H", "Hidden neurons", min = 2, max = 16, value = 8,
+                  step = 1),
+      sliderInput("m", "Batch size m", min = 1, max = 400, value = 20,
+                  step = 1),
+      sliderInput("a", "Learning rate", min = 0.01, max = 0.60, value = 0.20,
+                  step = 0.01),
+      sliderInput("nep", "Epochs", min = 10, max = 300, value = 100, step = 10),
+      sliderInput("ctr", "Weight colour contrast", min = 1, max = 40,
+                  value = 12, step = 1),
+      checkboxInput("showgd", "Overlay the full-batch run", TRUE)
+    ),
+    ## ---- column 2: data generation, then playback ----------------------
+    column(
+      2,
+      div(
+        style = "margin-top:10px;",
+        tags$h5(tags$b("Data")),
+        sliderInput("n", "Sample size n", min = 40, max = 400, value = 200,
+                    step = 20),
+        sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40, value = 0.08,
+                    step = 0.01),
+        actionButton("newdata", "Regenerate a dataset",
+                     class = "btn-warning",
+                     style = "width:100%; margin-bottom:6px;"),
+
+        hr(style = "border-top:2px solid #999; margin:14px 0;"),
+
+        tags$h5(tags$b("Training")),
+        actionButton("play", "Play", class = "btn-primary btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("step", "Next", class = "btn-lg",
+                     style = "width:100%; margin-bottom:10px;"),
+        actionButton("back", "Prev", class = "btn-lg",
+                     style = "width:100%;"),
+        checkboxInput("byepoch", "Advance a whole epoch", TRUE),
+        checkboxInput("autoplay", "Autoplay on change", FALSE),
+        actionButton("newinit", "New initial weights",
+                     style = "width:100%; margin-bottom:8px;"),
+        actionButton("newseed", "New batch sequence",
+                     style = "width:100%; margin-bottom:8px;"),
+        helpText("Both runs share the data, the initial weights and the",
+                 "number of epochs; only m differs.")
+      )
+    ),
+    ## ---- column 3: plots -----------------------------------------------
+    column(
+      7,
+      plotOutput("nets", height = "300px"),
+      plotOutput("fit", height = "340px"),
+      sliderInput("k", "Update k", min = 0, max = 1, value = 0, step = 1,
+                  width = "900px")
+    )
+  )
+)
+
+## ----------------------------------------------------------------- server
+server &lt;- function(input, output, session) {
+
+  MAXUP &lt;- 4000
+  dseed &lt;- reactiveVal(1); wseed &lt;- reactiveVal(1); bseed &lt;- reactiveVal(1)
+  playing &lt;- reactiveVal(FALSE)
+
+  observeEvent(input$newdata, dseed(dseed() + 1))
+  observeEvent(input$newinit, wseed(wseed() + 1))
+  observeEvent(input$newseed, bseed(bseed() + 1))
+
+  observeEvent(input$n, {
+    updateSliderInput(session, "m", max = input$n,
+                      value = min(input$m, input$n))
+  })
+
+  DAT &lt;- reactive(make_data(input$n, input$sigma, dseed(), input$dgp))
+
+  runs &lt;- reactive({
+    D &lt;- DAT(); H &lt;- input$H
+    m &lt;- max(1, min(input$m, D$n))
+    B &lt;- ceiling(D$n / m)
+    ne &lt;- max(1, min(input$nep, floor(MAXUP / B)))
+    p0 &lt;- init_p(H, wseed())
+    S &lt;- train(p0, H, m, input$a, ne, bseed(), D)
+    G &lt;- train(p0, H, D$n, input$a, ne, bseed(), D)
+    list(S = S, G = G, H = H, B = B, m = m, D = D, ne = ne,
+         capped = ne &lt; input$nep,
+         wmax = max(0.2, quantile(abs(c(S$P, G$P)), 0.97, na.rm = TRUE)))
+  })
+
+  stride &lt;- reactive(if (isTRUE(input$byepoch)) runs()$B else 1L)
+
+  observeEvent(runs(), {
+    updateSliderInput(session, "k", max = max(1, runs()$S$n - 1), value = 0)
+    playing(isTRUE(input$autoplay) &amp;&amp; runs()$S$n &gt; 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) playing(FALSE)
+    else {
+      if (as.integer(input$k) &gt;= runs()$S$n - 1)
+        updateSliderInput(session, "k", value = 0)
+      playing(TRUE)
+    }
+  })
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       label = if (isTRUE(playing())) "Pause" else "Play")
+  })
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax &lt;- isolate(runs()$S$n) - 1
+    k &lt;- isolate(as.integer(input$k)); st &lt;- isolate(stride())
+    if (k &gt;= kmax) { playing(FALSE); return() }
+    invalidateLater(250, session)
+    updateSliderInput(session, "k", value = min(k + st, kmax))
+  })
+  observeEvent(input$step, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = min(as.integer(input$k) + stride(),
+                                  max(0, runs()$S$n - 1)))
+  })
+  observeEvent(input$back, {
+    playing(FALSE)
+    updateSliderInput(session, "k",
+                      value = max(as.integer(input$k) - stride(), 0))
+  })
+
+  cur &lt;- reactive({
+    R &lt;- runs()
+    k &lt;- min(as.integer(input$k), R$S$n - 1) + 1L
+    ep &lt;- R$S$EP[k]
+    kg &lt;- max(1, min(R$G$n, floor(ep) + 1L))
+    list(R = R, k = k, kg = kg, ep = ep)
+  })
+
+  output$nets &lt;- renderPlot({
+    C &lt;- cur(); R &lt;- C$R
+    msz &lt;- length(R$S$IDX[[C$k]])
+    par(mfrow = c(1, if (isTRUE(input$showgd)) 2 else 1), mar = c(1, 1, 3, 1))
+    draw_net(R$S$P[C$k, ], R$H, R$wmax, input$ctr,
+             sprintf("m = %d (B = %d),  epoch %.2f", msz, R$B, C$ep))
+    if (isTRUE(input$showgd))
+      draw_net(R$G$P[C$kg, ], R$H, R$wmax, input$ctr,
+               sprintf("m = %d (full batch),  epoch %d", R$D$n, C$kg - 1L))
+  })
+
+  output$fit &lt;- renderPlot({
+    C &lt;- cur(); R &lt;- C$R; D &lt;- R$D
+    par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+
+    idx &lt;- R$S$IDX[[C$k]]
+    plot(D$x, D$y, pch = 20, col = "grey75", cex = 0.9,
+         xlab = "x", ylab = "y", main = "fitted curve and current batch")
+    points(D$x[idx], D$y[idx], pch = 19, col = "#E8820C", cex = 1.2)
+    lines(XG, gtrue(XG, D$dgp), col = "red", lty = 2, lwd = 2)
+    lines(XG, fnet(R$S$P[C$k, ], XG, R$H), col = "#2E8B57", lwd = 2.5)
+    if (isTRUE(input$showgd))
+      lines(XG, fnet(R$G$P[C$kg, ], XG, R$H), col = "#7B3FBF", lwd = 2.5)
+    legend("topright", bty = "n", cex = 0.85,
+           lwd = c(2, 2.5, 2.5), lty = c(2, 1, 1),
+           col = c("red", "#2E8B57", "#7B3FBF"),
+           legend = c(if (identical(D$dgp, "bumps")) "true curve (bumps)"
+                      else "teacher network",
+                      paste0("m = ", R$m, " fit"), "full-batch fit"))
+
+    yl &lt;- range(c(R$S$L, if (isTRUE(input$showgd)) R$G$L), na.rm = TRUE)
+    plot(R$S$EP, R$S$L, type = "l", log = "y", col = "#2E8B57", lwd = 2,
+         ylim = pmax(yl, 1e-7), xlab = "epoch (one pass over all n)",
+         ylab = "training loss (all n)", main = "loss per epoch")
+    if (isTRUE(input$showgd))
+      lines(R$G$EP, R$G$L, col = "#7B3FBF", lwd = 2)
+    abline(h = 0.5 * input$sigma^2, col = "grey55", lty = 3)
+    points(C$ep, R$S$L[C$k], pch = 19, col = "#E8820C", cex = 1.5)
+  })
+
+  output$info &lt;- renderUI({
+    C &lt;- cur(); R &lt;- C$R; H &lt;- R$H
+    P &lt;- unpack(R$S$P[C$k, ], H)
+    fmt &lt;- function(v, d = 3) formatC(v, format = "f", digits = d)
+    rows &lt;- paste0(
+      "&lt;tr&gt;&lt;td&gt;h", 1:H, "&lt;/td&gt;&lt;td align='right'&gt;", fmt(P$w),
+      "&lt;/td&gt;&lt;td align='right'&gt;", fmt(P$cc),
+      "&lt;/td&gt;&lt;td align='right'&gt;", fmt(P$v), "&lt;/td&gt;&lt;/tr&gt;", collapse = "")
+    HTML(paste0(
+      "&lt;hr&gt;&lt;b&gt;update&lt;/b&gt; ", C$k - 1, " of ", R$S$n - 1,
+      "  (epoch ", fmt(C$ep, 2), ")&lt;br&gt;",
+      "&lt;b&gt;batch size m&lt;/b&gt; = ", length(R$S$IDX[[C$k]]), " of ", R$D$n, "&lt;br&gt;",
+      "&lt;b&gt;updates per epoch&lt;/b&gt; = ", R$B, "&lt;br&gt;",
+      "&lt;b&gt;parameters&lt;/b&gt; = ", 3 * H + 1, "&lt;br&gt;&lt;br&gt;",
+      "&lt;b&gt;loss, m = ", R$m, "&lt;/b&gt; = ", fmt(R$S$L[C$k], 5), "&lt;br&gt;",
+      "&lt;b&gt;loss, full batch&lt;/b&gt; = ", fmt(R$G$L[C$kg], 5), "&lt;br&gt;",
+      "&lt;b&gt;noise floor&lt;/b&gt; &amp;asymp; ", fmt(0.5 * input$sigma^2, 5), "&lt;br&gt;",
+      if (isTRUE(R$S$diverged))
+        "&lt;b style='color:#C81E1E'&gt;run diverged&lt;/b&gt;&lt;br&gt;" else "",
+      if (isTRUE(R$capped))
+        paste0("&lt;i style='color:#C81E1E'&gt;epochs capped at ", R$ne,
+               "&lt;/i&gt;&lt;br&gt;") else "",
+      "&lt;br&gt;&lt;table style='font-size:90%'&gt;",
+      "&lt;tr&gt;&lt;th&gt;unit&lt;/th&gt;&lt;th&gt;w&lt;/th&gt;&lt;th&gt;bias&lt;/th&gt;&lt;th&gt;v&lt;/th&gt;&lt;/tr&gt;",
+      rows, "&lt;/table&gt;",
+      "&lt;br&gt;&lt;i&gt;output bias = ", fmt(P$b), "&lt;/i&gt;"
+    ))
+  })
+}
+
+shinyApp(ui, server)</code></pre>
+<section id="about-the-app" class="level2">
+<h2 class="anchored" data-anchor-id="about-the-app">About the app</h2>
+<p>Illustrates how stochastic gradient descent trades the accuracy of each step for lower cost, by comparing mini-batch with full-batch updates on the same problem. Compare a mini-batch run against a full-batch run sharing the same data and starting weights.</p>
+<p>The app above trains a small one-hidden-layer neural network (<span class="math inline">\(1 \to H \to 1\)</span>, so <span class="math inline">\(3H+1\)</span> parameters) by gradient ascent on the log-likelihood (equivalently, gradient descent on the mean squared error) under two data-generating processes — one inside the network’s own model class, one outside it — and lets you compare a mini-batch run against a full-batch run sharing the same data, initial weights, and number of epochs.</p>
+<div class="callout callout-style-default callout-note callout-titled" title="R source for this app">
+<div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+<span class="screen-reader-only">Note</span>R source for this app
+</div>
+<div class="callout-btn-toggle d-inline-block border-0 py-1 ps-1 pe-0 float-end"><i class="callout-toggle"></i></div>
+</div>
+<div id="callout-1" class="callout-1-contents callout-collapse collapse">
+<div class="callout-body-container callout-body">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(shiny)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------------------------- data</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="do">## Two data-generating processes. The teacher network lies inside the</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="do">## student's model class; the bumps do not.</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>TEACH <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">w =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">3</span>, <span class="dv">5</span>), <span class="at">cc =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="dv">5</span>), <span class="at">v =</span> <span class="fu">c</span>(<span class="fl">1.0</span>, <span class="sc">-</span><span class="fl">1.2</span>, <span class="fl">0.8</span>), <span class="at">b =</span> <span class="dv">0</span>)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>g_teacher <span class="ot">&lt;-</span> <span class="cf">function</span>(x) {</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  Hm <span class="ot">&lt;-</span> <span class="fu">tanh</span>(<span class="fu">outer</span>(x, TEACH<span class="sc">$</span>w) <span class="sc">+</span> <span class="fu">rep</span>(TEACH<span class="sc">$</span>cc, <span class="at">each =</span> <span class="fu">length</span>(x)))</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as.vector</span>(Hm <span class="sc">%*%</span> TEACH<span class="sc">$</span>v <span class="sc">+</span> TEACH<span class="sc">$</span>b)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>g_bumps <span class="ot">&lt;-</span> <span class="cf">function</span>(x)</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>  <span class="fl">1.2</span> <span class="sc">*</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">9</span> <span class="sc">*</span> (x <span class="sc">+</span> <span class="fl">0.7</span>)<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fl">1.0</span> <span class="sc">*</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">9</span> <span class="sc">*</span> (x <span class="sc">-</span> <span class="fl">0.8</span>)<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>DGPS <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Teacher network (1 - 3 tanh - 1)"</span> <span class="ot">=</span> <span class="st">"teacher"</span>,</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Two Gaussian bumps (outside the model class)"</span> <span class="ot">=</span> <span class="st">"bumps"</span>)</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>gtrue <span class="ot">&lt;-</span> <span class="cf">function</span>(x, dgp)</span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">identical</span>(dgp, <span class="st">"bumps"</span>)) <span class="fu">g_bumps</span>(x) <span class="cf">else</span> <span class="fu">g_teacher</span>(x)</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>XG <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>, <span class="at">length.out =</span> <span class="dv">300</span>)</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>make_data <span class="ot">&lt;-</span> <span class="cf">function</span>(n, sigma, seed, dgp) {</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set.seed</span>(<span class="dv">500</span> <span class="sc">+</span> seed)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> <span class="fu">sort</span>(<span class="fu">runif</span>(n, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>))</span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">x =</span> x, <span class="at">y =</span> <span class="fu">gtrue</span>(x, dgp) <span class="sc">+</span> <span class="fu">rnorm</span>(n, <span class="dv">0</span>, sigma), <span class="at">n =</span> n, <span class="at">dgp =</span> dgp)</span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------- network: 1 - H tanh - 1</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>unpack <span class="ot">&lt;-</span> <span class="cf">function</span>(p, H)</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">w =</span> p[<span class="dv">1</span><span class="sc">:</span>H], <span class="at">cc =</span> p[H <span class="sc">+</span> (<span class="dv">1</span><span class="sc">:</span>H)], <span class="at">v =</span> p[<span class="dv">2</span> <span class="sc">*</span> H <span class="sc">+</span> (<span class="dv">1</span><span class="sc">:</span>H)], <span class="at">b =</span> p[<span class="dv">3</span> <span class="sc">*</span> H <span class="sc">+</span> <span class="dv">1</span>])</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>fnet <span class="ot">&lt;-</span> <span class="cf">function</span>(p, x, H) {</span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>  P <span class="ot">&lt;-</span> <span class="fu">unpack</span>(p, H)</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>  Hm <span class="ot">&lt;-</span> <span class="fu">tanh</span>(<span class="fu">outer</span>(x, P<span class="sc">$</span>w) <span class="sc">+</span> <span class="fu">rep</span>(P<span class="sc">$</span>cc, <span class="at">each =</span> <span class="fu">length</span>(x)))</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">as.vector</span>(Hm <span class="sc">%*%</span> P<span class="sc">$</span>v <span class="sc">+</span> P<span class="sc">$</span>b)</span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>gnet <span class="ot">&lt;-</span> <span class="cf">function</span>(p, x, y, H) {</span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); P <span class="ot">&lt;-</span> <span class="fu">unpack</span>(p, H)</span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>  Hm <span class="ot">&lt;-</span> <span class="fu">tanh</span>(<span class="fu">outer</span>(x, P<span class="sc">$</span>w) <span class="sc">+</span> <span class="fu">rep</span>(P<span class="sc">$</span>cc, <span class="at">each =</span> n))</span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>  r <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(Hm <span class="sc">%*%</span> P<span class="sc">$</span>v <span class="sc">+</span> P<span class="sc">$</span>b) <span class="sc">-</span> y</span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>  S <span class="ot">&lt;-</span> (<span class="dv">1</span> <span class="sc">-</span> Hm<span class="sc">^</span><span class="dv">2</span>) <span class="sc">*</span> <span class="fu">outer</span>(r, P<span class="sc">$</span>v)</span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="fu">as.vector</span>(<span class="fu">colSums</span>(S <span class="sc">*</span> x)) <span class="sc">/</span> n,        <span class="co"># dw</span></span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>    <span class="fu">as.vector</span>(<span class="fu">colSums</span>(S)) <span class="sc">/</span> n,            <span class="co"># dc</span></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    <span class="fu">as.vector</span>(<span class="fu">crossprod</span>(Hm, r)) <span class="sc">/</span> n,      <span class="co"># dv</span></span>
+<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mean</span>(r))                              <span class="co"># db</span></span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>mse <span class="ot">&lt;-</span> <span class="cf">function</span>(p, H, x, y) <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">mean</span>((<span class="fu">fnet</span>(p, x, H) <span class="sc">-</span> y)<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>init_p <span class="ot">&lt;-</span> <span class="cf">function</span>(H, seed) {</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set.seed</span>(<span class="dv">1000</span> <span class="sc">+</span> seed)</span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="fu">rnorm</span>(H, <span class="dv">0</span>, <span class="dv">2</span>), <span class="fu">rnorm</span>(H, <span class="dv">0</span>, <span class="fl">1.5</span>), <span class="fu">rnorm</span>(H, <span class="dv">0</span>, <span class="fl">0.7</span>), <span class="dv">0</span>)</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a><span class="do">## ---------------------------------------------------------------- training</span></span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a><span class="do">## m = batch size; m &gt;= n is full-batch gradient descent.</span></span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>train <span class="ot">&lt;-</span> <span class="cf">function</span>(p0, H, m, a, nepoch, seed, D) {</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> D<span class="sc">$</span>n</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">min</span>(m, n))</span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>  B <span class="ot">&lt;-</span> <span class="fu">ceiling</span>(n <span class="sc">/</span> m)                              <span class="co"># updates per epoch</span></span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>  nup <span class="ot">&lt;-</span> B <span class="sc">*</span> nepoch</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>  P <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, nup <span class="sc">+</span> <span class="dv">1</span>, <span class="fu">length</span>(p0))</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>  L <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, nup <span class="sc">+</span> <span class="dv">1</span>); EP <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, nup <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>  IDX <span class="ot">&lt;-</span> <span class="fu">vector</span>(<span class="st">"list"</span>, nup <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>  <span class="fu">set.seed</span>(seed)</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> p0; k <span class="ot">&lt;-</span> <span class="dv">0</span>; bad <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (e <span class="cf">in</span> <span class="fu">seq_len</span>(nepoch)) {</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>    perm <span class="ot">&lt;-</span> <span class="cf">if</span> (B <span class="sc">==</span> <span class="dv">1</span>) <span class="fu">seq_len</span>(n) <span class="cf">else</span> <span class="fu">sample.int</span>(n)</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>    grp <span class="ot">&lt;-</span> <span class="fu">split</span>(perm, <span class="fu">ceiling</span>(<span class="fu">seq_len</span>(n) <span class="sc">/</span> m))    <span class="co"># last batch may be smaller</span></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> (b <span class="cf">in</span> <span class="fu">seq_len</span>(B)) {</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>      k <span class="ot">&lt;-</span> k <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>      idx <span class="ot">&lt;-</span> grp[[b]]</span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>      P[k, ] <span class="ot">&lt;-</span> p; IDX[[k]] <span class="ot">&lt;-</span> idx</span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>      L[k] <span class="ot">&lt;-</span> <span class="fu">mse</span>(p, H, D<span class="sc">$</span>x, D<span class="sc">$</span>y); EP[k] <span class="ot">&lt;-</span> (k <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">/</span> B</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>      p <span class="ot">&lt;-</span> p <span class="sc">-</span> a <span class="sc">*</span> <span class="fu">gnet</span>(p, D<span class="sc">$</span>x[idx], D<span class="sc">$</span>y[idx], H)</span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">any</span>(<span class="sc">!</span><span class="fu">is.finite</span>(p))) { bad <span class="ot">&lt;-</span> <span class="cn">TRUE</span>; <span class="cf">break</span> }</span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (bad) <span class="cf">break</span></span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span>bad) {</span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>    k <span class="ot">&lt;-</span> k <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>    P[k, ] <span class="ot">&lt;-</span> p; IDX[[k]] <span class="ot">&lt;-</span> <span class="fu">seq_len</span>(n)</span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>    L[k] <span class="ot">&lt;-</span> <span class="fu">mse</span>(p, H, D<span class="sc">$</span>x, D<span class="sc">$</span>y); EP[k] <span class="ot">&lt;-</span> (k <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">/</span> B</span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>  n_rec <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">1</span>, k)</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">P =</span> P[<span class="dv">1</span><span class="sc">:</span>n_rec, , <span class="at">drop =</span> <span class="cn">FALSE</span>], <span class="at">L =</span> L[<span class="dv">1</span><span class="sc">:</span>n_rec], <span class="at">EP =</span> EP[<span class="dv">1</span><span class="sc">:</span>n_rec],</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>       <span class="at">IDX =</span> IDX[<span class="dv">1</span><span class="sc">:</span>n_rec], <span class="at">n =</span> n_rec, <span class="at">B =</span> B, <span class="at">m =</span> m, <span class="at">diverged =</span> bad)</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------------------ weight plot</span></span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a><span class="do">## Diverging ramp: blue = negative, red = positive, magnitude by saturation.</span></span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>DIV <span class="ot">&lt;-</span> <span class="fu">colorRampPalette</span>(<span class="fu">c</span>(<span class="st">"#08306B"</span>, <span class="st">"#2171B5"</span>, <span class="st">"#6BAED6"</span>, <span class="st">"#DEEBF7"</span>,</span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"#F7F7F7"</span>,</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"#FEE0D2"</span>, <span class="st">"#FC9272"</span>, <span class="st">"#CB181D"</span>, <span class="st">"#67000D"</span>))(<span class="dv">201</span>)</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a><span class="do">## compander: maps v in [-wmax, wmax] to [-1, 1], boosting small values.</span></span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>tone <span class="ot">&lt;-</span> <span class="cf">function</span>(v, wmax, k) {</span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>  u <span class="ot">&lt;-</span> <span class="fu">pmax</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fu">pmin</span>(<span class="dv">1</span>, v <span class="sc">/</span> wmax))</span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sign</span>(u) <span class="sc">*</span> <span class="fu">log1p</span>(k <span class="sc">*</span> <span class="fu">abs</span>(u)) <span class="sc">/</span> <span class="fu">log1p</span>(k)</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>wcol <span class="ot">&lt;-</span> <span class="cf">function</span>(v, wmax, k) DIV[<span class="fu">round</span>((<span class="fu">tone</span>(v, wmax, k) <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">*</span> <span class="dv">100</span>) <span class="sc">+</span> <span class="dv">1</span>]</span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>wlwd <span class="ot">&lt;-</span> <span class="cf">function</span>(v, wmax, k) <span class="fl">0.8</span> <span class="sc">+</span> <span class="dv">6</span> <span class="sc">*</span> <span class="fu">abs</span>(<span class="fu">tone</span>(v, wmax, k))</span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>draw_net <span class="ot">&lt;-</span> <span class="cf">function</span>(p, H, wmax, k, main) {</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>  P <span class="ot">&lt;-</span> <span class="fu">unpack</span>(p, H)</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>  yh <span class="ot">&lt;-</span> <span class="cf">if</span> (H <span class="sc">==</span> <span class="dv">1</span>) <span class="fl">0.5</span> <span class="cf">else</span> <span class="fu">seq</span>(<span class="fl">0.92</span>, <span class="fl">0.10</span>, <span class="at">length.out =</span> H)</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>  ix <span class="ot">&lt;-</span> <span class="fl">0.05</span>; hx <span class="ot">&lt;-</span> <span class="fl">0.55</span>; ox <span class="ot">&lt;-</span> <span class="fl">1.05</span></span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>  nc <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="fl">1.4</span>, <span class="fu">min</span>(<span class="fl">4.4</span>, <span class="dv">36</span> <span class="sc">/</span> H))</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot.new</span>(); <span class="fu">plot.window</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.05</span>, <span class="fl">1.2</span>), <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.10</span>, <span class="fl">1.02</span>))</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>  <span class="fu">title</span>(<span class="at">main =</span> main, <span class="at">cex.main =</span> <span class="fl">1.05</span>)</span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>H)</span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>    <span class="fu">segments</span>(ix, <span class="fl">0.5</span>, hx, yh[j], <span class="at">col =</span> <span class="fu">wcol</span>(P<span class="sc">$</span>w[j], wmax, k),</span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>             <span class="at">lwd =</span> <span class="fu">wlwd</span>(P<span class="sc">$</span>w[j], wmax, k), <span class="at">lend =</span> <span class="dv">1</span>)</span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>H)</span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>    <span class="fu">segments</span>(hx, yh[j], ox, <span class="fl">0.5</span>, <span class="at">col =</span> <span class="fu">wcol</span>(P<span class="sc">$</span>v[j], wmax, k),</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>             <span class="at">lwd =</span> <span class="fu">wlwd</span>(P<span class="sc">$</span>v[j], wmax, k), <span class="at">lend =</span> <span class="dv">1</span>)</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(ix, <span class="fl">0.5</span>, <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">cex =</span> <span class="fl">3.2</span>, <span class="at">bg =</span> <span class="st">"white"</span>, <span class="at">lwd =</span> <span class="fl">1.6</span>)</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>  <span class="fu">text</span>(ix, <span class="fl">0.5</span>, <span class="st">"x"</span>, <span class="at">font =</span> <span class="dv">2</span>)</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(<span class="fu">rep</span>(hx, H), yh, <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">cex =</span> nc, <span class="at">lwd =</span> <span class="fl">1.4</span>,</span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>         <span class="at">bg =</span> <span class="fu">wcol</span>(P<span class="sc">$</span>cc, wmax, k))</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (H <span class="sc">&lt;=</span> <span class="dv">10</span>) <span class="fu">text</span>(<span class="fu">rep</span>(hx, H), yh, <span class="dv">1</span><span class="sc">:</span>H, <span class="at">cex =</span> <span class="fl">0.65</span>)</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>  <span class="fu">points</span>(ox, <span class="fl">0.5</span>, <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">cex =</span> <span class="fl">3.4</span>, <span class="at">lwd =</span> <span class="fl">1.6</span>, <span class="at">bg =</span> <span class="fu">wcol</span>(P<span class="sc">$</span>b, wmax, k))</span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>  <span class="fu">text</span>(ox, <span class="fl">0.5</span>, <span class="st">"y"</span>, <span class="at">font =</span> <span class="dv">2</span>)</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>  <span class="do">## signed colour bar</span></span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>  xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.12</span>, <span class="fl">0.98</span>, <span class="at">length.out =</span> <span class="dv">201</span>)</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rect</span>(xs, <span class="sc">-</span><span class="fl">0.09</span>, xs <span class="sc">+</span> <span class="fu">diff</span>(xs)[<span class="dv">1</span>], <span class="sc">-</span><span class="fl">0.035</span>, <span class="at">col =</span> DIV, <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>  lab <span class="ot">&lt;-</span> <span class="fu">formatC</span>(wmax, <span class="at">format =</span> <span class="st">"g"</span>, <span class="at">digits =</span> <span class="dv">2</span>)</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>  <span class="fu">text</span>(<span class="fu">c</span>(<span class="fl">0.12</span>, <span class="fl">0.55</span>, <span class="fl">0.98</span>), <span class="sc">-</span><span class="fl">0.005</span>,</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>       <span class="fu">c</span>(<span class="fu">paste0</span>(<span class="st">"-"</span>, lab), <span class="st">"0"</span>, <span class="fu">paste0</span>(<span class="st">"+"</span>, lab)), <span class="at">cex =</span> <span class="fl">0.72</span>)</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a><span class="do">## --------------------------------------------------------------------- UI</span></span>
+<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
+<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>  <span class="fu">titlePanel</span>(<span class="st">"Shinylive App for Stochastic Gradient Descent"</span>),</span>
+<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fluidRow</span>(</span>
+<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- column 1: training controls -----------------------------------</span></span>
+<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>    <span class="fu">column</span>(</span>
+<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>      <span class="dv">3</span>,</span>
+<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"dgp"</span>, <span class="st">"True curve"</span>, <span class="at">choices =</span> DGPS, <span class="at">selected =</span> <span class="st">"teacher"</span>),</span>
+<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"H"</span>, <span class="st">"Hidden neurons"</span>, <span class="at">min =</span> <span class="dv">2</span>, <span class="at">max =</span> <span class="dv">16</span>, <span class="at">value =</span> <span class="dv">8</span>,</span>
+<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a>                  <span class="at">step =</span> <span class="dv">1</span>),</span>
+<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"m"</span>, <span class="st">"Batch size m"</span>, <span class="at">min =</span> <span class="dv">1</span>, <span class="at">max =</span> <span class="dv">400</span>, <span class="at">value =</span> <span class="dv">20</span>,</span>
+<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>                  <span class="at">step =</span> <span class="dv">1</span>),</span>
+<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"a"</span>, <span class="st">"Learning rate"</span>, <span class="at">min =</span> <span class="fl">0.01</span>, <span class="at">max =</span> <span class="fl">0.60</span>, <span class="at">value =</span> <span class="fl">0.20</span>,</span>
+<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>                  <span class="at">step =</span> <span class="fl">0.01</span>),</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"nep"</span>, <span class="st">"Epochs"</span>, <span class="at">min =</span> <span class="dv">10</span>, <span class="at">max =</span> <span class="dv">300</span>, <span class="at">value =</span> <span class="dv">100</span>, <span class="at">step =</span> <span class="dv">10</span>),</span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"ctr"</span>, <span class="st">"Weight colour contrast"</span>, <span class="at">min =</span> <span class="dv">1</span>, <span class="at">max =</span> <span class="dv">40</span>,</span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>                  <span class="at">value =</span> <span class="dv">12</span>, <span class="at">step =</span> <span class="dv">1</span>),</span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>      <span class="fu">checkboxInput</span>(<span class="st">"showgd"</span>, <span class="st">"Overlay the full-batch run"</span>, <span class="cn">TRUE</span>)</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- column 2: data generation, then playback ----------------------</span></span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>    <span class="fu">column</span>(</span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>      <span class="dv">2</span>,</span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(</span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>        <span class="at">style =</span> <span class="st">"margin-top:10px;"</span>,</span>
+<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">h5</span>(tags<span class="sc">$</span><span class="fu">b</span>(<span class="st">"Data"</span>)),</span>
+<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sliderInput</span>(<span class="st">"n"</span>, <span class="st">"Sample size n"</span>, <span class="at">min =</span> <span class="dv">40</span>, <span class="at">max =</span> <span class="dv">400</span>, <span class="at">value =</span> <span class="dv">200</span>,</span>
+<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>                    <span class="at">step =</span> <span class="dv">20</span>),</span>
+<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sliderInput</span>(<span class="st">"sigma"</span>, <span class="st">"Noise SD"</span>, <span class="at">min =</span> <span class="fl">0.01</span>, <span class="at">max =</span> <span class="fl">0.40</span>, <span class="at">value =</span> <span class="fl">0.08</span>,</span>
+<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a>                    <span class="at">step =</span> <span class="fl">0.01</span>),</span>
+<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"newdata"</span>, <span class="st">"Regenerate a dataset"</span>,</span>
+<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>                     <span class="at">class =</span> <span class="st">"btn-warning"</span>,</span>
+<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%; margin-bottom:6px;"</span>),</span>
+<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>        <span class="fu">hr</span>(<span class="at">style =</span> <span class="st">"border-top:2px solid #999; margin:14px 0;"</span>),</span>
+<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>        tags<span class="sc">$</span><span class="fu">h5</span>(tags<span class="sc">$</span><span class="fu">b</span>(<span class="st">"Training"</span>)),</span>
+<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"play"</span>, <span class="st">"Play"</span>, <span class="at">class =</span> <span class="st">"btn-primary btn-lg"</span>,</span>
+<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%; margin-bottom:10px;"</span>),</span>
+<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"step"</span>, <span class="st">"Next"</span>, <span class="at">class =</span> <span class="st">"btn-lg"</span>,</span>
+<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%; margin-bottom:10px;"</span>),</span>
+<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"back"</span>, <span class="st">"Prev"</span>, <span class="at">class =</span> <span class="st">"btn-lg"</span>,</span>
+<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%;"</span>),</span>
+<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>        <span class="fu">checkboxInput</span>(<span class="st">"byepoch"</span>, <span class="st">"Advance a whole epoch"</span>, <span class="cn">TRUE</span>),</span>
+<span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a>        <span class="fu">checkboxInput</span>(<span class="st">"autoplay"</span>, <span class="st">"Autoplay on change"</span>, <span class="cn">FALSE</span>),</span>
+<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"newinit"</span>, <span class="st">"New initial weights"</span>,</span>
+<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%; margin-bottom:8px;"</span>),</span>
+<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>        <span class="fu">actionButton</span>(<span class="st">"newseed"</span>, <span class="st">"New batch sequence"</span>,</span>
+<span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a>                     <span class="at">style =</span> <span class="st">"width:100%; margin-bottom:8px;"</span>),</span>
+<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>        <span class="fu">helpText</span>(<span class="st">"Both runs share the data, the initial weights and the"</span>,</span>
+<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"number of epochs; only m differs."</span>)</span>
+<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>      )</span>
+<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- column 3: plots -----------------------------------------------</span></span>
+<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>    <span class="fu">column</span>(</span>
+<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>      <span class="dv">7</span>,</span>
+<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>      <span class="fu">plotOutput</span>(<span class="st">"nets"</span>, <span class="at">height =</span> <span class="st">"300px"</span>),</span>
+<span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>      <span class="fu">plotOutput</span>(<span class="st">"fit"</span>, <span class="at">height =</span> <span class="st">"340px"</span>),</span>
+<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"k"</span>, <span class="st">"Update k"</span>, <span class="at">min =</span> <span class="dv">0</span>, <span class="at">max =</span> <span class="dv">1</span>, <span class="at">value =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="dv">1</span>,</span>
+<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>                  <span class="at">width =</span> <span class="st">"900px"</span>)</span>
+<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a><span class="do">## ----------------------------------------------------------------- server</span></span>
+<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>  MAXUP <span class="ot">&lt;-</span> <span class="dv">4000</span></span>
+<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a>  dseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">1</span>); wseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">1</span>); bseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">1</span>)</span>
+<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>  playing <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>newdata, <span class="fu">dseed</span>(<span class="fu">dseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>newinit, <span class="fu">wseed</span>(<span class="fu">wseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>newseed, <span class="fu">bseed</span>(<span class="fu">bseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>n, {</span>
+<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"m"</span>, <span class="at">max =</span> input<span class="sc">$</span>n,</span>
+<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>                      <span class="at">value =</span> <span class="fu">min</span>(input<span class="sc">$</span>m, input<span class="sc">$</span>n))</span>
+<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a>  DAT <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">make_data</span>(input<span class="sc">$</span>n, input<span class="sc">$</span>sigma, <span class="fu">dseed</span>(), input<span class="sc">$</span>dgp))</span>
+<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>  runs <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>    D <span class="ot">&lt;-</span> <span class="fu">DAT</span>(); H <span class="ot">&lt;-</span> input<span class="sc">$</span>H</span>
+<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>    m <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">min</span>(input<span class="sc">$</span>m, D<span class="sc">$</span>n))</span>
+<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>    B <span class="ot">&lt;-</span> <span class="fu">ceiling</span>(D<span class="sc">$</span>n <span class="sc">/</span> m)</span>
+<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a>    ne <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">min</span>(input<span class="sc">$</span>nep, <span class="fu">floor</span>(MAXUP <span class="sc">/</span> B)))</span>
+<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>    p0 <span class="ot">&lt;-</span> <span class="fu">init_p</span>(H, <span class="fu">wseed</span>())</span>
+<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>    S <span class="ot">&lt;-</span> <span class="fu">train</span>(p0, H, m, input<span class="sc">$</span>a, ne, <span class="fu">bseed</span>(), D)</span>
+<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>    G <span class="ot">&lt;-</span> <span class="fu">train</span>(p0, H, D<span class="sc">$</span>n, input<span class="sc">$</span>a, ne, <span class="fu">bseed</span>(), D)</span>
+<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">S =</span> S, <span class="at">G =</span> G, <span class="at">H =</span> H, <span class="at">B =</span> B, <span class="at">m =</span> m, <span class="at">D =</span> D, <span class="at">ne =</span> ne,</span>
+<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>         <span class="at">capped =</span> ne <span class="sc">&lt;</span> input<span class="sc">$</span>nep,</span>
+<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>         <span class="at">wmax =</span> <span class="fu">max</span>(<span class="fl">0.2</span>, <span class="fu">quantile</span>(<span class="fu">abs</span>(<span class="fu">c</span>(S<span class="sc">$</span>P, G<span class="sc">$</span>P)), <span class="fl">0.97</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)))</span>
+<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>  stride <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>byepoch)) <span class="fu">runs</span>()<span class="sc">$</span>B <span class="cf">else</span> <span class="dv">1</span>L)</span>
+<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(<span class="fu">runs</span>(), {</span>
+<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">max =</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">runs</span>()<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>), <span class="at">value =</span> <span class="dv">0</span>)</span>
+<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>    <span class="fu">playing</span>(<span class="fu">isTRUE</span>(input<span class="sc">$</span>autoplay) <span class="sc">&amp;&amp;</span> <span class="fu">runs</span>()<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
+<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>play, {</span>
+<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">playing</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span> {</span>
+<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">as.integer</span>(input<span class="sc">$</span>k) <span class="sc">&gt;=</span> <span class="fu">runs</span>()<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>)</span>
+<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">value =</span> <span class="dv">0</span>)</span>
+<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>      <span class="fu">playing</span>(<span class="cn">TRUE</span>)</span>
+<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(<span class="fu">playing</span>(), {</span>
+<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateActionButton</span>(session, <span class="st">"play"</span>,</span>
+<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>                       <span class="at">label =</span> <span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="st">"Pause"</span> <span class="cf">else</span> <span class="st">"Play"</span>)</span>
+<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observe</span>({</span>
+<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">return</span>()</span>
+<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>    kmax <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">runs</span>()<span class="sc">$</span>S<span class="sc">$</span>n) <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>    k <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k)); st <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">stride</span>())</span>
+<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (k <span class="sc">&gt;=</span> kmax) { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">return</span>() }</span>
+<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>    <span class="fu">invalidateLater</span>(<span class="dv">250</span>, session)</span>
+<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">value =</span> <span class="fu">min</span>(k <span class="sc">+</span> st, kmax))</span>
+<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>step, {</span>
+<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a>    <span class="fu">playing</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>,</span>
+<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>                      <span class="at">value =</span> <span class="fu">min</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k) <span class="sc">+</span> <span class="fu">stride</span>(),</span>
+<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>                                  <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">runs</span>()<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>)))</span>
+<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>back, {</span>
+<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a>    <span class="fu">playing</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>,</span>
+<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>                      <span class="at">value =</span> <span class="fu">max</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k) <span class="sc">-</span> <span class="fu">stride</span>(), <span class="dv">0</span>))</span>
+<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>  cur <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>    R <span class="ot">&lt;-</span> <span class="fu">runs</span>()</span>
+<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>    k <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k), R<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>) <span class="sc">+</span> <span class="dv">1</span>L</span>
+<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>    ep <span class="ot">&lt;-</span> R<span class="sc">$</span>S<span class="sc">$</span>EP[k]</span>
+<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a>    kg <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">min</span>(R<span class="sc">$</span>G<span class="sc">$</span>n, <span class="fu">floor</span>(ep) <span class="sc">+</span> <span class="dv">1</span>L))</span>
+<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">R =</span> R, <span class="at">k =</span> k, <span class="at">kg =</span> kg, <span class="at">ep =</span> ep)</span>
+<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>nets <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-279"><a href="#cb2-279" aria-hidden="true" tabindex="-1"></a>    C <span class="ot">&lt;-</span> <span class="fu">cur</span>(); R <span class="ot">&lt;-</span> C<span class="sc">$</span>R</span>
+<span id="cb2-280"><a href="#cb2-280" aria-hidden="true" tabindex="-1"></a>    msz <span class="ot">&lt;-</span> <span class="fu">length</span>(R<span class="sc">$</span>S<span class="sc">$</span>IDX[[C<span class="sc">$</span>k]])</span>
+<span id="cb2-281"><a href="#cb2-281" aria-hidden="true" tabindex="-1"></a>    <span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>showgd)) <span class="dv">2</span> <span class="cf">else</span> <span class="dv">1</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-282"><a href="#cb2-282" aria-hidden="true" tabindex="-1"></a>    <span class="fu">draw_net</span>(R<span class="sc">$</span>S<span class="sc">$</span>P[C<span class="sc">$</span>k, ], R<span class="sc">$</span>H, R<span class="sc">$</span>wmax, input<span class="sc">$</span>ctr,</span>
+<span id="cb2-283"><a href="#cb2-283" aria-hidden="true" tabindex="-1"></a>             <span class="fu">sprintf</span>(<span class="st">"m = %d (B = %d),  epoch %.2f"</span>, msz, R<span class="sc">$</span>B, C<span class="sc">$</span>ep))</span>
+<span id="cb2-284"><a href="#cb2-284" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>showgd))</span>
+<span id="cb2-285"><a href="#cb2-285" aria-hidden="true" tabindex="-1"></a>      <span class="fu">draw_net</span>(R<span class="sc">$</span>G<span class="sc">$</span>P[C<span class="sc">$</span>kg, ], R<span class="sc">$</span>H, R<span class="sc">$</span>wmax, input<span class="sc">$</span>ctr,</span>
+<span id="cb2-286"><a href="#cb2-286" aria-hidden="true" tabindex="-1"></a>               <span class="fu">sprintf</span>(<span class="st">"m = %d (full batch),  epoch %d"</span>, R<span class="sc">$</span>D<span class="sc">$</span>n, C<span class="sc">$</span>kg <span class="sc">-</span> <span class="dv">1</span>L))</span>
+<span id="cb2-287"><a href="#cb2-287" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-288"><a href="#cb2-288" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-289"><a href="#cb2-289" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>fit <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-290"><a href="#cb2-290" aria-hidden="true" tabindex="-1"></a>    C <span class="ot">&lt;-</span> <span class="fu">cur</span>(); R <span class="ot">&lt;-</span> C<span class="sc">$</span>R; D <span class="ot">&lt;-</span> R<span class="sc">$</span>D</span>
+<span id="cb2-291"><a href="#cb2-291" aria-hidden="true" tabindex="-1"></a>    <span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="fl">4.2</span>, <span class="fl">2.5</span>, <span class="dv">1</span>))</span>
+<span id="cb2-292"><a href="#cb2-292" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-293"><a href="#cb2-293" aria-hidden="true" tabindex="-1"></a>    idx <span class="ot">&lt;-</span> R<span class="sc">$</span>S<span class="sc">$</span>IDX[[C<span class="sc">$</span>k]]</span>
+<span id="cb2-294"><a href="#cb2-294" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot</span>(D<span class="sc">$</span>x, D<span class="sc">$</span>y, <span class="at">pch =</span> <span class="dv">20</span>, <span class="at">col =</span> <span class="st">"grey75"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>,</span>
+<span id="cb2-295"><a href="#cb2-295" aria-hidden="true" tabindex="-1"></a>         <span class="at">xlab =</span> <span class="st">"x"</span>, <span class="at">ylab =</span> <span class="st">"y"</span>, <span class="at">main =</span> <span class="st">"fitted curve and current batch"</span>)</span>
+<span id="cb2-296"><a href="#cb2-296" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(D<span class="sc">$</span>x[idx], D<span class="sc">$</span>y[idx], <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"#E8820C"</span>, <span class="at">cex =</span> <span class="fl">1.2</span>)</span>
+<span id="cb2-297"><a href="#cb2-297" aria-hidden="true" tabindex="-1"></a>    <span class="fu">lines</span>(XG, <span class="fu">gtrue</span>(XG, D<span class="sc">$</span>dgp), <span class="at">col =</span> <span class="st">"red"</span>, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb2-298"><a href="#cb2-298" aria-hidden="true" tabindex="-1"></a>    <span class="fu">lines</span>(XG, <span class="fu">fnet</span>(R<span class="sc">$</span>S<span class="sc">$</span>P[C<span class="sc">$</span>k, ], XG, R<span class="sc">$</span>H), <span class="at">col =</span> <span class="st">"#2E8B57"</span>, <span class="at">lwd =</span> <span class="fl">2.5</span>)</span>
+<span id="cb2-299"><a href="#cb2-299" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>showgd))</span>
+<span id="cb2-300"><a href="#cb2-300" aria-hidden="true" tabindex="-1"></a>      <span class="fu">lines</span>(XG, <span class="fu">fnet</span>(R<span class="sc">$</span>G<span class="sc">$</span>P[C<span class="sc">$</span>kg, ], XG, R<span class="sc">$</span>H), <span class="at">col =</span> <span class="st">"#7B3FBF"</span>, <span class="at">lwd =</span> <span class="fl">2.5</span>)</span>
+<span id="cb2-301"><a href="#cb2-301" aria-hidden="true" tabindex="-1"></a>    <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-302"><a href="#cb2-302" aria-hidden="true" tabindex="-1"></a>           <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb2-303"><a href="#cb2-303" aria-hidden="true" tabindex="-1"></a>           <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"red"</span>, <span class="st">"#2E8B57"</span>, <span class="st">"#7B3FBF"</span>),</span>
+<span id="cb2-304"><a href="#cb2-304" aria-hidden="true" tabindex="-1"></a>           <span class="at">legend =</span> <span class="fu">c</span>(<span class="cf">if</span> (<span class="fu">identical</span>(D<span class="sc">$</span>dgp, <span class="st">"bumps"</span>)) <span class="st">"true curve (bumps)"</span></span>
+<span id="cb2-305"><a href="#cb2-305" aria-hidden="true" tabindex="-1"></a>                      <span class="cf">else</span> <span class="st">"teacher network"</span>,</span>
+<span id="cb2-306"><a href="#cb2-306" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">paste0</span>(<span class="st">"m = "</span>, R<span class="sc">$</span>m, <span class="st">" fit"</span>), <span class="st">"full-batch fit"</span>))</span>
+<span id="cb2-307"><a href="#cb2-307" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-308"><a href="#cb2-308" aria-hidden="true" tabindex="-1"></a>    yl <span class="ot">&lt;-</span> <span class="fu">range</span>(<span class="fu">c</span>(R<span class="sc">$</span>S<span class="sc">$</span>L, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>showgd)) R<span class="sc">$</span>G<span class="sc">$</span>L), <span class="at">na.rm =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-309"><a href="#cb2-309" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot</span>(R<span class="sc">$</span>S<span class="sc">$</span>EP, R<span class="sc">$</span>S<span class="sc">$</span>L, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">log =</span> <span class="st">"y"</span>, <span class="at">col =</span> <span class="st">"#2E8B57"</span>, <span class="at">lwd =</span> <span class="dv">2</span>,</span>
+<span id="cb2-310"><a href="#cb2-310" aria-hidden="true" tabindex="-1"></a>         <span class="at">ylim =</span> <span class="fu">pmax</span>(yl, <span class="fl">1e-7</span>), <span class="at">xlab =</span> <span class="st">"epoch (one pass over all n)"</span>,</span>
+<span id="cb2-311"><a href="#cb2-311" aria-hidden="true" tabindex="-1"></a>         <span class="at">ylab =</span> <span class="st">"training loss (all n)"</span>, <span class="at">main =</span> <span class="st">"loss per epoch"</span>)</span>
+<span id="cb2-312"><a href="#cb2-312" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>showgd))</span>
+<span id="cb2-313"><a href="#cb2-313" aria-hidden="true" tabindex="-1"></a>      <span class="fu">lines</span>(R<span class="sc">$</span>G<span class="sc">$</span>EP, R<span class="sc">$</span>G<span class="sc">$</span>L, <span class="at">col =</span> <span class="st">"#7B3FBF"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb2-314"><a href="#cb2-314" aria-hidden="true" tabindex="-1"></a>    <span class="fu">abline</span>(<span class="at">h =</span> <span class="fl">0.5</span> <span class="sc">*</span> input<span class="sc">$</span>sigma<span class="sc">^</span><span class="dv">2</span>, <span class="at">col =</span> <span class="st">"grey55"</span>, <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb2-315"><a href="#cb2-315" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(C<span class="sc">$</span>ep, R<span class="sc">$</span>S<span class="sc">$</span>L[C<span class="sc">$</span>k], <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"#E8820C"</span>, <span class="at">cex =</span> <span class="fl">1.5</span>)</span>
+<span id="cb2-316"><a href="#cb2-316" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-317"><a href="#cb2-317" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-318"><a href="#cb2-318" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>info <span class="ot">&lt;-</span> <span class="fu">renderUI</span>({</span>
+<span id="cb2-319"><a href="#cb2-319" aria-hidden="true" tabindex="-1"></a>    C <span class="ot">&lt;-</span> <span class="fu">cur</span>(); R <span class="ot">&lt;-</span> C<span class="sc">$</span>R; H <span class="ot">&lt;-</span> R<span class="sc">$</span>H</span>
+<span id="cb2-320"><a href="#cb2-320" aria-hidden="true" tabindex="-1"></a>    P <span class="ot">&lt;-</span> <span class="fu">unpack</span>(R<span class="sc">$</span>S<span class="sc">$</span>P[C<span class="sc">$</span>k, ], H)</span>
+<span id="cb2-321"><a href="#cb2-321" aria-hidden="true" tabindex="-1"></a>    fmt <span class="ot">&lt;-</span> <span class="cf">function</span>(v, <span class="at">d =</span> <span class="dv">3</span>) <span class="fu">formatC</span>(v, <span class="at">format =</span> <span class="st">"f"</span>, <span class="at">digits =</span> d)</span>
+<span id="cb2-322"><a href="#cb2-322" aria-hidden="true" tabindex="-1"></a>    rows <span class="ot">&lt;-</span> <span class="fu">paste0</span>(</span>
+<span id="cb2-323"><a href="#cb2-323" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;tr&gt;&lt;td&gt;h"</span>, <span class="dv">1</span><span class="sc">:</span>H, <span class="st">"&lt;/td&gt;&lt;td align='right'&gt;"</span>, <span class="fu">fmt</span>(P<span class="sc">$</span>w),</span>
+<span id="cb2-324"><a href="#cb2-324" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;/td&gt;&lt;td align='right'&gt;"</span>, <span class="fu">fmt</span>(P<span class="sc">$</span>cc),</span>
+<span id="cb2-325"><a href="#cb2-325" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;/td&gt;&lt;td align='right'&gt;"</span>, <span class="fu">fmt</span>(P<span class="sc">$</span>v), <span class="st">"&lt;/td&gt;&lt;/tr&gt;"</span>, <span class="at">collapse =</span> <span class="st">""</span>)</span>
+<span id="cb2-326"><a href="#cb2-326" aria-hidden="true" tabindex="-1"></a>    <span class="fu">HTML</span>(<span class="fu">paste0</span>(</span>
+<span id="cb2-327"><a href="#cb2-327" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;hr&gt;&lt;b&gt;update&lt;/b&gt; "</span>, C<span class="sc">$</span>k <span class="sc">-</span> <span class="dv">1</span>, <span class="st">" of "</span>, R<span class="sc">$</span>S<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb2-328"><a href="#cb2-328" aria-hidden="true" tabindex="-1"></a>      <span class="st">"  (epoch "</span>, <span class="fu">fmt</span>(C<span class="sc">$</span>ep, <span class="dv">2</span>), <span class="st">")&lt;br&gt;"</span>,</span>
+<span id="cb2-329"><a href="#cb2-329" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;batch size m&lt;/b&gt; = "</span>, <span class="fu">length</span>(R<span class="sc">$</span>S<span class="sc">$</span>IDX[[C<span class="sc">$</span>k]]), <span class="st">" of "</span>, R<span class="sc">$</span>D<span class="sc">$</span>n, <span class="st">"&lt;br&gt;"</span>,</span>
+<span id="cb2-330"><a href="#cb2-330" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;updates per epoch&lt;/b&gt; = "</span>, R<span class="sc">$</span>B, <span class="st">"&lt;br&gt;"</span>,</span>
+<span id="cb2-331"><a href="#cb2-331" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;parameters&lt;/b&gt; = "</span>, <span class="dv">3</span> <span class="sc">*</span> H <span class="sc">+</span> <span class="dv">1</span>, <span class="st">"&lt;br&gt;&lt;br&gt;"</span>,</span>
+<span id="cb2-332"><a href="#cb2-332" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;loss, m = "</span>, R<span class="sc">$</span>m, <span class="st">"&lt;/b&gt; = "</span>, <span class="fu">fmt</span>(R<span class="sc">$</span>S<span class="sc">$</span>L[C<span class="sc">$</span>k], <span class="dv">5</span>), <span class="st">"&lt;br&gt;"</span>,</span>
+<span id="cb2-333"><a href="#cb2-333" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;loss, full batch&lt;/b&gt; = "</span>, <span class="fu">fmt</span>(R<span class="sc">$</span>G<span class="sc">$</span>L[C<span class="sc">$</span>kg], <span class="dv">5</span>), <span class="st">"&lt;br&gt;"</span>,</span>
+<span id="cb2-334"><a href="#cb2-334" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;b&gt;noise floor&lt;/b&gt; &amp;asymp; "</span>, <span class="fu">fmt</span>(<span class="fl">0.5</span> <span class="sc">*</span> input<span class="sc">$</span>sigma<span class="sc">^</span><span class="dv">2</span>, <span class="dv">5</span>), <span class="st">"&lt;br&gt;"</span>,</span>
+<span id="cb2-335"><a href="#cb2-335" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">isTRUE</span>(R<span class="sc">$</span>S<span class="sc">$</span>diverged))</span>
+<span id="cb2-336"><a href="#cb2-336" aria-hidden="true" tabindex="-1"></a>        <span class="st">"&lt;b style='color:#C81E1E'&gt;run diverged&lt;/b&gt;&lt;br&gt;"</span> <span class="cf">else</span> <span class="st">""</span>,</span>
+<span id="cb2-337"><a href="#cb2-337" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">isTRUE</span>(R<span class="sc">$</span>capped))</span>
+<span id="cb2-338"><a href="#cb2-338" aria-hidden="true" tabindex="-1"></a>        <span class="fu">paste0</span>(<span class="st">"&lt;i style='color:#C81E1E'&gt;epochs capped at "</span>, R<span class="sc">$</span>ne,</span>
+<span id="cb2-339"><a href="#cb2-339" aria-hidden="true" tabindex="-1"></a>               <span class="st">"&lt;/i&gt;&lt;br&gt;"</span>) <span class="cf">else</span> <span class="st">""</span>,</span>
+<span id="cb2-340"><a href="#cb2-340" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;br&gt;&lt;table style='font-size:90%'&gt;"</span>,</span>
+<span id="cb2-341"><a href="#cb2-341" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;tr&gt;&lt;th&gt;unit&lt;/th&gt;&lt;th&gt;w&lt;/th&gt;&lt;th&gt;bias&lt;/th&gt;&lt;th&gt;v&lt;/th&gt;&lt;/tr&gt;"</span>,</span>
+<span id="cb2-342"><a href="#cb2-342" aria-hidden="true" tabindex="-1"></a>      rows, <span class="st">"&lt;/table&gt;"</span>,</span>
+<span id="cb2-343"><a href="#cb2-343" aria-hidden="true" tabindex="-1"></a>      <span class="st">"&lt;br&gt;&lt;i&gt;output bias = "</span>, <span class="fu">fmt</span>(P<span class="sc">$</span>b), <span class="st">"&lt;/i&gt;"</span></span>
+<span id="cb2-344"><a href="#cb2-344" aria-hidden="true" tabindex="-1"></a>    ))</span>
+<span id="cb2-345"><a href="#cb2-345" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-346"><a href="#cb2-346" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-347"><a href="#cb2-347" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-348"><a href="#cb2-348" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div>
+</div>
+<p>This app accompanies <em><a href="../chapters/unit05_MLE.html#sec-sgd-app">Optimization for Maximum Likelihood Estimation</a></em> in the book.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation column-page-right">
+  <div class="nav-page nav-page-previous">
+      <a href="./app_nelder-mead.html" class="pagination-link" aria-label="Nelder–Mead">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">Nelder–Mead</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="./app_mixture.html" class="pagination-link" aria-label="The EM Algorithm for a Normal Mixture">
+        <span class="nav-page-text">The EM Algorithm for a Normal Mixture</span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

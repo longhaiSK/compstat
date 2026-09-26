@@ -23,27 +23,25 @@ fi
 exec "$PYTHON_EXEC" "$0" "$@"
 """
 
-# Regenerates the standalone Shinylive app archive straight from the app
-# chunks already in the chapter .qmd files, so the archive can never drift out
-# of sync with the book. Run it after adding, removing, or editing any
-# {shinylive-r} app, then render:
+# SPENT MIGRATION TOOL -- kept for the record, not for re-running.
 #
-#   ./gen_shinyapps.py && quarto render shinyapps_src
+# On 2026-09-26 this script moved all 16 {shinylive-r} apps out of the book's
+# chapters and into the standalone archive in shinyliveapps_compstat/, taking
+# each app's caption and the prose of its chapter section along as that page's
+# "About the app" notes. The chapters now hold only a pointer to the archive.
 #
-# What it writes (everything under shinyapps_src/ is generated -- do not edit
-# by hand; edit the chapter the app lives in and re-run):
+# Because it builds the archive *from* the chapters, and the chapters no
+# longer contain any apps, running it again finds nothing and exits with
+# "no {shinylive-r} apps found; nothing written" without touching anything.
+# The archive is now hand-maintained: shinyliveapps_compstat/app_<slug>.qmd is
+# the only copy of each app, and _quarto.yml's sidebar is the list of them.
+# To add an app, write its page and add it to index.qmd and that sidebar, then
 #
-#   shinyapps_src/_quarto.yml                 website sub-project + left sidebar
-#   shinyapps_src/shinyliveapps_compstat.qmd  the hub page
-#   shinyapps_src/app_<slug>.qmd              one page per app
+#   quarto render shinyliveapps_compstat
 #
-# The sub-project renders with `output-dir: ..`, so the .html files land at the
-# repo root beside the book's own index.html and share the book's already-built
-# site_libs/ and shinylive-sw.js. Website search is switched off deliberately:
-# it would otherwise overwrite the book's root search.json.
+# The rest of this file documents how the migration was done.
 #
-# The chapter parser here is deliberately the same one gen_gallery.py uses --
-# every app in this book is wrapped in a Pandoc Figure Div
+# Every app in the book was wrapped in a Pandoc Figure Div
 #
 #   ::: {#fig-foo-app}
 #
@@ -55,18 +53,19 @@ exec "$PYTHON_EXEC" "$0" "$@"
 #
 #   :::
 #
-# so the div id gives the page its slug and its back-link anchor, and the
-# bold run opening the trailing caption paragraph gives the page its title.
+# so the div id gave the page its slug and its back-link anchor, and the bold
+# run opening the trailing caption paragraph gave the page its title. The
+# chapter parser is the same one gen_gallery.py uses.
 
 import re
-import shutil
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 QUARTO_YML = ROOT / "_quarto.yml"
-SRC_DIR = ROOT / "shinyapps_src"
-HUB_STEM = "shinyliveapps_compstat"
+SRC_DIR = ROOT / "shinyliveapps_compstat"
+HUB_STEM = "index"
+STYLES = "styles.scss"
 SKIP = {"index.qmd", "gallery.qmd"}
 
 BOOK_TITLE = "Elements of Statistical Computation"
@@ -107,6 +106,125 @@ def plain_text(s):
     """Sidebar entries are plain text, not markdown: $t$ would show its dollars."""
     return MATH_RE.sub(r'\1', s)
 
+
+
+# Seeded into the archive once, then hand-editable forever after. Quarto's
+# stock sidebar is a plain list in small type; the rules below turn each entry
+# into a card-like button and make the chapter names read as section labels
+# rather than as more links.
+DEFAULT_STYLES = """/*-- scss:defaults --*/
+
+// The app titles taken from the book's captions are long sentences, so the
+// sidebar needs more room than Quarto's 250px default. Quarto spends only
+// about 0.6 of this value on the sidebar columns themselves, so 470px is what
+// buys a sidebar roughly 300px wide.
+$grid-sidebar-width: 470px;
+
+/*-- scss:rules --*/
+
+$app-accent: #2563eb;
+$app-accent-soft: rgba(37, 99, 235, 0.1);
+$app-ink: #334155;
+
+#quarto-sidebar {
+  background: linear-gradient(180deg, #fbfcfe 0%, #eef2f8 100%);
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 0 0.7rem 2rem;
+}
+
+#quarto-sidebar .sidebar-title {
+  font-size: 1.2rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  padding: 0.5rem 0.35rem 0.1rem;
+
+  a {
+    color: #0f172a;
+    text-decoration: none;
+  }
+}
+
+#quarto-sidebar .sidebar-item {
+  font-size: 0.97rem;
+  line-height: 1.32;
+}
+
+#quarto-sidebar .sidebar-item-container {
+  margin: 0.22rem 0;
+}
+
+// Every navigable entry is a button.
+#quarto-sidebar .sidebar-link {
+  display: block;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.55rem;
+  color: $app-ink;
+  text-decoration: none;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    box-shadow 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+
+#quarto-sidebar .sidebar-link:hover {
+  background: $app-accent-soft;
+  border-color: rgba(37, 99, 235, 0.35);
+  color: #1e293b;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.09);
+  transform: translateX(2px);
+}
+
+#quarto-sidebar .sidebar-link.active {
+  background: linear-gradient(180deg, #3b82f6 0%, $app-accent 100%);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.32);
+}
+
+// ...except the chapter headings, which are labels for the buttons beneath
+// them. They carry .sidebar-link too, so the button styling is undone here.
+#quarto-sidebar .sidebar-item-section > .sidebar-item-container {
+  display: flex;
+  align-items: center;
+  margin: 0.9rem 0 0.15rem;
+}
+
+#quarto-sidebar .sidebar-item-section > .sidebar-item-container > .sidebar-link {
+  flex: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+
+  &:hover {
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    color: $app-accent;
+  }
+}
+
+#quarto-sidebar .sidebar-item-toggle {
+  color: #94a3b8;
+  text-decoration: none;
+
+  &:hover {
+    color: $app-accent;
+  }
+}
+
+#quarto-sidebar .sidebar-section .sidebar-item-container {
+  margin-left: 0.1rem;
+}
+"""
 
 def get_chapter_order():
     lines = QUARTO_YML.read_text(encoding="utf-8").splitlines()
@@ -161,10 +279,166 @@ def slug_for(fig_id):
     return slug or fig_id
 
 
+# Sentences that exist only because the app sits inside a multi-format book:
+# they tell PDF readers where to find the live version. On a page that *is*
+# the live version they are worse than redundant, so they are dropped. The
+# patterns allow any whitespace between words because the chapter sources are
+# hard-wrapped, so a sentence is usually split across two or three lines.
+BOOK_ONLY_SENTENCES = [
+    "This app runs live only in the HTML edition of this book; readers of "
+    "other formats can follow the link below it.",
+]
+BOOK_ONLY_RES = [re.compile(r'\s+'.join(map(re.escape, t.split())))
+                 for t in BOOK_ONLY_SENTENCES]
+
+
+def strip_book_only(text):
+    for rx in BOOK_ONLY_RES:
+        text = rx.sub('', text)
+    # Tidy up after the excisions: trailing spaces and the blank-line runs a
+    # removed sentence can leave behind.
+    text = re.sub(r'[ \t]+$', '', text, flags=re.M)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip('\n')
+
+
+# Prose lifted out of a chapter can carry the book's cross-references with it
+# (@tbl-..., @sec-..., @fig-...). Those resolve to nothing on an archive page,
+# where Quarto renders them as a broken "?@ref", so each one is rewritten into
+# a real link: to another app's page when it points at an app, and otherwise
+# back into the rendered chapter that owns it, keeping the number the book
+# gave it ("Table 10.2") by reading it out of the rendered HTML.
+XREF_RE = re.compile(r'(?<![\w@])@((?:fig|tbl|sec|eq|thm|lst|exm|exr)-[A-Za-z0-9_-]+)')
+XREF_LABEL_RE = r'<a href="#%s" class="quarto-xref">(.*?)</a>'
+NBSP_RE = re.compile(r'&nbsp;|&#160;')
+
+
+def _label_text(raw):
+    """'Table&nbsp;<span>10.2</span>' -> 'Table 10.2'."""
+    text = re.sub(r'<[^>]+>', '', raw)
+    return re.sub(r'\s+', ' ', NBSP_RE.sub(' ', text)).strip()
+
+
+def build_xref_index(chapter_files, wanted):
+    """Map each wanted crossref id to (rendered chapter file, label text)."""
+    index = {}
+    if not wanted:
+        return index
+    for rel in chapter_files:
+        html_path = ROOT / Path(rel).with_suffix('.html')
+        if not html_path.exists():
+            continue
+        html = html_path.read_text(encoding="utf-8", errors="replace")
+        for cid in wanted - index.keys():
+            if f'id="{cid}"' not in html:
+                continue
+            m = re.search(XREF_LABEL_RE % re.escape(cid), html, re.S)
+            index[cid] = (html_path.name, _label_text(m.group(1)) if m else cid)
+    return index
+
+
+def rewrite_xrefs(text, app, app_ids, xref_index):
+    def sub(m):
+        cid = m.group(1)
+        if cid in (app['fig_id'], app.get('sec_id')):
+            return 'the app above'
+        if cid in app_ids:
+            slug, title = app_ids[cid]
+            return f'[{title}](app_{slug}.html)'
+        hit = xref_index.get(cid)
+        if hit:
+            chapter_html, label = hit
+            return f'[{label}](../chapters/{chapter_html}#{cid})'
+        print(f"WARNING: {app['chapter']}: '{app['fig_id']}' refers to @{cid}, which "
+              f"is neither an app nor findable in the rendered book; left as-is and "
+              f"it will render as a broken cross-reference. Render the book first.",
+              file=sys.stderr)
+        return m.group(0)
+    return XREF_RE.sub(sub, text)
+
+
+def structural_headings(lines):
+    """Headings that actually divide the chapter into sections.
+
+    Two kinds of line look like a heading but are not one: an R comment inside
+    a chunk ("# ---- setup ----") and a heading written inside a div, which in
+    this book is how a callout gets its title ("::: {.callout-note}" followed
+    by "### Reproducing this figure"). Counting either as a section break cuts
+    an app's section short.
+    """
+    heads = []
+    in_chunk = False
+    depth = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('```'):
+            in_chunk = not in_chunk
+            continue
+        if in_chunk:
+            continue
+        if DIV_FENCE_RE.match(stripped):
+            depth = depth + 1 if DIV_OPEN_RE.match(stripped) else max(depth - 1, 0)
+            continue
+        if depth == 0 and (m := HEADING_RE.match(line)):
+            heads.append((i, len(m.group(1))))
+    return heads
+
+
+# In the book each app sits in a section of its own -- "### Shinylive App for
+# X" -- holding the app plus a few paragraphs explaining what to do with it.
+# Those paragraphs are the archive's "About the app" text. Everything that is
+# the app itself, or exists only to paper over the app's absence in the PDF
+# edition, is left behind: the Figure Div carrying the chunk and its caption
+# (already the page's lead), and the .content-visible blocks, whose whole
+# purpose is to show one thing in HTML and another elsewhere.
+CONTENT_VISIBLE_RE = re.compile(r'content-visible|content-hidden')
+
+
+def extract_about(lines, heads, app):
+    div_start, div_end = app.get('div_span', (None, None))
+    if div_start is None:
+        return ""
+
+    # The enclosing section runs from the nearest heading above the app to the
+    # next heading at the same or a shallower level.
+    prior = [h for h in heads if h[0] < div_start]
+    if not prior:
+        return ""
+    head_idx, head_level = prior[-1]
+    end = next((i for i, lv in heads if i > head_idx and lv <= head_level), len(lines))
+
+    kept = []
+    i = head_idx + 1
+    while i < end:
+        line = lines[i]
+        stripped = line.strip()
+        if div_start <= i <= div_end:
+            i = div_end + 1
+            continue
+        om = DIV_OPEN_RE.match(stripped)
+        if om and CONTENT_VISIBLE_RE.search(om.group(1)):
+            # Skip the whole conditional block, including any nesting inside it.
+            depth = 0
+            while i < end:
+                st = lines[i].strip()
+                if DIV_FENCE_RE.match(st):
+                    depth += 1 if DIV_OPEN_RE.match(st) else -1
+                    if depth == 0:
+                        break
+                i += 1
+            i += 1
+            continue
+        kept.append(line)
+        i += 1
+
+    return strip_book_only('\n'.join(kept))
+
+
 def parse_chapter(path):
     """Return (chapter title, [app dicts]) for one chapter file."""
     lines = path.read_text(encoding="utf-8").splitlines()
     n = len(lines)
+    heads = structural_headings(lines)
     apps = []
 
     last_heading_raw = ""
@@ -180,7 +454,7 @@ def parse_chapter(path):
             paragraph_buffer.clear()
 
     def current_fig_div():
-        for div_id in reversed(div_stack):
+        for div_id, _ in reversed(div_stack):
             if div_id and div_id.startswith('fig-'):
                 return div_id
         return None
@@ -202,10 +476,11 @@ def parse_chapter(path):
             om = DIV_OPEN_RE.match(line.strip())
             if om:
                 idm = DIV_ID_IN_ATTRS_RE.search(om.group(1))
-                div_stack.append(idm.group(1) if idm else None)
+                div_stack.append((idm.group(1) if idm else None, i))
             else:
-                closed_id = div_stack.pop() if div_stack else None
+                closed_id, opened_at = div_stack.pop() if div_stack else (None, None)
                 if pending is not None and closed_id == pending['fig_id']:
+                    pending['div_span'] = (opened_at, i)
                     # Whatever paragraph immediately preceded this closing
                     # fence is the Figure Div's caption.
                     label, rest = split_caption(last_paragraph)
@@ -218,6 +493,9 @@ def parse_chapter(path):
                     pending['title'] = short_title(label)
                     pending['caption'] = label
                     pending['lead'] = rest
+                    sid = HEADING_ID_RE.search(pending['heading'] or '')
+                    pending['sec_id'] = sid.group(1) if sid else None
+                    pending['about'] = extract_about(lines, heads, pending)
                     apps.append(pending)
                     pending = None
             i += 1
@@ -318,10 +596,23 @@ def source_block(app):
     ])
 
 
-def render_app_page(app, chapter_title):
-    book_href = f"chapters/{Path(app['chapter']).with_suffix('.html').name}#{app['fig_id']}"
+# `engine: markdown` has to sit in each document's front matter -- Quarto
+# ignores a project-level `engine:` key. Without it Quarto starts a jupyter
+# kernel for every page, which is both slow and a dependency this archive does
+# not otherwise have: no chunk here is executed at render time, since the
+# shinylive filter turns the {shinylive-r} block into a browser-side app.
+def render_app_page(app, chapter_title, app_ids, xref_index):
+    # The archive lives one directory below the book, so every link back into
+    # a chapter climbs out of it first. The target is the *section* the app
+    # used to occupy, not its Figure Div: once the app itself has moved here,
+    # what remains in the chapter is that section, now a pointer back to this
+    # page. Sections that never carried an explicit id get the same id the
+    # book-side stub is given.
+    anchor = app.get('sec_id') or f"sec-{app['slug']}-app"
+    book_href = f"../chapters/{Path(app['chapter']).with_suffix('.html').name}#{anchor}"
     lines = [
         '---',
+        'engine: markdown',
         f"title: {yaml_quote(app['title'])}",
         f"subtitle: {yaml_quote(chapter_title)}",
         '---',
@@ -330,14 +621,17 @@ def render_app_page(app, chapter_title):
         f"chapters/{app['chapter']} (line {app['line']}) -- do not edit by hand. -->",
         '',
     ]
-    if app['lead']:
-        lines += [app['lead'], '']
+    lines += [app_chunk(app), '']
+    # The caption's description opens "About the app" so that every app has
+    # one, including the few whose chapter section holds nothing but the app.
+    about = '\n\n'.join(x for x in (app['lead'], app.get('about', '')) if x)
+    about = rewrite_xrefs(about, app, app_ids, xref_index)
+    if about:
+        lines += ['## About the app', '', about, '']
     lines += [
-        app_chunk(app),
-        '',
         source_block(app),
         '',
-        f"[Read this app in context]({book_href}) in *{chapter_title}*.",
+        f"This app accompanies *[{chapter_title}]({book_href})* in the book.",
         '',
     ]
     return '\n'.join(lines)
@@ -346,6 +640,7 @@ def render_app_page(app, chapter_title):
 def render_hub(chapters_data, n_app):
     lines = [
         '---',
+        'engine: markdown',
         f'title: {yaml_quote(SITE_TITLE)}',
         f'subtitle: {yaml_quote(BOOK_TITLE)}',
         '---',
@@ -353,7 +648,7 @@ def render_hub(chapters_data, n_app):
         '<!-- GENERATED by gen_shinyapps.py -- do not edit by hand. -->',
         '',
         f'This is a standalone archive of all {n_app} interactive Shinylive apps in '
-        f'*[{BOOK_TITLE}](index.html)*. Each app runs entirely in your browser: the R '
+        f'*[{BOOK_TITLE}](../index.html)*. Each app runs entirely in your browser: the R '
         'code is compiled to WebAssembly and executed locally by [webR](https://docs.r-wasm.org/webr/latest/), '
         'so nothing is sent to a server and no R installation is needed.',
         '',
@@ -377,14 +672,14 @@ def render_quarto_yml(chapters_data):
     lines = [
         '# GENERATED by gen_shinyapps.py -- do not edit by hand.',
         '#',
-        '# A website sub-project whose only job is to publish the book\'s Shinylive',
-        '# apps as one standalone page each. It renders into the repo root',
-        '# (output-dir: ..) so the pages sit beside the book\'s index.html and reuse',
-        '# the site_libs/ and shinylive-sw.js already built there. Search is off on',
-        '# purpose: a website search index would overwrite the book\'s search.json.',
+        "# A website sub-project whose only job is to publish the book's Shinylive",
+        '# apps as one standalone page each. Sources and rendered pages share this',
+        '# directory (output-dir: .), exactly as the book does at the repo root, so',
+        '# rendering the archive can never touch the book\'s own index.html,',
+        '# search.json or site_libs/ one level up.',
         'project:',
         '  type: website',
-        '  output-dir: ..',
+        '  output-dir: .',
         '  render:',
         '    - "*.qmd"',
         '',
@@ -396,10 +691,10 @@ def render_quarto_yml(chapters_data):
         '    style: docked',
         '    collapse-level: 1',
         '    contents:',
-        f'      - href: {HUB_STEM}.qmd',
+        '      - href: index.qmd',
         '        text: "All apps"',
-        '      - href: index.html',
-        f'        text: {yaml_quote("← Back to the book")}',
+        '      - href: ../index.html',
+        f'        text: {yaml_quote("Back to the book")}',
     ]
     for chapter_title, apps in chapters_data:
         if not apps:
@@ -416,8 +711,12 @@ def render_quarto_yml(chapters_data):
         '',
         'format:',
         '  html:',
-        '    theme: cosmo',
+        f'    theme: [cosmo, {STYLES}]',
         '    toc: false',
+        '    # These pages are app viewers, not prose: the default article column',
+        '    # squeezes a sidebarLayout app into half the window and leaves the',
+        '    # rest of the screen empty.',
+        '    page-layout: full',
         '    embed-resources: false   # shinylive cannot run in a self-contained file',
         '    link-external-newwindow: true',
     ]
@@ -454,24 +753,63 @@ def main():
         print("gen_shinyapps: no {shinylive-r} apps found; nothing written.", file=sys.stderr)
         sys.exit(1)
 
-    # Rebuild the source dir from scratch so an app deleted from the book does
-    # not leave an orphan page behind. _extensions is a symlink to the book's,
-    # so the sub-project can find the shinylive filter from its own root.
-    if SRC_DIR.exists():
-        for child in SRC_DIR.iterdir():
-            if child.is_symlink() or child.is_file():
-                child.unlink()
-            elif child.is_dir():
-                shutil.rmtree(child)
+    # The rendered pages now live in this directory too, so the old
+    # wipe-and-recreate is gone: only the files this script owns are rewritten,
+    # and only apps that have disappeared from the book are cleaned up.
     SRC_DIR.mkdir(exist_ok=True)
-    (SRC_DIR / "_extensions").symlink_to("../_extensions")
+    ext = SRC_DIR / "_extensions"
+    if not ext.exists():
+        # The sub-project is its own Quarto project root, so it cannot see the
+        # book's _extensions by walking up -- it needs its own path to the
+        # shinylive filter.
+        ext.symlink_to("../_extensions")
+
+    # An app may be referred to by its Figure Div id or by the {#sec-...} on
+    # its heading; both must land on the same archive page.
+    app_ids = {}
+    for _, apps in chapters_data:
+        for app in apps:
+            for key in (app['fig_id'], app.get('sec_id')):
+                if key:
+                    app_ids[key] = (app['slug'], app['title'])
+    wanted = set()
+    for _, apps in chapters_data:
+        for app in apps:
+            for cid in XREF_RE.findall(f"{app['lead']}\n{app.get('about', '')}"):
+                if cid not in app_ids:
+                    wanted.add(cid)
+    xref_index = build_xref_index(chapter_files, wanted)
 
     (SRC_DIR / "_quarto.yml").write_text(render_quarto_yml(chapters_data), encoding="utf-8")
     (SRC_DIR / f"{HUB_STEM}.qmd").write_text(render_hub(chapters_data, n_app), encoding="utf-8")
+
+    wanted = set()
     for chapter_title, apps in chapters_data:
         for app in apps:
-            (SRC_DIR / f"app_{app['slug']}.qmd").write_text(
-                render_app_page(app, chapter_title), encoding="utf-8")
+            name = f"app_{app['slug']}"
+            wanted.add(name)
+            (SRC_DIR / f"{name}.qmd").write_text(
+                render_app_page(app, chapter_title, app_ids, xref_index),
+                encoding="utf-8")
+
+    # An app renamed or removed in the book would otherwise leave its page
+    # behind, still listed by nothing but still served.
+    removed = 0
+    for stale in sorted(SRC_DIR.glob("app_*.qmd")):
+        if stale.stem not in wanted:
+            stale.unlink()
+            stale.with_suffix(".html").unlink(missing_ok=True)
+            print(f"gen_shinyapps: removed stale page {stale.stem} "
+                  f"(its app is no longer in the book).", file=sys.stderr)
+            removed += 1
+
+    # styles.scss is seeded once and then left alone, so the sidebar can be
+    # restyled by hand without the next run reverting it.
+    styles = SRC_DIR / STYLES
+    if not styles.exists():
+        styles.write_text(DEFAULT_STYLES, encoding="utf-8")
+        print(f"gen_shinyapps: created {STYLES} (edit it freely -- it is never "
+              f"overwritten).", file=sys.stderr)
 
     print(f"gen_shinyapps: wrote {SRC_DIR.name}/ — {n_app} app pages plus "
           f"{HUB_STEM}.qmd across {len(chapters_data)} chapters.\n"

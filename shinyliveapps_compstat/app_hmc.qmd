@@ -1,0 +1,205 @@
+---
+engine: markdown
+title: "Hamiltonian Monte Carlo Tuning"
+subtitle: "Markov Chain Monte Carlo"
+---
+
+<!-- Moved out of chapters/unit12_mcmc.qmd on 2026-09-26 by gen_shinyapps.py, which
+     also lifted the "About the app" notes from that section. The app no
+     longer exists in the book, so THIS FILE IS NOW ITS ONLY COPY --
+     edit it here, and re-render with: quarto render shinyliveapps_compstat -->
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 860
+library(shiny)
+
+Sigma <- matrix(c(1, 0.98, 0.98, 1), 2)
+Sinv  <- solve(Sigma)
+log_pi_corr  <- function(z) -0.5 * sum(z * (Sinv %*% z))
+grad_pi_corr <- function(z) -as.vector(Sinv %*% z)
+
+hmc <- function(log_pi, grad_log_pi, theta, eps, L, iters) {
+    d <- length(theta)
+    out <- matrix(NA_real_, iters, d); n_acc <- 0
+    for (t in seq_len(iters)) {
+        p0 <- rnorm(d)
+        th <- theta; p <- p0 + eps / 2 * grad_log_pi(th)
+        for (l in seq_len(L)) {
+            th <- th + eps * p
+            if (l < L) p <- p + eps * grad_log_pi(th)
+        }
+        p <- p + eps / 2 * grad_log_pi(th)
+        H0 <- -log_pi(theta) + 0.5 * sum(p0^2)
+        H1 <- -log_pi(th)    + 0.5 * sum(p^2)
+        if (log(runif(1)) < H0 - H1) { theta <- th; n_acc <- n_acc + 1 }
+        out[t, ] <- theta
+    }
+    attr(out, "accept_rate") <- n_acc / iters
+    out
+}
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Hamiltonian Monte Carlo Tuning"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            sliderInput("eps", "leapfrog step size (epsilon)", min = 0.01, max = 1, value = 0.05, step = 0.01),
+            sliderInput("L", "number of leapfrog steps (L)", min = 1, max = 60, value = 30, step = 1),
+            sliderInput("iters", "iterations", min = 200, max = 3000, value = 1000, step = 200),
+            helpText("Target: bivariate normal with correlation 0.98. Try eps = 0.05, ",
+                     "L = 30 (efficient), then eps = 0.5 (unstable, low acceptance), ",
+                     "then L = 2 (random-walk-like, high autocorrelation)."),
+            tableOutput("tab")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("traj", height = "360px"),
+            plotOutput("acfplot", height = "220px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    fit <- reactive({
+        set.seed(1)
+        hmc(log_pi_corr, grad_pi_corr, theta = c(-2, -2), eps = input$eps, L = input$L, iters = input$iters)
+    })
+
+    output$traj <- renderPlot({
+        d <- fit()
+        g <- seq(-3.5, 3.5, length.out = 60)
+        Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
+        par(mar = c(4, 4, 2, 1))
+        contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60",
+                xlab = expression(theta[1]), ylab = expression(theta[2]),
+                main = sprintf("accept rate: %.2f", attr(d, "accept_rate")))
+        k <- min(100, nrow(d))
+        lines(d[1:k, ], col = "steelblue", lwd = 1.2)
+        points(d[1:k, ], pch = 19, cex = 0.5, col = "steelblue")
+    })
+
+    output$acfplot <- renderPlot({
+        d <- fit()
+        par(mar = c(4, 4, 1, 1))
+        acf(d[, 1], lag.max = 60, col = "steelblue", main = "autocorrelation of theta_1")
+    })
+
+    output$tab <- renderTable({
+        d <- fit()
+        data.frame(quantity = c("acceptance rate", "mean theta_1", "sd theta_1"),
+                   value = c(attr(d, "accept_rate"), mean(d[, 1]), sd(d[, 1])))
+    }, digits = 3, rownames = FALSE)
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Lets you tune the step size and number of leapfrog steps of Hamiltonian Monte Carlo to see how they affect its exploration of a correlated target. The app above runs the `hmc()` function above on the same correlated target and lets you vary $\epsilon$ and $L$ directly.
+
+Leapfrog step size $\epsilon$ and step count $L$ both need tuning: too large an $\epsilon$ makes the discretized trajectory unstable (rejections rise sharply); too small an $L$ reduces HMC to a random walk; too large an $L$ lets the trajectory turn back on itself and waste computation.
+
+::: {.callout-note}
+### Reproducing this figure
+The chunk above uses the [shinylive](https://github.com/quarto-ext/shinylive) extension, which compiles the app to WebAssembly so it runs in the reader's browser with no Shiny server. Install it once per project with
+
+```bash
+quarto add quarto-ext/shinylive
+```
+
+and add `filters: [shinylive]` to the document or project YAML. Only packages available in webR may be used inside the app, so the code above is restricted to base R and `shiny`.
+:::
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+Sigma <- matrix(c(1, 0.98, 0.98, 1), 2)
+Sinv  <- solve(Sigma)
+log_pi_corr  <- function(z) -0.5 * sum(z * (Sinv %*% z))
+grad_pi_corr <- function(z) -as.vector(Sinv %*% z)
+
+hmc <- function(log_pi, grad_log_pi, theta, eps, L, iters) {
+    d <- length(theta)
+    out <- matrix(NA_real_, iters, d); n_acc <- 0
+    for (t in seq_len(iters)) {
+        p0 <- rnorm(d)
+        th <- theta; p <- p0 + eps / 2 * grad_log_pi(th)
+        for (l in seq_len(L)) {
+            th <- th + eps * p
+            if (l < L) p <- p + eps * grad_log_pi(th)
+        }
+        p <- p + eps / 2 * grad_log_pi(th)
+        H0 <- -log_pi(theta) + 0.5 * sum(p0^2)
+        H1 <- -log_pi(th)    + 0.5 * sum(p^2)
+        if (log(runif(1)) < H0 - H1) { theta <- th; n_acc <- n_acc + 1 }
+        out[t, ] <- theta
+    }
+    attr(out, "accept_rate") <- n_acc / iters
+    out
+}
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Hamiltonian Monte Carlo Tuning"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            sliderInput("eps", "leapfrog step size (epsilon)", min = 0.01, max = 1, value = 0.05, step = 0.01),
+            sliderInput("L", "number of leapfrog steps (L)", min = 1, max = 60, value = 30, step = 1),
+            sliderInput("iters", "iterations", min = 200, max = 3000, value = 1000, step = 200),
+            helpText("Target: bivariate normal with correlation 0.98. Try eps = 0.05, ",
+                     "L = 30 (efficient), then eps = 0.5 (unstable, low acceptance), ",
+                     "then L = 2 (random-walk-like, high autocorrelation)."),
+            tableOutput("tab")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("traj", height = "360px"),
+            plotOutput("acfplot", height = "220px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    fit <- reactive({
+        set.seed(1)
+        hmc(log_pi_corr, grad_pi_corr, theta = c(-2, -2), eps = input$eps, L = input$L, iters = input$iters)
+    })
+
+    output$traj <- renderPlot({
+        d <- fit()
+        g <- seq(-3.5, 3.5, length.out = 60)
+        Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
+        par(mar = c(4, 4, 2, 1))
+        contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60",
+                xlab = expression(theta[1]), ylab = expression(theta[2]),
+                main = sprintf("accept rate: %.2f", attr(d, "accept_rate")))
+        k <- min(100, nrow(d))
+        lines(d[1:k, ], col = "steelblue", lwd = 1.2)
+        points(d[1:k, ], pch = 19, cex = 0.5, col = "steelblue")
+    })
+
+    output$acfplot <- renderPlot({
+        d <- fit()
+        par(mar = c(4, 4, 1, 1))
+        acf(d[, 1], lag.max = 60, col = "steelblue", main = "autocorrelation of theta_1")
+    })
+
+    output$tab <- renderTable({
+        d <- fit()
+        data.frame(quantity = c("acceptance rate", "mean theta_1", "sd theta_1"),
+                   value = c(attr(d, "accept_rate"), mean(d[, 1]), sd(d[, 1])))
+    }, digits = 3, rownames = FALSE)
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Markov Chain Monte Carlo](../chapters/unit12_mcmc.html#sec-hmc-app)* in the book.

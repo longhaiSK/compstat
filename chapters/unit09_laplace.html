@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-09-25">
+<meta name="dcterms.date" content="2026-09-26">
 
 <title>9&nbsp; Laplace Approximation – Elements of Statistical Computation</title>
 <style>
@@ -83,11 +83,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/num_eq.js"></script>
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/merge-toc.js"></script>
 <link href="../site_libs/quarto-contrib/custombook-1.0.0/bookstyles.css" rel="stylesheet">
-<meta name="shinylive:serviceworker_dir" content="..">
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
-<link href="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
-<link href="../site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -299,7 +294,7 @@ window.Quarto = {
   <li><a href="#example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood" id="toc-example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood" class="nav-link" data-scroll-target="#example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood"><span class="header-section-number">9.4</span> Example: Comparing Laplace, Quadrature, and Monte Carlo on Computing Marginal Likelihood</a></li>
   <li><a href="#sec-laplace-transform-app" id="toc-sec-laplace-transform-app" class="nav-link" data-scroll-target="#sec-laplace-transform-app"><span class="header-section-number">9.5</span> Adaptive Gauss–Hermite Quadrature</a>
   <ul>
-  <li><a href="#shinylive-app-for-adaptive-gausshermite-quadrature" id="toc-shinylive-app-for-adaptive-gausshermite-quadrature" class="nav-link" data-scroll-target="#shinylive-app-for-adaptive-gausshermite-quadrature"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</a></li>
+  <li><a href="#sec-laplace-transform-app" id="toc-sec-laplace-transform-app" class="nav-link" data-scroll-target="#sec-laplace-transform-app"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">9.6</span> Summary</a></li>
   </ul>
@@ -331,7 +326,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 25, 2026</p>
+      <p class="date">September 26, 2026</p>
     </div>
   </div>
   
@@ -704,110 +699,9 @@ u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,
 <p>Applying a midpoint rule on this adapted grid yields: <span class="math display">\[
 P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L}, \qquad \mu_i = \hat\mu_L + s_L\,\Phi^{-1}(u_i), \qquad u_i = \big(i-\tfrac12\big)/n
 \]</span></p>
-<section id="shinylive-app-for-adaptive-gausshermite-quadrature" class="level3" data-number="9.5.1">
-<h3 data-number="9.5.1" class="anchored" data-anchor-id="shinylive-app-for-adaptive-gausshermite-quadrature"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</h3>
-<div id="fig-laplace-transform-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-laplace-transform-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: laplace-transform-app
-#| standalone: true
-#| viewerHeight: 760
-
-library(shiny)
-
-ui &lt;- fluidPage(
-    titlePanel("Shinylive App for Adaptive Gauss–Hermite Quadrature"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            numericInput("mu_hat", "mu_hat (data location)", value = 8, step = 1),
-            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
-                        min = 2, max = 25, value = 9, step = 1),
-            helpText("The grid is a midpoint rule, uniform in u = Phi((mu - ",
-                     "mode_L)/se_L), where mode_L and se_L come from the ",
-                     "Laplace approximation recomputed for the current ",
-                     "mu_hat. Try mu_hat = 8 or 20 (values that broke the ",
-                     "plain logistic grid in the earlier app) and watch the ",
-                     "quadrature estimate stay close to the true value.")
-        ),
-        mainPanel(
-            width = 8,
-            plotOutput("squeeze", height = "560px")
-        )
-    )
-)
-
-server &lt;- function(input, output, session) {
-
-    output$squeeze &lt;- renderPlot({
-        n_eff &lt;- 3; sigma_prior &lt;- 5
-        L     &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
-        prior &lt;- function(mu) dnorm(mu, 0, sigma_prior)
-        z     &lt;- function(mu) L(mu) * prior(mu)
-
-        log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
-
-        ### true value, exactly as in the Unit08 / earlier Unit09 apps
-        log_marlik &lt;- log(integrate(z, -Inf, Inf)$value)
-
-        ### Laplace approximation for THIS mu_hat: mode and se define the transform
-        h_neg &lt;- function(mu) -(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                                   dnorm(mu, 0, sigma_prior, log = TRUE))
-        op       &lt;- nlm(h_neg, p = input$mu_hat, hessian = TRUE)
-        lap_mode &lt;- op$estimate
-        lap_se   &lt;- 1 / sqrt(op$hessian[1, 1])
-
-        lo &lt;- min(-8, input$mu_hat - 6)
-        hi &lt;- max(14, input$mu_hat + 6)
-        mu_grid &lt;- seq(lo, hi, length.out = 500)
-
-        u_pts  &lt;- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
-        mu_pts &lt;- qnorm(u_pts, lap_mode, lap_se)                # mu = Laplace-CDF^{-1}(u)
-
-        ### quadrature estimate built from this Laplace-shaped grid
-        log_z           &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-            dnorm(mu, 0, sigma_prior, log = TRUE)
-        h_step          &lt;- 1 / input$n_pts
-        log_jac         &lt;- dnorm(mu_pts, lap_mode, lap_se, log = TRUE)   # log du/dmu
-        log_marlik_quad &lt;- log_sum_exp(log_z(mu_pts) - log_jac) + log(h_step)
-
-        par(mar = c(4, 4, 2, 4))
-        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
-             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
-        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
-                col = adjustcolor("firebrick", 0.15), border = NA)
-        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
-        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
-
-        par(new = TRUE)
-        plot(mu_grid, pnorm(mu_grid, lap_mode, lap_se), type = "l", lwd = 3, col = "steelblue",
-             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
-        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
-        mtext(expression(u == Phi((mu - hat(mu)[L]) / s[L])), side = 4, line = 2.5, col = "steelblue")
-
-        guide_col &lt;- adjustcolor("gray50", 0.6)
-        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
-        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
-        points(mu_pts, u_pts, pch = 19, col = "gray30")
-
-        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
-               legend = c(expression(z(mu) == pi(mu) * L(mu)),
-                          expression(u == Phi((mu - hat(mu)[L]) / s[L])),
-                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
-                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
-    })
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-laplace-transform-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;9.2: <strong>Shinylive App Illustrating Adaptive Gauss–Hermite Quadrature.</strong> Shows how centring and scaling the quadrature grid with the Laplace approximation lets a few grid points capture the posterior wherever it sits. Because <span class="math inline">\(u_i\)</span> is uniform in <em>Laplace-normalized</em> space, the grid automatically concentrates where the true posterior mass lives.
-</figcaption>
-</figure>
-</div>
+<section id="sec-laplace-transform-app" class="level3" data-number="9.5.1">
+<h3 data-number="9.5.1" class="anchored" data-anchor-id="sec-laplace-transform-app"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</h3>
+<p>There is a <a href="../shinyliveapps_compstat/app_laplace-transform.html">shinylive app</a> to show how centring and scaling the quadrature grid with the Laplace approximation lets a few grid points capture the posterior wherever it sits.</p>
 </section>
 </section>
 <section id="summary" class="level2" data-number="9.6">

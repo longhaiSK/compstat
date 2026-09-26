@@ -1,0 +1,342 @@
+---
+engine: markdown
+title: "Importance Sampling of a Student-$t$ Interval"
+subtitle: "Importance Sampling"
+---
+
+<!-- Moved out of chapters/unit11_importance_sampling.qmd on 2026-09-26 by gen_shinyapps.py, which
+     also lifted the "About the app" notes from that section. The app no
+     longer exists in the book, so THIS FILE IS NOW ITS ONLY COPY --
+     edit it here, and re-render with: quarto render shinyliveapps_compstat -->
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 850
+library(shiny)
+library(ars)
+
+## rtnorm_ars() and is_t_interval(): identical to the versions defined
+## earlier in the chapter (a {shinylive-r} chunk cannot see objects
+## defined elsewhere in the document, so they are pasted in verbatim).
+rtnorm_ars <- function(n, mu = 0, sigma = 1, lo = 0, hi = Inf) {
+    logf   <- function(x) dnorm(x, mu, sigma, log = TRUE)
+    fprima <- function(x) -(x - mu) / sigma^2
+    if (is.finite(hi)) {
+        x0 <- lo + (hi - lo) * c(0.1, 0.5, 0.9)
+    } else {
+        right <- max(mu, lo) + 3 * sigma
+        x0 <- sort(unique(c(lo + 0.1 * sigma, max(lo + 0.2 * sigma, mu + 1e-6), right)))
+    }
+    ars(n, f = logf, fprima = fprima, x = x0,
+        lb = TRUE, xlb = lo, ub = is.finite(hi), xub = if (is.finite(hi)) hi else 0)
+}
+
+is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
+    if (!is.null(seed)) set.seed(seed)
+    X <- rtnorm_ars(S, mu, sigma, c1, c2)
+
+    lZ   <- log(pnorm(c2, mu, sigma) - pnorm(c1, mu, sigma))
+    logw <- dt(X, df, log = TRUE) - (dnorm(X, mu, sigma, log = TRUE) - lZ)
+
+    m    <- max(logw)
+    v    <- exp(logw - m)
+    Chat <- mean(v) * exp(m)
+    se   <- sd(v) / sqrt(S) * exp(m)
+    wn   <- v / sum(v)
+
+    list(X = X, wn = wn, Chat = Chat, se = se, ess = 1 / sum(wn^2),
+         truth = pt(c2, df) - pt(c1, df))
+}
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Importance Sampling of a Student-t Interval"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 3,
+            sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1),
+            sliderInput("c1", HTML("c<sub>1</sub>"), min = -5, max = 10, value = 1, step = 0.25),
+            sliderInput("c2", HTML("c<sub>2</sub>"), min = -5, max = 15, value = 3, step = 0.25),
+            checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE),
+            sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25),
+            sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25),
+            selectInput("S", "sample size  S",
+                        choices = c(200, 1000, 5000, 20000), selected = 1000),
+            actionButton("new", "New sample"),
+            checkboxInput("logw", "log scale for weights", FALSE)
+        ),
+        mainPanel(width = 9, plotOutput("panels", height = "680px"))
+    )
+)
+
+server <- function(input, output) {
+
+    sim <- reactive({
+        S  <- as.integer(input$S)
+        c1 <- input$c1
+        c2 <- if (input$c2inf) Inf else input$c2
+        validate(need(c2 > c1, "c2 must be greater than c1"))
+        mu <- input$mu; sg <- input$sg; df <- input$df
+
+        r <- is_t_interval(S, df, c1, c2, mu, sg, seed = input$new + 1)
+        c(r, list(S = S, c1 = c1, c2 = c2, mu = mu, sg = sg, df = df))
+    })
+
+    output$panels <- renderPlot({
+        s  <- sim()
+        c1 <- s$c1; c2 <- s$c2; X <- s$X
+        lo <- c1
+        hi <- if (is.finite(c2)) c2 else max(max(X) + 0.5, c1 + 5)
+        xs <- seq(lo, hi, length.out = 800)
+
+        ## both densities normalized on (c1, c2)
+        ft <- dt(xs, s$df) / s$truth
+        gt <- dnorm(xs, s$mu, s$sg) / (pnorm(c2, s$mu, s$sg) - pnorm(c1, s$mu, s$sg))
+        yl <- range(c(ft, gt)[c(ft, gt) > 0])
+        yl[1] <- max(yl[1], 1e-12)
+
+        lwr <- s$Chat - 1.96 * s$se
+        upr <- s$Chat + 1.96 * s$se
+        covered <- lwr <= s$truth && s$truth <= upr
+        ci_col  <- if (covered) "darkgreen" else "firebrick"
+
+        layout(matrix(1:2, 2), heights = c(3, 2))
+
+        ## ---- top panel: the two densities ----------------------------
+        par(mar = c(0.4, 5, 3, 1))
+        plot(xs, ft, type = "n", log = "y", ylim = yl, xlim = c(lo, hi),
+             xaxt = "n", xlab = "", ylab = "density (log scale)",
+             main = "target and proposal, both normalized on (c1, c2)")
+        if (!is.finite(c2)) {
+            rect(max(X), yl[1], hi, yl[2] * 10,
+                 col = adjustcolor("grey60", 0.18), border = NA)
+            text(max(X), yl[2], "  no draw ever reached here", adj = c(0, 1.4),
+                 col = "grey35", cex = 0.95)
+        }
+        lines(xs, ft, lwd = 4, col = "firebrick")
+        lines(xs, gt, lwd = 3, col = "steelblue")
+        rug(X, col = adjustcolor("steelblue", 0.25))
+        legend("bottomleft", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
+               lwd = c(4, 3, NA, NA, NA),
+               col = c("firebrick", "steelblue", NA, NA, NA),
+               text.col = c("black", "black", "black", "black", ci_col),
+               legend = c(
+                   sprintf("target: t(df=%g) on (c1, c2)", s$df),
+                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg),
+                   sprintf("true  P = %.5g", s$truth),
+                   sprintf("est.   P = %.5g", s$Chat),
+                   sprintf("95%% CI = (%.5g, %.5g)", lwr, upr)))
+
+        ## ---- bottom panel: normalized weights ------------------------
+        par(mar = c(4.5, 5, 0.4, 1))
+        wn <- s$wn
+        if (input$logw) {
+            wl <- c(max(min(wn[wn > 0]), 1e-12), max(wn))
+            plot(X, wn, type = "n", log = "y", ylim = wl, xlim = c(lo, hi),
+                 xlab = "x", ylab = "normalized weight (log scale)")
+            segments(X, wl[1], X, wn, col = adjustcolor("grey50", 0.6))
+        } else {
+            plot(X, wn, type = "n", ylim = c(0, max(wn) * 1.08),
+                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight")
+            segments(X, 0, X, wn, col = adjustcolor("grey50", 0.6))
+        }
+        abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
+        legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
+               lty = c(2, NA, NA), lwd = c(2, NA, NA),
+               col = c("darkgreen", NA, NA),
+               text.col = "blue",
+               legend = c("1 / S  (perfectly balanced weights)",
+                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
+                                  s$ess, 100 * s$ess / s$S, s$S),
+                          sprintf("largest weight = %.1f%% of the total",
+                                  100 * max(wn))))
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Shows how the choice of constants and proposal determines whether importance sampling of a Student-$t$ interval is reliable, by displaying the target, the proposal, and the importance weights. Sliders control $c_{1}$, $c_{2}$ (or $c_{2}=\infty$ via the checkbox), the target's degrees of freedom $\nu$, and the proposal's $\mu,\sigma$; the top panel compares the (normalized) target and proposal densities on a log scale, with the CI in the legend colored by whether it covers the truth, and the bottom panel shows the normalized importance weights at the sampled points.
+
+The app above puts $c_{1}$, $c_{2}$, $\mu$, $\sigma$ and the target's degrees
+of freedom $\nu$ under slider control (a checkbox sends $c_{2}$ to $\infty$),
+and displays, on a common $x$-axis: the two truncated densities on a log
+scale with a rug of the draws, and the normalized importance weights
+$\tilde w_{i}=w_{i}/\sum_{j}w_{j}$ at the sampled points. The legend reports
+the true $P(c_{1}<X<c_{2})$, the estimate, and its nominal 95% interval,
+colored green when the interval covers the truth and red when it does not.
+Leave $c_{2}$ finite and the estimator behaves; check the box and watch it
+misbehave exactly as the variance calculation predicts, while
+$S_{\text{eff}}$ in the bottom panel need not warn you either way.
+
+Several settings repay attention.
+
+- **$c_{2}$ finite (the default).** Target and proposal share the same
+  bounded support, so the weights have finite variance: raising $S$ improves
+  the estimate at the usual $1/\sqrt S$ rate, and the 95% interval covers
+  about as often as it claims to.
+- **Check "$c_{2}=\infty$".** This reproduces the divergent case derived
+  above. Raising $S$ no longer shrinks a variance that does not exist, and
+  repeated *New sample* draws swing far more than the reported standard error
+  admits. With large $\nu$ the run-away region is rarely reached, so the app
+  can still look fine by chance; with small $\nu$ (Cauchy, $\nu=1$) it bites
+  often — but $S_{\text{eff}}$ need not warn you either way.
+- **Small $\sigma$, or $\mu$ far outside $(c_{1},c_{2})$.** Draws pile up
+  wherever the proposal happens to put mass inside the interval, the weights
+  are nearly equal, $S_{\text{eff}}$ stays high, and the estimate can still
+  miss badly: uniform weights certify only that the proposal is internally
+  consistent, not that it matches the target's shape there.
+- **Large $\sigma$.** One draw's weight can dominate the sum,
+  $S_{\text{eff}}$ collapses toward $1$ — visibly unreliable, which is an
+  improvement on being invisibly unreliable.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+library(ars)
+
+## rtnorm_ars() and is_t_interval(): identical to the versions defined
+## earlier in the chapter (a {shinylive-r} chunk cannot see objects
+## defined elsewhere in the document, so they are pasted in verbatim).
+rtnorm_ars <- function(n, mu = 0, sigma = 1, lo = 0, hi = Inf) {
+    logf   <- function(x) dnorm(x, mu, sigma, log = TRUE)
+    fprima <- function(x) -(x - mu) / sigma^2
+    if (is.finite(hi)) {
+        x0 <- lo + (hi - lo) * c(0.1, 0.5, 0.9)
+    } else {
+        right <- max(mu, lo) + 3 * sigma
+        x0 <- sort(unique(c(lo + 0.1 * sigma, max(lo + 0.2 * sigma, mu + 1e-6), right)))
+    }
+    ars(n, f = logf, fprima = fprima, x = x0,
+        lb = TRUE, xlb = lo, ub = is.finite(hi), xub = if (is.finite(hi)) hi else 0)
+}
+
+is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
+    if (!is.null(seed)) set.seed(seed)
+    X <- rtnorm_ars(S, mu, sigma, c1, c2)
+
+    lZ   <- log(pnorm(c2, mu, sigma) - pnorm(c1, mu, sigma))
+    logw <- dt(X, df, log = TRUE) - (dnorm(X, mu, sigma, log = TRUE) - lZ)
+
+    m    <- max(logw)
+    v    <- exp(logw - m)
+    Chat <- mean(v) * exp(m)
+    se   <- sd(v) / sqrt(S) * exp(m)
+    wn   <- v / sum(v)
+
+    list(X = X, wn = wn, Chat = Chat, se = se, ess = 1 / sum(wn^2),
+         truth = pt(c2, df) - pt(c1, df))
+}
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Importance Sampling of a Student-t Interval"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 3,
+            sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1),
+            sliderInput("c1", HTML("c<sub>1</sub>"), min = -5, max = 10, value = 1, step = 0.25),
+            sliderInput("c2", HTML("c<sub>2</sub>"), min = -5, max = 15, value = 3, step = 0.25),
+            checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE),
+            sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25),
+            sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25),
+            selectInput("S", "sample size  S",
+                        choices = c(200, 1000, 5000, 20000), selected = 1000),
+            actionButton("new", "New sample"),
+            checkboxInput("logw", "log scale for weights", FALSE)
+        ),
+        mainPanel(width = 9, plotOutput("panels", height = "680px"))
+    )
+)
+
+server <- function(input, output) {
+
+    sim <- reactive({
+        S  <- as.integer(input$S)
+        c1 <- input$c1
+        c2 <- if (input$c2inf) Inf else input$c2
+        validate(need(c2 > c1, "c2 must be greater than c1"))
+        mu <- input$mu; sg <- input$sg; df <- input$df
+
+        r <- is_t_interval(S, df, c1, c2, mu, sg, seed = input$new + 1)
+        c(r, list(S = S, c1 = c1, c2 = c2, mu = mu, sg = sg, df = df))
+    })
+
+    output$panels <- renderPlot({
+        s  <- sim()
+        c1 <- s$c1; c2 <- s$c2; X <- s$X
+        lo <- c1
+        hi <- if (is.finite(c2)) c2 else max(max(X) + 0.5, c1 + 5)
+        xs <- seq(lo, hi, length.out = 800)
+
+        ## both densities normalized on (c1, c2)
+        ft <- dt(xs, s$df) / s$truth
+        gt <- dnorm(xs, s$mu, s$sg) / (pnorm(c2, s$mu, s$sg) - pnorm(c1, s$mu, s$sg))
+        yl <- range(c(ft, gt)[c(ft, gt) > 0])
+        yl[1] <- max(yl[1], 1e-12)
+
+        lwr <- s$Chat - 1.96 * s$se
+        upr <- s$Chat + 1.96 * s$se
+        covered <- lwr <= s$truth && s$truth <= upr
+        ci_col  <- if (covered) "darkgreen" else "firebrick"
+
+        layout(matrix(1:2, 2), heights = c(3, 2))
+
+        ## ---- top panel: the two densities ----------------------------
+        par(mar = c(0.4, 5, 3, 1))
+        plot(xs, ft, type = "n", log = "y", ylim = yl, xlim = c(lo, hi),
+             xaxt = "n", xlab = "", ylab = "density (log scale)",
+             main = "target and proposal, both normalized on (c1, c2)")
+        if (!is.finite(c2)) {
+            rect(max(X), yl[1], hi, yl[2] * 10,
+                 col = adjustcolor("grey60", 0.18), border = NA)
+            text(max(X), yl[2], "  no draw ever reached here", adj = c(0, 1.4),
+                 col = "grey35", cex = 0.95)
+        }
+        lines(xs, ft, lwd = 4, col = "firebrick")
+        lines(xs, gt, lwd = 3, col = "steelblue")
+        rug(X, col = adjustcolor("steelblue", 0.25))
+        legend("bottomleft", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
+               lwd = c(4, 3, NA, NA, NA),
+               col = c("firebrick", "steelblue", NA, NA, NA),
+               text.col = c("black", "black", "black", "black", ci_col),
+               legend = c(
+                   sprintf("target: t(df=%g) on (c1, c2)", s$df),
+                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg),
+                   sprintf("true  P = %.5g", s$truth),
+                   sprintf("est.   P = %.5g", s$Chat),
+                   sprintf("95%% CI = (%.5g, %.5g)", lwr, upr)))
+
+        ## ---- bottom panel: normalized weights ------------------------
+        par(mar = c(4.5, 5, 0.4, 1))
+        wn <- s$wn
+        if (input$logw) {
+            wl <- c(max(min(wn[wn > 0]), 1e-12), max(wn))
+            plot(X, wn, type = "n", log = "y", ylim = wl, xlim = c(lo, hi),
+                 xlab = "x", ylab = "normalized weight (log scale)")
+            segments(X, wl[1], X, wn, col = adjustcolor("grey50", 0.6))
+        } else {
+            plot(X, wn, type = "n", ylim = c(0, max(wn) * 1.08),
+                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight")
+            segments(X, 0, X, wn, col = adjustcolor("grey50", 0.6))
+        }
+        abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
+        legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
+               lty = c(2, NA, NA), lwd = c(2, NA, NA),
+               col = c("darkgreen", NA, NA),
+               text.col = "blue",
+               legend = c("1 / S  (perfectly balanced weights)",
+                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
+                                  s$ess, 100 * s$ess / s$S, s$S),
+                          sprintf("largest weight = %.1f%% of the total",
+                                  100 * max(wn))))
+    })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Importance Sampling](../chapters/unit11_importance_sampling.html#sec-t-is-app)* in the book.

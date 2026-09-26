@@ -298,9 +298,18 @@ def render_gallery(chapters_data):
     lines.append("")
     lines.append("## List of Shinylive Apps")
     lines.append("")
-    for title, figs, tbls, apps in chapters_data:
-        for sec_id, desc in apps:
-            lines.append(f"* @{sec_id} — {desc}")
+    if any(apps for _, _, _, apps in chapters_data):
+        for title, figs, tbls, apps in chapters_data:
+            for sec_id, desc in apps:
+                lines.append(f"* @{sec_id} — {desc}")
+    else:
+        # The apps no longer live in the chapters: they were moved out to a
+        # standalone archive, so there is nothing here to cross-reference.
+        lines.append("The book's interactive Shinylive apps are collected in a "
+                     "standalone archive: "
+                     "[Shinylive Apps](shinyliveapps_compstat/index.html). "
+                     "Each app runs in the browser and carries its R source and "
+                     "the notes that accompany it.")
     lines.append("")
 
     lines.append("## List of Figures")

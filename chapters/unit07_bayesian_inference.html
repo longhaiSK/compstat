@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-09-25">
+<meta name="dcterms.date" content="2026-09-26">
 
 <title>7&nbsp; Introduction to Bayesian Inference – Elements of Statistical Computation</title>
 <style>
@@ -83,11 +83,6 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/num_eq.js"></script>
 <script src="../site_libs/quarto-contrib/custombook-1.0.0/merge-toc.js"></script>
 <link href="../site_libs/quarto-contrib/custombook-1.0.0/bookstyles.css" rel="stylesheet">
-<meta name="shinylive:serviceworker_dir" content="..">
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/load-shinylive-sw.js" type="module"></script>
-<script src="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/run-python-blocks.js" type="module"></script>
-<link href="../site_libs/quarto-contrib/shinylive-0.10.12/shinylive/shinylive.css" rel="stylesheet">
-<link href="../site_libs/quarto-contrib/shinylive-quarto-css/shinylive-quarto.css" rel="stylesheet">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -353,7 +348,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">September 25, 2026</p>
+      <p class="date">September 26, 2026</p>
     </div>
   </div>
   
@@ -1059,189 +1054,7 @@ Figure&nbsp;7.6: Shows why the posterior predictive distribution is wider than a
 </section>
 <section id="sec-bayes-explorer" class="level2" data-number="7.6">
 <h2 data-number="7.6" class="anchored" data-anchor-id="sec-bayes-explorer"><span class="header-section-number">7.6</span> Shinylive App for Conjugate Bayesian Updating</h2>
-<p>This app runs live only in the HTML edition of this book; readers of other formats can follow the link below it.</p>
-<div id="fig-bayes-explorer-app" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-bayes-explorer-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<pre class="shinylive-r" data-engine="r"><code>#| '!! shinylive warning !!': |
-#|   shinylive does not work in self-contained HTML documents.
-#|   Please set `embed-resources: false` in your metadata.
-#| label: bayes-explorer-app
-#| standalone: true
-#| viewerHeight: 860
-
-library(shiny)
-
-ui &lt;- fluidPage(
-  titlePanel("Shinylive App for Conjugate Bayesian Updating"),
-  sidebarLayout(
-    sidebarPanel(
-      width = 4,
-      selectInput("model", "Model",
-                  choices = c("Bernoulli - Beta" = "bb", "Poisson - Gamma" = "pg",
-                              "Normal (known sigma) - Normal" = "nn")),
-      conditionalPanel(
-        "input.model == 'bb'",
-        numericInput("a1", "prior alpha1 (successes)", value = 1, min = 0.1, step = 0.5),
-        numericInput("a0", "prior alpha0 (failures)", value = 1, min = 0.1, step = 0.5),
-        numericInput("n_bb", "n (trials)", value = 10, min = 1, step = 1),
-        numericInput("y_bb", "y (successes observed)", value = 7, min = 0, step = 1)
-      ),
-      conditionalPanel(
-        "input.model == 'pg'",
-        numericInput("alpha", "prior alpha (shape)", value = 2, min = 0.1, step = 0.5),
-        numericInput("beta", "prior beta (rate)", value = 1, min = 0.1, step = 0.5),
-        numericInput("n_pg", "n (observations)", value = 8, min = 1, step = 1),
-        numericInput("S_pg", "sum of counts", value = 29, min = 0, step = 1)
-      ),
-      conditionalPanel(
-        "input.model == 'nn'",
-        numericInput("mu0", "prior mu0 (mean)", value = 0, step = 0.5),
-        numericInput("kappa0", "prior kappa0 (pseudo-sample-size)", value = 1, min = 0.1, step = 0.5),
-        numericInput("sigma_nn", "sigma (known)", value = 2, min = 0.1, step = 0.5),
-        numericInput("n_nn", "n (observations)", value = 15, min = 1, step = 1),
-        numericInput("ybar_nn", "sample mean y-bar", value = 3, step = 0.5)
-      ),
-      helpText("Dashed = prior, solid = posterior. The dotted vertical line ",
-               "is the MLE (y/n for Bernoulli, S/n for Poisson, y-bar for Normal). ",
-               "*Log marginal likelihood is exact for Bernoulli; for Poisson ",
-               "and Normal it is shown up to an additive constant that ",
-               "depends only on the individual data points (not part of the ",
-               "summary inputs here) and cancels when comparing priors for ",
-               "the same data.")
-    ),
-    mainPanel(
-      width = 8,
-      plotOutput("densplot", height = "380px"),
-      tableOutput("summtab")
-    )
-  )
-)
-
-server &lt;- function(input, output, session) {
-
-  output$densplot &lt;- renderPlot({
-    par(mar = c(4, 4, 2, 1))
-    if (input$model == "bb") {
-      a1 &lt;- input$a1; a0 &lt;- input$a0; n &lt;- input$n_bb; y &lt;- input$y_bb
-      post_a1 &lt;- a1 + y; post_a0 &lt;- a0 + (n - y)
-      xs &lt;- seq(0, 1, length.out = 500)
-      ylim &lt;- c(0, max(dbeta(xs, a1, a0), dbeta(xs, post_a1, post_a0)) * 1.1)
-      curve(dbeta(x, a1, a0), 0, 1, lwd = 2, lty = 2, col = "gray40",
-            xlab = expression(theta), ylab = "density", ylim = ylim)
-      curve(dbeta(x, post_a1, post_a0), add = TRUE, lwd = 3, col = "steelblue")
-      abline(v = y / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "steelblue"),
-             legend = c("prior", "posterior"))
-    } else if (input$model == "pg") {
-      alpha &lt;- input$alpha; beta &lt;- input$beta; n &lt;- input$n_pg; S &lt;- input$S_pg
-      post_alpha &lt;- alpha + S; post_beta &lt;- beta + n
-      hi &lt;- max(qgamma(0.999, alpha, beta), qgamma(0.999, post_alpha, post_beta))
-      xs &lt;- seq(0, hi, length.out = 500)
-      ylim &lt;- c(0, max(dgamma(xs, alpha, beta), dgamma(xs, post_alpha, post_beta)) * 1.1)
-      curve(dgamma(x, alpha, beta), 0, hi, lwd = 2, lty = 2, col = "gray40",
-            xlab = expression(lambda), ylab = "density", ylim = ylim)
-      curve(dgamma(x, post_alpha, post_beta), add = TRUE, lwd = 3, col = "firebrick")
-      abline(v = S / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "firebrick"),
-             legend = c("prior", "posterior"))
-    } else {
-      mu0 &lt;- input$mu0; kappa0 &lt;- input$kappa0; sigma &lt;- input$sigma_nn
-      n &lt;- input$n_nn; ybar &lt;- input$ybar_nn
-      post_kappa &lt;- kappa0 + n
-      post_mu &lt;- (kappa0 * mu0 + n * ybar) / post_kappa
-      post_sd &lt;- sigma / sqrt(post_kappa)
-      prior_sd &lt;- sigma / sqrt(kappa0)
-      lo &lt;- min(mu0 - 3 * prior_sd, post_mu - 3 * post_sd)
-      hi &lt;- max(mu0 + 3 * prior_sd, post_mu + 3 * post_sd)
-      xs &lt;- seq(lo, hi, length.out = 500)
-      ylim &lt;- c(0, max(dnorm(xs, mu0, prior_sd), dnorm(xs, post_mu, post_sd)) * 1.1)
-      curve(dnorm(x, mu0, prior_sd), lo, hi, lwd = 2, lty = 2, col = "gray40",
-            xlab = expression(mu), ylab = "density", ylim = ylim)
-      curve(dnorm(x, post_mu, post_sd), add = TRUE, lwd = 3, col = "darkorchid")
-      abline(v = ybar, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "darkorchid"),
-             legend = c("prior", "posterior"))
-    }
-  })
-
-  output$summtab &lt;- renderTable({
-    if (input$model == "bb") {
-      a1 &lt;- input$a1; a0 &lt;- input$a0; n &lt;- input$n_bb; y &lt;- input$y_bb
-      post_a1 &lt;- a1 + y; post_a0 &lt;- a0 + (n - y)
-      logmarg    &lt;- lbeta(post_a1, post_a0) - lbeta(a1, a0)         # exact
-      pred_mean  &lt;- post_a1 / (post_a1 + post_a0)
-      pred_sd    &lt;- sqrt(pred_mean * (1 - pred_mean))
-      data.frame(
-        quantity = c("prior mean", "MLE (y/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
-        value = c(sprintf("%.3f", a1 / (a1 + a0)),
-                  sprintf("%.3f", y / n),
-                  sprintf("%.3f", logmarg),
-                  sprintf("Beta(%.2f, %.2f)", post_a1, post_a0),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))),
-                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0)),
-                  sprintf("Bernoulli(%.3f)", pred_mean),
-                  sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
-    } else if (input$model == "pg") {
-      alpha &lt;- input$alpha; beta &lt;- input$beta; n &lt;- input$n_pg; S &lt;- input$S_pg
-      post_alpha &lt;- alpha + S; post_beta &lt;- beta + n
-      logmarg   &lt;- alpha * log(beta) - lgamma(alpha) + lgamma(post_alpha) -
-        post_alpha * log(post_beta)                                 # up to -sum(log(y_i!))
-      nb_prob   &lt;- post_beta / (post_beta + 1)
-      pred_mean &lt;- post_alpha / post_beta
-      pred_sd   &lt;- sqrt(pred_mean * (1 + 1 / post_beta))
-      data.frame(
-        quantity = c("prior mean", "MLE (S/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
-        value = c(sprintf("%.3f", alpha / beta),
-                  sprintf("%.3f", S / n),
-                  sprintf("%.3f", logmarg),
-                  sprintf("Gamma(%.2f, %.2f)", post_alpha, post_beta),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_alpha) / post_beta),
-                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta)),
-                  sprintf("NegBin(%.2f, %.3f)", post_alpha, nb_prob),
-                  sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
-    } else {
-      mu0 &lt;- input$mu0; kappa0 &lt;- input$kappa0; sigma &lt;- input$sigma_nn
-      n &lt;- input$n_nn; ybar &lt;- input$ybar_nn
-      post_kappa &lt;- kappa0 + n
-      post_mu &lt;- (kappa0 * mu0 + n * ybar) / post_kappa
-      post_sd &lt;- sigma / sqrt(post_kappa)
-      logmarg &lt;- -n / 2 * log(2 * pi * sigma^2) + 0.5 * log(kappa0 / post_kappa) -
-        kappa0 * n * (mu0 - ybar)^2 / (2 * sigma^2 * post_kappa)     # up to -SS/(2 sigma^2)
-      pred_sd &lt;- sqrt(post_sd^2 + sigma^2)
-      data.frame(
-        quantity = c("prior mean", "MLE (y-bar)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
-        value = c(sprintf("%.3f", mu0),
-                  sprintf("%.3f", ybar),
-                  sprintf("%.3f", logmarg),
-                  sprintf("N(%.3f, %.3f^2)", post_mu, post_sd),
-                  sprintf("%.3f", post_mu),
-                  sprintf("%.3f", post_sd),
-                  sprintf("(%.3f, %.3f)", qnorm(0.025, post_mu, post_sd), qnorm(0.975, post_mu, post_sd)),
-                  sprintf("N(%.3f, %.3f^2)", post_mu, pred_sd),
-                  sprintf("%.3f", post_mu), sprintf("%.3f", pred_sd)))
-    }
-  }, colnames = FALSE, striped = TRUE)
-}
-
-shinyApp(ui, server)</code></pre>
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-bayes-explorer-app-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;7.7: <strong>Shinylive App Illustrating Conjugate Bayesian Updating.</strong> Lets you explore conjugate Bayesian updating, to see how the prior, the data, and the sample size combine into the posterior. The app below lets you adjust the prior, sample size, and observed data for any of the three conjugate models and watch prior and posterior move together, along with the posterior summary table computed above.
-</figcaption>
-</figure>
-</div>
+<p>There is a <a href="../shinyliveapps_compstat/app_bayes-explorer.html">shinylive app</a> to let you explore conjugate Bayesian updating, to see how the prior, the data, and the sample size combine into the posterior.</p>
 </section>
 <section id="where-computation-enters" class="level2" data-number="7.7">
 <h2 data-number="7.7" class="anchored" data-anchor-id="where-computation-enters"><span class="header-section-number">7.7</span> Where Computation Enters</h2>

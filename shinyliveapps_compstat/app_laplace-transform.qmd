@@ -1,0 +1,200 @@
+---
+engine: markdown
+title: "Adaptive Gauss–Hermite Quadrature"
+subtitle: "Laplace Approximation"
+---
+
+<!-- Moved out of chapters/unit09_laplace.qmd on 2026-09-26 by gen_shinyapps.py, which
+     also lifted the "About the app" notes from that section. The app no
+     longer exists in the book, so THIS FILE IS NOW ITS ONLY COPY --
+     edit it here, and re-render with: quarto render shinyliveapps_compstat -->
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 760
+library(shiny)
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Adaptive Gauss–Hermite Quadrature"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu_hat (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is a midpoint rule, uniform in u = Phi((mu - ",
+                     "mode_L)/se_L), where mode_L and se_L come from the ",
+                     "Laplace approximation recomputed for the current ",
+                     "mu_hat. Try mu_hat = 8 or 20 (values that broke the ",
+                     "plain logistic grid in the earlier app) and watch the ",
+                     "quadrature estimate stay close to the true value.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    output$squeeze <- renderPlot({
+        n_eff <- 3; sigma_prior <- 5
+        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior <- function(mu) dnorm(mu, 0, sigma_prior)
+        z     <- function(mu) L(mu) * prior(mu)
+
+        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### true value, exactly as in the Unit08 / earlier Unit09 apps
+        log_marlik <- log(integrate(z, -Inf, Inf)$value)
+
+        ### Laplace approximation for THIS mu_hat: mode and se define the transform
+        h_neg <- function(mu) -(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                                   dnorm(mu, 0, sigma_prior, log = TRUE))
+        op       <- nlm(h_neg, p = input$mu_hat, hessian = TRUE)
+        lap_mode <- op$estimate
+        lap_se   <- 1 / sqrt(op$hessian[1, 1])
+
+        lo <- min(-8, input$mu_hat - 6)
+        hi <- max(14, input$mu_hat + 6)
+        mu_grid <- seq(lo, hi, length.out = 500)
+
+        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
+        mu_pts <- qnorm(u_pts, lap_mode, lap_se)                # mu = Laplace-CDF^{-1}(u)
+
+        ### quadrature estimate built from this Laplace-shaped grid
+        log_z           <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        h_step          <- 1 / input$n_pts
+        log_jac         <- dnorm(mu_pts, lap_mode, lap_se, log = TRUE)   # log du/dmu
+        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log_jac) + log(h_step)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, pnorm(mu_grid, lap_mode, lap_se), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == Phi((mu - hat(mu)[L]) / s[L])), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col <- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Shows how centring and scaling the quadrature grid with the Laplace approximation lets a few grid points capture the posterior wherever it sits. Because $u_i$ is uniform in *Laplace-normalized* space, the grid automatically concentrates where the true posterior mass lives.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for Adaptive Gauss–Hermite Quadrature"),
+    sidebarLayout(
+        sidebarPanel(
+            width = 4,
+            numericInput("mu_hat", "mu_hat (data location)", value = 8, step = 1),
+            sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                        min = 2, max = 25, value = 9, step = 1),
+            helpText("The grid is a midpoint rule, uniform in u = Phi((mu - ",
+                     "mode_L)/se_L), where mode_L and se_L come from the ",
+                     "Laplace approximation recomputed for the current ",
+                     "mu_hat. Try mu_hat = 8 or 20 (values that broke the ",
+                     "plain logistic grid in the earlier app) and watch the ",
+                     "quadrature estimate stay close to the true value.")
+        ),
+        mainPanel(
+            width = 8,
+            plotOutput("squeeze", height = "560px")
+        )
+    )
+)
+
+server <- function(input, output, session) {
+
+    output$squeeze <- renderPlot({
+        n_eff <- 3; sigma_prior <- 5
+        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
+        prior <- function(mu) dnorm(mu, 0, sigma_prior)
+        z     <- function(mu) L(mu) * prior(mu)
+
+        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+        ### true value, exactly as in the Unit08 / earlier Unit09 apps
+        log_marlik <- log(integrate(z, -Inf, Inf)$value)
+
+        ### Laplace approximation for THIS mu_hat: mode and se define the transform
+        h_neg <- function(mu) -(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+                                   dnorm(mu, 0, sigma_prior, log = TRUE))
+        op       <- nlm(h_neg, p = input$mu_hat, hessian = TRUE)
+        lap_mode <- op$estimate
+        lap_se   <- 1 / sqrt(op$hessian[1, 1])
+
+        lo <- min(-8, input$mu_hat - 6)
+        hi <- max(14, input$mu_hat + 6)
+        mu_grid <- seq(lo, hi, length.out = 500)
+
+        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
+        mu_pts <- qnorm(u_pts, lap_mode, lap_se)                # mu = Laplace-CDF^{-1}(u)
+
+        ### quadrature estimate built from this Laplace-shaped grid
+        log_z           <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        h_step          <- 1 / input$n_pts
+        log_jac         <- dnorm(mu_pts, lap_mode, lap_se, log = TRUE)   # log du/dmu
+        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log_jac) + log(h_step)
+
+        par(mar = c(4, 4, 2, 4))
+        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+             xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
+        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+                col = adjustcolor("firebrick", 0.15), border = NA)
+        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+
+        par(new = TRUE)
+        plot(mu_grid, pnorm(mu_grid, lap_mode, lap_se), type = "l", lwd = 3, col = "steelblue",
+             axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
+        axis(4, col.axis = "steelblue", col.ticks = "steelblue")
+        mtext(expression(u == Phi((mu - hat(mu)[L]) / s[L])), side = 4, line = 2.5, col = "steelblue")
+
+        guide_col <- adjustcolor("gray50", 0.6)
+        segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
+        segments(mu_pts, u_pts, max(mu_grid), u_pts, col = guide_col, lty = 3)
+        points(mu_pts, u_pts, pch = 19, col = "gray30")
+
+        legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
+               legend = c(expression(z(mu) == pi(mu) * L(mu)),
+                          expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
+                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
+    })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Laplace Approximation](../chapters/unit09_laplace.html#sec-laplace-transform-app)* in the book.
