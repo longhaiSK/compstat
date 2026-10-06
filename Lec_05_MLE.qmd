@@ -402,6 +402,54 @@ for (k in 1:4) {
 
 Each bar is the bracket at one iteration; the dot is its midpoint, mapped onto $g$ to decide which half survives. The bracket halves every step regardless of the shape of $g$ — no faster near the root than far from it.
 
+## Golden Section Search
+
+Works on $\mathcal{L}(\theta) = -\ell(\theta)$ directly, **without any derivative**: keep a bracket $[a, b]$ containing the minimum of a unimodal $\mathcal{L}$ and two interior points $a' < b'$ placed at the golden ratio ($\phi \approx 0.618$).
+
+- If $\mathcal{L}(a') < \mathcal{L}(b')$ the minimum is in $[a, b']$; otherwise in $[a', b]$.
+- The golden placement lets the surviving interior point be **reused**, so each step costs one new evaluation and shrinks the bracket by $0.618$.
+
+```{r}
+#| label: golden
+golden <- function(f, a, b, tol = 1e-8) {
+  phi <- (sqrt(5) - 1) / 2; k <- 0
+  x1 <- b - phi * (b - a); x2 <- a + phi * (b - a); f1 <- f(x1); f2 <- f(x2)
+  while (b - a > tol) {
+    if (f1 < f2) { b <- x2; x2 <- x1; f2 <- f1; x1 <- b - phi * (b - a); f1 <- f(x1) }
+    else         { a <- x1; x1 <- x2; f1 <- f2; x2 <- a + phi * (b - a); f2 <- f(x2) }
+    k <- k + 1 }
+  c(root = (a + b) / 2, iter = k)
+}
+golden(nll, 0.1, 10)                     # R equivalent: optimize(nll, c(0.1, 10))
+```
+
+## Golden Section, Visualized
+
+```{r}
+#| label: golden-plot
+#| fig-width: 8
+#| fig-height: 4
+fv <- nll(lam); yr <- range(fv); pad <- 0.3 * diff(yr)
+plot(lam, fv, type = "l", lwd = 2, ylim = c(yr[1], yr[2] + pad),
+     xlab = TeX("$\\lambda$"), ylab = TeX("$L(\\lambda)$"))
+points(lhat, nll(lhat), pch = 19, cex = 1.3)
+
+gr <- (3 - sqrt(5)) / 2; xl <- 0.5; xu <- 3.6
+ylev <- seq(yr[2] + 0.08 * pad, yr[2] + 0.95 * pad, length.out = 3)
+for (k in 1:3) {
+  xml <- xl + gr * (xu - xl); xmu <- xu - gr * (xu - xl)
+  segments(xl, ylev[k], xu, ylev[k], col = 4, lwd = 3)
+  points(c(xl, xu), rep(ylev[k], 2), pch = "|", col = 4)
+  keep_lower <- nll(xml) < nll(xmu)
+  points(xml, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 4 else 2)
+  points(xmu, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 2 else 4)
+  if (keep_lower) xu <- xmu else xl <- xml
+}
+```
+
+The point that survives (blue) is already correctly placed for the next iteration, so only the red point costs a fresh evaluation.
+
+
 ## Newton–Raphson: Derivation
 
 Approximate the gradient by its tangent line at the current point $\theta_k$ and solve for where the tangent hits zero:
@@ -636,54 +684,6 @@ c(newton_step = l_nr, scoring_step = l_fs)
 ```
 
 The two lines pass through the same point with different slopes. Newton uses the actual slope $g'(\lambda_0)$, which is nearly flat here and throws the iterate out of the parameter space; scoring uses $nI(\lambda_0)$, an average over hypothetical data, which stays steeply positive and keeps every iterate positive. The slopes agree as $\lambda_k \to \hat\lambda$, so the two methods finish at the same speed.
-
-## Golden Section Search
-
-Works on $\mathcal{L}(\theta) = -\ell(\theta)$ directly, **without any derivative**: keep a bracket $[a, b]$ containing the minimum of a unimodal $\mathcal{L}$ and two interior points $a' < b'$ placed at the golden ratio ($\phi \approx 0.618$).
-
-- If $\mathcal{L}(a') < \mathcal{L}(b')$ the minimum is in $[a, b']$; otherwise in $[a', b]$.
-- The golden placement lets the surviving interior point be **reused**, so each step costs one new evaluation and shrinks the bracket by $0.618$.
-
-```{r}
-#| label: golden
-golden <- function(f, a, b, tol = 1e-8) {
-  phi <- (sqrt(5) - 1) / 2; k <- 0
-  x1 <- b - phi * (b - a); x2 <- a + phi * (b - a); f1 <- f(x1); f2 <- f(x2)
-  while (b - a > tol) {
-    if (f1 < f2) { b <- x2; x2 <- x1; f2 <- f1; x1 <- b - phi * (b - a); f1 <- f(x1) }
-    else         { a <- x1; x1 <- x2; f1 <- f2; x2 <- a + phi * (b - a); f2 <- f(x2) }
-    k <- k + 1 }
-  c(root = (a + b) / 2, iter = k)
-}
-golden(nll, 0.1, 10)                     # R equivalent: optimize(nll, c(0.1, 10))
-```
-
-## Golden Section, Visualized
-
-```{r}
-#| label: golden-plot
-#| fig-width: 8
-#| fig-height: 4
-fv <- nll(lam); yr <- range(fv); pad <- 0.3 * diff(yr)
-plot(lam, fv, type = "l", lwd = 2, ylim = c(yr[1], yr[2] + pad),
-     xlab = TeX("$\\lambda$"), ylab = TeX("$L(\\lambda)$"))
-points(lhat, nll(lhat), pch = 19, cex = 1.3)
-
-gr <- (3 - sqrt(5)) / 2; xl <- 0.5; xu <- 3.6
-ylev <- seq(yr[2] + 0.08 * pad, yr[2] + 0.95 * pad, length.out = 3)
-for (k in 1:3) {
-  xml <- xl + gr * (xu - xl); xmu <- xu - gr * (xu - xl)
-  segments(xl, ylev[k], xu, ylev[k], col = 4, lwd = 3)
-  points(c(xl, xu), rep(ylev[k], 2), pch = "|", col = 4)
-  keep_lower <- nll(xml) < nll(xmu)
-  points(xml, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 4 else 2)
-  points(xmu, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 2 else 4)
-  if (keep_lower) xu <- xmu else xl <- xml
-}
-```
-
-The point that survives (blue) is already correctly placed for the next iteration, so only the red point costs a fresh evaluation.
-
 
 ## Standard Error from the Curvature
 
@@ -1083,59 +1083,6 @@ sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hes
 
 `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for gradient-only methods.
 
-# Nelder–Mead (Simplex Method)
-
-## Overview
-
-Maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values:
-
-1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
-
-2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
-3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
-
-```{r}
-rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
-nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
-```
-
-Robust and derivative-free (R's `optim` default), but slow in high dimensions and offers no standard errors.
-
-## Nelder–Mead: The Simplex Moves {.smaller}
-
-Golden section needs a bracket, which exists only in one dimension. Nelder–Mead generalizes the idea: keep $d+1$ points (a **simplex**) in $\mathbb{R}^d$ and replace the worst one at each iteration, using **function values only** — no derivative, no bracket.
-
-Order the vertices $f(v_1) \le \cdots \le f(v_{d+1})$, let $c$ be the centroid of all but the worst, and try in turn
-$$
-x_r = c + \alpha(c - v_{d+1}), \quad
-x_e = c + \gamma(x_r - c), \quad
-x_c = c + \rho(v_{d+1} - c),
-$$
-with the R defaults $\alpha = 1$, $\gamma = 2$, $\rho = \sigma = 1/2$. If even $x_c$ fails, **shrink** every vertex halfway toward $v_1$.
-
-```{r}
-#| label: nm-moves
-#| echo: false
-#| fig-width: 7
-#| fig-height: 3.6
-par(mar = c(0, 0, 0, 0))
-B <- c(0.2, 0.3); G <- c(2.2, 0.6); W <- c(1.0, 2.0)
-cen <- (B + G) / 2
-xr <- cen + (cen - W); xe <- cen + 2 * (xr - cen); xc <- cen + 0.5 * (W - cen)
-plot(NA, xlim = c(-0.4, 2.7), ylim = c(-2.9, 2.3), axes = FALSE, ann = FALSE, asp = 1)
-polygon(rbind(B, G, W), lwd = 2, border = "grey30")
-segments(W[1], W[2], xe[1], xe[2], lty = 3, col = "grey50")
-points(rbind(B, G, W), pch = 19)
-points(rbind(xr, xe, xc), pch = 19, col = c(2, 4, "orange3"))
-points(cen[1], cen[2], pch = 4, lwd = 2)
-text(B[1], B[2], TeX("$v_1$"), pos = 2); text(G[1], G[2], TeX("$v_2$"), pos = 4)
-text(W[1], W[2], TeX("$v_3$ (worst)"), pos = 3); text(cen[1], cen[2], TeX("$c$"), pos = 4)
-text(xr[1], xr[2], TeX("$x_r$ reflect"), pos = 4, col = 2)
-text(xe[1], xe[2], TeX("$x_e$ expand"), pos = 4, col = 4)
-text(xc[1], xc[2], TeX("$x_c$ contract"), pos = 2, col = "orange3")
-```
-
-
 # Stochastic Gradient Descent
 
 ## Motivation: Large $n$
@@ -1269,6 +1216,59 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
 - Newton–Raphson needed `r fit$iter` full-data passes; SGD made `r nrow(sg$path) - 1` cheap updates over 5 epochs and lands near the MLE with residual noise.
 
 - Per data pass, Newton–Raphson is far more efficient here ($n = 500$, $p = 3$); SGD earns its keep when one full gradient — or the $O(p^3)$ Hessian solve — is prohibitively expensive.
+
+# Nelder–Mead (Simplex Method)
+
+## Overview
+
+Maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values:
+
+1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
+
+2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
+3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
+
+```{r}
+rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
+nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
+```
+
+Robust and derivative-free (R's `optim` default), but slow in high dimensions and offers no standard errors.
+
+## Nelder–Mead: The Simplex Moves {.smaller}
+
+Golden section needs a bracket, which exists only in one dimension. Nelder–Mead generalizes the idea: keep $d+1$ points (a **simplex**) in $\mathbb{R}^d$ and replace the worst one at each iteration, using **function values only** — no derivative, no bracket.
+
+Order the vertices $f(v_1) \le \cdots \le f(v_{d+1})$, let $c$ be the centroid of all but the worst, and try in turn
+$$
+x_r = c + \alpha(c - v_{d+1}), \quad
+x_e = c + \gamma(x_r - c), \quad
+x_c = c + \rho(v_{d+1} - c),
+$$
+with the R defaults $\alpha = 1$, $\gamma = 2$, $\rho = \sigma = 1/2$. If even $x_c$ fails, **shrink** every vertex halfway toward $v_1$.
+
+```{r}
+#| label: nm-moves
+#| echo: false
+#| fig-width: 7
+#| fig-height: 3.6
+par(mar = c(0, 0, 0, 0))
+B <- c(0.2, 0.3); G <- c(2.2, 0.6); W <- c(1.0, 2.0)
+cen <- (B + G) / 2
+xr <- cen + (cen - W); xe <- cen + 2 * (xr - cen); xc <- cen + 0.5 * (W - cen)
+plot(NA, xlim = c(-0.4, 2.7), ylim = c(-2.9, 2.3), axes = FALSE, ann = FALSE, asp = 1)
+polygon(rbind(B, G, W), lwd = 2, border = "grey30")
+segments(W[1], W[2], xe[1], xe[2], lty = 3, col = "grey50")
+points(rbind(B, G, W), pch = 19)
+points(rbind(xr, xe, xc), pch = 19, col = c(2, 4, "orange3"))
+points(cen[1], cen[2], pch = 4, lwd = 2)
+text(B[1], B[2], TeX("$v_1$"), pos = 2); text(G[1], G[2], TeX("$v_2$"), pos = 4)
+text(W[1], W[2], TeX("$v_3$ (worst)"), pos = 3); text(cen[1], cen[2], TeX("$c$"), pos = 4)
+text(xr[1], xr[2], TeX("$x_r$ reflect"), pos = 4, col = 2)
+text(xe[1], xe[2], TeX("$x_e$ expand"), pos = 4, col = 4)
+text(xc[1], xc[2], TeX("$x_c$ contract"), pos = 2, col = "orange3")
+```
+
 
 ## Summary {.smaller}
 
