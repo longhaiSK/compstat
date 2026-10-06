@@ -18,8 +18,8 @@ and solving for its minimum (Newton–Raphson), and using the curvature of that
 quadratic to report a standard error. The multivariate case, where neither plotting nor
 bracketing is available, shows what survives of that idea and what has to be
 added — safeguards against divergence, and a wider menu of derivative-free and
-gradient-only methods (Nelder–Mead, gradient descent, conjugate gradient,
-BFGS, and stochastic gradient descent) for when the Hessian is unavailable or
+gradient-only methods (gradient descent, conjugate gradient,
+BFGS, stochastic gradient descent, and Nelder–Mead) for when the Hessian is unavailable or
 too expensive. Several of these methods are illustrated below with live,
 in-browser animations that let you change the objective function, the
 starting point, and the algorithm before watching the iterates respond.
@@ -486,6 +486,84 @@ for (k in 1:4) {
 
 The bracket halves at every step, so after $k$ iterations the error is at most $(b - a)/2^{k}$ and the iteration count is known in advance: about $\log_2\{(b-a)/\text{tol}\}$, regardless of the shape of $g$. Bisection cannot diverge, which makes it the natural fallback when a faster method misbehaves. R's `uniroot` uses Brent's method, which retains the bracketing guarantee while interpolating for speed.
 
+### Golden Section Search
+
+Golden section minimizes $\mathcal{L}$ directly, using **no derivative at all**, which makes it the method of choice when $\ell$ is not differentiable or its derivative is unreliable. Keep a bracket $[x_l, x_u]$ containing the minimum of a unimodal $\mathcal{L}$, with two interior points placed at the golden fraction $\kappa = (3 - \sqrt5)/2 \approx 0.382$ of the way in from each end. Comparing the two interior values discards one end, and the ratio is chosen precisely so that the surviving interior point is correctly positioned for the next iteration: one new evaluation per step, with the bracket shrinking by the factor $0.618$.
+
+```{r}
+#| label: golden
+golden <- function(f, brack.int, eps = 1e-4, ...) {
+  kap <- (3 - sqrt(5)) / 2
+  xl <- min(brack.int); xu <- max(brack.int)
+  tmp <- kap * (xu - xl)
+  xmu <- xu - tmp; xml <- xl + tmp
+  fl <- f(xml, ...); fu <- f(xmu, ...)
+  while (abs(xu - xl) > (1e-5 + abs(xl)) * eps) {
+    if (fl < fu) {
+      xu <- xmu; xmu <- xml; fu <- fl
+      xml <- xl + kap * (xu - xl); fl <- f(xml, ...)
+    } else {
+      xl <- xml; xml <- xmu; fl <- fu
+      xmu <- xu - kap * (xu - xl); fu <- f(xmu, ...)
+    }
+  }
+  if (fl < fu) xml else xmu
+}
+```
+
+The schematic makes the reuse visible. Each bar is the current bracket with its two interior points; the point that survives into the next iteration is drawn in blue and sits at exactly the right position there, so only the red point has to be evaluated afresh.
+
+```{r}
+#| label: fig-scheme-golden
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Illustrates golden section search, a derivative-free method for optimizing a one-dimensional function, and why it needs only one new function evaluation per step.
+#|   Golden section search: the interior point that survives (blue) is already correctly positioned for the next iteration, so only one new point (red) is evaluated per step."
+kap <- (3 - sqrt(5)) / 2
+
+par(mar = c(4, 4.5, 2.5, 1))
+plot(lam, nll(lam), type = "l", lwd = 2, ylim = c(0.30, 1.30), xlim = c(0.12, 3),
+     xlab = TeX(r"($\lambda$)"), ylab = TeX(r"($L(\lambda)$)"),
+     main = TeX(r"(golden section: one new evaluation per step)"))
+points(lhat, nll(lhat), pch = 19, cex = 1.2)
+
+xl <- 0.3; xu <- 3
+ylev <- seq(0.42, 0.34, length.out = 3)
+for (k in 1:3) {
+  xml <- xl + kap * (xu - xl); xmu <- xu - kap * (xu - xl)
+  segments(xl, ylev[k], xu, ylev[k], col = 4, lwd = 3)
+  points(c(xl, xu), rep(ylev[k], 2), pch = "|", col = 4)
+  keep_lower <- nll(xml) < nll(xmu)
+  points(xml, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 4 else 2)
+  points(xmu, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 2 else 4)
+  text(0.19, ylev[k], k, cex = 0.8, col = 4)
+  if (keep_lower) xu <- xmu else xl <- xml
+}
+```
+
+The first test is the negative log-likelihood of the classical genetic linkage model, with cell counts $(1997, 906, 904, 32)$ and probabilities $\left((2+\theta)/4, (1-\theta)/4, (1-\theta)/4, \theta/4\right)$; it is smooth, so any method would work. The second, $f(x) = |x - 10|$, is not differentiable at its minimum, so no root-finder applies — golden section handles it without modification.
+
+```{r}
+#| label: fig-golden-tests
+#| fig-width: 10
+#| fig-height: 4.5
+#| fig-cap: "Tests golden section search on a smooth likelihood and on a non-differentiable function to show that the method needs no derivatives.
+#|   Golden section search applied to a smooth genetic-linkage log-likelihood (left) and to a non-differentiable function $|x-10|$ (right), with the located minimizer marked in red."
+f1 <- function(theta) -1997 * log(2 + theta) - 1810 * log(1 - theta) - 32 * log(theta)
+f2 <- function(x) abs(x - 10)
+
+par(mfrow = c(1, 2), mar = c(4, 4.5, 2.5, 1))
+curve(f1, 0.001, 0.999, n = 400, lwd = 2, xlab = TeX(r"($\theta$)"), ylab = TeX(r"($L(\theta)$)"),
+      main = TeX(r"(genetic linkage model)"))
+abline(v = golden(f1, c(0.001, 0.999)), col = 2, lty = 2, lwd = 2)
+
+curve(f2, 0, 20, n = 400, lwd = 2, xlab = TeX(r"($x$)"), ylab = TeX(r"($|x - 10|$)"),
+      main = TeX(r"(not differentiable at the minimum)"))
+abline(v = golden(f2, c(0, 20)), col = 2, lty = 2, lwd = 2)
+
+c(linkage = golden(f1, c(0.001, 0.999)), abs_value = golden(f2, c(0, 20)))
+```
+
 ### Newton–Raphson
 
 #### Derivation
@@ -732,84 +810,6 @@ safe_newton <- function(f, d1, d2, x0, lower = -Inf, upper = Inf,
   }
   stop("not converged")
 }
-```
-
-### Golden Section Search
-
-Golden section minimizes $\mathcal{L}$ directly, using **no derivative at all**, which makes it the method of choice when $\ell$ is not differentiable or its derivative is unreliable. Keep a bracket $[x_l, x_u]$ containing the minimum of a unimodal $\mathcal{L}$, with two interior points placed at the golden fraction $\kappa = (3 - \sqrt5)/2 \approx 0.382$ of the way in from each end. Comparing the two interior values discards one end, and the ratio is chosen precisely so that the surviving interior point is correctly positioned for the next iteration: one new evaluation per step, with the bracket shrinking by the factor $0.618$.
-
-```{r}
-#| label: golden
-golden <- function(f, brack.int, eps = 1e-4, ...) {
-  kap <- (3 - sqrt(5)) / 2
-  xl <- min(brack.int); xu <- max(brack.int)
-  tmp <- kap * (xu - xl)
-  xmu <- xu - tmp; xml <- xl + tmp
-  fl <- f(xml, ...); fu <- f(xmu, ...)
-  while (abs(xu - xl) > (1e-5 + abs(xl)) * eps) {
-    if (fl < fu) {
-      xu <- xmu; xmu <- xml; fu <- fl
-      xml <- xl + kap * (xu - xl); fl <- f(xml, ...)
-    } else {
-      xl <- xml; xml <- xmu; fl <- fu
-      xmu <- xu - kap * (xu - xl); fu <- f(xmu, ...)
-    }
-  }
-  if (fl < fu) xml else xmu
-}
-```
-
-The schematic makes the reuse visible. Each bar is the current bracket with its two interior points; the point that survives into the next iteration is drawn in blue and sits at exactly the right position there, so only the red point has to be evaluated afresh.
-
-```{r}
-#| label: fig-scheme-golden
-#| fig-width: 8
-#| fig-height: 5
-#| fig-cap: "Illustrates golden section search, a derivative-free method for optimizing a one-dimensional function, and why it needs only one new function evaluation per step.
-#|   Golden section search: the interior point that survives (blue) is already correctly positioned for the next iteration, so only one new point (red) is evaluated per step."
-kap <- (3 - sqrt(5)) / 2
-
-par(mar = c(4, 4.5, 2.5, 1))
-plot(lam, nll(lam), type = "l", lwd = 2, ylim = c(0.30, 1.30), xlim = c(0.12, 3),
-     xlab = TeX(r"($\lambda$)"), ylab = TeX(r"($L(\lambda)$)"),
-     main = TeX(r"(golden section: one new evaluation per step)"))
-points(lhat, nll(lhat), pch = 19, cex = 1.2)
-
-xl <- 0.3; xu <- 3
-ylev <- seq(0.42, 0.34, length.out = 3)
-for (k in 1:3) {
-  xml <- xl + kap * (xu - xl); xmu <- xu - kap * (xu - xl)
-  segments(xl, ylev[k], xu, ylev[k], col = 4, lwd = 3)
-  points(c(xl, xu), rep(ylev[k], 2), pch = "|", col = 4)
-  keep_lower <- nll(xml) < nll(xmu)
-  points(xml, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 4 else 2)
-  points(xmu, ylev[k], pch = 19, cex = 0.9, col = if (keep_lower) 2 else 4)
-  text(0.19, ylev[k], k, cex = 0.8, col = 4)
-  if (keep_lower) xu <- xmu else xl <- xml
-}
-```
-
-The first test is the negative log-likelihood of the classical genetic linkage model, with cell counts $(1997, 906, 904, 32)$ and probabilities $\left((2+\theta)/4, (1-\theta)/4, (1-\theta)/4, \theta/4\right)$; it is smooth, so any method would work. The second, $f(x) = |x - 10|$, is not differentiable at its minimum, so no root-finder applies — golden section handles it without modification.
-
-```{r}
-#| label: fig-golden-tests
-#| fig-width: 10
-#| fig-height: 4.5
-#| fig-cap: "Tests golden section search on a smooth likelihood and on a non-differentiable function to show that the method needs no derivatives.
-#|   Golden section search applied to a smooth genetic-linkage log-likelihood (left) and to a non-differentiable function $|x-10|$ (right), with the located minimizer marked in red."
-f1 <- function(theta) -1997 * log(2 + theta) - 1810 * log(1 - theta) - 32 * log(theta)
-f2 <- function(x) abs(x - 10)
-
-par(mfrow = c(1, 2), mar = c(4, 4.5, 2.5, 1))
-curve(f1, 0.001, 0.999, n = 400, lwd = 2, xlab = TeX(r"($\theta$)"), ylab = TeX(r"($L(\theta)$)"),
-      main = TeX(r"(genetic linkage model)"))
-abline(v = golden(f1, c(0.001, 0.999)), col = 2, lty = 2, lwd = 2)
-
-curve(f2, 0, 20, n = 400, lwd = 2, xlab = TeX(r"($x$)"), ylab = TeX(r"($|x - 10|$)"),
-      main = TeX(r"(not differentiable at the minimum)"))
-abline(v = golden(f2, c(0, 20)), col = 2, lty = 2, lwd = 2)
-
-c(linkage = golden(f1, c(0.001, 0.999)), abs_value = golden(f2, c(0, 20)))
 ```
 
 ### Numerical Derivatives
@@ -2229,28 +2229,6 @@ All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `o
 
 There is a [shinylive app](../shinyliveapps_compstat/app_gradient-methods.html) to let you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability.
 
-## Nelder–Mead (Simplex Method)
-
-Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
-
-1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
-
-2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
-
-3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
-
-```{r}
-#| label: nelder-mead-rosenbrock
-rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
-nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
-```
-
-The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
-
-### Shinylive App for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
-
-There is a [shinylive app](../shinyliveapps_compstat/app_nelder-mead.html) to show how the Nelder-Mead method finds a minimum without derivatives, by repeatedly reflecting, expanding, contracting, and shrinking a simplex.
-
 ## Stochastic Gradient Descent
 
 ### Motivation: Large $n$
@@ -2260,7 +2238,7 @@ $$
 \mathcal{L}(\theta) = \sum_{i=1}^n \mathcal{L}_i(\theta), \qquad g(\theta) = \sum_{i=1}^n g_i(\theta).
 $$
 
-Every method in the two previous sections needs the **full** gradient — an $O(np)$ pass through all the data — at every single iteration, and Newton needs $O(np^2)$ for the Hessian on top of that. With $n$ in the millions and $p$ in the millions, as in a large neural network, even one full gradient evaluation is expensive.
+Every derivative-based method above needs the **full** gradient — an $O(np)$ pass through all the data — at every single iteration, and Newton needs $O(np^2)$ for the Hessian on top of that. With $n$ in the millions and $p$ in the millions, as in a large neural network, even one full gradient evaluation is expensive.
 
 The idea behind stochastic gradient descent is that $g_i(\theta)$ for a randomly chosen $i$ is an **unbiased estimate** of the average gradient,
 $$
@@ -2352,6 +2330,28 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
 ```
 
 Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
+
+## Nelder–Mead (Simplex Method)
+
+Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
+
+1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
+
+2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
+
+3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
+
+```{r}
+#| label: nelder-mead-rosenbrock
+rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
+nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
+```
+
+The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
+
+### Shinylive App for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
+
+There is a [shinylive app](../shinyliveapps_compstat/app_nelder-mead.html) to show how the Nelder-Mead method finds a minimum without derivatives, by repeatedly reflecting, expanding, contracting, and shrinking a simplex.
 
 ## Comparing All the Methods
 
