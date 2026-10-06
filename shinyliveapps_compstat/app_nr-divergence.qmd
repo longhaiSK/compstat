@@ -1,7 +1,6 @@
 ---
 engine: markdown
-title: "Safeguarded Newton-Raphson"
-subtitle: "Optimization for Maximum Likelihood Estimation"
+title: "Safeguarded Newton-Raphson for Logistic Regression"
 ---
 
 <!-- Moved out of chapters/unit05_MLE.qmd on 2026-09-26 by gen_shinyapps.py, which
@@ -11,7 +10,7 @@ subtitle: "Optimization for Maximum Likelihood Estimation"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 820
+#| viewerHeight: 960
 library(shiny)
 
 ### ---------- fixed data ----------------------------------------------------
@@ -19,6 +18,7 @@ set.seed(1)
 n <- 200
 z <- sort(runif(n, -2, 2))
 r <- rbinom(n, 1, plogis(0 + 1.5 * z))
+r_jit <- r + runif(n, -0.1, 0.1)      # vertical jitter, for display only
 
 log1pexp <- function(u) pmax(u, 0) + log1p(exp(-abs(u)))
 negll <- function(b) {
@@ -113,53 +113,55 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
 
 ui <- fluidPage(
     titlePanel("Shinylive App for Safeguarded Newton-Raphson"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            div(style = "display: flex; gap: 10px;",
-                div(style = "flex: 1;",
-                    numericInput("b0", HTML("starting &beta;<sub>0</sub>"),
-                                 value = 0, step = 0.5, width = "100%")),
-                div(style = "flex: 1;",
-                    numericInput("b1", HTML("starting &beta;<sub>1</sub>"),
-                                 value = 5, step = 0.5, width = "100%"))),
-            helpText("Or click inside the contour plot to choose a new ",
-                     "starting value."),
-            selectInput("ls", "line search",
-                        c("none (full Newton step)" = "none",
-                          "backtracking (Armijo)"   = "armijo")),
-            selectInput("robust", "robustification of the Hessian",
-                        c("none (observed information)" = "none",
-                          "ridge (Levenberg-Marquardt)" = "ridge",
-                          "eigenvalue flooring"         = "eigen")),
-            checkboxInput("compare", "overlay the plain Newton-Raphson path",
-                          TRUE),
-            checkboxInput("autoplay", "autoplay when the start changes", TRUE),
-            sliderInput("iter", "iteration", min = 0, max = 1, value = 0,
-                        step = 1),
-            div(style = "display: flex; gap: 4px;",
-                ctrl_btn("first", "backward-fast", "Back to the start"),
-                ctrl_btn("back",  "backward-step", "One step back"),
-                ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
-                ctrl_btn("pause", "pause",         "Pause"),
-                ctrl_btn("step",  "forward-step",  "One step forward"),
-                ctrl_btn("toend", "forward-fast",  "To the end")),
-            hr(),
-            helpText("Try the starting values (0, 3) and then (0, 5), first ",
-                     "with both safeguards off, then with each in turn. From ",
-                     "(0, 5) the plain iteration stops because the ",
-                     "information matrix goes numerically singular; the ",
-                     "robustification is what keeps it invertible.")
+    ## control panel
+    wellPanel(
+        fluidRow(
+            column(2, numericInput("b0", HTML("starting &beta;<sub>0</sub>"),
+                                   value = 0, step = 0.5, width = "100%")),
+            column(2, numericInput("b1", HTML("starting &beta;<sub>1</sub>"),
+                                   value = 5, step = 0.5, width = "100%")),
+            column(3, selectInput("ls", "line search",
+                                  c("none (full Newton step)" = "none",
+                                    "backtracking (Armijo)"   = "armijo"),
+                                  width = "100%")),
+            column(3, selectInput("robust", "robustification of the Hessian",
+                                  c("none (observed information)" = "none",
+                                    "ridge (Levenberg-Marquardt)" = "ridge",
+                                    "eigenvalue flooring"         = "eigen"),
+                                  width = "100%")),
+            column(2, checkboxInput("compare", "overlay plain Newton-Raphson",
+                                    TRUE),
+                   checkboxInput("autoplay", "autoplay on a new start", TRUE))
         ),
-        mainPanel(
-            width = 8,
-            plotOutput("contour", click = "click", height = "450px"),
-            ## details of the iterations, shown under the plot
-            hr(),
-            div(style = "max-width: 560px;",
-                tableOutput("tab"),
-                htmlOutput("note"))
+        fluidRow(
+            column(5, sliderInput("iter", "iteration", min = 0, max = 1,
+                                  value = 0, step = 1, width = "100%")),
+            column(4, div(style = "display: flex; gap: 4px; padding-top: 25px;",
+                          ctrl_btn("first", "backward-fast", "Back to the start"),
+                          ctrl_btn("back",  "backward-step", "One step back"),
+                          ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
+                          ctrl_btn("pause", "pause",         "Pause"),
+                          ctrl_btn("step",  "forward-step",  "One step forward"),
+                          ctrl_btn("toend", "forward-fast",  "To the end"))),
+            column(3, div(style = "padding-top: 25px;",
+                          helpText("Or click inside the contour plot to choose ",
+                                   "a new starting value.")))
         )
+    ),
+    ## the two views of the same iterate
+    fluidRow(
+        column(6, plotOutput("contour", click = "click", height = "430px")),
+        column(6, plotOutput("fit", height = "430px"))
+    ),
+    ## details of the iterations, shown under the plots
+    hr(),
+    fluidRow(
+        column(7, tableOutput("tab"), htmlOutput("note")),
+        column(5, helpText("Try the starting values (0, 3) and then (0, 5), first ",
+                           "with both safeguards off, then with each in turn. From ",
+                           "(0, 5) the plain iteration stops because the ",
+                           "information matrix goes numerically singular; the ",
+                           "robustification is what keeps it invertible."))
     )
 )
 
@@ -289,6 +291,42 @@ server <- function(input, output, session) {
         legend("bottomright", bg = "#ffffffcc", box.col = NA, cex = 0.85,
                pch = leg$pch, pt.bg = leg$bg, lwd = leg$lwd, lty = leg$lty,
                col = leg$col, legend = leg$txt)
+    })
+
+    ## the logistic curve fitted at the current iterate, over the data; the 0/1
+    ## responses are jittered vertically so that their density can be seen
+    output$fit <- renderPlot({
+        P <- path()$P; kk <- k() + 1L; RP <- ref()
+        xs <- seq(min(z), max(z), length.out = 200)
+        curve_at <- function(b) plogis(b[1] + b[2] * xs)
+        par(mar = c(4, 4, 2, 1))
+        plot(z, r_jit, pch = 19, cex = 0.7, col = adjustcolor("grey30", 0.4),
+             ylim = c(-0.2, 1.2), xlab = "x", ylab = "P(y = 1)",
+             main = sprintf("fitted logistic curve, iteration %d", kk - 1))
+        abline(h = c(0, 1), col = "grey85")
+        lines(xs, curve_at(c(0, 1.5)), col = "darkgreen", lwd = 2, lty = 3)
+        ## the earlier iterates, faint
+        if (kk > 1) for (i in seq_len(kk - 1))
+            lines(xs, curve_at(P[i, 1:2]), col = adjustcolor("steelblue", 0.35))
+        ## the plain (unsafeguarded) iterate at the same step
+        if (!is.null(RP))
+            lines(xs, curve_at(RP$P[min(kk, RP$n), 1:2]), col = "grey45",
+                  lwd = 2, lty = 2)
+        lines(xs, curve_at(P[kk, 1:2]), col = "firebrick", lwd = 3)
+        leg <- list(txt = c("data (jittered)", "current fit", "earlier iterates",
+                            "true curve"),
+                    pch = c(19, NA, NA, NA), lwd = c(NA, 3, 1, 2),
+                    lty = c(NA, 1, 1, 3),
+                    col = c(adjustcolor("grey30", 0.6), "firebrick", "steelblue",
+                            "darkgreen"))
+        if (!is.null(RP)) {
+            leg$txt <- c(leg$txt, "plain Newton-Raphson")
+            leg$pch <- c(leg$pch, NA); leg$lwd <- c(leg$lwd, 2)
+            leg$lty <- c(leg$lty, 2);  leg$col <- c(leg$col, "grey45")
+        }
+        legend("right", bg = "#ffffffcc", box.col = NA, cex = 0.85,
+               pch = leg$pch, lwd = leg$lwd, lty = leg$lty, col = leg$col,
+               legend = leg$txt)
     })
 
     ## one decimal throughout; a diverging run reaches values that would
@@ -332,7 +370,9 @@ animation over the contours of the negative log-likelihood. The orange arrow
 shows the direction of the gradient of the log-likelihood. Switching on either
 safeguard keeps the plain iteration visible as a dashed grey path for
 comparison; the details of each iteration, and the reason the run ended, are
-reported under the plot.
+reported under the plots. The right-hand plot shows the logistic curve fitted at the
+current iterate over the data, whose 0/1 responses are jittered vertically so
+that their density can be seen.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -344,6 +384,7 @@ set.seed(1)
 n <- 200
 z <- sort(runif(n, -2, 2))
 r <- rbinom(n, 1, plogis(0 + 1.5 * z))
+r_jit <- r + runif(n, -0.1, 0.1)      # vertical jitter, for display only
 
 log1pexp <- function(u) pmax(u, 0) + log1p(exp(-abs(u)))
 negll <- function(b) {
@@ -438,53 +479,55 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
 
 ui <- fluidPage(
     titlePanel("Shinylive App for Safeguarded Newton-Raphson"),
-    sidebarLayout(
-        sidebarPanel(
-            width = 4,
-            div(style = "display: flex; gap: 10px;",
-                div(style = "flex: 1;",
-                    numericInput("b0", HTML("starting &beta;<sub>0</sub>"),
-                                 value = 0, step = 0.5, width = "100%")),
-                div(style = "flex: 1;",
-                    numericInput("b1", HTML("starting &beta;<sub>1</sub>"),
-                                 value = 5, step = 0.5, width = "100%"))),
-            helpText("Or click inside the contour plot to choose a new ",
-                     "starting value."),
-            selectInput("ls", "line search",
-                        c("none (full Newton step)" = "none",
-                          "backtracking (Armijo)"   = "armijo")),
-            selectInput("robust", "robustification of the Hessian",
-                        c("none (observed information)" = "none",
-                          "ridge (Levenberg-Marquardt)" = "ridge",
-                          "eigenvalue flooring"         = "eigen")),
-            checkboxInput("compare", "overlay the plain Newton-Raphson path",
-                          TRUE),
-            checkboxInput("autoplay", "autoplay when the start changes", TRUE),
-            sliderInput("iter", "iteration", min = 0, max = 1, value = 0,
-                        step = 1),
-            div(style = "display: flex; gap: 4px;",
-                ctrl_btn("first", "backward-fast", "Back to the start"),
-                ctrl_btn("back",  "backward-step", "One step back"),
-                ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
-                ctrl_btn("pause", "pause",         "Pause"),
-                ctrl_btn("step",  "forward-step",  "One step forward"),
-                ctrl_btn("toend", "forward-fast",  "To the end")),
-            hr(),
-            helpText("Try the starting values (0, 3) and then (0, 5), first ",
-                     "with both safeguards off, then with each in turn. From ",
-                     "(0, 5) the plain iteration stops because the ",
-                     "information matrix goes numerically singular; the ",
-                     "robustification is what keeps it invertible.")
+    ## control panel
+    wellPanel(
+        fluidRow(
+            column(2, numericInput("b0", HTML("starting &beta;<sub>0</sub>"),
+                                   value = 0, step = 0.5, width = "100%")),
+            column(2, numericInput("b1", HTML("starting &beta;<sub>1</sub>"),
+                                   value = 5, step = 0.5, width = "100%")),
+            column(3, selectInput("ls", "line search",
+                                  c("none (full Newton step)" = "none",
+                                    "backtracking (Armijo)"   = "armijo"),
+                                  width = "100%")),
+            column(3, selectInput("robust", "robustification of the Hessian",
+                                  c("none (observed information)" = "none",
+                                    "ridge (Levenberg-Marquardt)" = "ridge",
+                                    "eigenvalue flooring"         = "eigen"),
+                                  width = "100%")),
+            column(2, checkboxInput("compare", "overlay plain Newton-Raphson",
+                                    TRUE),
+                   checkboxInput("autoplay", "autoplay on a new start", TRUE))
         ),
-        mainPanel(
-            width = 8,
-            plotOutput("contour", click = "click", height = "450px"),
-            ## details of the iterations, shown under the plot
-            hr(),
-            div(style = "max-width: 560px;",
-                tableOutput("tab"),
-                htmlOutput("note"))
+        fluidRow(
+            column(5, sliderInput("iter", "iteration", min = 0, max = 1,
+                                  value = 0, step = 1, width = "100%")),
+            column(4, div(style = "display: flex; gap: 4px; padding-top: 25px;",
+                          ctrl_btn("first", "backward-fast", "Back to the start"),
+                          ctrl_btn("back",  "backward-step", "One step back"),
+                          ctrl_btn("play",  "play",          "Play", class = "btn-primary"),
+                          ctrl_btn("pause", "pause",         "Pause"),
+                          ctrl_btn("step",  "forward-step",  "One step forward"),
+                          ctrl_btn("toend", "forward-fast",  "To the end"))),
+            column(3, div(style = "padding-top: 25px;",
+                          helpText("Or click inside the contour plot to choose ",
+                                   "a new starting value.")))
         )
+    ),
+    ## the two views of the same iterate
+    fluidRow(
+        column(6, plotOutput("contour", click = "click", height = "430px")),
+        column(6, plotOutput("fit", height = "430px"))
+    ),
+    ## details of the iterations, shown under the plots
+    hr(),
+    fluidRow(
+        column(7, tableOutput("tab"), htmlOutput("note")),
+        column(5, helpText("Try the starting values (0, 3) and then (0, 5), first ",
+                           "with both safeguards off, then with each in turn. From ",
+                           "(0, 5) the plain iteration stops because the ",
+                           "information matrix goes numerically singular; the ",
+                           "robustification is what keeps it invertible."))
     )
 )
 
@@ -614,6 +657,42 @@ server <- function(input, output, session) {
         legend("bottomright", bg = "#ffffffcc", box.col = NA, cex = 0.85,
                pch = leg$pch, pt.bg = leg$bg, lwd = leg$lwd, lty = leg$lty,
                col = leg$col, legend = leg$txt)
+    })
+
+    ## the logistic curve fitted at the current iterate, over the data; the 0/1
+    ## responses are jittered vertically so that their density can be seen
+    output$fit <- renderPlot({
+        P <- path()$P; kk <- k() + 1L; RP <- ref()
+        xs <- seq(min(z), max(z), length.out = 200)
+        curve_at <- function(b) plogis(b[1] + b[2] * xs)
+        par(mar = c(4, 4, 2, 1))
+        plot(z, r_jit, pch = 19, cex = 0.7, col = adjustcolor("grey30", 0.4),
+             ylim = c(-0.2, 1.2), xlab = "x", ylab = "P(y = 1)",
+             main = sprintf("fitted logistic curve, iteration %d", kk - 1))
+        abline(h = c(0, 1), col = "grey85")
+        lines(xs, curve_at(c(0, 1.5)), col = "darkgreen", lwd = 2, lty = 3)
+        ## the earlier iterates, faint
+        if (kk > 1) for (i in seq_len(kk - 1))
+            lines(xs, curve_at(P[i, 1:2]), col = adjustcolor("steelblue", 0.35))
+        ## the plain (unsafeguarded) iterate at the same step
+        if (!is.null(RP))
+            lines(xs, curve_at(RP$P[min(kk, RP$n), 1:2]), col = "grey45",
+                  lwd = 2, lty = 2)
+        lines(xs, curve_at(P[kk, 1:2]), col = "firebrick", lwd = 3)
+        leg <- list(txt = c("data (jittered)", "current fit", "earlier iterates",
+                            "true curve"),
+                    pch = c(19, NA, NA, NA), lwd = c(NA, 3, 1, 2),
+                    lty = c(NA, 1, 1, 3),
+                    col = c(adjustcolor("grey30", 0.6), "firebrick", "steelblue",
+                            "darkgreen"))
+        if (!is.null(RP)) {
+            leg$txt <- c(leg$txt, "plain Newton-Raphson")
+            leg$pch <- c(leg$pch, NA); leg$lwd <- c(leg$lwd, 2)
+            leg$lty <- c(leg$lty, 2);  leg$col <- c(leg$col, "grey45")
+        }
+        legend("right", bg = "#ffffffcc", box.col = NA, cex = 0.85,
+               pch = leg$pch, lwd = leg$lwd, lty = leg$lty, col = leg$col,
+               legend = leg$txt)
     })
 
     ## one decimal throughout; a diverging run reaches values that would
