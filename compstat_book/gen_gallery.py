@@ -307,7 +307,7 @@ def render_gallery(chapters_data):
         # standalone archive, so there is nothing here to cross-reference.
         lines.append("The book's interactive Shinylive apps are collected in a "
                      "standalone archive: "
-                     "[Shinylive Apps](shinyliveapps_compstat/index.html). "
+                     "[Shinylive Apps](../shinylive_apps/index.html). "
                      "Each app runs in the browser and carries its R source and "
                      "the notes that accompany it.")
     lines.append("")
