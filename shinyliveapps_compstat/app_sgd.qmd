@@ -11,7 +11,7 @@ pagetitle: "sgd-nn-shinylive"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 1180
+#| viewerHeight: 1150
 library(shiny)
 
 ## ------------------------------------------------------------------- data
@@ -154,13 +154,31 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
   actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
                style = "flex: 1; padding: 6px 0;")
 
+## a bold label in the left-hand column of a row of controls
+row_label <- function(txt)
+  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
 ui <- fluidPage(
   titlePanel("Shinylive App for Stochastic Gradient Descent"),
-  ## ---- control panel ------------------------------------------------------
+  ## ---- control panel: three rows --------------------------------------------
   wellPanel(
+    ## generate the data
     fluidRow(
+      row_label("Generate data"),
       column(2, selectInput("dgp", "True curve", choices = DGPS,
                             selected = "teacher", width = "100%")),
+      column(2, sliderInput("n", "Sample size n", min = 40, max = 400,
+                            value = 200, step = 20, width = "100%")),
+      column(2, sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40,
+                            value = 0.08, step = 0.01, width = "100%")),
+      column(2, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate a dataset",
+                                 class = "btn-warning", style = "width:100%;")))
+    ),
+    hr(style = "margin: 4px 0 8px;"),
+    ## tune the training
+    fluidRow(
+      row_label("Training tuning"),
       column(2, sliderInput("H", "Hidden neurons", min = 2, max = 16,
                             value = 8, step = 1, width = "100%")),
       column(2, sliderInput("m", "Batch size m", min = 1, max = 400,
@@ -169,42 +187,34 @@ ui <- fluidPage(
                             value = 0.20, step = 0.01, width = "100%")),
       column(2, sliderInput("nep", "Epochs", min = 10, max = 300, value = 100,
                             step = 10, width = "100%")),
-      column(2, sliderInput("ctr", "Weight colour contrast", min = 1,
-                            max = 40, value = 12, step = 1, width = "100%"))
-    ),
-    fluidRow(
-      column(2, sliderInput("n", "Sample size n", min = 40, max = 400,
-                            value = 200, step = 20, width = "100%")),
-      column(2, sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40,
-                            value = 0.08, step = 0.01, width = "100%")),
-      column(2, div(style = "padding-top: 25px;",
-                    actionButton("newdata", "Regenerate a dataset",
-                                 class = "btn-warning", style = "width:100%;"))),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newinit", "New initial weights",
-                                 style = "width:100%;"))),
-      column(2, div(style = "padding-top: 25px;",
+                                 style = "width:100%; margin-bottom: 6px;"),
                     actionButton("newseed", "New batch sequence",
-                                 style = "width:100%;"))),
-      column(2, div(style = "padding-top: 12px;",
-                    checkboxInput("showgd", "Overlay the full-batch run", TRUE),
-                    checkboxInput("byepoch", "Advance a whole epoch", TRUE),
-                    checkboxInput("autoplay", "Autoplay on change", FALSE)))
+                                 style = "width:100%;")))
     ),
+    hr(style = "margin: 4px 0 8px;"),
+    ## play the run
     fluidRow(
-      column(6, sliderInput("k", "Update k", min = 0, max = 1, value = 0,
-                            step = 1, width = "100%")),
-      column(3, div(style = "display: flex; gap: 4px; padding-top: 25px;",
+      row_label("Play control"),
+      column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One step back"),
                     ctrl_btn("play",  "play",          "Play / pause",
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One step forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end"))),
-      column(3, div(style = "padding-top: 22px;",
-                    helpText("Both runs share the data, the initial weights ",
-                             "and the number of epochs; only m differs.")))
-    )
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("byepoch", "Advance a whole epoch", TRUE),
+                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("showgd", "Overlay the full-batch run",
+                                  TRUE))),
+      column(3, sliderInput("ctr", "Weight colour contrast", min = 1,
+                            max = 40, value = 12, step = 1, width = "100%"))
+    ),
+    helpText("Both runs share the data, the initial weights and the number ",
+             "of epochs; only m differs.")
   ),
   ## ---- plots --------------------------------------------------------------
   plotOutput("nets", height = "300px"),
@@ -217,6 +227,7 @@ server <- function(input, output, session) {
   MAXUP <- 4000
   dseed <- reactiveVal(1); wseed <- reactiveVal(1); bseed <- reactiveVal(1)
   playing <- reactiveVal(FALSE)
+  kpos <- reactiveVal(0L)            # the current update, 0 .. S$n - 1
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   observeEvent(input$newinit, wseed(wseed() + 1))
@@ -245,15 +256,14 @@ server <- function(input, output, session) {
   stride <- reactive(if (isTRUE(input$byepoch)) runs()$B else 1L)
 
   observeEvent(runs(), {
-    updateSliderInput(session, "k", max = max(1, runs()$S$n - 1), value = 0)
+    kpos(0L)
     playing(isTRUE(input$autoplay) && runs()$S$n > 1)
   })
 
   observeEvent(input$play, {
     if (isTRUE(playing())) playing(FALSE)
     else {
-      if (as.integer(input$k) >= runs()$S$n - 1)
-        updateSliderInput(session, "k", value = 0)
+      if (kpos() >= runs()$S$n - 1) kpos(0L)
       playing(TRUE)
     }
   })
@@ -264,34 +274,31 @@ server <- function(input, output, session) {
   observe({
     if (!isTRUE(playing())) return()
     kmax <- isolate(runs()$S$n) - 1
-    k <- isolate(as.integer(input$k)); st <- isolate(stride())
+    k <- isolate(kpos()); st <- isolate(stride())
     if (k >= kmax) { playing(FALSE); return() }
     invalidateLater(250, session)
-    updateSliderInput(session, "k", value = min(k + st, kmax))
+    kpos(min(k + st, kmax))
   })
   observeEvent(input$step, {
     playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = min(as.integer(input$k) + stride(),
-                                  max(0, runs()$S$n - 1)))
+    kpos(min(kpos() + stride(), max(0, runs()$S$n - 1)))
   })
   observeEvent(input$back, {
     playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = max(as.integer(input$k) - stride(), 0))
+    kpos(max(kpos() - stride(), 0))
   })
   observeEvent(input$first, {
     playing(FALSE)
-    updateSliderInput(session, "k", value = 0)
+    kpos(0L)
   })
   observeEvent(input$toend, {
     playing(FALSE)
-    updateSliderInput(session, "k", value = max(0, runs()$S$n - 1))
+    kpos(max(0L, runs()$S$n - 1L))
   })
 
   cur <- reactive({
     R <- runs()
-    k <- min(as.integer(input$k), R$S$n - 1) + 1L
+    k <- min(kpos(), R$S$n - 1) + 1L
     ep <- R$S$EP[k]
     kg <- max(1, min(R$G$n, floor(ep) + 1L))
     list(R = R, k = k, kg = kg, ep = ep)
@@ -521,13 +528,31 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
   actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
                style = "flex: 1; padding: 6px 0;")
 
+## a bold label in the left-hand column of a row of controls
+row_label <- function(txt)
+  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
 ui <- fluidPage(
   titlePanel("Shinylive App for Stochastic Gradient Descent"),
-  ## ---- control panel ------------------------------------------------------
+  ## ---- control panel: three rows --------------------------------------------
   wellPanel(
+    ## generate the data
     fluidRow(
+      row_label("Generate data"),
       column(2, selectInput("dgp", "True curve", choices = DGPS,
                             selected = "teacher", width = "100%")),
+      column(2, sliderInput("n", "Sample size n", min = 40, max = 400,
+                            value = 200, step = 20, width = "100%")),
+      column(2, sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40,
+                            value = 0.08, step = 0.01, width = "100%")),
+      column(2, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate a dataset",
+                                 class = "btn-warning", style = "width:100%;")))
+    ),
+    hr(style = "margin: 4px 0 8px;"),
+    ## tune the training
+    fluidRow(
+      row_label("Training tuning"),
       column(2, sliderInput("H", "Hidden neurons", min = 2, max = 16,
                             value = 8, step = 1, width = "100%")),
       column(2, sliderInput("m", "Batch size m", min = 1, max = 400,
@@ -536,42 +561,34 @@ ui <- fluidPage(
                             value = 0.20, step = 0.01, width = "100%")),
       column(2, sliderInput("nep", "Epochs", min = 10, max = 300, value = 100,
                             step = 10, width = "100%")),
-      column(2, sliderInput("ctr", "Weight colour contrast", min = 1,
-                            max = 40, value = 12, step = 1, width = "100%"))
-    ),
-    fluidRow(
-      column(2, sliderInput("n", "Sample size n", min = 40, max = 400,
-                            value = 200, step = 20, width = "100%")),
-      column(2, sliderInput("sigma", "Noise SD", min = 0.01, max = 0.40,
-                            value = 0.08, step = 0.01, width = "100%")),
-      column(2, div(style = "padding-top: 25px;",
-                    actionButton("newdata", "Regenerate a dataset",
-                                 class = "btn-warning", style = "width:100%;"))),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newinit", "New initial weights",
-                                 style = "width:100%;"))),
-      column(2, div(style = "padding-top: 25px;",
+                                 style = "width:100%; margin-bottom: 6px;"),
                     actionButton("newseed", "New batch sequence",
-                                 style = "width:100%;"))),
-      column(2, div(style = "padding-top: 12px;",
-                    checkboxInput("showgd", "Overlay the full-batch run", TRUE),
-                    checkboxInput("byepoch", "Advance a whole epoch", TRUE),
-                    checkboxInput("autoplay", "Autoplay on change", FALSE)))
+                                 style = "width:100%;")))
     ),
+    hr(style = "margin: 4px 0 8px;"),
+    ## play the run
     fluidRow(
-      column(6, sliderInput("k", "Update k", min = 0, max = 1, value = 0,
-                            step = 1, width = "100%")),
-      column(3, div(style = "display: flex; gap: 4px; padding-top: 25px;",
+      row_label("Play control"),
+      column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One step back"),
                     ctrl_btn("play",  "play",          "Play / pause",
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One step forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end"))),
-      column(3, div(style = "padding-top: 22px;",
-                    helpText("Both runs share the data, the initial weights ",
-                             "and the number of epochs; only m differs.")))
-    )
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("byepoch", "Advance a whole epoch", TRUE),
+                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("showgd", "Overlay the full-batch run",
+                                  TRUE))),
+      column(3, sliderInput("ctr", "Weight colour contrast", min = 1,
+                            max = 40, value = 12, step = 1, width = "100%"))
+    ),
+    helpText("Both runs share the data, the initial weights and the number ",
+             "of epochs; only m differs.")
   ),
   ## ---- plots --------------------------------------------------------------
   plotOutput("nets", height = "300px"),
@@ -584,6 +601,7 @@ server <- function(input, output, session) {
   MAXUP <- 4000
   dseed <- reactiveVal(1); wseed <- reactiveVal(1); bseed <- reactiveVal(1)
   playing <- reactiveVal(FALSE)
+  kpos <- reactiveVal(0L)            # the current update, 0 .. S$n - 1
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   observeEvent(input$newinit, wseed(wseed() + 1))
@@ -612,15 +630,14 @@ server <- function(input, output, session) {
   stride <- reactive(if (isTRUE(input$byepoch)) runs()$B else 1L)
 
   observeEvent(runs(), {
-    updateSliderInput(session, "k", max = max(1, runs()$S$n - 1), value = 0)
+    kpos(0L)
     playing(isTRUE(input$autoplay) && runs()$S$n > 1)
   })
 
   observeEvent(input$play, {
     if (isTRUE(playing())) playing(FALSE)
     else {
-      if (as.integer(input$k) >= runs()$S$n - 1)
-        updateSliderInput(session, "k", value = 0)
+      if (kpos() >= runs()$S$n - 1) kpos(0L)
       playing(TRUE)
     }
   })
@@ -631,34 +648,31 @@ server <- function(input, output, session) {
   observe({
     if (!isTRUE(playing())) return()
     kmax <- isolate(runs()$S$n) - 1
-    k <- isolate(as.integer(input$k)); st <- isolate(stride())
+    k <- isolate(kpos()); st <- isolate(stride())
     if (k >= kmax) { playing(FALSE); return() }
     invalidateLater(250, session)
-    updateSliderInput(session, "k", value = min(k + st, kmax))
+    kpos(min(k + st, kmax))
   })
   observeEvent(input$step, {
     playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = min(as.integer(input$k) + stride(),
-                                  max(0, runs()$S$n - 1)))
+    kpos(min(kpos() + stride(), max(0, runs()$S$n - 1)))
   })
   observeEvent(input$back, {
     playing(FALSE)
-    updateSliderInput(session, "k",
-                      value = max(as.integer(input$k) - stride(), 0))
+    kpos(max(kpos() - stride(), 0))
   })
   observeEvent(input$first, {
     playing(FALSE)
-    updateSliderInput(session, "k", value = 0)
+    kpos(0L)
   })
   observeEvent(input$toend, {
     playing(FALSE)
-    updateSliderInput(session, "k", value = max(0, runs()$S$n - 1))
+    kpos(max(0L, runs()$S$n - 1L))
   })
 
   cur <- reactive({
     R <- runs()
-    k <- min(as.integer(input$k), R$S$n - 1) + 1L
+    k <- min(kpos(), R$S$n - 1) + 1L
     ep <- R$S$EP[k]
     kg <- max(1, min(R$G$n, floor(ep) + 1L))
     list(R = R, k = k, kg = kg, ep = ep)
