@@ -1,0 +1,600 @@
+---
+subtitle: "Markov Chain Monte Carlo"
+pagetitle: "MCMC-slides"
+author: "Longhai Li"
+format: banner_slides-revealjs
+number-sections: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+set.seed(812)
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+library(latex2exp)
+```
+
+# 1. Markov Chains
+
+## Goal
+
+Draw $\theta_1,\theta_2,\ldots,\theta_n\sim f$ for a target $f$ (typically a posterior known up to a constant), then use $\frac1n\sum_i a(\theta_i)$.
+
+- Rejection sampling and importance sampling use a **fixed** proposal $g$; in high dimensions no fixed $g$ resembles $f$, and they collapse
+- MCMC instead builds a **random process** $\theta_1,\theta_2,\theta_3,\ldots$ that moves locally, and is designed so that, eventually, each $\theta_i$ is distributed as $f$
+- The draws are **dependent**, and only correct **in the limit**; the price for working in any dimension
+
+We first need a little theory of Markov chains.
+
+## Markov Chains and Transition Distributions
+
+**Definition.** $\{\theta_i: i = 0,1,2,\ldots\}$ is a **Markov chain** if the future depends on the past only through the present:
+$$P(\theta_i\mid\theta_0,\theta_1,\ldots,\theta_{i-1}) = P(\theta_i\mid\theta_{i-1})$$
+
+We write $T(\theta_i\mid\theta_{i-1})$, or $T(\theta_{i-1}\to\theta_i)$, and call it the **transition distribution** (a matrix for a finite state space, a conditional density for a continuous one).
+
+$$\theta_0 \xrightarrow{\ T(\theta_1\mid\theta_0)\ } \theta_1 \xrightarrow{\ T(\theta_2\mid\theta_1)\ } \theta_2 \xrightarrow{\ \ } \cdots$$
+
+A chain is specified by a starting value (or distribution) $\theta_0$ and $T$; simulating it means drawing $\theta_i\sim T(\cdot\mid\theta_{i-1})$ repeatedly.
+
+## Example: A Three-State Chain
+
+State space $\{0,1,2\}$. From each state, stay with probability $0.1$, move to each of the other two states with probability $0.45$:
+$$T = \begin{pmatrix} 0.1 & 0.45 & 0.45\\ 0.45 & 0.1 & 0.45\\ 0.45 & 0.45 & 0.1\end{pmatrix}, \qquad T_{jk} = P(\theta_i = k\mid\theta_{i-1} = j)$$
+
+```{r}
+#| label: example-a-three-state
+#| echo: true
+simulate_chain <- function(T, theta0, n) {
+  theta <- integer(n + 1); theta[1] <- theta0
+  for (i in 2:(n + 1)) theta[i] <- sample(seq_len(ncol(T)), 1, prob = T[theta[i - 1], ])
+  theta - 1 }                                                  # states 0, 1, 2
+T3 <- matrix(c(0.1, 0.45, 0.45, 0.45, 0.1, 0.45, 0.45, 0.45, 0.1), 3, byrow = TRUE)
+th <- simulate_chain(T3, theta0 = 1, n = 10000)
+head(th, 20); table(th) / length(th)
+```
+
+Whatever the start, the long-run frequencies are $(1/3,1/3,1/3)$.
+
+## Example: A Three-State Chain (Continued)
+
+```{r}
+#| label: example-a-three-state-2
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(1, 2), mar = c(1, 1, 2, 1))
+ang <- c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3); cx <- cos(ang); cy <- sin(ang)
+plot(NA, xlim = c(-1.6, 1.6), ylim = c(-1.4, 1.6), asp = 1, axes = FALSE, xlab = "", ylab = "", main = "transition diagram")
+for (j in 1:3) for (k in 1:3) if (j != k) {
+  d <- c(cx[k] - cx[j], cy[k] - cy[j]); d <- d / sqrt(sum(d^2)); o <- c(-d[2], d[1]) * 0.08
+  arrows(cx[j] + 0.22 * d[1] + o[1], cy[j] + 0.22 * d[2] + o[2], cx[k] - 0.22 * d[1] + o[1], cy[k] - 0.22 * d[2] + o[2],
+         length = 0.1, col = "steelblue", lwd = 2)
+  text((cx[j] + cx[k]) / 2 + 2.5 * o[1], (cy[j] + cy[k]) / 2 + 2.5 * o[2], "0.45", cex = 0.85, col = "steelblue") }
+symbols(cx, cy, circles = rep(0.2, 3), inches = FALSE, add = TRUE, bg = "white", fg = "firebrick", lwd = 2)
+text(cx, cy, 0:2, cex = 1.3); text(cx * 1.45, cy * 1.45, "0.1 (stay)", cex = 0.85, col = "gray30")
+plot(th[1:60], type = "s", lwd = 2, col = "firebrick", yaxt = "n", xlab = "i", ylab = "state", main = "first 60 steps of the chain", axes = FALSE)
+axis(1); axis(2, at = 0:2); box()
+```
+
+## Convergence and the Equilibrium Distribution
+
+Under regularity conditions (next slide), for **every** starting value $\theta_0$,
+$$\lim_{n\to\infty} P(\theta_n = \theta\mid\theta_0) = \pi(\theta)$$
+
+$\pi$ is the **equilibrium** (stationary, limiting) **distribution** of the chain: after many steps the chain forgets where it started, and the marginal distribution of $\theta_n$ settles at $\pi$.
+
+For the three-state chain, $P(\theta_n = \cdot\mid\theta_0 = 0)$ is the first row of $T^n$:
+
+```{r}
+#| label: convergence-and-the-equilibrium
+#| echo: true
+Tn <- diag(3); for (n in 1:6) { Tn <- Tn %*% T3; cat(sprintf("n = %d:  %s\n", n, paste(round(Tn[1, ], 4), collapse = "  "))) }
+```
+
+## Convergence (Continued)
+
+$P(\theta_n = k\mid\theta_0 = 0)$ for $k = 0,1,2$ as a function of $n$. Starting from state $0$ with certainty, the distribution converges geometrically to $\pi = (1/3,1/3,1/3)$.
+
+```{r}
+#| label: convergence-continued
+#| fig-width: 9
+#| fig-height: 4.4
+par(mar = c(4, 4, 1, 1)); N <- 8; Pn <- matrix(0, N + 1, 3); Pn[1, ] <- c(1, 0, 0); Tn <- diag(3)
+for (n in 1:N) { Tn <- Tn %*% T3; Pn[n + 1, ] <- Tn[1, ] }
+matplot(0:N, Pn, type = "b", pch = 19, lwd = 2, lty = 1, col = c("firebrick", "steelblue", "forestgreen"),
+        xlab = "n", ylab = TeX(r"($P(\theta_n = k \, | \, \theta_0 = 0)$)"), ylim = c(0, 1))
+abline(h = 1 / 3, lty = 3)
+legend("topright", bty = "n", pch = 19, lwd = 2, col = c("firebrick", "steelblue", "forestgreen"), legend = paste("k =", 0:2))
+```
+
+## Invariance Condition
+
+$\pi(\theta)$ a distribution, $T(\cdot,\cdot)$ a transition. We say **$T$ leaves $\pi$ invariant** if
+$$\int \pi(\theta)\,T(\theta,\theta^T)\,d\theta = \pi(\theta^T) \qquad\text{for all }\theta^T$$
+
+(for a finite state space, $\pi^\top T = \pi^\top$: $\pi$ is a left eigenvector of $T$ with eigenvalue 1).
+
+**Meaning**: if $\theta\sim\pi$ and $\theta^T\sim T(\theta,\cdot)$, then $\theta^T\sim\pi$. One step of the chain applied to a $\pi$-distributed input returns a $\pi$-distributed output: $\pi$ is a **fixed point** of $T$.
+
+Invariance is what makes $\pi$ a candidate equilibrium: once the chain reaches $\pi$, it stays there. Check for the three-state chain:
+$$\big(\tfrac13,\tfrac13,\tfrac13\big)\,T = \big(\tfrac13(0.1+0.45+0.45),\ \ldots\big) = \big(\tfrac13,\tfrac13,\tfrac13\big)$$
+
+## Invariance (Continued)
+
+Points $\theta_1,\theta_2,\theta_3,\ldots$ drawn from $\pi$ (top), each moved one step by $T$ (arrows). The moved points $\theta_1^T,\theta_2^T,\ldots$ (bottom) are again distributed as $\pi$.
+
+```{r}
+#| label: invariance-continued
+#| fig-width: 9
+#| fig-height: 4.4
+par(mar = c(1, 1, 1, 1)); m <- 400
+th0 <- rnorm(m)                                      # pi = N(0, 1)
+rho <- 0.6; th1 <- rho * th0 + sqrt(1 - rho^2) * rnorm(m)   # T: AR(1) step, leaves N(0,1) invariant
+plot(NA, xlim = c(-3.5, 3.5), ylim = c(-1.3, 1.3), axes = FALSE, xlab = "", ylab = "")
+curve(dnorm(x) * 2 + 0.1, add = TRUE, lwd = 3); curve(-dnorm(x) * 2 - 0.1, add = TRUE, lwd = 3)
+abline(h = c(0.1, -0.1))
+points(th0, rep(0.1, m) + runif(m, 0, 0.05), pch = 19, col = adjustcolor("firebrick", 0.4), cex = 0.5)
+points(th1, rep(-0.1, m) - runif(m, 0, 0.05), pch = 19, col = adjustcolor("forestgreen", 0.4), cex = 0.5)
+idx <- 1:12; arrows(th0[idx], 0.08, th1[idx], -0.08, length = 0.06, col = "steelblue", lwd = 1.5)
+text(-3.3, 0.9, TeX(r"($\theta_1, \theta_2, \ldots \sim \pi$)"), adj = 0); text(-3.3, -0.9, TeX(r"($\theta_1^T, \theta_2^T, \ldots \sim \pi$ again)"), adj = 0)
+text(3.2, 0, "T", col = "steelblue", cex = 1.3)
+```
+
+## When Does the Chain Converge to $\pi$?
+
+Given a target $\pi$, design a transition $T$ such that
+
+1. **Invariance**: $T$ leaves $\pi$ invariant
+2. **Aperiodicity**: the chain does not cycle deterministically (e.g. $1\to2\to3\to1\to\cdots$ never converges, it oscillates)
+3. **Irreducibility**: every state can be reached from every other state (a chain that splits into non-communicating pieces, or one that never moves, converges to something that depends on where it started)
+
+Then, for any $\theta_0$, $\theta_n\to\pi$ in distribution, and ergodic averages converge:
+$$\frac1n\sum_{i=1}^n a(\theta_i)\ \longrightarrow\ E_\pi\big[a(\theta)\big]$$
+
+**Practice**: simulate $T$ long enough, discard the initial portion (**burn-in**), and treat the remaining $\theta_i$ as (dependent) draws from $\pi$.
+
+## When Does the Chain Converge (Continued)
+
+```{r}
+#| label: when-does-the-chain
+#| fig-width: 10
+#| fig-height: 3.6
+par(mfrow = c(1, 3), mar = c(1, 1, 2, 1))
+draw_graph <- function(pos, edges, main, self = NULL) {
+  plot(NA, xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5), asp = 1, axes = FALSE, xlab = "", ylab = "", main = main)
+  for (e in edges) { j <- e[1]; k <- e[2]; d <- pos[k, ] - pos[j, ]; d <- d / sqrt(sum(d^2))
+    arrows(pos[j, 1] + 0.25 * d[1], pos[j, 2] + 0.25 * d[2], pos[k, 1] - 0.25 * d[1], pos[k, 2] - 0.25 * d[2], length = 0.1, lwd = 2, col = "steelblue") }
+  symbols(pos[, 1], pos[, 2], circles = rep(0.2, nrow(pos)), inches = FALSE, add = TRUE, bg = "white", fg = "firebrick", lwd = 2)
+  text(pos[, 1], pos[, 2], seq_len(nrow(pos)))
+  for (s in self) { t <- seq(0, 2 * pi, length.out = 50); lines(pos[s, 1] + 0.3 * cos(t) + 0.28 * sign(pos[s, 1] + 1e-9), pos[s, 2] + 0.3 * sin(t) + 0.28, col = "steelblue", lwd = 2) } }
+tri <- cbind(cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)))
+draw_graph(tri, list(c(1, 2), c(2, 3), c(3, 1)), "periodic: 1 -> 2 -> 3 -> 1 forever")
+six <- rbind(cbind(-0.9 + 0.45 * cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), 0.45 * sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3))),
+             cbind(0.9 + 0.45 * cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), 0.45 * sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3))))
+draw_graph(six, list(c(1, 2), c(2, 1), c(2, 3), c(3, 1), c(4, 5), c(5, 6), c(6, 4), c(5, 4)), "reducible: two pieces never communicate")
+draw_graph(tri, list(c(1, 2), c(2, 1), c(2, 3), c(3, 2), c(3, 1), c(1, 3)), "irreducible and aperiodic (with self-loops)", self = 1:3)
+```
+
+## Detailed Balance (Reversibility) {.smaller}
+
+$T$ satisfies **detailed balance** with respect to $\pi$ if
+$$\pi(\theta)\,T(\theta,\theta^T) = \pi(\theta^T)\,T(\theta^T,\theta) \qquad\text{for all }\theta,\theta^T$$
+
+- The flow of probability from $\theta$ to $\theta^T$ equals the flow back: the chain looks the same run forwards or backwards ("reversible")
+- Note: this does **not** say $T(\theta,\theta^T) = T(\theta^T,\theta)$; the transition itself need not be symmetric, only the flow weighted by $\pi$
+
+**Theorem.** Detailed balance $\Longrightarrow$ invariance.
+
+**Proof.** Integrate both sides over $\theta$:
+$$\int\pi(\theta)\,T(\theta,\theta^T)\,d\theta = \int\pi(\theta^T)\,T(\theta^T,\theta)\,d\theta
+= \pi(\theta^T)\underbrace{\int T(\theta^T,\theta)\,d\theta}_{=\,1} = \pi(\theta^T). \qquad\blacksquare$$
+
+Detailed balance is a **local** condition, checked pair by pair; that is what makes it the standard tool for constructing MCMC transitions.
+
+# 2. Gibbs Sampling
+
+## Example: Posterior of a Normal Sample {.smaller}
+
+$$x_1,\ldots,x_n\mid\mu,\sigma^2 \overset{iid}{\sim} N(\mu,\sigma^2), \qquad
+\mu\sim N(\mu_0,\sigma_0^2), \qquad \sigma^2\sim\text{IG}\Big(a_0 = \tfrac\alpha2,\ \lambda_0 = \tfrac{\alpha w}{2}\Big)$$
+
+Inverse gamma: $\sigma^2\sim\text{IG}(a_0,\lambda_0)$ means $1/\sigma^2\sim\text{Gamma}(a_0,\lambda_0)$, with density
+$$p(\sigma^2)\propto\frac{1}{(\sigma^2)^{a_0+1}}\,e^{-\lambda_0/\sigma^2}, \qquad a_0\text{ shape},\ \lambda_0\text{ scale}$$
+(the extra $1/(\sigma^2)^2$ relative to the gamma kernel is the Jacobian of $\tau = 1/\sigma^2$).
+
+Prior for $\mu$: $p(\mu)\propto e^{-(\mu-\mu_0)^2/(2\sigma_0^2)}$. Likelihood:
+$$L(\mu,\sigma^2;x) = \prod_{i=1}^n\frac{1}{\sqrt{2\pi}\sigma}e^{-(x_i-\mu)^2/(2\sigma^2)} \propto (\sigma^2)^{-n/2}\exp\Big\{-\sum_{i=1}^n\frac{(x_i-\mu)^2}{2\sigma^2}\Big\}$$
+
+**Joint posterior**
+$$P(\mu,\sigma^2\mid x)\propto e^{-\frac{(\mu-\mu_0)^2}{2\sigma_0^2}}\cdot(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\sigma^2)^{-n/2}e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)}$$
+
+Two-dimensional, no closed form for the normalizing constant, but each **conditional** is standard.
+
+## Full Conditional of $\mu$ {.smaller}
+
+Keep only factors involving $\mu$ and complete the square, using $\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2$:
+$$
+\begin{aligned}
+P(\mu\mid\sigma^2,x) &\propto \exp\Big\{-\frac{\mu^2-2\mu\mu_0}{2\sigma_0^2}\Big\}\exp\Big\{-\frac{n\mu^2-2n\mu\bar x}{2\sigma^2}\Big\} \\
+&= \exp\Big\{-\frac12\Big[\Big(\frac1{\sigma_0^2}+\frac n{\sigma^2}\Big)\mu^2 - 2\Big(\frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}\Big)\mu\Big]\Big\}
+\end{aligned}
+$$
+
+Matching with $N(m,v)$, whose kernel is $\exp\{-\tfrac12(\mu^2/v - 2m\mu/v)\}$:
+$$\mu\mid\sigma^2,x\ \sim\ N(m,v), \qquad
+\frac1v = \frac1{\sigma_0^2}+\frac n{\sigma^2}, \qquad
+\frac mv = \frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}$$
+
+- $m = \dfrac{\mu_0/\sigma_0^2 + n\bar x/\sigma^2}{1/\sigma_0^2 + n/\sigma^2}$: precision-weighted average of prior mean and sample mean; $n/\sigma^2$ is the **weight of the data**
+- As $n\to\infty$: $m\to\bar x$ and $v\approx\sigma^2/n$
+
+## Full Conditional of $\sigma^2$ {.smaller}
+
+Keep only factors involving $\sigma^2$:
+$$
+\begin{aligned}
+P(\sigma^2\mid\mu,x) &\propto(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\sigma^2)^{-n/2}e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)} \\
+&= (\sigma^2)^{-\left(\frac n2+a_0+1\right)}\exp\Big\{-\frac{\lambda_0+\frac12\sum_i(x_i-\mu)^2}{\sigma^2}\Big\}
+\end{aligned}
+$$
+
+which is again an inverse gamma kernel:
+$$\sigma^2\mid\mu,x\ \sim\ \text{IG}\Big(\frac n2+a_0,\ \frac12\sum_{i=1}^n(x_i-\mu)^2+\lambda_0\Big)
+= \text{IG}\Big(\frac{n+\alpha}{2},\ \frac{\alpha w+\sum_i(x_i-\mu)^2}{2}\Big)$$
+
+- Shape: prior "sample size" $\alpha$ plus $n$; scale: prior "sum of squares" $\alpha w$ plus the data sum of squares
+- To draw: $\tau\sim\text{Gamma}(\text{shape},\text{rate})$ with the same two numbers, then $\sigma^2 = 1/\tau$
+
+## The Gibbs Sampler
+
+Starting from $(\mu^{(0)},(\sigma^2)^{(0)})$, repeat for $t = 1,2,\ldots$:
+
+1. Draw $\mu^{(t)}\sim P\big(\mu\mid(\sigma^2)^{(t-1)},x\big)$
+2. Draw $(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid\mu^{(t)},x\big)$
+
+Each step replaces one coordinate by a draw from its full conditional given the **current** values of the others.
+
+**Why it works.** A step that draws $\theta_j\sim\pi(\theta_j\mid\theta_{-j})$ leaves $\pi$ invariant: if $(\theta_j,\theta_{-j})\sim\pi$, then $\theta_{-j}\sim\pi(\theta_{-j})$, and replacing $\theta_j$ by a draw from $\pi(\theta_j\mid\theta_{-j})$ gives a pair with joint density $\pi(\theta_{-j})\pi(\theta_j\mid\theta_{-j}) = \pi$. Cycling through all coordinates keeps $\pi$ invariant; with positive full conditionals the chain is irreducible and aperiodic.
+
+- No tuning parameters, no rejections
+- Requires full conditionals that can be sampled; conjugate structure gives them for free
+- Strong posterior correlation between coordinates slows mixing
+
+## The Gibbs Sampler (Continued)
+
+```{r}
+#| label: the-gibbs-sampler-continued
+#| echo: true
+x <- rnorm(20, 5, 2); n <- length(x); xbar <- mean(x)
+mu0 <- 0; s02 <- 100; a0 <- 1; lam0 <- 1                        # prior: N(0, 10^2), IG(1, 1)
+gibbs <- function(iters, mu = 0, s2 = 1) {
+  out <- matrix(NA, iters, 2, dimnames = list(NULL, c("mu", "s2")))
+  for (t in 1:iters) {
+    v  <- 1 / (1 / s02 + n / s2); m <- v * (mu0 / s02 + n * xbar / s2)
+    mu <- rnorm(1, m, sqrt(v))
+    s2 <- 1 / rgamma(1, shape = n / 2 + a0, rate = sum((x - mu)^2) / 2 + lam0)
+    out[t, ] <- c(mu, s2) }
+  out }
+draws <- gibbs(5000, mu = 20, s2 = 50)                          # deliberately poor start
+round(rbind(posterior_mean = colMeans(draws[-(1:200), ]), posterior_sd = apply(draws[-(1:200), ], 2, sd)), 3)
+```
+
+## The Gibbs Sampler (Continued)
+
+Left: the first 30 Gibbs moves on the joint posterior (contours). Each move is horizontal or vertical, since one coordinate changes at a time. Right: trace plots showing the burn-in from the poor start.
+
+```{r}
+#| label: the-gibbs-sampler-continued-2
+#| fig-width: 10
+#| fig-height: 4.4
+layout(matrix(c(1, 2, 1, 3), 2)); par(mar = c(4, 4, 2, 1))
+lpost <- function(mu, s2) sum(dnorm(x, mu, sqrt(s2), log = TRUE)) + dnorm(mu, mu0, sqrt(s02), log = TRUE) + (-(a0 + 1) * log(s2) - lam0 / s2)
+mg <- seq(2.5, 7.5, length.out = 80); sg <- seq(1, 12, length.out = 80)
+Z <- outer(mg, sg, Vectorize(lpost)); Z <- exp(Z - max(Z))
+contour(mg, sg, Z, nlevels = 8, drawlabels = FALSE, xlab = TeX(r"($\mu$)"), ylab = TeX(r"($\sigma^2$)"), main = "Gibbs path (first 30 moves after burn-in)")
+d2 <- gibbs(30, mu = 3, s2 = 10)                                   # start (3, 10)
+pp <- rbind(c(3, 10)); for (t in 1:30) pp <- rbind(pp, c(d2[t, 1], pp[nrow(pp), 2]), d2[t, ])   # horizontal then vertical
+lines(pp, col = "firebrick", lwd = 1.5); points(d2, pch = 19, col = "firebrick", cex = 0.7)
+plot(draws[1:300, "mu"], type = "l", xlab = "t", ylab = TeX(r"($\mu^{(t)}$)"), main = "trace of mu (start 20)")
+plot(draws[1:300, "s2"], type = "l", xlab = "t", ylab = TeX(r"($(\sigma^2)^{(t)}$)"), main = "trace of sigma^2 (start 50)")
+```
+
+## Data Augmentation: Rounded Observations
+
+Suppose we observe only $y_i = \lfloor x_i\rfloor$ (e.g. ages in whole years), with $x_i\sim N(\mu,\sigma^2)$ latent. Treat $x_1,\ldots,x_n$ as extra unknowns and Gibbs-sample all three blocks. Repeat:
+
+1. $x_i^{(t)}\sim P\big(x_i\mid\mu^{(t-1)},(\sigma^2)^{(t-1)},y_i\big)$, for $i = 1,\ldots,n$
+2. $\mu^{(t)}\sim P\big(\mu\mid x^{(t)},(\sigma^2)^{(t-1)}\big)$
+3. $(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid x^{(t)},\mu^{(t)}\big)$
+
+Steps 2–3 are the conditionals already derived, applied to the imputed $x$. For step 1,
+$$P(x_i\mid\mu,\sigma^2,y_i) = \frac{P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)}{\int P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)\,dx_i}
+= \frac{P(x_i\mid\mu,\sigma^2)}{\int_{y_i}^{y_i+1}P(x_i\mid\mu,\sigma^2)\,dx_i}, \qquad x_i\in[y_i,y_i+1)$$
+
+a normal truncated to $[y_i,y_i+1)$, drawn by inversion: $x_i = \mu + \sigma\,\Phi^{-1}\big(U\big)$ with $U\sim\text{Unif}\big(\Phi(\tfrac{y_i-\mu}\sigma),\Phi(\tfrac{y_i+1-\mu}\sigma)\big)$.
+
+## Data Augmentation (Continued)
+
+The conditional of a latent $x_i$ is the $N(\mu,\sigma^2)$ density restricted to the unit interval $[y_i,y_i+1)$ and renormalized.
+
+```{r}
+#| label: data-augmentation-continued
+#| fig-width: 10
+#| fig-height: 4
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1)); mu <- 50; s <- 10; yi <- 41
+curve(dnorm(x, mu, s), 15, 85, lwd = 3, xlab = "x", ylab = "", main = TeX(r"($N(\mu, \sigma^2)$ with observed $y_i = 41$)"))
+xs <- seq(yi, yi + 1, length.out = 50)
+polygon(c(xs, rev(xs)), c(dnorm(xs, mu, s), rep(0, 50)), col = "firebrick", border = "firebrick")
+abline(v = c(yi, yi + 1), lty = 3)
+curve(dnorm(x, mu, s) / (pnorm(yi + 1, mu, s) - pnorm(yi, mu, s)), yi, yi + 1, lwd = 3, col = "firebrick",
+      xlab = "x", ylab = "density", main = TeX(r"($P(x_i | \mu, \sigma^2, y_i)$,  $y_i \leq x_i < y_i + 1$)"), ylim = c(0, 1.2))
+```
+
+The same pattern handles censored, binned, or interval-valued data: augment with the latent exact values, and every conditional becomes standard.
+
+# 3. Metropolis–Hastings
+
+## The Metropolis–Hastings Algorithm
+
+Target $\pi(\theta)$, known up to a constant. Choose a **proposal** distribution $\tilde T(\theta^*\mid\theta)$ that we can sample from. Starting from $\theta^{(0)}$, repeat for $t = 1,\ldots,n$:
+
+1. Draw a proposal $\theta^*\sim\tilde T(\cdot\mid\theta^{(t-1)})$
+2. Compute the acceptance ratio
+$$r = \min\left\{\frac{\pi(\theta^*)\,\tilde T(\theta^{(t-1)}\mid\theta^*)}{\pi(\theta^{(t-1)})\,\tilde T(\theta^*\mid\theta^{(t-1)})},\ 1\right\}$$
+3. Draw $U\sim\text{Unif}(0,1)$. If $U<r$, set $\theta^{(t)} = \theta^*$ (accept); otherwise set $\theta^{(t)} = \theta^{(t-1)}$ (reject and **stay**)
+
+- Only the ratio $\pi(\theta^*)/\pi(\theta^{(t-1)})$ is needed: normalizing constants cancel
+- A rejected step still produces a draw: the current value is **repeated**, unlike rejection sampling
+- Unlike Gibbs, no conditional distributions are needed; any $\tilde T$ works in principle
+
+## Symmetric Proposals: Random-Walk Metropolis
+
+If $\tilde T$ is symmetric, $\tilde T(\theta^*\mid\theta) = \tilde T(\theta\mid\theta^*)$, e.g.
+$$\tilde T(\theta^*\mid\theta^{(t-1)}) = N\big(\theta^{(t-1)},\ \varsigma^2\big)$$
+
+the proposal terms cancel and
+$$r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}$$
+
+- Uphill proposals ($\pi(\theta^*)\ge\pi(\theta^{(t-1)})$) are always accepted
+- Downhill proposals are accepted with probability equal to the density ratio; the chain can go downhill, which is what lets it explore rather than just climb
+- $\varsigma$ is the **step size**: the single tuning parameter of the algorithm
+
+## Random-Walk Metropolis (Continued)
+
+Left: two proposals from a $N(\theta^{(t-1)},\varsigma^2)$ kernel; the uphill one is accepted, the downhill one accepted with probability $\pi(\theta^*)/\pi(\theta^{(t-1)})$. Right: a trace with rejections showing as flat segments.
+
+```{r}
+#| label: random-walk-metropolis-continued
+#| fig-width: 10
+#| fig-height: 4.2
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+curve(dnorm, -3.5, 3.5, lwd = 3, xlab = TeX(r"($\theta$)"), ylab = TeX(r"($\pi(\theta)$)"), main = "proposals from a symmetric kernel")
+for (cur in c(-2, 1.2)) { pr <- cur + c(-0.6, 0.6)[1 + (cur < 0)]
+  curve(dnorm(x, cur, 0.5) * 0.15, add = TRUE, col = "gray60", lty = 2)
+  points(c(cur, pr), dnorm(c(cur, pr)), pch = 19, col = c("black", "firebrick"))
+  arrows(cur, dnorm(cur) * 0.5, pr, dnorm(cur) * 0.5, length = 0.08, col = "firebrick")
+  text(cur, dnorm(cur), TeX(r"($\theta^{(t-1)}$)"), pos = 2, cex = 0.9); text(pr, dnorm(pr), TeX(r"($\theta^*$)"), pos = 4, cex = 0.9) }
+th <- numeric(60); th[1] <- -1; for (t in 2:60) { p <- th[t - 1] + rnorm(1, 0, 0.8); th[t] <- if (runif(1) < dnorm(p) / dnorm(th[t - 1])) p else th[t - 1] }
+plot(th, type = "s", lwd = 2, col = "steelblue", xlab = "t", ylab = TeX(r"($\theta^{(t)}$)"), main = "trace: flat segments are rejections")
+rej <- which(diff(th) == 0); points(rej + 1, th[rej + 1], pch = 4, col = "firebrick")
+```
+
+## Choice of Step Size
+
+```{r}
+#| label: choice-of-step-size
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+mh <- function(sig, n = 2000) { th <- numeric(n); th[1] <- 0; acc <- 0
+  for (t in 2:n) { p <- th[t - 1] + rnorm(1, 0, sig)
+    if (runif(1) < dnorm(p) / dnorm(th[t - 1])) { th[t] <- p; acc <- acc + 1 } else th[t] <- th[t - 1] }
+  list(th = th, acc = acc / (n - 1)) }
+res <- lapply(c(0.1, 2.4, 40), mh)
+labs <- c("too small", "about right", "too large")
+for (k in 1:3) plot(res[[k]]$th[1:500], type = "l", xlab = "t", ylab = TeX(r"($\theta^{(t)}$)"), ylim = c(-3.5, 3.5),
+                    main = sprintf("step %s (sd = %g): accept %.2f", labs[k], c(0.1, 2.4, 40)[k], res[[k]]$acc))
+for (k in 1:3) acf(res[[k]]$th, lag.max = 50, main = "autocorrelation")
+```
+
+Target $N(0,1)$. Tiny steps are almost always accepted but move slowly; huge steps are almost always rejected; both give highly autocorrelated chains.
+
+## Choice of Step Size (Continued)
+
+- The chain is a sequence of **dependent** draws. For a stationary chain with lag-$k$ autocorrelations $\rho_k$,
+$$\text{Var}\Big(\frac1T\sum_{t=1}^T\theta^{(t)}\Big)\ \approx\ \frac{\sigma^2}{T}\Big(1 + 2\sum_{k=1}^\infty\rho_k\Big) = \frac{\sigma^2}{T_{\text{eff}}},
+\qquad T_{\text{eff}} = \frac{T}{1+2\sum_k\rho_k}$$
+so the goal of tuning is **small autocorrelation**, not a high acceptance rate
+- For random-walk Metropolis on a smooth target, the optimal acceptance rate is about $0.234$ in high dimension (up to $\approx0.44$ in one dimension), i.e. an optimal **rejection** rate around $0.75$
+- A rejection rate that is too **low** signals steps that are too small: the chain crawls, and traces look smooth and deceptively stable
+- Rule of thumb: scale $\varsigma$ to roughly $2.4/\sqrt d$ times the posterior standard deviation; tune during burn-in, then fix it (changing $\varsigma$ adaptively during the kept run breaks the Markov property unless done carefully)
+
+## Example: Truncated Normal
+
+$$\pi(\theta)\propto\varphi(\theta)\,I(l\le\theta\le u)$$
+
+Random-walk Metropolis with $\theta^*\sim N(\theta^{(t-1)},\varsigma^2)$ and
+$$r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}$$
+
+If $\theta^*$ falls outside $[l,u]$, then $\pi(\theta^*) = 0$, $r = 0$, and the proposal is **rejected**; the chain stays at $\theta^{(t-1)}$. No special handling is needed: the indicator in $\pi$ does it.
+
+```{r}
+#| label: example-truncated-normal
+#| fig-width: 8
+#| fig-height: 2.8
+par(mar = c(4, 1, 1, 1)); l <- -1; u <- 0.5
+curve(dnorm(x) * (x >= l & x <= u), -2.5, 2, n = 1001, lwd = 3, xlab = TeX(r"($\theta$)"), ylab = "", yaxt = "n", col = "firebrick")
+abline(v = c(l, u), lty = 3); axis(1, at = c(l, u), labels = c("l", "u"), line = -1, tick = FALSE)
+arrows(0.3, 0.05, 0.9, 0.05, length = 0.08, lwd = 2); text(0.9, 0.05, TeX(r"($\theta^*$ outside: $r = 0$, reject)"), pos = 4)
+points(0.3, 0.05, pch = 19)
+```
+
+## Example: Posterior of a Normal Sample by Metropolis–Hastings
+
+Same model as the Gibbs example. $\sigma^2>0$ is awkward for a normal random walk (proposals below zero are wasted), so reparametrize $w = \log\sigma^2$, $\sigma^2 = e^w$, $w\in\mathbb R$.
+
+**Change of variables.** If $X\sim f_X$ and $Y = t(X)$, then $f_Y(y) = f_X\big(t^{-1}(y)\big)\,\big|\tfrac{\partial t^{-1}(y)}{\partial y}\big|$. With $t^{-1}(w) = e^w$, the Jacobian is $e^w$, so the posterior in $(\mu,w)$ is
+$$P(\mu,w\mid x)\ \propto\ P(x_1,\ldots,x_n\mid\mu,e^w)\cdot p(\mu)\cdot p_{\sigma^2}(e^w)\cdot e^w$$
+
+Forgetting the factor $e^w$ targets the wrong distribution.
+
+**Algorithm.** Random-walk proposal on $(\mu,w)$ jointly, $(\mu^*,w^*) = (\mu,w) + \varsigma\,(z_1,z_2)$, $z\sim N_2(0,I)$, and
+$$r = \min\left\{\exp\big[\log P(\mu^*,w^*\mid x) - \log P(\mu,w\mid x)\big],\ 1\right\}$$
+
+always computed on the log scale.
+
+## Example (Continued)
+
+```{r}
+#| label: example-continued
+#| echo: true
+log_post <- function(mu, w) { s2 <- exp(w)
+  sum(dnorm(x, mu, sqrt(s2), log = TRUE)) + dnorm(mu, mu0, sqrt(s02), log = TRUE) +
+    (-(a0 + 1) * log(s2) - lam0 / s2) + w }                       # + w is the log Jacobian
+mh_normal <- function(iters, step, mu = 0, w = 0) {
+  out <- matrix(NA, iters, 2, dimnames = list(NULL, c("mu", "s2"))); acc <- 0; lp <- log_post(mu, w)
+  for (t in 1:iters) {
+    mu_p <- mu + step[1] * rnorm(1); w_p <- w + step[2] * rnorm(1); lp_p <- log_post(mu_p, w_p)
+    if (log(runif(1)) < lp_p - lp) { mu <- mu_p; w <- w_p; lp <- lp_p; acc <- acc + 1 }
+    out[t, ] <- c(mu, exp(w)) }
+  list(draws = out, accept = acc / iters) }
+fit <- mh_normal(20000, step = c(1.2, 0.6))
+c(accept = fit$accept)
+round(rbind(MH = colMeans(fit$draws[-(1:1000), ]), Gibbs = colMeans(draws[-(1:200), ])), 3)
+```
+
+Gibbs and Metropolis–Hastings target the same posterior; their averages agree up to Monte Carlo error.
+
+## Justification of Metropolis–Hastings{.smaller}
+
+**Claim.** The MH transition $T$ satisfies detailed balance with respect to $\pi$, hence leaves $\pi$ invariant.
+
+For $\theta^T\ne\theta$, a move $\theta\to\theta^T$ requires proposing $\theta^T$ and accepting it:
+$$T(\theta\to\theta^T) = \tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\}$$
+
+(For $\theta^T = \theta$ there is no density expression, the chain has a point mass from rejections, but detailed balance holds trivially there. Then
+$$
+\begin{aligned}
+\text{LHS} = \pi(\theta)\,T(\theta\to\theta^T)
+&= \pi(\theta)\,\tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\} \\
+&= \min\Big\{\pi(\theta^T)\,\tilde T(\theta^T\to\theta),\ \pi(\theta)\,\tilde T(\theta\to\theta^T)\Big\}
+\end{aligned}
+$$
+
+By the same computation with the roles of $\theta$ and $\theta^T$ exchanged,
+$$\text{RHS} = \pi(\theta^T)\,T(\theta^T\to\theta) = \min\Big\{\pi(\theta)\,\tilde T(\theta\to\theta^T),\ \pi(\theta^T)\,\tilde T(\theta^T\to\theta)\Big\} = \text{LHS}. \qquad\blacksquare$$
+
+## Metropolis-within-Gibbs
+
+$\theta = (\theta_1,\theta_2)$. Gibbs sampling alternates $\theta_1^{(t)}\sim\pi(\theta_1\mid\theta_2^{(t-1)})$ and $\theta_2^{(t)}\sim\pi(\theta_2\mid\theta_1^{(t)})$. When a full conditional cannot be sampled directly:
+
+- Replace that step by a Metropolis–Hastings transition $T_j(\theta_j\to\theta_j^T)$ that leaves $\pi(\theta_j\mid\theta_{-j})$ invariant
+- Only $\pi(\theta_j\mid\theta_{-j})\propto\pi(\theta_j,\theta_{-j})$ is needed, evaluated at the current $\theta_{-j}$: the joint posterior as a function of $\theta_j$ alone
+
+Since each block transition leaves $\pi$ invariant (the argument for Gibbs applies to any $\pi(\theta_j\mid\theta_{-j})$-invariant $T_j$), the composite sweep leaves $\pi$ invariant. A single MH step per block suffices; the inner chain need not converge.
+
+**Practical picture of most MCMC software**: Gibbs updates where conjugacy allows, one-dimensional or block Metropolis (or slice sampling, Hamiltonian Monte Carlo) elsewhere, all combined in one sweep.
+
+# 4. Hamiltonian Monte Carlo
+
+## Why Random Walks Struggle
+
+A random-walk proposal has no sense of direction: in $d$ dimensions it needs $O(d)$ steps to move a distance of one posterior standard deviation, and along a narrow, correlated ridge it needs far more. Gibbs suffers the same way when coordinates are strongly correlated.
+
+**Hamiltonian Monte Carlo** (HMC) uses the **gradient** $\nabla\log\pi(\theta)$ to propose distant points with high acceptance.
+
+Introduce an auxiliary **momentum** $p\in\mathbb R^d$ and the joint density
+$$\pi(\theta,p)\ \propto\ \exp\big\{-H(\theta,p)\big\}, \qquad
+H(\theta,p) = \underbrace{-\log\pi(\theta)}_{U(\theta)\ \text{potential energy}} + \underbrace{\tfrac12\,p^\top M^{-1}p}_{K(p)\ \text{kinetic energy}}$$
+
+- The marginal of $\theta$ is the target $\pi(\theta)$; $p\sim N_d(0,M)$ independently of $\theta$
+- $M$ (the "mass matrix") is a tuning choice, often $I$ or a diagonal estimate of posterior precision
+- Physical picture: a particle at position $\theta$ rolling on the surface $U(\theta)$ with momentum $p$
+
+## Hamiltonian Dynamics and the Leapfrog Integrator
+
+Hamilton's equations move $(\theta,p)$ in fictitious time $\tau$:
+$$\frac{d\theta}{d\tau} = \frac{\partial H}{\partial p} = M^{-1}p, \qquad
+\frac{dp}{d\tau} = -\frac{\partial H}{\partial\theta} = \nabla\log\pi(\theta)$$
+
+Exact dynamics **conserve $H$**, preserve volume, and are reversible, so following them for any time and then accepting would leave $\pi(\theta,p)$ invariant with acceptance probability 1. In practice the equations are discretized by the **leapfrog** integrator with step size $\epsilon$, repeated $L$ times:
+$$
+p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta), \qquad
+\theta \leftarrow \theta + \epsilon\,M^{-1}p, \qquad
+p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta)
+$$
+
+Leapfrog is still volume-preserving and reversible (negate $p$ and run backwards), so it can be used inside a Metropolis step; only energy conservation is approximate, with error $O(\epsilon^2)$ per trajectory. The Metropolis correction removes this discretization bias.
+
+## The HMC Algorithm {.smaller}
+
+Starting from $\theta^{(0)}$, repeat for $t = 1,\ldots,n$:
+
+1. Draw a fresh momentum $p\sim N_d(0,M)$; set $(\theta,p)$ with $\theta = \theta^{(t-1)}$
+2. Run $L$ leapfrog steps of size $\epsilon$ to obtain $(\theta^*,p^*)$
+3. Accept $\theta^{(t)} = \theta^*$ with probability
+$$r = \min\Big\{\exp\big[-H(\theta^*,p^*) + H(\theta,p)\big],\ 1\Big\}$$
+otherwise $\theta^{(t)} = \theta^{(t-1)}$
+
+- Step 1 is a Gibbs update of $p$ from its conditional, step 2–3 is a Metropolis update of $(\theta,p)$ with a deterministic, reversible proposal (momentum negation makes it symmetric); each leaves $\pi(\theta,p)$ invariant
+- Because $H$ is nearly conserved, acceptance stays high (target $\approx0.65$–$0.8$) even though $\theta^*$ is far from $\theta^{(t-1)}$
+- Needs $\nabla\log\pi$: analytic, or by automatic differentiation
+
+
+## The HMC Algorithm (Continued)
+
+```{r}
+#| label: the-hmc-algorithm-continued
+#| echo: true
+hmc <- function(log_pi, grad_log_pi, theta, eps, L, iters, M = diag(length(theta))) {
+  out <- matrix(NA, iters, length(theta)); acc <- 0; Minv <- solve(M)
+  for (t in 1:iters) {
+    p <- as.vector(t(chol(M)) %*% rnorm(length(theta))); th <- theta; pp <- p
+    pp <- pp + eps / 2 * grad_log_pi(th)                            # leapfrog: half step in p
+    for (l in 1:L) { th <- th + eps * Minv %*% pp
+      if (l < L) pp <- pp + eps * grad_log_pi(th) }                 # full steps in theta and p
+    pp <- pp + eps / 2 * grad_log_pi(th)                            # final half step in p
+    H0 <- -log_pi(theta) + 0.5 * sum(p * (Minv %*% p)); H1 <- -log_pi(th) + 0.5 * sum(pp * (Minv %*% pp))
+    if (log(runif(1)) < H0 - H1) { theta <- as.vector(th); acc <- acc + 1 }
+    out[t, ] <- theta }
+  list(draws = out, accept = acc / iters) }
+Sigma <- matrix(c(1, 0.98, 0.98, 1), 2); Sinv <- solve(Sigma)    # target: strongly correlated N(0, Sigma)
+fit_hmc <- hmc(function(z) -0.5 * sum(z * (Sinv %*% z)), function(z) -as.vector(Sinv %*% z),
+               theta = c(-2, -2), eps = 0.05, L = 30, iters = 2000)
+c(accept = fit_hmc$accept, mean1 = mean(fit_hmc$draws[, 1]), sd1 = sd(fit_hmc$draws[, 1]))
+```
+
+Tuning: $\epsilon$ (too large: leapfrog unstable, rejections) and $L$ (too small: random-walk behaviour; too large: trajectory turns back). The **No-U-Turn Sampler** (NUTS) chooses $L$ adaptively and is the default in Stan
+
+## HMC versus Random-Walk Metropolis
+
+Target: bivariate normal with correlation $0.98$. Same number of iterations for both samplers.
+
+```{r}
+#| label: hmc-versus-random-walk-metropolis
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+rw <- matrix(NA, 2000, 2); cur <- c(-2, -2); lp <- -0.5 * sum(cur * (Sinv %*% cur)); acc <- 0
+for (t in 1:2000) { pr <- cur + 0.3 * rnorm(2); lpp <- -0.5 * sum(pr * (Sinv %*% pr))
+  if (log(runif(1)) < lpp - lp) { cur <- pr; lp <- lpp; acc <- acc + 1 }; rw[t, ] <- cur }
+g <- seq(-3.5, 3.5, length.out = 80); Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
+for (k in 1:2) { d <- if (k == 1) rw else fit_hmc$draws
+  contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60", xlab = TeX(r"($\theta_1$)"), ylab = TeX(r"($\theta_2$)"),
+          main = sprintf("%s: first 100 draws, accept %.2f", c("random walk (sd 0.3)", "HMC (eps 0.05, L 30)")[k], c(acc / 2000, fit_hmc$accept)[k]))
+  lines(d[1:100, ], col = c("firebrick", "steelblue")[k], lwd = 1.5); points(d[1:100, ], pch = 19, cex = 0.5, col = c("firebrick", "steelblue")[k]) }
+a1 <- acf(rw[, 1], lag.max = 60, plot = FALSE)$acf; a2 <- acf(fit_hmc$draws[, 1], lag.max = 60, plot = FALSE)$acf
+plot(0:60, a1, type = "h", lwd = 2, col = "firebrick", xlab = "lag", ylab = TeX(r"(ACF of $\theta_1$)"), main = "autocorrelation", ylim = c(-0.2, 1))
+lines(0:60 + 0.3, a2, type = "h", lwd = 2, col = "steelblue"); legend("topright", bty = "n", lwd = 2, col = c("firebrick", "steelblue"), legend = c("random walk", "HMC"))
+```
+
+Random-walk Metropolis creeps along the ridge with autocorrelation persisting for dozens of lags; HMC follows the ridge in a single trajectory and its draws are nearly independent.
+
+## Summary {.smaller}
+
+- A Markov chain with transition $T$ converges to its equilibrium $\pi$ from any start if $T$ leaves $\pi$ invariant and is irreducible and aperiodic; **detailed balance** $\pi(\theta)T(\theta,\theta^T) = \pi(\theta^T)T(\theta^T,\theta)$ is the practical way to guarantee invariance
+- MCMC: design $T$ for the target posterior, run it, discard burn-in, and average the dependent draws; $\text{Var}(\bar\theta)\approx\sigma^2(1+2\sum_k\rho_k)/T$, so autocorrelation, not just chain length, governs accuracy
+- **Gibbs sampling**: update each coordinate from its full conditional; automatic when the model is conditionally conjugate; data augmentation adds latent variables to make conditionals standard
+- **Metropolis–Hastings**: propose from any $\tilde T$, accept with probability $\min\{\pi(\theta^*)\tilde T(\theta\mid\theta^*)/[\pi(\theta)\tilde T(\theta^*\mid\theta)],1\}$; random-walk proposals need a tuned step size (acceptance $\approx0.25$–$0.45$); transform bounded parameters and include the Jacobian
+- **Metropolis-within-Gibbs** combines the two: MH for the blocks without closed-form conditionals
+- **Hamiltonian Monte Carlo** adds momentum and follows gradient-driven trajectories (leapfrog + Metropolis correction), giving distant proposals with high acceptance and nearly independent draws; the default in modern software (Stan)

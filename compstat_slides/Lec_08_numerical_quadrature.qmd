@@ -1,0 +1,370 @@
+---
+subtitle: "Numerical Quadrature"
+pagetitle: "quadrature-slides"
+author: "Longhai Li"
+format: banner_slides-revealjs
+number-sections: false
+---
+
+```{r}
+#| include: false
+set.seed(812)
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+library(latex2exp)
+```
+
+# 1. The Problem and Transformations
+
+## Numerical Quadrature
+
+Goal: approximate the area under a curve
+$$A = \int_a^b f(x)\,dx, \qquad a,\ b \text{ finite}$$
+
+by evaluating $f$ at a finite set of points and forming a weighted sum:
+$$\tilde A_n = \sum_{i=1}^n w_i\, f(x_i)$$
+
+- Different rules differ in how the points $x_i$ and weights $w_i$ are chosen
+- If $a$ or $b$ is infinite, first **transform** the variable so the range becomes finite
+- Typical statistical uses: probabilities $P(a<X<b)$, expectations, normalizing constants and marginal likelihoods in Bayesian inference
+
+## Infinite Range: Logistic Transformation
+
+Map $x\in(-\infty,\infty)$ to $y\in(0,1)$:
+$$y = \frac{1}{1+e^{-x}}, \qquad x = t(y) = \log\frac{y}{1-y}, \qquad t'(y) = \frac{1}{y(1-y)}$$
+
+Change of variable:
+$$\int_{-\infty}^{\infty} f(x)\,dx = \int_0^1 f\big(t(y)\big)\,t'(y)\,dy = \int_0^1 g(y)\,dy,
+\qquad g(y) = \frac{f\big(\log\frac{y}{1-y}\big)}{y(1-y)}$$
+
+- Any quadrature rule for a finite interval now applies to $g$ on $(0,1)$
+- Equally spaced points in $y$ correspond to points in $x$ that are dense near $0$ and sparse in the tails
+- For a half-line $(0,\infty)$ use $x = -\log(1-y)$ or $x = y/(1-y)$ instead
+
+## Infinite Range: Logistic Transformation (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+curve(1 / (1 + exp(-x)), -6, 6, lwd = 3, xlab = "x", ylab = "y", main = TeX(r"($y = 1/(1+e^{-x})$)"))
+ys <- seq(0.05, 0.95, by = 0.1); xs <- log(ys / (1 - ys))
+segments(xs, 0, xs, ys, lty = 3, col = "gray50"); segments(-6, ys, xs, ys, lty = 3, col = "gray50")
+points(xs, ys, pch = 19, col = "firebrick")
+f <- function(x) 0.6 * dnorm(x, -1, 1) + 0.4 * dnorm(x, 2, 1.5)
+curve(f, -6, 6, lwd = 3, xlab = "x", ylab = "f(x)", main = "original integrand")
+xs2 <- seq(-6, 6, length.out = 400)
+polygon(c(xs2, rev(xs2)), c(f(xs2), rep(0, 400)), col = adjustcolor("firebrick", 0.3), border = NA)
+rug(xs, col = "firebrick", lwd = 2)
+g <- function(y) f(log(y / (1 - y))) / (y * (1 - y))
+curve(g, 0.001, 0.999, lwd = 3, n = 501, xlab = "y", ylab = "g(y) = f(t(y)) t'(y)", main = "transformed integrand on (0, 1)")
+ys2 <- seq(0.001, 0.999, length.out = 400)
+polygon(c(ys2, rev(ys2)), c(g(ys2), rep(0, 400)), col = adjustcolor("steelblue", 0.3), border = NA)
+rug(ys, col = "firebrick", lwd = 2)
+```
+
+Equally spaced $y$ points (red ticks, right) map to unequally spaced $x$ points (red ticks, middle). The two shaded areas are equal.
+
+## Calculating Probabilities
+
+For $X$ with density $\varphi(x)$, e.g. $\varphi(x) = \frac{1}{\sqrt{2\pi}}e^{-x^2/2}$,
+$$P(a<X<b) = \int_a^b \varphi(x)\,dx = \int_{-\infty}^{\infty}\varphi^{(c)}(x)\,dx,
+\qquad \varphi^{(c)}(x) = \varphi(x)\,I(a<x<b)$$
+
+- Either integrate $\varphi$ directly over the finite interval $[a,b]$, or
+- integrate the **truncated** function $\varphi^{(c)}$ over the whole line; the indicator does the cutting
+
+The second view matters when $[a,b]$ is not the natural range: the same machinery computes $P(X\in S)$ for any set $S$ and, more generally, $E[h(X)] = \int h(x)\varphi(x)\,dx$.
+
+```{r}
+#| fig-width: 8
+#| fig-height: 2.8
+par(mar = c(4, 4, 1, 1)); a <- 0.5; b <- 2
+curve(dnorm, -3.5, 3.5, lwd = 3, xlab = "x", ylab = "")
+xs <- seq(a, b, length.out = 100)
+polygon(c(xs, rev(xs)), c(dnorm(xs), rep(0, 100)), col = adjustcolor("firebrick", 0.3), border = NA)
+lines(c(-3.5, a, a, xs, b, b, 3.5), c(0, 0, dnorm(a), dnorm(xs), dnorm(b), 0, 0), col = "steelblue", lwd = 3)
+axis(1, at = c(a, b), labels = c("a", "b"), line = -1, tick = FALSE, col.axis = "firebrick")
+legend("topleft", bty = "n", lwd = 3, col = c("black", "steelblue"),
+       legend = TeX(c(r"($\varphi(x)$)", r"($\varphi^{(c)}(x) = \varphi(x) I(a<x<b)$)")))
+```
+
+# 2. Quadrature Rules
+
+## Midpoint Rule
+
+Divide $[a,b]$ into $n$ panels of width $h_n = (b-a)/n$ and use the height of $f$ at the middle of each panel:
+$$\tilde A_n = h_n\sum_{i=1}^n f\!\Big(a + \big(i-\tfrac12\big)h_n\Big)$$
+
+- Each panel is approximated by a rectangle
+- Error for smooth $f$: $\;A - \tilde A_n = \dfrac{(b-a)h_n^2}{24}\,f''(\xi) = O(h_n^2) = O(1/n^2)$
+- Does not evaluate $f$ at the endpoints, which is convenient when $f$ is singular or undefined there (e.g. $g(y)$ at $y = 0, 1$ after a logistic transform)
+
+## Trapezoidal Rule
+
+Approximate $f$ on each panel $[x_{i-1},x_i]$ by the straight line through $\big(x_{i-1},f(x_{i-1})\big)$ and $\big(x_i,f(x_i)\big)$; the panel area is a trapezoid:
+$$\int_{x_0}^{x_1} f(x)\,dx \approx \tfrac12\big[f(x_0)+f(x_1)\big](x_1-x_0)$$
+
+Summing over $n$ panels with $x_i = a + ih_n$, interior points are shared by two panels:
+$$
+\begin{aligned}
+\tilde A_n &= \tfrac12 h_n\Big[f(a) + f(a+h_n) + f(a+h_n) + \cdots + f\big(a+(n-1)h_n\big) + f(b)\Big] \\
+&= \tfrac12 h_n\big[f(a) + f(b)\big] + h_n\sum_{i=1}^{n-1} f(a+ih_n)
+\end{aligned}
+$$
+
+- Error: $\;A - \tilde A_n = -\dfrac{(b-a)h_n^2}{12}\,f''(\xi) = O(1/n^2)$, twice the midpoint error and of opposite sign
+- Exact for linear $f$
+
+## Simpson's Rule
+
+Take $n = 2m$ (even) and $h_n = (b-a)/n$. On each **pair** of panels $[x_0,x_1]$ with $x_1 - x_0 = 2h_n$, replace $f$ by the quadratic $\tilde f$ through $f(x_0)$, $f\big(\tfrac{x_0+x_1}{2}\big)$, $f(x_1)$. Integrating the quadratic exactly gives
+$$\int_{x_0}^{x_1}\tilde f(x)\,dx = \frac{x_1-x_0}{6}\Big[f(x_0) + 4f\big(\tfrac{x_0+x_1}{2}\big) + f(x_1)\Big]$$
+
+Summing over the $m$ pairs, each even interior point is shared by two pairs:
+$$
+\begin{aligned}
+\tilde A_{2m} &= \frac{2h_n}{6}\Big[f(a) + 4f(a+h_n) + f(a+2h_n) + f(a+2h_n) + 4f(a+3h_n) + \cdots + f(b)\Big] \\
+&= \frac{h_n}{3}\Big[f(a) + f(b) + 4\sum_{i=1}^{m} f\big(a+(2i-1)h_n\big) + 2\sum_{i=1}^{m-1} f\big(a+2ih_n\big)\Big]
+\end{aligned}
+$$
+
+- Error: $\;A - \tilde A_{2m} = -\dfrac{(b-a)h_n^4}{180}\,f^{(4)}(\xi) = O(1/n^4)$; exact for cubics
+- Simpson $= \tfrac23\,\text{Midpoint} + \tfrac13\,\text{Trapezoid}$ on the same pair of panels
+
+## The Three Rules on One Panel Pair
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+f <- function(x) 1.2 * exp(-(x - 1.1)^2 / 0.9) + 0.3
+x0 <- 0; x1 <- 2; xm <- 1
+base <- function(main) { curve(f, -0.3, 2.3, lwd = 3, ylim = c(0, 1.7), xlab = "x", ylab = "f(x)", main = main)
+  abline(v = c(x0, xm, x1), lty = 3, col = "gray50") }
+base("Midpoint: rectangles")
+rect(c(x0, xm), 0, c(xm, x1), f(c(0.5, 1.5)), col = adjustcolor("steelblue", 0.3), border = "steelblue", lwd = 2)
+points(c(0.5, 1.5), f(c(0.5, 1.5)), pch = 19, col = "steelblue")
+base("Trapezoid: straight lines")
+for (i in 1:2) { xs <- c(x0, xm, x1)[i:(i + 1)]
+  polygon(c(xs, rev(xs)), c(f(xs), 0, 0), col = adjustcolor("firebrick", 0.3), border = "firebrick", lwd = 2) }
+points(c(x0, xm, x1), f(c(x0, xm, x1)), pch = 19, col = "firebrick")
+base("Simpson: one quadratic")
+q <- lm(y ~ poly(x, 2, raw = TRUE), data.frame(x = c(x0, xm, x1), y = f(c(x0, xm, x1))))
+xs <- seq(x0, x1, length.out = 100); yq <- predict(q, data.frame(x = xs))
+polygon(c(xs, rev(xs)), c(yq, rep(0, 100)), col = adjustcolor("forestgreen", 0.3), border = NA)
+lines(xs, yq, col = "forestgreen", lwd = 3); points(c(x0, xm, x1), f(c(x0, xm, x1)), pch = 19, col = "forestgreen")
+```
+
+Simpson uses the same three points as the trapezoid rule on two panels, but fits a parabola instead of two line segments.
+
+## Implementation in R
+
+```{r}
+#| echo: true
+midpoint <- function(f, a, b, n) { h <- (b - a) / n; h * sum(f(a + (1:n - 0.5) * h)) }
+trapezoid <- function(f, a, b, n) { h <- (b - a) / n; x <- a + (0:n) * h
+  h * (sum(f(x)) - 0.5 * (f(a) + f(b))) }
+simpson <- function(f, a, b, n) { stopifnot(n %% 2 == 0); h <- (b - a) / n; x <- a + (0:n) * h
+  h / 3 * sum(f(x) * c(1, rep(c(4, 2), n / 2 - 1), 4, 1)) }
+# P(0.5 < Z < 2) for Z ~ N(0, 1); exact value from pnorm
+exact <- pnorm(2) - pnorm(0.5)
+sapply(c(midpoint = midpoint, trapezoid = trapezoid, simpson = simpson),
+       function(rule) rule(dnorm, 0.5, 2, 10) - exact)
+```
+
+With only 10 panels Simpson's rule is already accurate to about $10^{-7}$.
+
+## Convergence of the Error
+
+```{r}
+#| fig-width: 8
+#| fig-height: 4.4
+par(mar = c(4, 4, 1, 1)); ns <- 2^(1:9)
+err <- sapply(list(midpoint, trapezoid, simpson), function(rule) sapply(ns, function(n) abs(rule(dnorm, 0.5, 2, n) - exact)))
+matplot(ns, err, type = "b", log = "xy", pch = 19, lty = 1, lwd = 2, col = c("steelblue", "firebrick", "forestgreen"),
+        xlab = "number of panels n", ylab = "absolute error")
+legend("bottomleft", bty = "n", lwd = 2, pch = 19, col = c("steelblue", "firebrick", "forestgreen"),
+       legend = c("midpoint, slope -2", "trapezoid, slope -2", "Simpson, slope -4"))
+```
+
+On the log–log scale the slopes are the exponents of $1/n$: $-2$ for midpoint and trapezoid, $-4$ for Simpson, until rounding error dominates near $10^{-15}$.
+
+# 3. Application: Marginal Likelihood
+
+## The Marginal Likelihood
+
+With likelihood $L(\theta) = \prod_{i=1}^n P(y_i\mid\theta)$ and prior $\pi(\theta)$, the posterior is
+$$P(\theta\mid y) = \frac{\prod_{i=1}^n P(y_i\mid\theta)\,\pi(\theta)}{P(y)}, \qquad
+P(y) = \int L(\theta)\,\pi(\theta)\,d\theta = E_\pi\big[L(\theta)\big]$$
+
+- $P(y)$ is the **marginal likelihood**: the likelihood averaged over the prior
+- It is the normalizing constant of the posterior and the basis of Bayes factors for comparing models
+- Its value depends strongly on the prior: a prior far from where $L(\theta)$ is large, or a very diffuse prior, gives a small $P(y)$
+
+## The Marginal Likelihood (Continued)
+
+The same likelihood (red) with three priors: one concentrated near the likelihood, one far away, and one vague. $P(y)$ is the area under $L(\theta)\pi(\theta)$ (shaded).
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+L <- function(t) dnorm(t, 2, 1)
+for (pr in list(c(2, 1.5, "prior near likelihood"), c(-5, 1, "prior far away"), c(0, 10, "vague prior N(0, 100)"))) {
+  m <- as.numeric(pr[1]); s <- as.numeric(pr[2]); pi <- function(t) dnorm(t, m, s)
+  ml <- integrate(function(t) L(t) * pi(t), -Inf, Inf)$value
+  curve(L, -9, 8, lwd = 3, col = "firebrick", ylim = c(0, 0.42), xlab = TeX(r"($\theta$)"), ylab = "",
+        main = sprintf("%s:  P(y) = %.4f", pr[3], ml))
+  curve(pi, add = TRUE, lwd = 3, col = "steelblue")
+  ts <- seq(-9, 8, length.out = 300)
+  polygon(c(ts, rev(ts)), c(L(ts) * pi(ts), rep(0, 300)), col = adjustcolor("gray30", 0.4), border = NA)
+  if (m == 2) legend("topleft", bty = "n", lwd = 3, col = c("firebrick", "steelblue", "gray30"),
+                     legend = TeX(c(r"($L(\theta)$)", r"($\pi(\theta)$)", r"($L(\theta)\pi(\theta)$)")))
+}
+```
+
+## Example: Normal Data with Unknown Mean and Variance
+
+Data $y_1,\ldots,y_n\mid\mu,\sigma^2 \overset{iid}{\sim} N(\mu,\sigma^2)$. Parametrize the variance by $w = \log\sigma^2$ so both parameters range over $(-\infty,\infty)$, and assign normal priors:
+$$\mu\sim N(\mu_0,\sigma_0^2), \qquad w = \log\sigma^2 \sim N(w_0,\sigma_w^2)$$
+
+$$L(\mu,w) = \prod_{i=1}^n \varphi\big(y_i;\ \mu,\ e^{w/2}\big), \qquad
+\pi(\mu,w) = \varphi(\mu;\mu_0,\sigma_0)\,\varphi(w;w_0,\sigma_w)$$
+
+Marginal likelihood:
+$$P(y) = \int_{-\infty}^{\infty}\!\int_{-\infty}^{\infty} L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw$$
+
+No closed form (the prior on $w$ is not conjugate), so we use two-dimensional quadrature.
+
+## Example: Transform and Apply the Midpoint Rule
+
+Logistic transforms to $(0,1)^2$:
+$$\mu = \log\frac{u}{1-u}, \qquad w = \log\frac{v}{1-v}, \qquad
+d\mu\,dw = \frac{du}{u(1-u)}\,\frac{dv}{v(1-v)}$$
+
+$$P(y) = \int_0^1\!\int_0^1 L\big(\mu(u),w(v)\big)\,\pi\big(\mu(u),w(v)\big)\,\frac{1}{u(1-u)}\,\frac{1}{v(1-v)}\,du\,dv$$
+
+Product midpoint rule on an $n\times n$ grid with $h = 1/n$, $u_j = (j-\tfrac12)h$, $v_k = (k-\tfrac12)h$:
+$$P(y) \approx h^2\sum_{j=1}^n\sum_{k=1}^n g(u_j,v_k), \qquad g(u,v) = \frac{L\big(\mu(u),w(v)\big)\,\pi\big(\mu(u),w(v)\big)}{u(1-u)\,v(1-v)}$$
+
+Midpoint avoids the boundary, where $1/(u(1-u))\to\infty$.
+
+## Example: Transform and Apply the Midpoint Rule (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+y <- rnorm(20, 1, 2); n <- 20; h <- 1 / n; u <- (1:n - 0.5) * h
+logit <- function(p) log(p / (1 - p))
+logg <- function(u, v) { mu <- logit(u); w <- logit(v)
+  sum(dnorm(y, mu, exp(w / 2), log = TRUE)) + dnorm(mu, 0, 5, log = TRUE) + dnorm(w, 0, 2, log = TRUE) -
+    log(u * (1 - u)) - log(v * (1 - v)) }
+G <- outer(u, u, Vectorize(logg))
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+mg <- seq(-6, 6, length.out = 80); wg <- seq(-3, 4, length.out = 80)
+Gm <- outer(mg, wg, Vectorize(function(m, w) sum(dnorm(y, m, exp(w / 2), log = TRUE)) + dnorm(m, 0, 5, log = TRUE) + dnorm(w, 0, 2, log = TRUE)))
+contour(mg, wg, exp(Gm - max(Gm)), xlab = TeX(r"($\mu$)"), ylab = TeX(r"($w = \log \sigma^2$)"), main = TeX(r"($L(\mu, w) \pi(\mu, w)$, original scale)"), nlevels = 8)
+image(u, u, exp(G - max(G)), col = hcl.colors(30, "YlOrRd", rev = TRUE), xlab = "u", ylab = "v", main = "g(u, v) on the unit square with midpoint grid")
+abline(v = seq(0, 1, by = h), h = seq(0, 1, by = h), col = adjustcolor("gray30", 0.4)); points(expand.grid(u, u), pch = ".", cex = 1.5)
+```
+
+## Computing on the Log Scale
+
+$L(\theta)$ underflows for moderate $n$ (a product of $n$ densities), so store $\log g$ at each grid point and combine with **log-sum-exp**:
+$$\log\sum_{i} e^{\ell_i} = M + \log\sum_i e^{\ell_i - M}, \qquad M = \max_i \ell_i$$
+
+The largest term becomes $e^0 = 1$ and nothing overflows; terms far below $M$ underflow to $0$ harmlessly.
+
+```{r}
+#| echo: true
+log_sum_exp <- function(l) { M <- max(l); M + log(sum(exp(l - M))) }
+log_ml <- log_sum_exp(G) + 2 * log(h)          # log P(y) = log( h^2 * sum exp(log g) )
+c(log_marginal_likelihood = log_ml, direct_sum = log(sum(exp(G))) + 2 * log(h))
+```
+
+Here `G` is the $n\times n$ matrix of $\log g(u_j,v_k)$; the direct sum agrees for this small example but would return `-Inf` for large $n$ or extreme data.
+
+# 4. Difficulties of Numerical Quadrature
+
+## Peaked Integrands
+
+A grid of fixed width $h_n$ can **miss** a narrow spike entirely, or place one or two points on it and badly over- or underestimate its area.
+
+- The posterior $L(\theta)\pi(\theta)$ becomes sharper as $n$ grows (width $O(1/\sqrt n)$), so a grid that was fine for $n=10$ can be useless for $n=10^4$
+- Remedies: locate the mode first (optimization), centre and scale the grid around it, or use an adaptive rule that refines where $f$ varies fast
+
+## Peaked Integrands (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1)); a <- -3; b <- 3; n <- 8; h <- (b - a) / n; xm <- a + (1:n - 0.5) * h
+for (s in c(1, 0.03)) {
+  f <- function(x) dnorm(x, 0.2, s)
+  curve(f, a, b, n = 2001, lwd = 3, xlab = "x", ylab = "f(x)",
+        main = sprintf("sd = %g: midpoint (n = %d) = %.3f, exact = 1", s, n, h * sum(f(xm))))
+  rect(xm - h / 2, 0, xm + h / 2, f(xm), col = adjustcolor("steelblue", 0.3), border = "steelblue")
+  points(xm, f(xm), pch = 19, col = "steelblue")
+}
+```
+
+Same rule, same grid: the wide density integrates correctly; the spike is almost invisible to the grid.
+
+## Transformed Integrands Near the Boundary
+
+After a logistic transform, a posterior located at large $|\theta|$ is squeezed against $y = 0$ or $y = 1$. If $\theta\approx 50$, then $y = 1/(1+e^{-50}) \approx 1 - 2\times10^{-22}$: the entire mass of $g(y)$ sits in a sliver a uniform grid cannot resolve.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+f <- function(x) dnorm(x, 8, 1)
+curve(f, -2, 12, lwd = 3, xlab = TeX(r"($\theta$)"), ylab = "", main = TeX(r"(posterior at $\theta = 8$)"))
+g <- function(y) f(log(y / (1 - y))) / (y * (1 - y))
+curve(g, 0.001, 0.9999, n = 5001, lwd = 3, xlab = "y", ylab = "", main = "after logistic transform")
+abline(v = seq(0.025, 0.975, by = 0.05), col = adjustcolor("steelblue", 0.6), lty = 3)
+```
+
+Remedy: centre the transform on an estimate of the location, $y = 1/(1+e^{-(\theta-\hat\theta)/s})$, so the bulk of the posterior maps to the middle of $(0,1)$.
+
+## The Curse of Dimensionality
+
+With $n$ points per axis, a product rule in $d$ dimensions needs $n^d$ function evaluations:
+
+| $d$ | $n = 20$ | $n = 50$ |
+|---|---|---|
+| 1 | 20 | 50 |
+| 2 | 400 | 2,500 |
+| 5 | $3.2\times10^6$ | $3.1\times10^8$ |
+| 10 | $1.0\times10^{13}$ | $9.8\times10^{16}$ |
+
+- Meanwhile the posterior occupies a tiny, often tilted, ellipsoid inside the grid; almost all evaluations are wasted on regions where $f\approx0$
+- Error of the product rule degrades to $O(n^{-2/d})$ in terms of total evaluations $N = n^d$
+
+**Conclusion**: quadrature is the tool of choice for $d\le 3$ or so. Beyond that, Monte Carlo methods, whose error is $O(N^{-1/2})$ regardless of $d$, take over (next lectures).
+
+## The Curse of Dimensionality (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+S <- matrix(c(1, 0.85, 0.85, 1), 2) * 0.15; Si <- solve(S)
+g <- seq(-3, 3, length.out = 150)
+Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Si %*% c(a, b))))
+contour(g, g, Z, nlevels = 6, xlab = TeX(r"($\theta_1$)"), ylab = TeX(r"($\theta_2$)"), main = "posterior inside a 12 x 12 grid", drawlabels = FALSE, col = "firebrick", lwd = 2)
+gr <- seq(-3, 3, length.out = 13); abline(v = gr, h = gr, col = adjustcolor("gray30", 0.5))
+pts <- expand.grid(gr, gr); points(pts, pch = 19, cex = 0.5)
+inside <- apply(pts, 1, function(p) exp(-0.5 * p %*% Si %*% p)) > 0.01
+points(pts[inside, ], pch = 19, col = "firebrick", cex = 0.9)
+mtext(sprintf("%d of %d grid points carry non-negligible mass", sum(inside), nrow(pts)), side = 1, line = 2.6, cex = 0.85)
+plot(1:20, sapply(1:20, function(d) 20^d), log = "y", type = "b", pch = 19, xlab = "dimension d", ylab = "evaluations with 20 points per axis")
+abline(h = 1e12, lty = 2); text(3, 3e12, "one trillion", adj = 0, cex = 0.9)
+```
+
+## Summary
+
+- Quadrature approximates $\int_a^b f$ by a weighted sum of $f$ at grid points; infinite ranges are handled by a change of variable such as the logistic transform, with the Jacobian $t'(y)$ included
+- Midpoint and trapezoid rules have $O(1/n^2)$ error, Simpson's rule $O(1/n^4)$; all are cheap and reliable in one dimension
+- Statistical uses: probabilities $\int\varphi(x)I(a<x<b)\,dx$, expectations, and the marginal likelihood $P(y) = \int L(\theta)\pi(\theta)\,d\theta$; always compute on the log scale with log-sum-exp
+- Limitations: peaked integrands need a grid adapted to the mode and scale; product grids cost $n^d$ evaluations, so quadrature is practical only in low dimension

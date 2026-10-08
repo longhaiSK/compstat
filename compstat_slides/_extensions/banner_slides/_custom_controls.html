@@ -1,0 +1,100 @@
+<!-- --- STRUCTURE (HTML) --- -->
+<!-- Styling for these elements (.custom-slide-button, #custom-refresh-btn,
+     .slide-menu-button repositioning) lives in slides.css, section 4. -->
+
+<!-- Chalkboard Button -->
+<div id="custom-chalkboard-btn" class="custom-slide-button" title="Chalkboard" style="top: 75px; left: 10px;">
+  <svg viewBox="0 0 24 24" width="30" height="30" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="16" height="12" rx="2" ry="2"></rect>
+    <line x1="12" y1="16" x2="12" y2="20"></line>
+    <line x1="8" y1="20" x2="16" y2="20"></line>
+  </svg>
+</div>
+
+<!-- Notes Canvas Button -->
+<div id="custom-notes-btn" class="custom-slide-button" title="Notes Canvas" style="top: 120px; left: 10px;">
+  <svg viewBox="0 0 24 24" width="30" height="30" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+  </svg>
+</div>
+
+<!-- Refresh Button -->
+<div id="custom-refresh-btn" class="custom-slide-button" title="Refresh Page">
+  <svg viewBox="0 0 24 24" width="25" height="25" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"></polyline>
+    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+  </svg>
+</div>
+
+<!-- --- BEHAVIOR (JavaScript) --- -->
+<script>
+  // Wait for the full page to load before manipulating the DOM
+  window.addEventListener('load', () => {
+    // --- Attach Event Listeners to Buttons ---
+    const chalkboardBtn = document.getElementById('custom-chalkboard-btn');
+    if (chalkboardBtn) {
+      chalkboardBtn.addEventListener('click', () => {
+        if (window.RevealChalkboard) {
+          RevealChalkboard.toggleChalkboard();
+        } else if (Reveal.getPlugin('chalkboard')) {
+          Reveal.getPlugin('chalkboard').toggleChalkboard();
+        }
+      });
+    }
+
+    const notesBtn = document.getElementById('custom-notes-btn');
+    if (notesBtn) {
+      notesBtn.addEventListener('click', () => {
+        if (window.RevealChalkboard) {
+          RevealChalkboard.toggleNotesCanvas();
+        } else if (Reveal.getPlugin('chalkboard')) {
+          Reveal.getPlugin('chalkboard').toggleNotesCanvas();
+        }
+      });
+    }
+
+    const refreshBtn = document.getElementById('custom-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => window.location.reload());
+    }
+
+    // --- Layout Fix Script ---
+    // A short delay ensures Reveal.js has initialized its layout first
+    setTimeout(function() {
+      if(window.Reveal) Reveal.layout();
+    }, 200);
+
+    // --- Menu Table-of-Contents Total Fix ---
+    // The bundled reveal-menu plugin builds its "current/total" row labels
+    // once, calling Reveal.getTotalSlides() before Reveal finishes settling
+    // its slide count for documents with nested (#-grouped) sections. That
+    // bakes in an inflated total (e.g. 51 instead of the correct 47 - one
+    // extra count per # section that has ## children) which never gets
+    // refreshed. Each row's own current number is already correct; only the
+    // shared "/total" suffix is stale, so just correct that suffix in place.
+    function fixMenuTotal() {
+      if (!window.Reveal || typeof Reveal.getTotalSlides !== 'function') return;
+      var total = Reveal.getTotalSlides();
+      var items = document.querySelectorAll(
+        '.slide-menu-item[data-slide-h], .slide-menu-item-vertical[data-slide-h]'
+      );
+      items.forEach(function (li) {
+        var numSpan = li.querySelector('.slide-menu-item-number');
+        if (!numSpan) return;
+        var m = numSpan.textContent.match(/^(\d+)\s*\/\s*\d+(.*)$/);
+        if (m) numSpan.textContent = m[1] + '/' + total + m[2];
+      });
+    }
+
+    // Run once things settle, and again whenever the menu is opened (Reveal
+    // toggles this class on <body>, whatever the trigger: click, the "m"
+    // keyboard shortcut, or the API) so the fix is idempotent and robust.
+    setTimeout(fixMenuTotal, 300);
+    var menuObserver = new MutationObserver(function () {
+      if (document.body.classList.contains('slide-menu-active')) {
+        fixMenuTotal();
+      }
+    });
+    menuObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  });
+</script>

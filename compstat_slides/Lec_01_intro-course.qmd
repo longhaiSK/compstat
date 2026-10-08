@@ -1,0 +1,271 @@
+---
+subtitle: "Introduction to Statistical Computation"
+pagetitle: "intro-slides"
+author: "Longhai Li"
+format: banner_slides-revealjs
+---
+
+# Review of Basic Concepts
+
+## Statistical Inference: The Setup
+
+- Data: $x_1, \ldots, x_n$ observed
+- Model: $x_i \overset{iid}{\sim} f(x \mid \theta)$, with $\theta$ unknown
+- Three basic tasks:
+    1. **Point estimation**: find a single value $\hat\theta$ close to $\theta$
+    2. **Hypothesis testing**: decide whether the data are compatible with $H_0$
+    3. **Bayesian inference**: describe uncertainty about $\theta$ via a distribution
+
+## Point Estimation
+
+An **estimator** is a function of the data:
+$$
+\hat\theta = \hat\theta(x_1, \ldots, x_n)
+$$
+
+Familiar examples:
+
+- Sample mean $\hat\mu = \bar x = \frac{1}{n}\sum_{i=1}^n x_i$
+- Sample variance $\hat\sigma^2 = S^2 = \frac{1}{n-1}\sum_{i=1}^n (x_i - \bar x)^2$
+- Least squares in regression $\hat\beta = (X'X)^{-1} X' y$
+
+## Evaluating an Estimator
+
+Since $\hat\theta$ depends on random data, it has a **sampling distribution**.
+
+```{r}
+#| fig-height: 3.6
+#| fig-width: 9
+par(mar = c(4, 1, 1, 1))
+curve(dnorm(x, 0.4, 1), -3.5, 4, lwd = 3, col = "steelblue", axes = FALSE,
+      xlab = expression(hat(theta)), ylab = "", ylim = c(0, 0.75))
+curve(dnorm(x, 0, 0.55), add = TRUE, lwd = 3, col = "firebrick")
+axis(1, at = c(0, 0.4), labels = c(expression(theta), expression(E(hat(theta)^(1)))))
+abline(v = 0, lty = 2); abline(v = 0.4, lty = 3, col = "steelblue")
+arrows(0, 0.72, 0.4, 0.72, code = 3, length = 0.08); text(0.2, 0.74, "bias", pos = 3)
+legend("topright", bty = "n", lwd = 3, col = c("steelblue", "firebrick"),
+       legend = c(expression(hat(theta)^(1)*": biased, large variance"),
+                  expression(hat(theta)^(2)*": unbiased, small variance")))
+```
+
+- Bias $E(\hat\theta) - \theta$, variance $V(\hat\theta)$, and $\text{MSE}(\hat\theta) = E(\hat\theta - \theta)^2 = \text{Bias}^2 + V(\hat\theta)$
+- Comparing $\hat\theta^{(1)}$ and $\hat\theta^{(2)}$ requires knowing (or approximating) both sampling distributions
+
+## Maximum Likelihood Estimation
+
+The log-likelihood of $\theta$:
+$$
+\ell(\theta) = \log f(x_1, \ldots, x_n \mid \theta) = \log \prod_{i=1}^n f(x_i \mid \theta) = \sum_{i=1}^n \log f(x_i \mid \theta)
+$$
+
+The MLE is the maximizer:
+$$
+\hat\theta_{\text{MLE}} = \arg\max_\theta \ell(\theta)
+$$
+
+- Closed form exists in simple models (normal mean, binomial proportion)
+- In most models (GLMs, mixed models, survival models) there is no closed form
+
+## Hypothesis Testing
+
+Test $H_0: \mu = \mu_0$ against $H_1: \mu \neq \mu_0$ using
+$$
+T = \frac{\bar x - \mu_0}{S/\sqrt{n}}
+$$
+
+- Need the **null distribution** of $T$ (distribution of $T$ when $H_0$ is true)
+- For normal data, $T \sim t_{n-1}$ exactly; for other data, the null distribution is known only approximately or not at all
+
+## $p$-value, Type I Error, and Power
+
+```{r}
+#| fig-height: 4.2
+#| fig-width: 10
+par(mar = c(4, 1, 1, 1))
+tobs <- 1.5; tcrit <- qnorm(0.95); mu1 <- 2.5
+curve(dnorm(x), -3.5, 6.5, lwd = 3, col = "steelblue", axes = FALSE,
+      xlab = "T", ylab = "", ylim = c(0, 0.45))
+curve(dnorm(x, mu1), add = TRUE, lwd = 3, col = "firebrick")
+shade <- function(from, to, mean, col) {
+  xs <- seq(from, to, length.out = 200)
+  polygon(c(xs, rev(xs)), c(dnorm(xs, mean), rep(0, 200)), col = col, border = NA)
+}
+shade(tcrit, 6.5, mu1, adjustcolor("firebrick", 0.25))   # power
+shade(tcrit, 6.5, 0,   adjustcolor("steelblue", 0.45))   # alpha
+shade(tobs,  6.5, 0,   adjustcolor("gray30", 0.35))      # p-value
+axis(1, at = c(0, tobs, tcrit, mu1),
+     labels = c("0", expression(t[obs]), expression(t[alpha]), expression(mu[1])))
+abline(v = tcrit, lty = 2); abline(v = tobs, lty = 3)
+text(-1.6, 0.30, expression(H[0]*": null distribution"), col = "steelblue")
+text(4.3, 0.30, expression(H[1]*": alternative"), col = "firebrick")
+text(2.0, 0.055, "p-value", pos = 4, cex = 0.9)
+text(tcrit, 0.42, expression(alpha*" = type I error (blue tail)"), pos = 4, cex = 0.9)
+text(3.3, 0.16, "power (red tail)", pos = 4, cex = 0.9)
+```
+
+- $p$-value $= P_{H_0}(T \ge t_{\text{obs}})$: tail area of the null distribution beyond the observed statistic
+- Type I error $\alpha = P_{H_0}(T \ge t_\alpha)$: null tail area beyond the critical value
+- Power $= P_{H_1}(T \ge t_\alpha)$: alternative tail area beyond the critical value
+
+All three are tail probabilities of a distribution that is often unknown in closed form.
+
+## Bayesian Inference
+
+Combine a prior $\pi(\theta)$ with the likelihood $f(x \mid \theta)$:
+$$
+p(\theta \mid x) = \frac{f(x \mid \theta)\,\pi(\theta)}{\int f(x \mid \theta)\,\pi(\theta)\, d\theta}
+$$
+
+The denominator is an integral over $\theta$; for most models it has no closed form.
+
+## Prior, Likelihood, and Posterior
+
+```{r}
+#| fig-height: 4.2
+#| fig-width: 10
+par(mar = c(4, 1, 1, 1))
+# normal mean with known sigma: vague prior N(0, 3^2), n = 5, xbar = 2, sigma = 2
+s2p <- 9; xbar <- 2; n <- 5; s2 <- 4
+v_post <- 1 / (1 / s2p + n / s2); m_post <- v_post * (n * xbar / s2)
+curve(dnorm(x, 0, sqrt(s2p)), -8, 8, lwd = 3, col = "gray40", lty = 2,
+      axes = FALSE, xlab = expression(theta), ylab = "", ylim = c(0, 0.5))
+curve(dnorm(x, xbar, sqrt(s2 / n)), add = TRUE, lwd = 3, col = "firebrick")
+curve(dnorm(x, m_post, sqrt(v_post)), add = TRUE, lwd = 3, col = "steelblue")
+axis(1)
+legend("topleft", bty = "n", lwd = 3, lty = c(2, 1, 1),
+       col = c("gray40", "firebrick", "steelblue"),
+       legend = c(expression("vague prior "*pi(theta)),
+                  expression("likelihood "*f(x*"|"*theta)),
+                  expression("posterior "*p(theta*"|"*x))))
+```
+
+- A vague prior lets the likelihood dominate; the posterior is slightly narrower and pulled toward the prior mean
+- Inference uses posterior summaries: $E(\theta \mid x)$, $V(\theta \mid x)$, credible intervals, $P(H_0 \mid x)$
+- Each summary is again an integral over $\theta$
+
+## Summary of the Three Tasks
+
+| Task | Object needed | Typical difficulty |
+|---|---|---|
+| Point estimation | Sampling distribution of $\hat\theta$; maximizer of $\ell(\theta)$ | No closed form |
+| Hypothesis testing | Null distribution of $T$ | Unknown for general data |
+| Bayesian inference | $\int f(x\mid\theta)\pi(\theta)\,d\theta$; $E(\theta \mid x)$ | High-dimensional integral |
+
+Each task reduces to a computational problem: **calculating**, **simulating**, **optimizing**, or **integrating**.
+
+# The Use of Computers in Statistics
+
+## 1. Manipulating Numbers
+
+Even simple calculations are not trivial on a computer:
+
+- $1.1 + 2.1 + \cdots + 100.1$
+- $S^2 = \sum_{i=1}^n (x_i - \bar x)^2 / (n-1)$
+- $\prod_{i=1}^n f(x_i \mid \theta)$ for large $n$
+
+Computers store numbers with finite precision, which leads to
+
+- **Overflow**: result too large to represent
+- **Underflow**: result too small, rounded to zero
+- **Rounding error**: accumulated loss of digits
+
+## Example: Rounding Error
+
+```{r}
+#| echo: true
+x <- c(1e10 + 1, 1e10 + 2, 1e10 + 3)
+var(x)                                    # correct answer: 1
+sum(x^2)/2 - 3 * mean(x)^2 / 2           # textbook formula
+```
+
+```{r}
+#| echo: true
+prod(dnorm(rnorm(1000)))                  # likelihood underflows to 0
+sum(dnorm(rnorm(1000), log = TRUE))       # log-likelihood is fine
+```
+
+Lecture on computer arithmetic: how numbers are stored and how to avoid these errors.
+
+## 2. Simulation with Random Numbers
+
+**Monte Carlo**: replace a probability calculation with repeated random experiments.
+
+Generate $X_1, X_2 \overset{iid}{\sim} \text{Unif}(0,1)$. What is the distribution of $X_1 + X_2$?
+
+```{r}
+#| echo: true
+#| fig-height: 3.5
+z <- runif(10000) + runif(10000)
+hist(z, breaks = 40, freq = FALSE, main = "", xlab = "X1 + X2")
+```
+
+## Monte Carlo for Sampling Distributions
+
+Repeat many times: draw $x_1, \ldots, x_n$, compute the statistic.
+
+$$
+\sum_i x_i, \qquad \sum_i (x_i - \bar x)^2, \qquad T = \frac{\bar x - \mu_0}{S/\sqrt n}
+$$
+
+This gives empirical approximations to
+
+- The sampling distribution of $\hat\mu^{(1)}$ vs $\hat\mu^{(2)}$ (bias, variance, MSE)
+- The null distribution of $T$ for non-normal data
+- Coverage of confidence intervals
+
+Lecture on random numbers and Monte Carlo: pseudo-random generation, transformations, LLN/CLT, evaluating estimators and tests.
+
+## 3. Optimization
+
+Find $x_0 = \arg\max_x f(x)$.
+
+```{r}
+#| fig-height: 3.5
+curve(dgamma(x, 3, 1), 0, 10, ylab = "f(x)", lwd = 2, main = "")
+abline(v = 2, lty = 2)
+text(2.1, 0.05, expression(x[0]), adj = 0)
+```
+
+For MLE, $f = \ell(\theta)$; there is no closed form, so the maximum is found by iterative search.
+
+Lecture on MLE and optimization: Newton–Raphson, Fisher scoring, Nelder–Mead, gradient methods, stochastic gradient descent.
+
+## 4. Advanced Simulation and Integration
+
+Quantities of interest are integrals:
+$$
+E(X) = \int x f(x)\,dx, \qquad V(X), \qquad \int f(x\mid\theta)\pi(\theta)\,d\theta
+$$
+
+Two approaches:
+
+- **Numerical quadrature**: approximate the area under the curve by rectangles or trapezoids; works well in low dimension
+- **Monte Carlo integration**: draw from $f$ and average; the only practical route in high dimension
+
+For the posterior $p(\theta \mid x)$, direct sampling is impossible, so **Markov chain Monte Carlo** is used.
+
+## Numerical Quadrature
+
+```{r}
+#| fig-height: 4
+f <- function(x) dgamma(x, 3, 1)
+curve(f, 0, 8, lwd = 2, ylab = "f(x)", main = "")
+k <- 12; xs <- seq(0, 8, length.out = k + 1)
+rect(xs[-(k+1)], 0, xs[-1], f((xs[-(k+1)] + xs[-1]) / 2),
+     col = adjustcolor("red", 0.3), border = "red")
+```
+
+$$
+\int_a^b f(x)\,dx \approx \sum_{j=1}^k f(m_j)\,\Delta x
+$$
+
+## Course Roadmap
+
+| Topic | Statistical task |
+|---|---|
+| Computer arithmetic | Reliable calculation of likelihoods and variances |
+| Random numbers and Monte Carlo | Sampling distributions, evaluating estimators and tests |
+| MLE and optimization | Point estimation without closed forms |
+| Numerical integration and MCMC | Bayesian inference |
+
+Throughout: R programming, vectorization, and efficient code.

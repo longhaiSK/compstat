@@ -1,0 +1,474 @@
+---
+subtitle: "The EM Algorithm"
+pagetitle: "EM-slides"
+author: "Longhai Li"
+format: banner_slides-revealjs
+number-sections: false
+---
+
+```{r}
+#| include: false
+set.seed(812)
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+# censored Poisson example used in several figures (Section 3):
+# m exact observations, ncen observations known only to satisfy y < 2
+yobs <- c(3, 2, 4, 1, 3, 2, 5, 3); m <- length(yobs); ncen <- 12; n <- m + ncen
+lobs <- function(l) sum(dpois(yobs, l, log = TRUE)) + ncen * log(ppois(1, l))
+lcomp <- function(l, z) -n * l + log(l) * (sum(yobs) + sum(z)) - sum(lfactorial(yobs))
+Qfun  <- function(l, lt) lcomp(l, rep(lt / (1 + lt), ncen))
+lam <- seq(0.4, 3.2, length.out = 300)
+```
+
+# 1. Overview of EM
+
+## Setup and Motivation
+
+- Observed data $Y$; parameter $\theta$; likelihood $L(\theta) = P(Y\mid\theta)$
+- In many models $P(Y\mid\theta)$ is an integral (or sum) over latent or missing data $Z$:
+$$P(Y\mid\theta) = \int P(Y,Z\mid\theta)\,dZ$$
+
+
+**Terminology**
+
+| | Likelihood | Log-likelihood |
+|---|-----|-------|
+| Observed | $L_{\text{obs}}(\theta) = P(Y\mid\theta)$ | $\ell_{\text{obs}}(\theta) = \log P(Y\mid\theta)$ |
+| Complete | $L_{\text{comp}}(\theta) = P(Y,Z\mid\theta)$ | $\ell_{\text{comp}}(\theta;Y,Z) = \log P(Y,Z\mid\theta)$ |
+
+## The EM Algorithm
+
+Start from $\hat\theta^{(0)}$. For $t = 0,1,2,\ldots$:
+
+**E-step**: replace $\ell_{\text{obs}}(\theta)$ by the expected complete log-likelihood
+$$Q(\theta\mid\hat\theta^{(t)}) = E_{Z\mid Y,\hat\theta^{(t)}}\big[\ell_{\text{comp}}(\theta;Y,Z)\big]$$
+
+**M-step**:
+$$\hat\theta^{(t+1)} = \arg\max_\theta Q(\theta\mid\hat\theta^{(t)})$$
+
+Iterate until $\hat\theta^{(t)}$ converges.
+
+**Caution**: $Q$ is an average of $\ell_{\text{comp}}(\theta;Y,Z)$ over $P(Z\mid Y,\hat\theta^{(t)})$; it is **not** $\ell_{\text{comp}}\big(\theta;Y,E(Z\mid Y,\hat\theta^{(t)})\big)$.
+
+## $Q$ as an Average of Complete Log-Likelihoods
+
+Fix $\hat\theta^{(t)}$. Each draw $Z^{(s)}\sim P(Z\mid Y,\hat\theta^{(t)})$ gives one curve $\ell_{\text{comp}}(\theta;Y,Z^{(s)})$; $Q(\theta\mid\hat\theta^{(t)})$ is their expectation (illustrated with the censored Poisson example of Section 3, $\lambda^{(t)} = 1.5$):
+
+```{r}
+#| fig-width: 9
+#| fig-height: 5
+lt <- 1.5; S <- 10
+Z <- replicate(S, rbinom(ncen, 1, lt / (1 + lt)))            # draws of the censored y_i
+curves <- sapply(1:S, function(s) sapply(lam, lcomp, z = Z[, s]))
+Qexact <- sapply(lam, Qfun, lt = lt)
+par(mar = c(4, 4, 1, 1))
+matplot(lam, curves, type = "l", lty = 1, lwd = 1, col = "gray60", xlab = expression(theta),
+        ylab = "log-likelihood", ylim = range(curves) + c(0, 2))
+lines(lam, rowMeans(curves), lwd = 3, col = "firebrick")
+lines(lam, Qexact, lwd = 3, col = "black", lty = 2)
+abline(v = lt, lty = 3)
+legend("bottomright", bty = "n", lwd = c(1, 3, 3), lty = c(1, 1, 2), col = c("gray60", "firebrick", "black"),
+       legend = c(expression(l[comp](theta*";"*Y*","*Z^(s)) ~ "for 10 draws"),
+                  "average of the 10 curves",
+                  expression(Q(theta*"|"*hat(theta)^(t)) ~ "(exact expectation)")))
+```
+
+## Kullback-Leibler Distance {.smaller}
+
+**Definition**: for densities $P(z)$ and $q(z)$ on the same space,
+$$KL(P\|q) = \int P(z)\log\frac{P(z)}{q(z)}\,dz = E_P\!\left[\log\frac{P(Z)}{q(Z)}\right]$$
+
+
+
+**Theorem (Gibbs' inequality)**: $KL(P\|q) \ge 0$, with equality iff $P = q$ (a.e.)
+
+**Proof.** Since $\log x \le x - 1$ (equality iff $x=1$),
+$$
+\begin{aligned}
+KL(P\|q) &= -\int P(z)\log\frac{q(z)}{P(z)}\,dz \ \ge\ -\int P(z)\Big(\frac{q(z)}{P(z)}-1\Big)\,dz \\
+&= -\int\big[q(z)-P(z)\big]\,dz = 0 \qquad\blacksquare
+\end{aligned}
+$$
+**Remarks:**
+
+- Measures how much $q$ diverges from $P$; not symmetric ($KL(P\|q)\ne KL(q\|P)$ in general).
+- This inequality is what forces the $H$-term to decrease in the ascending-property proof (next slides), and what makes $F(\tilde P,\theta)$ a lower bound on $\ell_{\text{obs}}(\theta)$ later on
+
+## Simulation Check: $E_P[\log P(X)] > E_P[\log q(X)]$
+
+$KL(P\|q) = E_P[\log P(X)] - E_P[\log q(X)] > 0$ whenever $q\ne P$: draw $x_1,\ldots,x_n\sim P$ and compare $\log P(x_i)$ (blue) to $\log q(x_i)$ (red) at the *same* sampled points.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+mu_p <- 0; sd_p <- 1; mu_q <- 1.2; sd_q <- 1.6; nsamp <- 40
+x  <- rnorm(nsamp, mu_p, sd_p)                   # samples from P
+lp <- dnorm(x, mu_p, sd_p, log = TRUE)
+lq <- dnorm(x, mu_q, sd_q, log = TRUE)
+
+curve(dnorm(x, mu_p, sd_p), -4, 6, lwd = 3, col = "steelblue", xlab = "x", ylab = "density",
+      main = "P(x), q(x), and the samples")
+curve(dnorm(x, mu_q, sd_q), add = TRUE, lwd = 3, col = "firebrick")
+rug(x, col = "gray30", lwd = 1.5)
+legend("topright", bty = "n", lwd = 3, col = c("steelblue", "firebrick"),
+       legend = c(expression(P(x)), expression(q(x))))
+
+ord <- order(x)
+plot(x[ord], lp[ord], type = "b", pch = 19, col = "steelblue", lwd = 2,
+     xlab = "x (sorted)", ylab = "log-density at sample", ylim = range(c(lp, lq)),
+     main = expression(log~P(x[i])~vs.~log~q(x[i])))
+lines(x[ord], lq[ord], type = "b", pch = 19, col = "firebrick", lwd = 2)
+segments(x[ord], lp[ord], x[ord], lq[ord], col = "gray70")
+abline(h = mean(lp), col = "steelblue", lty = 2, lwd = 2)
+abline(h = mean(lq), col = "firebrick", lty = 2, lwd = 2)
+legend("bottomleft", bty = "n", lwd = 2, lty = c(1, 1, 2, 2), pch = c(19, 19, NA, NA),
+       col = c("steelblue", "firebrick", "steelblue", "firebrick"),
+       legend = c(expression(log~P(x[i])), expression(log~q(x[i])),
+                  bquote(mean(log~P(x[i])) == .(round(mean(lp), 2))),
+                  bquote(mean(log~q(x[i])) == .(round(mean(lq), 2)))))
+```
+
+- The blue dashed line (average of $\log P(x_i)$) always sits above the red one (average of $\log q(x_i)$); their gap is the (Monte Carlo estimate of the) $KL(P\|q)$
+
+
+## Ascending Property of EM
+
+Write $h(Y,Z\mid\theta) = P(Y,Z\mid\theta)$, $\;g(Y\mid\theta) = \int h(Y,Z\mid\theta)\,dZ$, $\;K(Z\mid Y,\theta) = h/g$.
+
+**Theorem.** $\;\ell_{\text{obs}}(\hat\theta^{(t+1)}) \ \ge\ \ell_{\text{obs}}(\hat\theta^{(t)})$.
+
+**Key identity.** Since $\log g(Y\mid\theta) = \log h(Y,Z\mid\theta) - \log K(Z\mid Y,\theta)$ for every $Z$, taking $E_{Z\mid Y,\theta_0}$ of both sides gives, for any $\theta_0$,
+$$
+\ell_{\text{obs}}(\theta) = \underbrace{E_{Z\mid Y,\theta_0}\big[\log h(Y,Z\mid\theta)\big]}_{Q(\theta\mid\theta_0)}
+- \underbrace{E_{Z\mid Y,\theta_0}\big[\log K(Z\mid Y,\theta)\big]}_{H(\theta\mid\theta_0)}
+$$
+
+Intuition: maximizing $Q$ makes the first term larger, and for *any* optimizer $\theta$ the second term $H$ (without the minus sign) is decreased — so $\ell_{\text{obs}}$ is increased.
+
+## Formal Proof {style="font-size: 30px"}
+
+**Proof.** Set $\theta_0 = \hat\theta^{(t)}$ and subtract the identity $\ell_{\text{obs}}(\theta) = Q(\theta\mid\hat\theta^{(t)}) - H(\theta\mid\hat\theta^{(t)})$ evaluated at $\theta = \hat\theta^{(t)}$ from the same identity at $\theta = \hat\theta^{(t+1)}$:
+$$
+\begin{aligned}
+\ell_{\text{obs}}(\hat\theta^{(t+1)}) - \ell_{\text{obs}}(\hat\theta^{(t)})
+&= \big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]
+- \big[H(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - H(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big] \\[2mm]
+&= \underbrace{\big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]}_{\ge 0 \text{ by the M-step}}
++ \underbrace{KL\big(K(\cdot\mid Y,\hat\theta^{(t)})\,\big\|\,K(\cdot\mid Y,\hat\theta^{(t+1)})\big)}_{\ge 0 \text{ by Gibbs' inequality}} \ \ge\ 0,
+\end{aligned}
+$$
+where the second line uses
+$$
+H(\hat\theta^{(t)}\mid\hat\theta^{(t)}) - H(\theta\mid\hat\theta^{(t)})
+= E_{\hat\theta^{(t)}}\!\left[\log \frac{K(Z\mid Y,\hat\theta^{(t)})}{K(Z\mid Y,\theta)} \,\Big|\, Y\right]
+= KL\big(K(\cdot\mid Y,\hat\theta^{(t)})\,\big\|\,K(\cdot\mid Y,\theta)\big)
+$$
+at $\theta = \hat\theta^{(t+1)}$. $\blacksquare$
+
+## EM as Alternating Optimization {.smaller}
+
+Let $\tilde P(\cdot)$ be any distribution on the hidden data $Z$. Using $P(Y,z\mid\theta) = P(Y\mid\theta)P(z\mid Y,\theta)$, we can define and express $F(\tilde P,\theta)$ as:
+
+
+$$\begin{aligned} F(\tilde P,\theta) &= \int \tilde P(z)\log P(Y,z\mid\theta)\,dz - \int \tilde P(z)\log\tilde P(z)\,dz \\ &= \ell_{\text{obs}}(\theta) - KL\big(\tilde P\,\Vert{}\,P(\cdot\mid Y,\theta)\big) \end{aligned}$$
+
+
+where $KL(P\Vert{}q) = \int P(z)\log\frac{P(z)}{q(z)}\,dz \ge 0$.
+
+* **E-step** = maximize $F$ over $\tilde P$ with $\theta = \hat\theta^{(t)}$ fixed: $KL \ge 0$ with equality iff $\tilde P = P(\cdot\mid Y,\hat\theta^{(t)})$, so the E-step sets $\tilde P$ to the conditional distribution of $Z$
+* **M-step** = maximize $F$ over $\theta$ with $\tilde P$ fixed: the second term of $F$ is free of $\theta$, so this is $\arg\max_\theta Q(\theta\mid\hat\theta^{(t)})$
+* **Tight Bound** = at $\theta = \hat\theta^{(t)}$ (after the E-step), $KL=0$, meaning the lower bound exactly equals the observed log-likelihood: $F(\tilde P,\hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$
+
+## $Q$ Functions as Tangent Lower Bounds
+
+Each $Q(\cdot\mid\hat\theta^{(t)})$, shifted by a constant, lies **below** $\ell_{\text{obs}}$ and **touches** it at $\hat\theta^{(t)}$; maximizing it moves uphill on $\ell_{\text{obs}}$.
+
+```{r}
+#| fig-width: 9
+#| fig-height: 5
+lo <- sapply(lam, lobs); top <- max(lo)
+par(mar = c(4, 4, 1, 1))
+plot(lam, lo, type = "l", lwd = 3, xlab = expression(theta), ylab = "log-likelihood",
+     ylim = c(top - 16, top + 2.5))
+lt <- 0.5; cols <- c("firebrick", "darkorange", "forestgreen")
+for (k in 1:3) {
+  shift <- lobs(lt) - Qfun(lt, lt)                     # make Q touch l_obs at theta^(t)
+  lines(lam, sapply(lam, Qfun, lt = lt) + shift, col = cols[k], lwd = 2, lty = 2)
+  points(lt, lobs(lt), pch = 19, col = cols[k])
+  lt_new <- (sum(yobs) + ncen * lt / (1 + lt)) / n       # M-step
+  segments(lt_new, top - 16, lt_new, lobs(lt_new), col = cols[k], lty = 3)
+  text(lt, lobs(lt), bquote(hat(theta)^(.(k - 1))), pos = 3, col = cols[k], xpd = NA)
+  lt <- lt_new
+}
+legend("bottomright", bty = "n", lwd = c(3, 2), lty = c(1, 2),
+       legend = c(expression(l[obs](theta)), expression(Q(theta*"|"*hat(theta)^(t)) + "const")))
+```
+
+
+# 2. Example 1: Two-Component Normal Mixture
+
+## Model and Likelihoods
+
+$$Z_i \sim \text{Bern}(p), \qquad Y_i\mid Z_i = 1 \sim N(\mu_1,1), \qquad Y_i\mid Z_i = 0 \sim N(\mu_0,1)$$
+
+Observed: $y_1,\ldots,y_n$. Hidden: $z_1,\ldots,z_n$. Parameter $\theta = (\mu_0,\mu_1,p)$.
+
+**Complete likelihood**
+$$P(y,z\mid\theta) = \prod_{i=1}^n P(y_i\mid z_i,\theta)\,P(z_i\mid\theta) = \prod_{i=1}^n \varphi(y_i\mid\mu_{z_i},1)\,p^{z_i}(1-p)^{1-z_i}$$
+
+**Observed likelihood** (sum out each $z_i$)
+$$P(y\mid\theta) = \prod_{i=1}^n\Big[\varphi(y_i\mid\mu_1,1)\,p + \varphi(y_i\mid\mu_0,1)(1-p)\Big]$$
+
+## Model and Likelihoods (Continued)
+
+The observed likelihood is a product of **mixture densities**, each the sum of two weighted normal components:
+
+```{r}
+#| fig-width: 9
+#| fig-height: 4.6
+par(mar = c(4, 4, 1, 1)); mu0 <- 0; mu1 <- 4; p <- 0.3
+curve((1 - p) * dnorm(x, mu0), -3.5, 7.5, lwd = 2, col = "steelblue", ylab = "density", xlab = "y",
+      ylim = c(0, 0.3))
+curve(p * dnorm(x, mu1), add = TRUE, lwd = 2, col = "firebrick")
+curve((1 - p) * dnorm(x, mu0) + p * dnorm(x, mu1), add = TRUE, lwd = 3)
+legend("topright", bty = "n", lwd = c(2, 2, 3), col = c("steelblue", "firebrick", "black"),
+       legend = c(expression((1-p)*phi(y*"|"*mu[0])), expression(p*phi(y*"|"*mu[1])),
+                  expression(f(y*"|"*theta) == "sum")))
+```
+
+## The Mixture Density
+
+The marginal density $f(y\mid\mu_0,\mu_1,p)$ can be bimodal or unimodal depending on $p$ and $|\mu_1-\mu_0|$:
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+mix <- function(x, mu0, mu1, p) (1 - p) * dnorm(x, mu0) + p * dnorm(x, mu1)
+for (s in list(c(0, 4, 0.5), c(0, 4, 0.15), c(0, 1.5, 0.5))) {
+  curve(mix(x, s[1], s[2], s[3]), -4, 7, lwd = 3, xlab = "y", ylab = "density",
+        main = bquote(mu[0] == .(s[1]) ~ "," ~ mu[1] == .(s[2]) ~ "," ~ p == .(s[3])))
+  y <- ifelse(rbinom(200, 1, s[3]) == 1, rnorm(200, s[2]), rnorm(200, s[1]))
+  rug(y, col = "gray40")
+}
+```
+
+Maximizing $\prod_i f(y_i\mid\theta)$ directly is awkward because of the sum inside the product; EM works with the complete likelihood instead.
+
+## Complete Log-Likelihood
+
+With $\log\varphi(y\mid\mu,1) = -\tfrac12(y-\mu)^2 - \log\sqrt{2\pi}$,
+$$
+\begin{aligned}
+\ell_{\text{comp}}(\theta;y,z)
+&= \sum_{i=1}^n\Big[z_i\log p + (1-z_i)\log(1-p) - \tfrac12(y_i-\mu_{z_i})^2\Big] + C \\
+&= \Big(\sum_{i=1}^n z_i\Big)\log\frac{p}{1-p} + n\log(1-p) \\
+&\quad - \frac12\sum_{i=1}^n\Big[z_i(y_i-\mu_1)^2 + (1-z_i)(y_i-\mu_0)^2\Big] + C
+\end{aligned}
+$$
+
+- Linear in each $z_i$, so the E-step only needs $E(Z_i\mid y_i,\hat\theta^{(t)})$
+- Given $z$, the parameters separate: $p$ is a Bernoulli proportion, $\mu_1,\mu_0$ are group means
+
+## E-Step: Soft Classification
+
+Given $\hat\theta^{(t)} = (\hat\mu_0^{(t)},\hat\mu_1^{(t)},\hat p^{(t)})$, Bayes' rule gives
+$$
+\hat p_i^{(t)} \equiv P(Z_i=1\mid y_i,\hat\theta^{(t)})
+= \frac{\varphi(y_i\mid\hat\mu_1^{(t)},1)\,\hat p^{(t)}}
+       {\varphi(y_i\mid\hat\mu_0^{(t)},1)(1-\hat p^{(t)}) + \varphi(y_i\mid\hat\mu_1^{(t)},1)\,\hat p^{(t)}}
+$$
+
+Then
+$$
+\begin{aligned}
+Q(\theta\mid\hat\theta^{(t)}) &= \Big(\sum_i \hat p_i^{(t)}\Big)\log\frac{p}{1-p} + n\log(1-p) \\
+&\quad - \frac12\sum_i\Big[\hat p_i^{(t)}(y_i-\mu_1)^2 + (1-\hat p_i^{(t)})(y_i-\mu_0)^2\Big]
+\end{aligned}
+$$
+
+## E-Step: Soft Classification (Continued)
+
+Left: at each $y_i$, $\hat p_i^{(t)}$ is the red share of the total height. Right: $\hat p_i^{(t)}$ as a function of $y_i$.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 1, 1)); mu0 <- 0; mu1 <- 4; p <- 0.3
+f0 <- function(x) (1 - p) * dnorm(x, mu0); f1 <- function(x) p * dnorm(x, mu1)
+curve(f0, -3.5, 7.5, lwd = 2, col = "steelblue", ylab = "weighted density", xlab = "y", ylim = c(0, 0.3))
+curve(f1, add = TRUE, lwd = 2, col = "firebrick")
+yi <- c(-0.5, 1.8, 3.2)
+for (y in yi) { segments(y, 0, y, f0(y), col = "steelblue", lwd = 4)
+  segments(y, f0(y), y, f0(y) + f1(y), col = "firebrick", lwd = 4)
+  text(y, f0(y) + f1(y), sprintf("%.2f", f1(y) / (f0(y) + f1(y))), pos = 3, cex = 0.9) }
+legend("topright", bty = "n", lwd = 2, col = c("steelblue", "firebrick"),
+       legend = c(expression((1-hat(p))*phi(y*"|"*hat(mu)[0])), expression(hat(p)*phi(y*"|"*hat(mu)[1]))))
+curve(f1(x) / (f0(x) + f1(x)), -3.5, 7.5, lwd = 3, xlab = "y",
+      ylab = expression(P(Z[i] == 1*"|"*y[i]*","*hat(theta)^(t))))
+abline(h = c(0, 1), lty = 3); points(yi, f1(yi) / (f0(yi) + f1(yi)), pch = 19)
+```
+
+## M-Step: Weighted Proportions and Means {.smaller}
+
+$Q$ separates into a term in $p$ and terms in $\mu_1$, $\mu_0$.
+
+| Update | Stationary equation $\;\Longrightarrow\;$ solution |
+|---|--------|
+| $p$ | $\dfrac{\partial Q}{\partial p} = \dfrac{\sum_i \hat p_i^{(t)}}{p(1-p)} - \dfrac{n}{1-p} = 0 \;\Longrightarrow\; \hat p^{(t+1)} = \dfrac1n\sum_{i=1}^n \hat p_i^{(t)}$ |
+| $\mu_1$ | $\dfrac{\partial Q}{\partial \mu_1} = \sum_i \hat p_i^{(t)}(y_i-\mu_1) = 0 \;\Longrightarrow\; \hat\mu_1^{(t+1)} = \dfrac{\sum_i \hat p_i^{(t)}\,y_i}{\sum_i \hat p_i^{(t)}}$ |
+| $\mu_0$ (weights $1-\hat p_i^{(t)}$) | $\hat\mu_0^{(t+1)} = \dfrac{\sum_i (1-\hat p_i^{(t)})\,y_i}{\sum_i (1-\hat p_i^{(t)})}$ |
+
+Return to the E-step with $\hat\theta^{(t+1)}$ and recompute $\hat p_i^{(t+1)}$.
+
+**Interpretation**: the M-step is the complete-data MLE with each observation split between the two groups according to its soft classification.
+
+# 3. Example 2: Censored Poisson Data
+
+## Truncated Distributions in Brief
+
+Let $X\sim f(x)$ and $Y = I(X>c)$. Then $Y\sim\text{Bern}\big(P(X>c)\big)$, and the conditional distribution of $X$ given $Y$ is $f$ restricted to one side of $c$ and renormalized:
+$$f(x\mid Y=1) = \frac{f(x)\,I(x>c)}{\int_c^\infty f(t)\,dt}, \qquad
+f(x\mid Y=0) = \frac{f(x)\,I(x\le c)}{\int_{-\infty}^c f(t)\,dt}$$
+
+For discrete $X$ the integrals are sums. This is exactly the distribution the E-step needs when an observation is only known to lie on one side of $c$.
+
+## Truncated Distributions in Brief (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.8
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1)); cc <- 1
+curve(dnorm, -3.5, 3.5, lwd = 3, xlab = "x", ylab = "density", main = "f(x) with cut point c")
+xs <- seq(cc, 3.5, length.out = 100)
+polygon(c(xs, rev(xs)), c(dnorm(xs), rep(0, 100)), col = adjustcolor("firebrick", 0.3), border = NA)
+xs <- seq(-3.5, cc, length.out = 100)
+polygon(c(xs, rev(xs)), c(dnorm(xs), rep(0, 100)), col = adjustcolor("steelblue", 0.3), border = NA)
+abline(v = cc, lty = 2); text(cc, 0.38, "c", pos = 4)
+text(1.8, 0.05, "P(X > c)", col = "firebrick"); text(-1, 0.1, expression(P(X <= c)), col = "steelblue")
+curve(dnorm(x) * (x > cc) / pnorm(cc, lower.tail = FALSE), -3.5, 3.5, lwd = 3, col = "firebrick",
+      n = 1001, xlab = "x", ylab = "density", main = "conditional densities", ylim = c(0, 1.6))
+curve(dnorm(x) * (x <= cc) / pnorm(cc), add = TRUE, lwd = 3, col = "steelblue", n = 1001)
+abline(v = cc, lty = 2)
+legend("topleft", bty = "n", lwd = 3, col = c("steelblue", "firebrick"),
+       legend = c("f(x | Y = 0)", "f(x | Y = 1)"))
+```
+
+## Censored Poisson: Data and Likelihoods
+
+$y_i \overset{iid}{\sim}\text{Pois}(\lambda)$, $i=1,\ldots,n$. The first $m$ values are observed exactly; for $i>m$ we only know $y_i<2$, recorded as $x_i = I(y_i<2) = 1$.
+
+**Observed data**: $y_1,\ldots,y_m$ and $x_{m+1}=\cdots=x_n=1$. **Missing**: $y_{m+1},\ldots,y_n$.
+
+**Complete likelihood**
+$$\prod_{i=1}^n f^{\text{Pois}}(y_i\mid\lambda)\cdot\prod_{i=m+1}^n I(y_i<2)$$
+
+**Observed likelihood**
+$$\prod_{i=1}^m f^{\text{Pois}}(y_i\mid\lambda)\cdot\prod_{i=m+1}^n P(y_i<2\mid\lambda),
+\qquad P(y_i<2\mid\lambda) = e^{-\lambda}(1+\lambda)$$
+
+The second factor makes the MLE nonlinear in $\lambda$; EM sidesteps it.
+
+## E-Step
+
+$$
+\ell_{\text{comp}}(\lambda) = -n\lambda + (\log\lambda)\sum_{i=1}^m y_i
++ (\log\lambda)\underbrace{\sum_{i=m+1}^n y_i}_{\text{missing}} - \sum_{i=1}^n\log(y_i!)
+$$
+
+For $i>m$, $y_i\in\{0,1\}$, and the truncated Poisson given $\lambda^{(t)}$ is
+$$P(y_i=0\mid x_i=1) = \frac{1}{1+\lambda^{(t)}}, \qquad P(y_i=1\mid x_i=1) = \frac{\lambda^{(t)}}{1+\lambda^{(t)}}$$
+
+$$\hat y_i^{(t)} \equiv E(y_i\mid x_i=1,\lambda^{(t)}) = \frac{\lambda^{(t)}}{1+\lambda^{(t)}}$$
+
+Since $y_i! = 1$ for $y_i\in\{0,1\}$, the $\log(y_i!)$ term is a known constant and no further expectation is needed.
+
+## E-Step (Continued)
+
+The conditional distribution of a censored $y_i$ is the Poisson pmf restricted to $\{0,1\}$ and renormalized:
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1)); lt <- 1.5; k <- 0:6
+barplot(dpois(k, lt), names.arg = k, col = c("firebrick", "firebrick", rep("gray80", 5)),
+        xlab = "y", ylab = "probability", main = bquote("Pois(" * lambda^(t) == .(lt) * ")"))
+barplot(c(1, lt) / (1 + lt), names.arg = 0:1, col = "firebrick", xlab = "y", ylab = "probability",
+        main = expression("truncated to {0, 1}: " * P(y[i]*"|"*x[i] == 1)))
+```
+
+## M-Step and the EM Update
+
+$$Q(\lambda\mid\lambda^{(t)}) = -n\lambda + (\log\lambda)\Big[\sum_{i=1}^m y_i + (n-m)\,\hat y^{(t)}\Big] + C^{(t)}$$
+
+$$\frac{\partial Q}{\partial\lambda} = -n + \frac{1}{\lambda}\Big[\sum_{i=1}^m y_i + (n-m)\hat y^{(t)}\Big] = 0$$
+
+$$\Longrightarrow\quad \lambda^{(t+1)} = \frac{m\,\bar y_{1:m} + (n-m)\dfrac{\lambda^{(t)}}{1+\lambda^{(t)}}}{n}$$
+
+- The update is the ordinary Poisson MLE (sample mean) with each censored value replaced by its conditional expectation
+- This works here only because $\ell_{\text{comp}}$ is linear in the missing $y_i$; in general, EM is **not** "plug in $E(Z)$ and maximize"
+
+# 4. More Complex Applications
+
+## Model-Based Clustering
+
+$$Z_i\sim\text{Categorical}(\pi_1,\ldots,\pi_K), \qquad Y_i\mid Z_i=k\sim N_d(\mu_k,\Sigma_k)$$
+
+Multivariate, $K$-component generalization of Example 1. E-step: soft cluster memberships $P(Z_i=k\mid y_i,\hat\theta^{(t)})$; M-step: weighted means, covariances, and proportions.
+
+```{r}
+#| fig-width: 6
+#| fig-height: 4.6
+par(mar = c(4, 4, 1, 1))
+ctr <- rbind(c(0, 0), c(4, 3), c(1, 5))
+Sig <- list(diag(2) * 0.8, matrix(c(1, 0.7, 0.7, 1), 2), diag(c(1.2, 0.4)))
+cols <- c("steelblue", "firebrick", "forestgreen"); ang <- seq(0, 2 * pi, length.out = 100)
+plot(NA, xlim = c(-3, 7), ylim = c(-3, 8), xlab = expression(y[1]), ylab = expression(y[2]))
+for (k in 1:3) { R <- chol(Sig[[k]])
+  pts <- matrix(rnorm(120), 60) %*% R + rep(ctr[k, ], each = 60)
+  points(pts, col = adjustcolor(cols[k], 0.6), pch = 19, cex = 0.8)
+  ell <- (cbind(cos(ang), sin(ang)) * 2.1) %*% R + rep(ctr[k, ], each = 100)
+  lines(ell, col = cols[k], lwd = 2); points(ctr[k, 1], ctr[k, 2], pch = 4, lwd = 3, col = cols[k]) }
+```
+
+## Hidden Markov Models
+
+Hidden states $h_1\to h_2\to\cdots\to h_n$ form a Markov chain; each observation depends only on its own state:
+$$P(y_{1:n}\mid h_{1:n},\theta) = \prod_{i=1}^n P(y_i\mid h_i,\theta)$$
+
+E-step: the forward–backward algorithm computes $P(h_i\mid y_{1:n},\hat\theta^{(t)})$ and $P(h_i,h_{i+1}\mid y_{1:n},\hat\theta^{(t)})$ without enumerating all $K^n$ state sequences. M-step: weighted transition and emission estimates (Baum–Welch).
+
+```{r}
+#| fig-width: 10
+#| fig-height: 3.4
+par(mar = c(4, 4, 1, 1)); N <- 120; P <- matrix(c(0.95, 0.05, 0.1, 0.9), 2, byrow = TRUE)
+h <- integer(N); h[1] <- 1; for (i in 2:N) h[i] <- sample(1:2, 1, prob = P[h[i - 1], ])
+y <- rnorm(N, mean = c(0, 3)[h])
+plot(y, type = "n", xlab = "i", ylab = expression(y[i]))
+r <- rle(h); e <- cumsum(r$lengths); s <- c(1, head(e, -1) + 1)
+rect(s - 0.5, par("usr")[3], e + 0.5, par("usr")[4],
+     col = adjustcolor(c("steelblue", "firebrick")[r$values], 0.15), border = NA)
+lines(y, col = "gray30"); points(y, pch = 19, col = c("steelblue", "firebrick")[h], cex = 0.7)
+legend("topright", bty = "n", pch = 19, col = c("steelblue", "firebrick"),
+       legend = c(expression(h[i] == 1), expression(h[i] == 2)), horiz = TRUE)
+```
+
+## Factor Analysis and the Common Pattern
+
+**Factor analysis**
+$$y_i = \Gamma x_i + \varepsilon_i, \qquad x_i\sim N_q(0,I) \text{ hidden}, \quad \varepsilon_i\sim N_d(0,\Psi)$$
+E-step: $x_i\mid y_i,\hat\theta^{(t)}$ is normal with closed-form mean and covariance. M-step: regression of $y$ on the expected factors.
+
+**Common pattern across applications**
+
+1. Introduce a hidden variable that makes the complete-data model tractable
+2. E-step: compute the conditional distribution (or expected sufficient statistics) of the hidden data
+3. M-step: complete-data MLE with the hidden data replaced by expected sufficient statistics
+
+## Summary
+
+- EM maximizes $\ell_{\text{obs}}$ by alternating between $Q(\theta\mid\hat\theta^{(t)}) = E_{Z\mid Y,\hat\theta^{(t)}}[\ell_{\text{comp}}]$ and its maximizer
+- Every iteration weakly increases $\ell_{\text{obs}}$; equivalently, EM is coordinate ascent on
+$$F(\tilde P,\theta) = \ell_{\text{obs}}(\theta) - KL\big(\tilde P\,\|\,P(Z\mid Y,\theta)\big)$$
+- When $\ell_{\text{comp}}$ is linear in sufficient statistics of $Z$, the E-step reduces to computing their conditional expectations
+- Convergence is linear (often slow) and only to a stationary point; run from several starting values

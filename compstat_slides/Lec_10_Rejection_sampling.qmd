@@ -1,0 +1,256 @@
+---
+subtitle: "Rejection Sampling"
+pagetitle: "rejection-slides"
+author: "Longhai Li"
+format: banner_slides-revealjs
+number-sections: false
+---
+
+```{r}
+#| include: false
+set.seed(812)
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+library(latex2exp)
+```
+
+# 1. Motivation
+
+## Review: Monte Carlo Integration
+
+To compute
+$$I = \int a(\theta)\,f(\theta)\,d\theta = E_f\big[a(\theta)\big], \qquad \theta\sim f(\theta)$$
+
+draw $\theta_1,\ldots,\theta_N \overset{iid}{\sim} f$ and use
+$$\hat I = \frac1N\sum_{i=1}^N a(\theta_i)$$
+
+**The catch**: we need to draw from $f$. For standard distributions R has `rnorm`, `rgamma`, etc. For a posterior $f(\theta)\propto L(\theta)\pi(\theta)$ we typically know $f$ only up to a normalizing constant and there is no built-in sampler.
+
+**Rejection sampling** produces exact iid draws from $f$ using draws from an easier distribution $g$: *reject, reweight, repeat*.
+
+## The Envelope
+
+Suppose we can find a function $g(x)$ such that
+
+- $g(x)\ge f(x)$ for all $x$ (an **envelope** of $f$), and
+- we can sample from the density $g(x)\big/\!\int g(x)\,dx$
+
+Neither $f$ nor $g$ needs to be normalized: $f$ may be an unnormalized posterior and $g$ a scaled density $M\,g_0(x)$.
+
+**Overall acceptance rate**
+$$\frac{\int_{-\infty}^{\infty} f(x)\,dx}{\int_{-\infty}^{\infty} g(x)\,dx} = \frac{\text{area under } f}{\text{area under } g}$$
+
+A tight envelope wastes few draws; a loose one wastes many.
+
+## The Envelope (Continued)
+
+```{r}
+#| fig-width: 9
+#| fig-height: 4.8
+par(mar = c(4, 4, 1, 1))
+f <- function(x) 0.9 * dgamma(x, 3, 1.2)
+g <- function(x) 0.9 * 1.9 * dgamma(x, 2.5, 0.9)
+xs <- seq(0, 12, length.out = 400)
+plot(xs, g(xs), type = "n", ylim = c(0, 0.45), xlab = "x", ylab = "")
+polygon(c(xs, rev(xs)), c(g(xs), rep(0, 400)), col = adjustcolor("steelblue", 0.35), border = NA)
+polygon(c(xs, rev(xs)), c(f(xs), rep(0, 400)), col = adjustcolor("firebrick", 0.45), border = NA)
+lines(xs, g(xs), col = "steelblue", lwd = 3); lines(xs, f(xs), col = "firebrick", lwd = 3)
+x0 <- 5.5; segments(x0, 0, x0, g(x0), col = "forestgreen", lwd = 3)
+points(rep(x0, 2), c(f(x0), g(x0)), pch = 19, col = "darkorange", cex = 1.3)
+text(x0, f(x0), "f(x)", pos = 4, col = "darkorange"); text(x0, g(x0), "g(x)", pos = 4, col = "darkorange")
+legend("topright", bty = "n", fill = adjustcolor(c("steelblue", "firebrick"), 0.4), border = NA,
+       legend = c("area under envelope g", "area under target f"))
+```
+
+At each $x$, the ratio $r = f(x)/g(x)\in[0,1]$ is the fraction of the green segment lying under $f$; a proposal at $x$ is kept with probability $r$.
+
+# 2. The Algorithm
+
+## Rejection Sampling
+
+**Input**: target $f$, envelope $g\ge f$ with a sampler for $g(x)\big/\!\int g(x)\,dx$.
+
+For $i = 1,\ldots,n$, repeat until acceptance:
+
+1. Draw $x\sim g(x)\big/\!\int g(x)\,dx$
+2. Compute $r = f(x)/g(x)$
+3. Draw $U\sim\text{Unif}(0,1)$
+4. If $U < r$, accept: set $x_i = x$; otherwise return to step 1
+
+Output: $x_1,\ldots,x_n \overset{iid}{\sim} f(x)\big/\!\int f(x)\,dx$.
+
+- The number of proposals per accepted draw is Geometric with mean $\int g(x)\,dx\big/\!\int f(x)\,dx$
+- Only ratios $f/g$ are needed, so unknown normalizing constants cancel as long as $g\ge f$ holds for the versions used
+
+## Alternative Description: Points Under a Curve
+
+Repeat until acceptance:
+
+1. Draw $x\sim g$
+2. Draw $V\sim\text{Unif}\big(0,\,g(x)\big)$, i.e. $V = U\cdot g(x)$ with $U\sim\text{Unif}(0,1)$
+3. If $V < f(x)$, accept $x$; otherwise go back to 1
+
+This is the same algorithm, since $V = U g(x) < f(x) \iff U < f(x)/g(x)$.
+
+**Why it works.** Steps 1–2 produce a point uniformly distributed in the region under $g$:
+$$(X,V)\sim\text{Unif}(G), \qquad G = \{(x,v): 0<v<g(x)\}$$
+
+Step 3 keeps the point only if it also lies in the region under $f$:
+$$F = \{(x,v): 0<v<f(x)\}\subset G$$
+
+A uniform point on $G$, conditioned on lying in $F$, is uniform on $F$. The $x$-coordinate of a uniform point on $F$ has density proportional to the height $f(x)$. $\blacksquare$
+
+## Alternative Description (Continued)
+
+```{r}
+#| fig-width: 9
+#| fig-height: 4.8
+par(mar = c(4, 4, 1, 1))
+plot(xs, g(xs), type = "l", lwd = 3, col = "steelblue", ylim = c(0, 0.45), xlab = "x", ylab = "v")
+lines(xs, f(xs), lwd = 3, col = "firebrick")
+N <- 600; xp <- rgamma(N, 2.5, 0.9); vp <- runif(N) * g(xp); acc <- vp < f(xp)
+points(xp[!acc], vp[!acc], pch = 4, col = adjustcolor("gray40", 0.7), cex = 0.7)
+points(xp[acc], vp[acc], pch = 19, col = adjustcolor("firebrick", 0.7), cex = 0.7)
+legend("topright", bty = "n", pch = c(19, 4), col = c("firebrick", "gray40"),
+       legend = c(sprintf("accepted (%d)", sum(acc)), sprintf("rejected (%d)", sum(!acc))))
+mtext(sprintf("acceptance rate: observed %.2f, theoretical %.2f", mean(acc), 1 / 1.9), side = 3, line = -1.2, cex = 0.9)
+```
+
+Points are uniform under $g$ (all markers); the accepted ones (red) are uniform under $f$, and their $x$-coordinates are draws from $f$.
+
+## Proof via the Distribution Function
+
+For any $t$,
+$$
+\begin{aligned}
+P(X\le t\mid \text{accept})
+&= \frac{P(X\le t,\ U<f(X)/g(X))}{P(U<f(X)/g(X))} \\[4pt]
+&= \frac{\displaystyle\int_{-\infty}^t \frac{f(x)}{g(x)}\cdot\frac{g(x)}{\int g(x)\,dx}\,dx}
+        {\displaystyle\int_{-\infty}^{\infty} \frac{f(x)}{g(x)}\cdot\frac{g(x)}{\int g(x)\,dx}\,dx}
+= \frac{\int_{-\infty}^t f(x)\,dx}{\int_{-\infty}^{\infty} f(x)\,dx}
+\end{aligned}
+$$
+
+which is the distribution function of the normalized $f$. The denominator, $P(\text{accept}) = \int f(x)\,dx\big/\!\int g(x)\,dx$, is the acceptance rate stated earlier.
+
+## Example 1: A Uniform Target
+
+$$f(x) = 2\,I\big(0\le x\le\tfrac12\big), \qquad g(x) = 2\,I(0\le x\le1)$$
+
+Steps:
+
+1. $X\sim\text{Unif}(0,1)$ (the density $g(x)\big/\!\int g(x)\,dx$)
+2. $U\sim\text{Unif}(0,1)$
+3. $r = f(X)/g(X) = \begin{cases}1, & X\le\tfrac12\\ 0, & X>\tfrac12\end{cases}$; accept if $U<r$
+
+Since $r\in\{0,1\}$, step 3 reduces to: **accept if $X\le\tfrac12$, otherwise redraw**. The accepted draws are $\text{Unif}(0,\tfrac12)$, as they should be.
+
+Acceptance rate: $\dfrac{\int f(x)\,dx}{\int g(x)\,dx} = \dfrac{1}{2}$.
+
+A looser envelope, e.g. $g_2(x) = 2\,I(0\le x\le 2)$, still works but accepts only $1/4$ of the proposals.
+
+## Example 1 (Continued)
+
+```{r}
+#| fig-width: 9
+#| fig-height: 4.2
+par(mar = c(4, 4, 1, 1))
+plot(NA, xlim = c(-0.1, 2.1), ylim = c(0, 2.4), xlab = "x", ylab = "")
+rect(0, 0, 2, 2, col = adjustcolor("purple", 0.12), border = "purple", lwd = 2)
+rect(0, 0, 1, 2, col = adjustcolor("steelblue", 0.25), border = "steelblue", lwd = 3)
+rect(0, 0, 0.5, 2, col = adjustcolor("firebrick", 0.35), border = "firebrick", lwd = 3)
+xp <- runif(40); yp <- runif(40, 0, 2)
+points(xp, yp, pch = ifelse(xp <= 0.5, 19, 4), col = ifelse(xp <= 0.5, "firebrick", "gray30"))
+legend("topright", bty = "n", lwd = c(3, 3, 2), col = c("firebrick", "steelblue", "purple"),
+       legend = TeX(c(r"($f(x) = 2 I(0 \leq x \leq 1/2)$)", r"($g(x) = 2 I(0 \leq x \leq 1)$)", r"($g_2(x) = 2 I(0 \leq x \leq 2)$)")))
+```
+
+## Example 2: Normal from a Double Exponential Envelope
+
+Target $f(x) = e^{-x^2/2}$ (unnormalized $N(0,1)$). Proposal density $g_0(x) = \tfrac12 e^{-|x|}$ (Laplace), easy to sample by inversion. Since $e^{-x^2/2}\le e^{1/2 - |x|}$ (equality at $|x|=1$), the envelope
+$$g(x) = 2e^{1/2}\,g_0(x) = e^{1/2-|x|} \ \ge\ f(x)$$
+
+works, with acceptance rate $\int f(x)\,dx\big/\!\int g(x)\,dx = \sqrt{2\pi}\big/(2e^{1/2}) \approx 0.76$.
+
+```{r}
+#| echo: true
+rlaplace <- function(n) { u <- runif(n); ifelse(u < 0.5, log(2 * u), -log(2 * (1 - u))) }
+f <- function(x) exp(-x^2 / 2); g <- function(x) exp(0.5 - abs(x))
+rnorm_reject <- function(n) { out <- numeric(0); tries <- 0
+  while (length(out) < n) { x <- rlaplace(n); tries <- tries + n
+    out <- c(out, x[runif(n) < f(x) / g(x)]) }
+  list(x = out[1:n], acceptance = n / tries) }
+res <- rnorm_reject(1e5); c(mean = mean(res$x), sd = sd(res$x), acceptance = res$acceptance)
+```
+
+## Example 2 (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+curve(g, -4, 4, lwd = 3, col = "steelblue", ylab = "", main = "target and envelope", ylim = c(0, 1.7))
+curve(f, add = TRUE, lwd = 3, col = "firebrick")
+legend("topright", bty = "n", lwd = 3, col = c("firebrick", "steelblue"),
+       legend = TeX(c(r"($f(x) = e^{-x^2/2}$)", r"($g(x) = e^{1/2-|x|}$)")))
+hist(res$x, breaks = 60, freq = FALSE, col = "gray85", border = "white", main = "accepted draws vs N(0, 1)", xlab = "x")
+curve(dnorm, add = TRUE, lwd = 3, col = "firebrick")
+```
+
+# 3. Adaptive Rejection Sampling
+
+## Log-Concave Targets
+
+Finding a good envelope by hand is the hard part of rejection sampling. For a large class of targets it can be automated.
+
+$f$ is **log-concave** if $\log f(x)$ is a concave function. Many posteriors are: normal, gamma ($\alpha\ge1$), beta ($\alpha,\beta\ge1$), logistic-regression posteriors with normal priors, and any product of log-concave factors.
+
+**Key fact**: a concave function lies below every tangent line. So for tangent lines $\ell_1(x),\ell_2(x),\ldots$ to $\log f$ at points $x_1<x_2<\cdots$, the piecewise-linear upper hull
+$$\log g(x) = \min_j \ell_j(x) = \begin{cases}\ell_1(x), & x\in I_1\\ \ell_2(x), & x\in I_2\\ \ \vdots\end{cases}$$
+
+satisfies $\log g(x)\ge\log f(x)$, hence $g(x) = e^{\ell_j(x)}\ge f(x)$ on each piece $I_j$.
+
+## Log-Concave Targets (Continued)
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+lf <- function(x) -(x - 0.5)^2 / 1.5 + 0.3 * x - 0.4   # concave log-density
+dlf <- function(x) -2 * (x - 0.5) / 1.5 + 0.3
+pts <- c(-1.2, 0.6, 2.3); xs <- seq(-3, 4, length.out = 400)
+hull <- function(x) apply(sapply(pts, function(p) lf(p) + dlf(p) * (x - p)), 1, min)
+plot(xs, lf(xs), type = "l", lwd = 3, col = "firebrick", ylim = c(-6, 1), xlab = "x", ylab = "",
+     main = TeX(r"($\log f(x)$ and tangent hull)"))
+for (p in pts) abline(lf(p) - dlf(p) * p, dlf(p), col = "gray60", lty = 2)
+lines(xs, hull(xs), lwd = 3, col = "steelblue"); points(pts, lf(pts), pch = 19, col = "steelblue", cex = 1.2)
+text(pts, lf(pts), TeX(c(r"($x_1$)", r"($x_2$)", r"($x_3$)")), pos = 1)
+plot(xs, exp(lf(xs)), type = "l", lwd = 3, col = "firebrick", xlab = "x", ylab = "",
+     main = TeX(r"($f(x)$ and piecewise-exponential envelope $g(x)$)"), ylim = c(0, 1.1))
+lines(xs, exp(hull(xs)), lwd = 3, col = "steelblue")
+```
+
+Left: tangents at three points bound the concave $\log f$ from above. Right: exponentiating gives a piecewise-exponential envelope $g\ge f$.
+
+## Sampling from the Piecewise-Exponential Envelope
+
+On piece $I_j = (z_{j-1}, z_j)$ the envelope is $g(x) = e^{a_j + b_j x}$, so its integral and CDF are closed-form:
+$$\int_{z_{j-1}}^{z_j} e^{a_j+b_j t}\,dt = \frac{e^{a_j}}{b_j}\big(e^{b_j z_j} - e^{b_j z_{j-1}}\big),
+\qquad F_g(x) = \frac{\int_{-\infty}^x g(t)\,dt}{\int_{-\infty}^{\infty} g(t)\,dt}$$
+
+Draw from $g(x)\big/\!\int g(x)\,dx$ by **inverse CDF**: pick a piece with probability proportional to its area, then invert the exponential CDF within the piece.
+
+**Adaptive rejection sampling (Gilks & Wild, 1992)**
+
+1. Start with a few tangent points $x_1<\cdots<x_k$ (at least one on each side of the mode)
+2. Draw $x\sim g$, $U\sim\text{Unif}(0,1)$; accept if $U<f(x)/g(x)$
+3. Whenever a point is **rejected**, add it to the tangent set and rebuild the hull
+
+Each rejection tightens the envelope where it was loose, so the acceptance rate rises toward 1 as sampling proceeds. Only $\log f$ and its derivative are required (a derivative-free version uses secants).
+
+## Summary and Limitations
+
+- Rejection sampling turns draws from an envelope $g\ge f$ into exact iid draws from $f$, using only the ratio $f/g$; normalizing constants are not needed
+- Geometric view: uniform points under $g$, keep those under $f$
+- Efficiency $=\int f(x)\,dx\big/\!\int g(x)\,dx$; the envelope should be as tight as possible while remaining easy to sample
+- Adaptive rejection sampling builds and refines the envelope automatically for log-concave $f$
+- Limitations: an envelope with a bounded ratio $g/f$ may not exist (heavier tails in $f$ than in $g$); in high dimensions the acceptance rate typically decays exponentially with dimension. These limitations motivate importance sampling and Markov chain Monte Carlo (next lectures)
