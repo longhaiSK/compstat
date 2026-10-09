@@ -1,0 +1,600 @@
+---
+engine: markdown
+title: "The EM Algorithm for a Bivariate Normal Mixture"
+pagetitle: "mixture-bvn-shinylive"
+---
+
+<!-- The app's code appears twice below (the live app and the R source
+     callout); keep the two copies identical. Re-render with:
+     quarto render shinylive_apps -->
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 1000
+library(shiny)
+
+### ---------- model functions -------------------------------------------------
+### a mixture of K = 3 bivariate normals; theta = list(pi, mu (K x 2), S (2 x 2 x K))
+K <- 3
+COLS <- c("#E69F00", "#0072B2", "#009E73")       # one colour per component
+
+## log density of N2(mu, S) at the rows of X
+ldbvn <- function(X, mu, S) {
+    det <- S[1, 1] * S[2, 2] - S[1, 2]^2
+    Si  <- matrix(c(S[2, 2], -S[1, 2], -S[1, 2], S[1, 1]), 2) / det
+    D   <- sweep(X, 2, mu)
+    -log(2 * pi) - 0.5 * log(det) - 0.5 * rowSums((D %*% Si) * D)
+}
+
+## log of pi_k * phi(x | mu_k, S_k), one column per component
+log_joint <- function(th, X)
+    sapply(seq_len(K), function(k) log(th$pi[k]) + ldbvn(X, th$mu[k, ], th$S[, , k]))
+
+row_lse <- function(L) { m <- apply(L, 1, max); m + log(rowSums(exp(L - m))) }
+
+## E-step: responsibilities (n x K) and the observed log-likelihood
+e_step <- function(th, X) {
+    L <- log_joint(th, X); lse <- row_lse(L)
+    list(R = exp(L - lse), loglik = sum(lse))
+}
+
+## M-step: weighted proportions, means and covariances
+m_step <- function(R, X) {
+    Nk <- colSums(R)
+    mu <- t(sapply(seq_len(K), function(k) colSums(R[, k] * X) / Nk[k]))
+    S  <- array(NA_real_, c(2, 2, K))
+    for (k in seq_len(K)) {
+        D <- sweep(X, 2, mu[k, ])
+        S[, , k] <- crossprod(D * sqrt(R[, k])) / Nk[k] + diag(1e-6, 2)
+    }
+    list(pi = Nk / nrow(X), mu = mu, S = S)
+}
+
+## a component is "degenerate" if it has (almost) no points or a flat covariance
+degenerate <- function(th)
+    any(!is.finite(unlist(th))) || any(th$pi < 1e-8) ||
+    any(apply(th$S, 3, function(S) S[1, 1] * S[2, 2] - S[1, 2]^2) < 1e-8)
+
+em_path <- function(th0, X, no_iters) {
+    TH <- list(th0); LL <- e_step(th0, X)$loglik
+    th <- th0
+    for (i in seq_len(no_iters)) {
+        th <- m_step(e_step(th, X)$R, X)
+        if (degenerate(th)) break
+        TH[[i + 1]] <- th
+        LL[i + 1] <- e_step(th, X)$loglik
+    }
+    list(TH = TH, LL = LL)
+}
+
+### ---------- data sets (true parameters) -------------------------------------
+cv <- function(s1, s2, r) matrix(c(s1^2, r * s1 * s2, r * s1 * s2, s2^2), 2)
+datasets <- list(
+    "well separated, equal weights" = list(
+        pi = rep(1/3, 3), mu = rbind(c(0, 0), c(4, 0), c(2, 3.5)),
+        S = list(diag(2), diag(2), diag(2))),
+    "overlapping, equal weights" = list(
+        pi = rep(1/3, 3), mu = rbind(c(0, 0), c(2.2, 0), c(1.1, 1.9)),
+        S = list(diag(2), diag(2), diag(2))),
+    "correlated shapes, unequal weights" = list(
+        pi = c(0.5, 0.3, 0.2), mu = rbind(c(0, 0), c(3, 3), c(4, -1)),
+        S = list(cv(1, 1, 0.8), cv(1.2, 0.7, -0.6), cv(0.5, 1.2, 0))),
+    "only two true clusters (K = 3 overfits)" = list(
+        pi = c(0.5, 0.5), mu = rbind(c(0, 0), c(4, 1)),
+        S = list(cv(1, 1, 0.3), cv(1, 1, -0.3)))
+)
+
+make_data <- function(spec, n, seed) {
+    set.seed(seed)
+    z <- sample(seq_along(spec$pi), n, replace = TRUE, prob = spec$pi)
+    X <- t(sapply(z, function(j) spec$mu[j, ] + drop(t(chol(spec$S[[j]])) %*% rnorm(2))))
+    colnames(X) <- c("x1", "x2")
+    X
+}
+
+### ---------- starting values ---------------------------------------------------
+starts <- c("three random data points as means", "random labels",
+            "all means near the centre")
+
+make_start <- function(how, X, seed) {
+    set.seed(seed)
+    S0 <- array(cov(X), c(2, 2, K))
+    ctr <- colMeans(X)
+    mu <- switch(how,
+        "three random data points as means" = X[sample(nrow(X), K), ],
+        "random labels" = {
+            lab <- sample(rep_len(seq_len(K), nrow(X)))
+            t(sapply(seq_len(K), function(k) colMeans(X[lab == k, , drop = FALSE])))
+        },
+        "all means near the centre" =
+            matrix(ctr, K, 2, byrow = TRUE) + matrix(rnorm(2 * K, 0, 0.05), K))
+    list(pi = rep(1 / K, K), mu = unname(mu), S = S0)
+}
+
+### ---------- UI ---------------------------------------------------------------
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+    actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+                 style = "flex: 1; padding: 6px 0;")
+
+## a bold label in the left-hand column of a row of controls
+row_label <- function(txt)
+    column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for the EM Algorithm for a Bivariate Normal Mixture"),
+    ## ---- control panel: three rows ------------------------------------------
+    wellPanel(
+        ## generate the data
+        fluidRow(
+            row_label("Generate data"),
+            column(3, selectInput("dataset", "True mixture", choices = names(datasets),
+                                  width = "100%")),
+            column(3, sliderInput("n", "Sample size n", min = 60, max = 600,
+                                  value = 300, step = 30, width = "100%")),
+            column(2, div(style = "padding-top: 25px;",
+                          actionButton("newdata", "Regenerate a dataset",
+                                       class = "btn-warning", style = "width:100%;")))
+        ),
+        hr(style = "margin: 4px 0 8px;"),
+        ## the starting value
+        fluidRow(
+            row_label("Starting value"),
+            column(3, selectInput("start", "Start EM from", choices = starts,
+                                  width = "100%")),
+            column(3, sliderInput("maxit", "Iterations to run", min = 5, max = 200,
+                                  value = 60, step = 5, width = "100%")),
+            column(2, div(style = "padding-top: 25px;",
+                          actionButton("newstart", "New random start",
+                                       style = "width:100%;")))
+        ),
+        hr(style = "margin: 4px 0 8px;"),
+        ## play the run
+        fluidRow(
+            row_label("Play control"),
+            column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
+                          ctrl_btn("first", "backward-fast", "Back to the start"),
+                          ctrl_btn("back",  "backward-step", "One iteration back"),
+                          ctrl_btn("play",  "play",          "Play / pause",
+                                   class = "btn-primary"),
+                          ctrl_btn("step",  "forward-step",  "One iteration forward"),
+                          ctrl_btn("toend", "forward-fast",  "To the end"))),
+            column(3, div(style = "padding-top: 8px;",
+                          checkboxInput("uncertain",
+                                        "Hollow points: max responsibility < 0.9", TRUE),
+                          checkboxInput("truth", "Mark the true means", FALSE))),
+            column(2, div(style = "padding-top: 8px;",
+                          checkboxInput("autoplay", "Autoplay on change", FALSE)))
+        )
+    ),
+    ## ---- plots ----------------------------------------------------------------
+    fluidRow(
+        column(7, plotOutput("fit", height = "560px")),
+        column(5, plotOutput("ll",  height = "280px"),
+                  plotOutput("pis", height = "280px"))
+    )
+)
+
+### ---------- server -----------------------------------------------------------
+server <- function(input, output, session) {
+
+    dseed <- reactiveVal(812); sseed <- reactiveVal(1)
+    observeEvent(input$newdata,  dseed(dseed() + 1))
+    observeEvent(input$newstart, sseed(sseed() + 1))
+
+    X <- reactive(make_data(datasets[[input$dataset]], input$n, dseed()))
+
+    path <- reactive(em_path(make_start(input$start, X(), sseed()), X(), input$maxit))
+    nlast <- reactive(length(path()$TH) - 1L)     # last iteration reached
+
+    ## ---- iteration state driven by the playback buttons ---------------------
+    t_cur   <- reactiveVal(0L)
+    playing <- reactiveVal(FALSE)
+
+    ## any change to the data or the starting value restarts the display
+    observeEvent(path(), {
+        t_cur(0L)
+        playing(isTRUE(input$autoplay) && nlast() > 0)
+    })
+
+    observeEvent(input$play, {
+        if (isTRUE(playing())) playing(FALSE)
+        else {
+            if (t_cur() >= nlast()) t_cur(0L)    # replay from the start
+            playing(TRUE)
+        }
+    })
+    observeEvent(playing(), {
+        updateActionButton(session, "play",
+                           icon = icon(if (isTRUE(playing())) "pause" else "play"))
+    })
+    ## the timer: advances one iteration per tick while playing
+    observe({
+        if (!isTRUE(playing())) return()
+        k <- isolate(t_cur()); kmax <- isolate(nlast())
+        if (k >= kmax) { playing(FALSE); return() }
+        invalidateLater(400, session)
+        t_cur(k + 1L)
+    })
+    observeEvent(input$step,  { playing(FALSE); t_cur(min(t_cur() + 1L, nlast())) })
+    observeEvent(input$back,  { playing(FALSE); t_cur(max(t_cur() - 1L, 0L)) })
+    observeEvent(input$first, { playing(FALSE); t_cur(0L) })
+    observeEvent(input$toend, { playing(FALSE); t_cur(nlast()) })
+
+    ## ---- the scatter plot with E-step classes and weighted-density contours --
+    output$fit <- renderPlot({
+        x <- X(); P <- path(); t <- min(t_cur(), nlast())
+        th <- P$TH[[t + 1]]
+        E  <- e_step(th, x)
+        cls  <- max.col(E$R, ties.method = "first")    # hard classification
+        sure <- apply(E$R, 1, max) >= 0.9
+
+        rx <- range(x[, 1]) + c(-1, 1); ry <- range(x[, 2]) + c(-1, 1)
+        g1 <- seq(rx[1], rx[2], length.out = 120)
+        g2 <- seq(ry[1], ry[2], length.out = 120)
+        G  <- as.matrix(expand.grid(g1, g2))
+        ## pi_k * phi_k on the grid, one column per component
+        Dk <- exp(log_joint(th, G))
+        ## shared, geometrically spaced levels: a component with a smaller
+        ## weight reaches fewer of them, so it draws fewer rings
+        lev <- max(Dk) * 2^-(0:7)
+
+        par(mar = c(4, 4, 3, 1))
+        plot(x, type = "n", asp = 1, xlim = rx, ylim = ry,
+             xlab = expression(x[1]), ylab = expression(x[2]),
+             main = sprintf("iteration %d:  log-likelihood = %.2f", t, E$loglik))
+        for (k in seq_len(K))
+            contour(g1, g2, matrix(Dk[, k], length(g1)), levels = lev,
+                    drawlabels = FALSE, col = COLS[k], lwd = 1.4, add = TRUE)
+        pch <- if (isTRUE(input$uncertain)) ifelse(sure, 19, 1) else 19
+        points(x, col = COLS[cls], pch = pch, cex = 0.8)
+        points(th$mu, pch = 3, cex = 2.2, lwd = 3)
+        if (isTRUE(input$truth))
+            points(datasets[[input$dataset]]$mu, pch = 4, cex = 2, lwd = 2, col = "red")
+        legend("topleft", bty = "n", cex = 0.9, pch = 19, col = COLS,
+               legend = sprintf("component %d:  pi = %.2f,  %d points",
+                                seq_len(K), th$pi, tabulate(cls, K)))
+        legend("bottomright", bty = "n", cex = 0.85,
+               pch = c(3, if (isTRUE(input$truth)) 4),
+               col = c("black", if (isTRUE(input$truth)) "red"),
+               legend = c("current means", if (isTRUE(input$truth)) "true means"))
+    })
+
+    output$ll <- renderPlot({
+        P <- path(); t <- min(t_cur(), nlast()); it <- seq_along(P$LL) - 1
+        par(mar = c(4, 4.5, 3, 1))
+        plot(it, P$LL, type = "n", xlab = "iteration",
+             ylab = "observed log-likelihood", main = "must never decrease")
+        lines(it[1:(t + 1)], P$LL[1:(t + 1)], type = "b", pch = 19, cex = 0.6,
+              col = "firebrick")
+        if (nlast() < input$maxit)
+            mtext(sprintf("stopped at iteration %d: a component degenerated", nlast()),
+                  side = 3, line = 0.1, cex = 0.8, col = "firebrick")
+    })
+
+    output$pis <- renderPlot({
+        P <- path(); t <- min(t_cur(), nlast()); it <- seq_along(P$TH) - 1
+        PI <- t(sapply(P$TH, `[[`, "pi"))
+        par(mar = c(4, 4.5, 3, 1))
+        matplot(it, PI, type = "n", ylim = c(0, 1), xlab = "iteration",
+                ylab = "mixing weight", main = "mixing weights")
+        for (k in seq_len(K))
+            lines(it[1:(t + 1)], PI[1:(t + 1), k], type = "b", pch = 19, cex = 0.6,
+                  col = COLS[k])
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Watch the EM algorithm fit a mixture of three bivariate normal distributions, each with its own mean vector and full covariance matrix:
+$$
+f(x) = \sum_{k=1}^{3} \pi_k\, \phi(x \mid \mu_k, \Sigma_k), \qquad x \in \mathbb{R}^2 .
+$$
+It is the two-dimensional, three-component version of the [one-dimensional mixture app](app_mixture.html).
+
+Pick a true mixture and a starting value, then step through the fit with the playback buttons, or press play to run it automatically. **Regenerate a dataset** draws a fresh sample from the same mixture. **New random start** draws a new starting value of the chosen kind. Changing the data or the start resets the display to iteration 0.
+
+Left panel, at iteration $t$:
+
+- **Colours: the E-step as a hard classification.** Each point is coloured by the component with the largest responsibility
+  $\hat r_{ik}^{(t)} \propto \hat\pi_k^{(t)}\, \phi(x_i \mid \hat\mu_k^{(t)}, \hat\Sigma_k^{(t)})$.
+  EM itself uses the soft responsibilities. Points whose largest responsibility is below 0.9 are drawn hollow, so you can see where the classification is uncertain.
+- **Contours: the weighted component densities** $\hat\pi_k^{(t)}\, \phi(x \mid \hat\mu_k^{(t)}, \hat\Sigma_k^{(t)})$, in the component's colour. All three use the same contour levels, each half the one above. A component with a smaller weight therefore reaches fewer of the levels and draws fewer rings. The black crosses are the current means.
+
+Right panels: the observed log-likelihood, which must never decrease, and the paths of the three mixing weights.
+
+Four behaviours are worth producing deliberately.
+
+**Fast convergence when the clusters are well separated.** With the well-separated mixture, the responsibilities are almost all 0 or 1 after a few iterations. The hard classification then agrees with the soft one, and EM converges in a handful of steps.
+
+**Slow convergence when they overlap.** With the overlapping mixture, many points stay hollow for a long time and the log-likelihood keeps creeping up for dozens of iterations. This is the slow linear convergence that comes with a large fraction of missing information.
+
+**Local maxima.** With correlated shapes and unequal weights, try several random starts. Some runs end with one component stretched across two true clusters while another splits a single cluster. The final log-likelihood is then visibly lower. EM finds a local maximum, not necessarily the global one, which is why it is usually run from several starts.
+
+**Overfitting with K = 3.** When the data have only two true clusters, the third component has no cluster of its own. It ends up either splitting one cluster or as a small, low-weight component. Its contours show only a ring or two, because its weight is small. The fitted log-likelihood still improves on the two-component fit, so the likelihood alone cannot tell you the number of components.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+### ---------- model functions -------------------------------------------------
+### a mixture of K = 3 bivariate normals; theta = list(pi, mu (K x 2), S (2 x 2 x K))
+K <- 3
+COLS <- c("#E69F00", "#0072B2", "#009E73")       # one colour per component
+
+## log density of N2(mu, S) at the rows of X
+ldbvn <- function(X, mu, S) {
+    det <- S[1, 1] * S[2, 2] - S[1, 2]^2
+    Si  <- matrix(c(S[2, 2], -S[1, 2], -S[1, 2], S[1, 1]), 2) / det
+    D   <- sweep(X, 2, mu)
+    -log(2 * pi) - 0.5 * log(det) - 0.5 * rowSums((D %*% Si) * D)
+}
+
+## log of pi_k * phi(x | mu_k, S_k), one column per component
+log_joint <- function(th, X)
+    sapply(seq_len(K), function(k) log(th$pi[k]) + ldbvn(X, th$mu[k, ], th$S[, , k]))
+
+row_lse <- function(L) { m <- apply(L, 1, max); m + log(rowSums(exp(L - m))) }
+
+## E-step: responsibilities (n x K) and the observed log-likelihood
+e_step <- function(th, X) {
+    L <- log_joint(th, X); lse <- row_lse(L)
+    list(R = exp(L - lse), loglik = sum(lse))
+}
+
+## M-step: weighted proportions, means and covariances
+m_step <- function(R, X) {
+    Nk <- colSums(R)
+    mu <- t(sapply(seq_len(K), function(k) colSums(R[, k] * X) / Nk[k]))
+    S  <- array(NA_real_, c(2, 2, K))
+    for (k in seq_len(K)) {
+        D <- sweep(X, 2, mu[k, ])
+        S[, , k] <- crossprod(D * sqrt(R[, k])) / Nk[k] + diag(1e-6, 2)
+    }
+    list(pi = Nk / nrow(X), mu = mu, S = S)
+}
+
+## a component is "degenerate" if it has (almost) no points or a flat covariance
+degenerate <- function(th)
+    any(!is.finite(unlist(th))) || any(th$pi < 1e-8) ||
+    any(apply(th$S, 3, function(S) S[1, 1] * S[2, 2] - S[1, 2]^2) < 1e-8)
+
+em_path <- function(th0, X, no_iters) {
+    TH <- list(th0); LL <- e_step(th0, X)$loglik
+    th <- th0
+    for (i in seq_len(no_iters)) {
+        th <- m_step(e_step(th, X)$R, X)
+        if (degenerate(th)) break
+        TH[[i + 1]] <- th
+        LL[i + 1] <- e_step(th, X)$loglik
+    }
+    list(TH = TH, LL = LL)
+}
+
+### ---------- data sets (true parameters) -------------------------------------
+cv <- function(s1, s2, r) matrix(c(s1^2, r * s1 * s2, r * s1 * s2, s2^2), 2)
+datasets <- list(
+    "well separated, equal weights" = list(
+        pi = rep(1/3, 3), mu = rbind(c(0, 0), c(4, 0), c(2, 3.5)),
+        S = list(diag(2), diag(2), diag(2))),
+    "overlapping, equal weights" = list(
+        pi = rep(1/3, 3), mu = rbind(c(0, 0), c(2.2, 0), c(1.1, 1.9)),
+        S = list(diag(2), diag(2), diag(2))),
+    "correlated shapes, unequal weights" = list(
+        pi = c(0.5, 0.3, 0.2), mu = rbind(c(0, 0), c(3, 3), c(4, -1)),
+        S = list(cv(1, 1, 0.8), cv(1.2, 0.7, -0.6), cv(0.5, 1.2, 0))),
+    "only two true clusters (K = 3 overfits)" = list(
+        pi = c(0.5, 0.5), mu = rbind(c(0, 0), c(4, 1)),
+        S = list(cv(1, 1, 0.3), cv(1, 1, -0.3)))
+)
+
+make_data <- function(spec, n, seed) {
+    set.seed(seed)
+    z <- sample(seq_along(spec$pi), n, replace = TRUE, prob = spec$pi)
+    X <- t(sapply(z, function(j) spec$mu[j, ] + drop(t(chol(spec$S[[j]])) %*% rnorm(2))))
+    colnames(X) <- c("x1", "x2")
+    X
+}
+
+### ---------- starting values ---------------------------------------------------
+starts <- c("three random data points as means", "random labels",
+            "all means near the centre")
+
+make_start <- function(how, X, seed) {
+    set.seed(seed)
+    S0 <- array(cov(X), c(2, 2, K))
+    ctr <- colMeans(X)
+    mu <- switch(how,
+        "three random data points as means" = X[sample(nrow(X), K), ],
+        "random labels" = {
+            lab <- sample(rep_len(seq_len(K), nrow(X)))
+            t(sapply(seq_len(K), function(k) colMeans(X[lab == k, , drop = FALSE])))
+        },
+        "all means near the centre" =
+            matrix(ctr, K, 2, byrow = TRUE) + matrix(rnorm(2 * K, 0, 0.05), K))
+    list(pi = rep(1 / K, K), mu = unname(mu), S = S0)
+}
+
+### ---------- UI ---------------------------------------------------------------
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+    actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+                 style = "flex: 1; padding: 6px 0;")
+
+## a bold label in the left-hand column of a row of controls
+row_label <- function(txt)
+    column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
+ui <- fluidPage(
+    titlePanel("Shinylive App for the EM Algorithm for a Bivariate Normal Mixture"),
+    ## ---- control panel: three rows ------------------------------------------
+    wellPanel(
+        ## generate the data
+        fluidRow(
+            row_label("Generate data"),
+            column(3, selectInput("dataset", "True mixture", choices = names(datasets),
+                                  width = "100%")),
+            column(3, sliderInput("n", "Sample size n", min = 60, max = 600,
+                                  value = 300, step = 30, width = "100%")),
+            column(2, div(style = "padding-top: 25px;",
+                          actionButton("newdata", "Regenerate a dataset",
+                                       class = "btn-warning", style = "width:100%;")))
+        ),
+        hr(style = "margin: 4px 0 8px;"),
+        ## the starting value
+        fluidRow(
+            row_label("Starting value"),
+            column(3, selectInput("start", "Start EM from", choices = starts,
+                                  width = "100%")),
+            column(3, sliderInput("maxit", "Iterations to run", min = 5, max = 200,
+                                  value = 60, step = 5, width = "100%")),
+            column(2, div(style = "padding-top: 25px;",
+                          actionButton("newstart", "New random start",
+                                       style = "width:100%;")))
+        ),
+        hr(style = "margin: 4px 0 8px;"),
+        ## play the run
+        fluidRow(
+            row_label("Play control"),
+            column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
+                          ctrl_btn("first", "backward-fast", "Back to the start"),
+                          ctrl_btn("back",  "backward-step", "One iteration back"),
+                          ctrl_btn("play",  "play",          "Play / pause",
+                                   class = "btn-primary"),
+                          ctrl_btn("step",  "forward-step",  "One iteration forward"),
+                          ctrl_btn("toend", "forward-fast",  "To the end"))),
+            column(3, div(style = "padding-top: 8px;",
+                          checkboxInput("uncertain",
+                                        "Hollow points: max responsibility < 0.9", TRUE),
+                          checkboxInput("truth", "Mark the true means", FALSE))),
+            column(2, div(style = "padding-top: 8px;",
+                          checkboxInput("autoplay", "Autoplay on change", FALSE)))
+        )
+    ),
+    ## ---- plots ----------------------------------------------------------------
+    fluidRow(
+        column(7, plotOutput("fit", height = "560px")),
+        column(5, plotOutput("ll",  height = "280px"),
+                  plotOutput("pis", height = "280px"))
+    )
+)
+
+### ---------- server -----------------------------------------------------------
+server <- function(input, output, session) {
+
+    dseed <- reactiveVal(812); sseed <- reactiveVal(1)
+    observeEvent(input$newdata,  dseed(dseed() + 1))
+    observeEvent(input$newstart, sseed(sseed() + 1))
+
+    X <- reactive(make_data(datasets[[input$dataset]], input$n, dseed()))
+
+    path <- reactive(em_path(make_start(input$start, X(), sseed()), X(), input$maxit))
+    nlast <- reactive(length(path()$TH) - 1L)     # last iteration reached
+
+    ## ---- iteration state driven by the playback buttons ---------------------
+    t_cur   <- reactiveVal(0L)
+    playing <- reactiveVal(FALSE)
+
+    ## any change to the data or the starting value restarts the display
+    observeEvent(path(), {
+        t_cur(0L)
+        playing(isTRUE(input$autoplay) && nlast() > 0)
+    })
+
+    observeEvent(input$play, {
+        if (isTRUE(playing())) playing(FALSE)
+        else {
+            if (t_cur() >= nlast()) t_cur(0L)    # replay from the start
+            playing(TRUE)
+        }
+    })
+    observeEvent(playing(), {
+        updateActionButton(session, "play",
+                           icon = icon(if (isTRUE(playing())) "pause" else "play"))
+    })
+    ## the timer: advances one iteration per tick while playing
+    observe({
+        if (!isTRUE(playing())) return()
+        k <- isolate(t_cur()); kmax <- isolate(nlast())
+        if (k >= kmax) { playing(FALSE); return() }
+        invalidateLater(400, session)
+        t_cur(k + 1L)
+    })
+    observeEvent(input$step,  { playing(FALSE); t_cur(min(t_cur() + 1L, nlast())) })
+    observeEvent(input$back,  { playing(FALSE); t_cur(max(t_cur() - 1L, 0L)) })
+    observeEvent(input$first, { playing(FALSE); t_cur(0L) })
+    observeEvent(input$toend, { playing(FALSE); t_cur(nlast()) })
+
+    ## ---- the scatter plot with E-step classes and weighted-density contours --
+    output$fit <- renderPlot({
+        x <- X(); P <- path(); t <- min(t_cur(), nlast())
+        th <- P$TH[[t + 1]]
+        E  <- e_step(th, x)
+        cls  <- max.col(E$R, ties.method = "first")    # hard classification
+        sure <- apply(E$R, 1, max) >= 0.9
+
+        rx <- range(x[, 1]) + c(-1, 1); ry <- range(x[, 2]) + c(-1, 1)
+        g1 <- seq(rx[1], rx[2], length.out = 120)
+        g2 <- seq(ry[1], ry[2], length.out = 120)
+        G  <- as.matrix(expand.grid(g1, g2))
+        ## pi_k * phi_k on the grid, one column per component
+        Dk <- exp(log_joint(th, G))
+        ## shared, geometrically spaced levels: a component with a smaller
+        ## weight reaches fewer of them, so it draws fewer rings
+        lev <- max(Dk) * 2^-(0:7)
+
+        par(mar = c(4, 4, 3, 1))
+        plot(x, type = "n", asp = 1, xlim = rx, ylim = ry,
+             xlab = expression(x[1]), ylab = expression(x[2]),
+             main = sprintf("iteration %d:  log-likelihood = %.2f", t, E$loglik))
+        for (k in seq_len(K))
+            contour(g1, g2, matrix(Dk[, k], length(g1)), levels = lev,
+                    drawlabels = FALSE, col = COLS[k], lwd = 1.4, add = TRUE)
+        pch <- if (isTRUE(input$uncertain)) ifelse(sure, 19, 1) else 19
+        points(x, col = COLS[cls], pch = pch, cex = 0.8)
+        points(th$mu, pch = 3, cex = 2.2, lwd = 3)
+        if (isTRUE(input$truth))
+            points(datasets[[input$dataset]]$mu, pch = 4, cex = 2, lwd = 2, col = "red")
+        legend("topleft", bty = "n", cex = 0.9, pch = 19, col = COLS,
+               legend = sprintf("component %d:  pi = %.2f,  %d points",
+                                seq_len(K), th$pi, tabulate(cls, K)))
+        legend("bottomright", bty = "n", cex = 0.85,
+               pch = c(3, if (isTRUE(input$truth)) 4),
+               col = c("black", if (isTRUE(input$truth)) "red"),
+               legend = c("current means", if (isTRUE(input$truth)) "true means"))
+    })
+
+    output$ll <- renderPlot({
+        P <- path(); t <- min(t_cur(), nlast()); it <- seq_along(P$LL) - 1
+        par(mar = c(4, 4.5, 3, 1))
+        plot(it, P$LL, type = "n", xlab = "iteration",
+             ylab = "observed log-likelihood", main = "must never decrease")
+        lines(it[1:(t + 1)], P$LL[1:(t + 1)], type = "b", pch = 19, cex = 0.6,
+              col = "firebrick")
+        if (nlast() < input$maxit)
+            mtext(sprintf("stopped at iteration %d: a component degenerated", nlast()),
+                  side = 3, line = 0.1, cex = 0.8, col = "firebrick")
+    })
+
+    output$pis <- renderPlot({
+        P <- path(); t <- min(t_cur(), nlast()); it <- seq_along(P$TH) - 1
+        PI <- t(sapply(P$TH, `[[`, "pi"))
+        par(mar = c(4, 4.5, 3, 1))
+        matplot(it, PI, type = "n", ylim = c(0, 1), xlab = "iteration",
+                ylab = "mixing weight", main = "mixing weights")
+        for (k in seq_len(K))
+            lines(it[1:(t + 1)], PI[1:(t + 1), k], type = "b", pch = 19, cex = 0.6,
+                  col = COLS[k])
+    })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[EM Algorithms](../compstat_book/chapters/unit06_em.html#sec-mixture-app)* in the book.
