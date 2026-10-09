@@ -279,7 +279,7 @@ window.Quarto = {
 #|   shinylive does not work in self-contained HTML documents.
 #|   Please set `embed-resources: false` in your metadata.
 #| standalone: true
-#| viewerHeight: 1000
+#| viewerHeight: 940
 library(shiny)
 
 ### ---------- model functions -------------------------------------------------
@@ -362,20 +362,20 @@ make_data &lt;- function(spec, n, seed) {
 }
 
 ### ---------- starting values ---------------------------------------------------
-starts &lt;- c("three random data points as means", "random labels",
-            "all means near the centre")
+starts &lt;- c("random data points as means", "random labels",
+            "means near the centre")
 
 make_start &lt;- function(how, X, seed) {
     set.seed(seed)
     S0 &lt;- array(cov(X), c(2, 2, K))
     ctr &lt;- colMeans(X)
     mu &lt;- switch(how,
-        "three random data points as means" = X[sample(nrow(X), K), ],
+        "random data points as means" = X[sample(nrow(X), K), ],
         "random labels" = {
             lab &lt;- sample(rep_len(seq_len(K), nrow(X)))
             t(sapply(seq_len(K), function(k) colMeans(X[lab == k, , drop = FALSE])))
         },
-        "all means near the centre" =
+        "means near the centre" =
             matrix(ctr, K, 2, byrow = TRUE) + matrix(rnorm(2 * K, 0, 0.05), K))
     list(pi = rep(1 / K, K), mu = unname(mu), S = S0)
 }
@@ -392,7 +392,7 @@ row_label &lt;- function(txt)
 
 ui &lt;- fluidPage(
     titlePanel("Shinylive App for the EM Algorithm for a Bivariate Normal Mixture"),
-    ## ---- control panel: three rows ------------------------------------------
+    ## ---- control panel: two rows --------------------------------------------
     wellPanel(
         ## generate the data
         fluidRow(
@@ -406,33 +406,27 @@ ui &lt;- fluidPage(
                                        class = "btn-warning", style = "width:100%;")))
         ),
         hr(style = "margin: 4px 0 8px;"),
-        ## the starting value
+        ## the starting value and the playback, in one row
         fluidRow(
-            row_label("Starting value"),
-            column(3, selectInput("start", "Start EM from", choices = starts,
+            row_label("Start and play"),
+            column(2, selectInput("start", "Start EM from", choices = starts,
                                   width = "100%")),
-            column(3, sliderInput("maxit", "Iterations to run", min = 5, max = 200,
+            column(2, sliderInput("maxit", "Iterations", min = 5, max = 200,
                                   value = 60, step = 5, width = "100%")),
-            column(2, div(style = "padding-top: 25px;",
-                          actionButton("newstart", "New random start",
-                                       style = "width:100%;")))
-        ),
-        hr(style = "margin: 4px 0 8px;"),
-        ## play the run
-        fluidRow(
-            row_label("Play control"),
-            column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
+            column(3, div(style = "display: flex; gap: 4px; padding-top: 25px;",
+                          actionButton("newstart", "Starting",
+                                       title = "Draw a new starting value of the chosen kind",
+                                       style = "flex: 1.8; padding: 6px 2px;"),
                           ctrl_btn("first", "backward-fast", "Back to the start"),
                           ctrl_btn("back",  "backward-step", "One iteration back"),
                           ctrl_btn("play",  "play",          "Play / pause",
                                    class = "btn-primary"),
                           ctrl_btn("step",  "forward-step",  "One iteration forward"),
                           ctrl_btn("toend", "forward-fast",  "To the end"))),
-            column(3, div(style = "padding-top: 8px;",
+            column(3, div(style = "padding-top: 4px; line-height: 1.1;",
                           checkboxInput("uncertain",
                                         "Hollow points: max responsibility &lt; 0.9", TRUE),
-                          checkboxInput("truth", "Mark the true means", FALSE))),
-            column(2, div(style = "padding-top: 8px;",
+                          checkboxInput("truth", "Mark the true means", FALSE),
                           checkboxInput("autoplay", "Autoplay on change", FALSE)))
         )
     ),
@@ -563,7 +557,7 @@ shinyApp(ui, server)</code></pre>
 <p>Watch the EM algorithm fit a mixture of three bivariate normal distributions, each with its own mean vector and full covariance matrix: <span class="math display">\[
 f(x) = \sum_{k=1}^{3} \pi_k\, \phi(x \mid \mu_k, \Sigma_k), \qquad x \in \mathbb{R}^2 .
 \]</span> It is the two-dimensional, three-component version of the <a href="app_mixture.html">one-dimensional mixture app</a>.</p>
-<p>Pick a true mixture and a starting value, then step through the fit with the playback buttons, or press play to run it automatically. <strong>Regenerate a dataset</strong> draws a fresh sample from the same mixture. <strong>New random start</strong> draws a new starting value of the chosen kind. Changing the data or the start resets the display to iteration 0.</p>
+<p>Pick a true mixture and a starting value, then step through the fit with the playback buttons, or press play to run it automatically. <strong>Regenerate a dataset</strong> draws a fresh sample from the same mixture. <strong>Starting</strong> draws a new starting value of the chosen kind. Changing the data or the start resets the display to iteration 0.</p>
 <p>Left panel, at iteration <span class="math inline">\(t\)</span>:</p>
 <ul>
 <li><strong>Colours: the E-step as a hard classification.</strong> Each point is coloured by the component with the largest responsibility <span class="math inline">\(\hat r_{ik}^{(t)} \propto \hat\pi_k^{(t)}\, \phi(x_i \mid \hat\mu_k^{(t)}, \hat\Sigma_k^{(t)})\)</span>. EM itself uses the soft responsibilities. Points whose largest responsibility is below 0.9 are drawn hollow, so you can see where the classification is uncertain.</li>
@@ -669,20 +663,20 @@ f(x) = \sum_{k=1}^{3} \pi_k\, \phi(x \mid \mu_k, \Sigma_k), \qquad x \in \mathbb
 <span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a><span class="do">### ---------- starting values ---------------------------------------------------</span></span>
-<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>starts <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"three random data points as means"</span>, <span class="st">"random labels"</span>,</span>
-<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>            <span class="st">"all means near the centre"</span>)</span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>starts <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"random data points as means"</span>, <span class="st">"random labels"</span>,</span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>            <span class="st">"means near the centre"</span>)</span>
 <span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>make_start <span class="ot">&lt;-</span> <span class="cf">function</span>(how, X, seed) {</span>
 <span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>    <span class="fu">set.seed</span>(seed)</span>
 <span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>    S0 <span class="ot">&lt;-</span> <span class="fu">array</span>(<span class="fu">cov</span>(X), <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">2</span>, K))</span>
 <span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>    ctr <span class="ot">&lt;-</span> <span class="fu">colMeans</span>(X)</span>
 <span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>    mu <span class="ot">&lt;-</span> <span class="cf">switch</span>(how,</span>
-<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>        <span class="st">"three random data points as means"</span> <span class="ot">=</span> X[<span class="fu">sample</span>(<span class="fu">nrow</span>(X), K), ],</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>        <span class="st">"random data points as means"</span> <span class="ot">=</span> X[<span class="fu">sample</span>(<span class="fu">nrow</span>(X), K), ],</span>
 <span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>        <span class="st">"random labels"</span> <span class="ot">=</span> {</span>
 <span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a>            lab <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">rep_len</span>(<span class="fu">seq_len</span>(K), <span class="fu">nrow</span>(X)))</span>
 <span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>            <span class="fu">t</span>(<span class="fu">sapply</span>(<span class="fu">seq_len</span>(K), <span class="cf">function</span>(k) <span class="fu">colMeans</span>(X[lab <span class="sc">==</span> k, , <span class="at">drop =</span> <span class="cn">FALSE</span>])))</span>
 <span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        },</span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        <span class="st">"all means near the centre"</span> <span class="ot">=</span></span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        <span class="st">"means near the centre"</span> <span class="ot">=</span></span>
 <span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>            <span class="fu">matrix</span>(ctr, K, <span class="dv">2</span>, <span class="at">byrow =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(<span class="dv">2</span> <span class="sc">*</span> K, <span class="dv">0</span>, <span class="fl">0.05</span>), K))</span>
 <span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">pi =</span> <span class="fu">rep</span>(<span class="dv">1</span> <span class="sc">/</span> K, K), <span class="at">mu =</span> <span class="fu">unname</span>(mu), <span class="at">S =</span> S0)</span>
 <span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>}</span>
@@ -699,7 +693,7 @@ f(x) = \sum_{k=1}^{3} \pi_k\, \phi(x \mid \mu_k, \Sigma_k), \qquad x \in \mathbb
 <span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
 <span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>    <span class="fu">titlePanel</span>(<span class="st">"Shinylive App for the EM Algorithm for a Bivariate Normal Mixture"</span>),</span>
-<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- control panel: three rows ------------------------------------------</span></span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- control panel: two rows --------------------------------------------</span></span>
 <span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>    <span class="fu">wellPanel</span>(</span>
 <span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>        <span class="do">## generate the data</span></span>
 <span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
@@ -713,158 +707,152 @@ f(x) = \sum_{k=1}^{3} \pi_k\, \phi(x \mid \mu_k, \Sigma_k), \qquad x \in \mathbb
 <span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">class =</span> <span class="st">"btn-warning"</span>, <span class="at">style =</span> <span class="st">"width:100%;"</span>)))</span>
 <span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>        ),</span>
 <span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>        <span class="fu">hr</span>(<span class="at">style =</span> <span class="st">"margin: 4px 0 8px;"</span>),</span>
-<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>        <span class="do">## the starting value</span></span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>        <span class="do">## the starting value and the playback, in one row</span></span>
 <span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
-<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>            <span class="fu">row_label</span>(<span class="st">"Starting value"</span>),</span>
-<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">selectInput</span>(<span class="st">"start"</span>, <span class="st">"Start EM from"</span>, <span class="at">choices =</span> starts,</span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>            <span class="fu">row_label</span>(<span class="st">"Start and play"</span>),</span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">selectInput</span>(<span class="st">"start"</span>, <span class="st">"Start EM from"</span>, <span class="at">choices =</span> starts,</span>
 <span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
-<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">sliderInput</span>(<span class="st">"maxit"</span>, <span class="st">"Iterations to run"</span>, <span class="at">min =</span> <span class="dv">5</span>, <span class="at">max =</span> <span class="dv">200</span>,</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">sliderInput</span>(<span class="st">"maxit"</span>, <span class="st">"Iterations"</span>, <span class="at">min =</span> <span class="dv">5</span>, <span class="at">max =</span> <span class="dv">200</span>,</span>
 <span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">value =</span> <span class="dv">60</span>, <span class="at">step =</span> <span class="dv">5</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
-<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"padding-top: 25px;"</span>,</span>
-<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">actionButton</span>(<span class="st">"newstart"</span>, <span class="st">"New random start"</span>,</span>
-<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">style =</span> <span class="st">"width:100%;"</span>)))</span>
-<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>        ),</span>
-<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>        <span class="fu">hr</span>(<span class="at">style =</span> <span class="st">"margin: 4px 0 8px;"</span>),</span>
-<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>        <span class="do">## play the run</span></span>
-<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
-<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>            <span class="fu">row_label</span>(<span class="st">"Play control"</span>),</span>
-<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 4px; padding-top: 22px;"</span>,</span>
-<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"first"</span>, <span class="st">"backward-fast"</span>, <span class="st">"Back to the start"</span>),</span>
-<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"back"</span>,  <span class="st">"backward-step"</span>, <span class="st">"One iteration back"</span>),</span>
-<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"play"</span>,  <span class="st">"play"</span>,          <span class="st">"Play / pause"</span>,</span>
-<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">class =</span> <span class="st">"btn-primary"</span>),</span>
-<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"step"</span>,  <span class="st">"forward-step"</span>,  <span class="st">"One iteration forward"</span>),</span>
-<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"toend"</span>, <span class="st">"forward-fast"</span>,  <span class="st">"To the end"</span>))),</span>
-<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"padding-top: 8px;"</span>,</span>
-<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"uncertain"</span>,</span>
-<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>                                        <span class="st">"Hollow points: max responsibility &lt; 0.9"</span>, <span class="cn">TRUE</span>),</span>
-<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"truth"</span>, <span class="st">"Mark the true means"</span>, <span class="cn">FALSE</span>))),</span>
-<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"padding-top: 8px;"</span>,</span>
-<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"autoplay"</span>, <span class="st">"Autoplay on change"</span>, <span class="cn">FALSE</span>)))</span>
-<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- plots ----------------------------------------------------------------</span></span>
-<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
-<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">7</span>, <span class="fu">plotOutput</span>(<span class="st">"fit"</span>, <span class="at">height =</span> <span class="st">"560px"</span>)),</span>
-<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">5</span>, <span class="fu">plotOutput</span>(<span class="st">"ll"</span>,  <span class="at">height =</span> <span class="st">"280px"</span>),</span>
-<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">plotOutput</span>(<span class="st">"pis"</span>, <span class="at">height =</span> <span class="st">"280px"</span>))</span>
-<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a><span class="do">### ---------- server -----------------------------------------------------------</span></span>
-<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 4px; padding-top: 25px;"</span>,</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">actionButton</span>(<span class="st">"newstart"</span>, <span class="st">"Starting"</span>,</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">title =</span> <span class="st">"Draw a new starting value of the chosen kind"</span>,</span>
+<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">style =</span> <span class="st">"flex: 1.8; padding: 6px 2px;"</span>),</span>
+<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"first"</span>, <span class="st">"backward-fast"</span>, <span class="st">"Back to the start"</span>),</span>
+<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"back"</span>,  <span class="st">"backward-step"</span>, <span class="st">"One iteration back"</span>),</span>
+<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"play"</span>,  <span class="st">"play"</span>,          <span class="st">"Play / pause"</span>,</span>
+<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">class =</span> <span class="st">"btn-primary"</span>),</span>
+<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"step"</span>,  <span class="st">"forward-step"</span>,  <span class="st">"One iteration forward"</span>),</span>
+<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">ctrl_btn</span>(<span class="st">"toend"</span>, <span class="st">"forward-fast"</span>,  <span class="st">"To the end"</span>))),</span>
+<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"padding-top: 4px; line-height: 1.1;"</span>,</span>
+<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"uncertain"</span>,</span>
+<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a>                                        <span class="st">"Hollow points: max responsibility &lt; 0.9"</span>, <span class="cn">TRUE</span>),</span>
+<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"truth"</span>, <span class="st">"Mark the true means"</span>, <span class="cn">FALSE</span>),</span>
+<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">checkboxInput</span>(<span class="st">"autoplay"</span>, <span class="st">"Autoplay on change"</span>, <span class="cn">FALSE</span>)))</span>
+<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- plots ----------------------------------------------------------------</span></span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">7</span>, <span class="fu">plotOutput</span>(<span class="st">"fit"</span>, <span class="at">height =</span> <span class="st">"560px"</span>)),</span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">5</span>, <span class="fu">plotOutput</span>(<span class="st">"ll"</span>,  <span class="at">height =</span> <span class="st">"280px"</span>),</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">plotOutput</span>(<span class="st">"pis"</span>, <span class="at">height =</span> <span class="st">"280px"</span>))</span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a><span class="do">### ---------- server -----------------------------------------------------------</span></span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>    dseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">812</span>); sseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">1</span>)</span>
+<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>newdata,  <span class="fu">dseed</span>(<span class="fu">dseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>newstart, <span class="fu">sseed</span>(<span class="fu">sseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>    X <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">make_data</span>(datasets[[input<span class="sc">$</span>dataset]], input<span class="sc">$</span>n, <span class="fu">dseed</span>()))</span>
 <span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>    dseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">812</span>); sseed <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">1</span>)</span>
-<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>newdata,  <span class="fu">dseed</span>(<span class="fu">dseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
-<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>newstart, <span class="fu">sseed</span>(<span class="fu">sseed</span>() <span class="sc">+</span> <span class="dv">1</span>))</span>
-<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>    X <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">make_data</span>(datasets[[input<span class="sc">$</span>dataset]], input<span class="sc">$</span>n, <span class="fu">dseed</span>()))</span>
-<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a>    path <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">em_path</span>(<span class="fu">make_start</span>(input<span class="sc">$</span>start, <span class="fu">X</span>(), <span class="fu">sseed</span>()), <span class="fu">X</span>(), input<span class="sc">$</span>maxit))</span>
-<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>    nlast <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">length</span>(<span class="fu">path</span>()<span class="sc">$</span>TH) <span class="sc">-</span> <span class="dv">1</span>L)     <span class="co"># last iteration reached</span></span>
-<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- iteration state driven by the playback buttons ---------------------</span></span>
-<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>    t_cur   <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">0</span>L)</span>
-<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>    playing <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>    path <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">em_path</span>(<span class="fu">make_start</span>(input<span class="sc">$</span>start, <span class="fu">X</span>(), <span class="fu">sseed</span>()), <span class="fu">X</span>(), input<span class="sc">$</span>maxit))</span>
+<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a>    nlast <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">length</span>(<span class="fu">path</span>()<span class="sc">$</span>TH) <span class="sc">-</span> <span class="dv">1</span>L)     <span class="co"># last iteration reached</span></span>
+<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- iteration state driven by the playback buttons ---------------------</span></span>
+<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>    t_cur   <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="dv">0</span>L)</span>
+<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>    playing <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>    <span class="do">## any change to the data or the starting value restarts the display</span></span>
+<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(<span class="fu">path</span>(), {</span>
+<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t_cur</span>(<span class="dv">0</span>L)</span>
+<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>        <span class="fu">playing</span>(<span class="fu">isTRUE</span>(input<span class="sc">$</span>autoplay) <span class="sc">&amp;&amp;</span> <span class="fu">nlast</span>() <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
+<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>    })</span>
 <span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>    <span class="do">## any change to the data or the starting value restarts the display</span></span>
-<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(<span class="fu">path</span>(), {</span>
-<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t_cur</span>(<span class="dv">0</span>L)</span>
-<span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a>        <span class="fu">playing</span>(<span class="fu">isTRUE</span>(input<span class="sc">$</span>autoplay) <span class="sc">&amp;&amp;</span> <span class="fu">nlast</span>() <span class="sc">&gt;</span> <span class="dv">0</span>)</span>
-<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>play, {</span>
-<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">playing</span>(<span class="cn">FALSE</span>)</span>
-<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span> {</span>
-<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> (<span class="fu">t_cur</span>() <span class="sc">&gt;=</span> <span class="fu">nlast</span>()) <span class="fu">t_cur</span>(<span class="dv">0</span>L)    <span class="co"># replay from the start</span></span>
-<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>            <span class="fu">playing</span>(<span class="cn">TRUE</span>)</span>
-<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(<span class="fu">playing</span>(), {</span>
-<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play"</span>,</span>
-<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>                           <span class="at">icon =</span> <span class="fu">icon</span>(<span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="st">"pause"</span> <span class="cf">else</span> <span class="st">"play"</span>))</span>
-<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the timer: advances one iteration per tick while playing</span></span>
-<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observe</span>({</span>
-<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">return</span>()</span>
-<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>        k <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">t_cur</span>()); kmax <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">nlast</span>())</span>
-<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (k <span class="sc">&gt;=</span> kmax) { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">return</span>() }</span>
-<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>        <span class="fu">invalidateLater</span>(<span class="dv">400</span>, session)</span>
-<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t_cur</span>(k <span class="sc">+</span> <span class="dv">1</span>L)</span>
-<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>step,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">min</span>(<span class="fu">t_cur</span>() <span class="sc">+</span> <span class="dv">1</span>L, <span class="fu">nlast</span>())) })</span>
-<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>back,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">max</span>(<span class="fu">t_cur</span>() <span class="sc">-</span> <span class="dv">1</span>L, <span class="dv">0</span>L)) })</span>
-<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>first, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="dv">0</span>L) })</span>
-<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>toend, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">nlast</span>()) })</span>
-<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- the scatter plot with E-step classes and weighted-density contours --</span></span>
-<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>fit <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">X</span>(); P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>())</span>
-<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>        th <span class="ot">&lt;-</span> P<span class="sc">$</span>TH[[t <span class="sc">+</span> <span class="dv">1</span>]]</span>
-<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>        E  <span class="ot">&lt;-</span> <span class="fu">e_step</span>(th, x)</span>
-<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a>        cls  <span class="ot">&lt;-</span> <span class="fu">max.col</span>(E<span class="sc">$</span>R, <span class="at">ties.method =</span> <span class="st">"first"</span>)    <span class="co"># hard classification</span></span>
-<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a>        sure <span class="ot">&lt;-</span> <span class="fu">apply</span>(E<span class="sc">$</span>R, <span class="dv">1</span>, max) <span class="sc">&gt;=</span> <span class="fl">0.9</span></span>
-<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>        rx <span class="ot">&lt;-</span> <span class="fu">range</span>(x[, <span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>); ry <span class="ot">&lt;-</span> <span class="fu">range</span>(x[, <span class="dv">2</span>]) <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>)</span>
-<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>        g1 <span class="ot">&lt;-</span> <span class="fu">seq</span>(rx[<span class="dv">1</span>], rx[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">120</span>)</span>
-<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>        g2 <span class="ot">&lt;-</span> <span class="fu">seq</span>(ry[<span class="dv">1</span>], ry[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">120</span>)</span>
-<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a>        G  <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(<span class="fu">expand.grid</span>(g1, g2))</span>
-<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>        <span class="do">## pi_k * phi_k on the grid, one column per component</span></span>
-<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>        Dk <span class="ot">&lt;-</span> <span class="fu">exp</span>(<span class="fu">log_joint</span>(th, G))</span>
-<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>        <span class="do">## shared, geometrically spaced levels: a component with a smaller</span></span>
-<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>        <span class="do">## weight reaches fewer of them, so it draws fewer rings</span></span>
-<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>        lev <span class="ot">&lt;-</span> <span class="fu">max</span>(Dk) <span class="sc">*</span> <span class="dv">4</span><span class="sc">^-</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">3</span>)</span>
-<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
-<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(x, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">asp =</span> <span class="dv">1</span>, <span class="at">xlim =</span> rx, <span class="at">ylim =</span> ry,</span>
-<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>             <span class="at">xlab =</span> <span class="fu">expression</span>(x[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(x[<span class="dv">2</span>]),</span>
-<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"iteration %d:  log-likelihood = %.2f"</span>, t, E<span class="sc">$</span>loglik))</span>
-<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(K))</span>
-<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>            <span class="fu">contour</span>(g1, g2, <span class="fu">matrix</span>(Dk[, k], <span class="fu">length</span>(g1)), <span class="at">levels =</span> lev,</span>
-<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>                    <span class="at">drawlabels =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(COLS[k], <span class="at">alpha.f =</span> <span class="fl">0.4</span>),</span>
-<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>                    <span class="at">lwd =</span> <span class="dv">1</span>, <span class="at">add =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>        pch <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>uncertain)) <span class="fu">ifelse</span>(sure, <span class="dv">19</span>, <span class="dv">1</span>) <span class="cf">else</span> <span class="dv">19</span></span>
-<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(x, <span class="at">col =</span> COLS[cls], <span class="at">pch =</span> pch, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
-<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>        <span class="do">## each mean in its component's colour, on a white halo so it</span></span>
-<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>        <span class="do">## stands out from the points of the same colour</span></span>
-<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(th<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">cex =</span> <span class="fl">2.4</span>, <span class="at">lwd =</span> <span class="dv">6</span>, <span class="at">col =</span> <span class="st">"white"</span>)</span>
-<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(th<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">cex =</span> <span class="fl">2.2</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> COLS)</span>
-<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth))</span>
-<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>            <span class="fu">points</span>(datasets[[input<span class="sc">$</span>dataset]]<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">4</span>, <span class="at">cex =</span> <span class="dv">2</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"red"</span>)</span>
-<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> COLS,</span>
-<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">sprintf</span>(<span class="st">"component %d:  pi = %.2f,  %d points"</span>,</span>
-<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>                                <span class="fu">seq_len</span>(K), th<span class="sc">$</span>pi, <span class="fu">tabulate</span>(cls, K)))</span>
-<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
-<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>               <span class="at">pch =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="dv">4</span>),</span>
-<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"grey30"</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="st">"red"</span>),</span>
-<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"current means"</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="st">"true means"</span>))</span>
-<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>ll <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>        P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>()); it <span class="ot">&lt;-</span> <span class="fu">seq_along</span>(P<span class="sc">$</span>LL) <span class="sc">-</span> <span class="dv">1</span></span>
-<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="fl">4.5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
-<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(it, P<span class="sc">$</span>LL, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">xlab =</span> <span class="st">"iteration"</span>,</span>
-<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="st">"observed log-likelihood"</span>, <span class="at">main =</span> <span class="st">"must never decrease"</span>)</span>
-<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(it[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], P<span class="sc">$</span>LL[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>,</span>
-<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>              <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
-<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">nlast</span>() <span class="sc">&lt;</span> input<span class="sc">$</span>maxit)</span>
-<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>            <span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"stopped at iteration %d: a component degenerated"</span>, <span class="fu">nlast</span>()),</span>
-<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>                  <span class="at">side =</span> <span class="dv">3</span>, <span class="at">line =</span> <span class="fl">0.1</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
-<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>pis <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>        P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>()); it <span class="ot">&lt;-</span> <span class="fu">seq_along</span>(P<span class="sc">$</span>TH) <span class="sc">-</span> <span class="dv">1</span></span>
-<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>        PI <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(P<span class="sc">$</span>TH, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"pi"</span>))</span>
-<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="fl">4.5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
-<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>        <span class="fu">matplot</span>(it, PI, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">xlab =</span> <span class="st">"iteration"</span>,</span>
-<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>                <span class="at">ylab =</span> <span class="st">"mixing weight"</span>, <span class="at">main =</span> <span class="st">"mixing weights"</span>)</span>
-<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(K))</span>
-<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>            <span class="fu">lines</span>(it[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], PI[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>), k], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>,</span>
-<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a>                  <span class="at">col =</span> COLS[k])</span>
-<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>play, {</span>
+<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">playing</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>        <span class="cf">else</span> {</span>
+<span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a>            <span class="cf">if</span> (<span class="fu">t_cur</span>() <span class="sc">&gt;=</span> <span class="fu">nlast</span>()) <span class="fu">t_cur</span>(<span class="dv">0</span>L)    <span class="co"># replay from the start</span></span>
+<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>            <span class="fu">playing</span>(<span class="cn">TRUE</span>)</span>
+<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(<span class="fu">playing</span>(), {</span>
+<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play"</span>,</span>
+<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>                           <span class="at">icon =</span> <span class="fu">icon</span>(<span class="cf">if</span> (<span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="st">"pause"</span> <span class="cf">else</span> <span class="st">"play"</span>))</span>
+<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the timer: advances one iteration per tick while playing</span></span>
+<span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observe</span>({</span>
+<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">return</span>()</span>
+<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>        k <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">t_cur</span>()); kmax <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">nlast</span>())</span>
+<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (k <span class="sc">&gt;=</span> kmax) { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">return</span>() }</span>
+<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>        <span class="fu">invalidateLater</span>(<span class="dv">400</span>, session)</span>
+<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>        <span class="fu">t_cur</span>(k <span class="sc">+</span> <span class="dv">1</span>L)</span>
+<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>step,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">min</span>(<span class="fu">t_cur</span>() <span class="sc">+</span> <span class="dv">1</span>L, <span class="fu">nlast</span>())) })</span>
+<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>back,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">max</span>(<span class="fu">t_cur</span>() <span class="sc">-</span> <span class="dv">1</span>L, <span class="dv">0</span>L)) })</span>
+<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>first, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="dv">0</span>L) })</span>
+<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>toend, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">t_cur</span>(<span class="fu">nlast</span>()) })</span>
+<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>    <span class="do">## ---- the scatter plot with E-step classes and weighted-density contours --</span></span>
+<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>fit <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> <span class="fu">X</span>(); P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>())</span>
+<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>        th <span class="ot">&lt;-</span> P<span class="sc">$</span>TH[[t <span class="sc">+</span> <span class="dv">1</span>]]</span>
+<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>        E  <span class="ot">&lt;-</span> <span class="fu">e_step</span>(th, x)</span>
+<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a>        cls  <span class="ot">&lt;-</span> <span class="fu">max.col</span>(E<span class="sc">$</span>R, <span class="at">ties.method =</span> <span class="st">"first"</span>)    <span class="co"># hard classification</span></span>
+<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a>        sure <span class="ot">&lt;-</span> <span class="fu">apply</span>(E<span class="sc">$</span>R, <span class="dv">1</span>, max) <span class="sc">&gt;=</span> <span class="fl">0.9</span></span>
+<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>        rx <span class="ot">&lt;-</span> <span class="fu">range</span>(x[, <span class="dv">1</span>]) <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>); ry <span class="ot">&lt;-</span> <span class="fu">range</span>(x[, <span class="dv">2</span>]) <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>        g1 <span class="ot">&lt;-</span> <span class="fu">seq</span>(rx[<span class="dv">1</span>], rx[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">120</span>)</span>
+<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>        g2 <span class="ot">&lt;-</span> <span class="fu">seq</span>(ry[<span class="dv">1</span>], ry[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">120</span>)</span>
+<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a>        G  <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(<span class="fu">expand.grid</span>(g1, g2))</span>
+<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a>        <span class="do">## pi_k * phi_k on the grid, one column per component</span></span>
+<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>        Dk <span class="ot">&lt;-</span> <span class="fu">exp</span>(<span class="fu">log_joint</span>(th, G))</span>
+<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>        <span class="do">## shared, geometrically spaced levels: a component with a smaller</span></span>
+<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>        <span class="do">## weight reaches fewer of them, so it draws fewer rings</span></span>
+<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>        lev <span class="ot">&lt;-</span> <span class="fu">max</span>(Dk) <span class="sc">*</span> <span class="dv">4</span><span class="sc">^-</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">3</span>)</span>
+<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(x, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">asp =</span> <span class="dv">1</span>, <span class="at">xlim =</span> rx, <span class="at">ylim =</span> ry,</span>
+<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>             <span class="at">xlab =</span> <span class="fu">expression</span>(x[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(x[<span class="dv">2</span>]),</span>
+<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"iteration %d:  log-likelihood = %.2f"</span>, t, E<span class="sc">$</span>loglik))</span>
+<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(K))</span>
+<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>            <span class="fu">contour</span>(g1, g2, <span class="fu">matrix</span>(Dk[, k], <span class="fu">length</span>(g1)), <span class="at">levels =</span> lev,</span>
+<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>                    <span class="at">drawlabels =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(COLS[k], <span class="at">alpha.f =</span> <span class="fl">0.4</span>),</span>
+<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a>                    <span class="at">lwd =</span> <span class="dv">1</span>, <span class="at">add =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>        pch <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>uncertain)) <span class="fu">ifelse</span>(sure, <span class="dv">19</span>, <span class="dv">1</span>) <span class="cf">else</span> <span class="dv">19</span></span>
+<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(x, <span class="at">col =</span> COLS[cls], <span class="at">pch =</span> pch, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
+<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>        <span class="do">## each mean in its component's colour, on a white halo so it</span></span>
+<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>        <span class="do">## stands out from the points of the same colour</span></span>
+<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(th<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">cex =</span> <span class="fl">2.4</span>, <span class="at">lwd =</span> <span class="dv">6</span>, <span class="at">col =</span> <span class="st">"white"</span>)</span>
+<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(th<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">cex =</span> <span class="fl">2.2</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> COLS)</span>
+<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth))</span>
+<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>            <span class="fu">points</span>(datasets[[input<span class="sc">$</span>dataset]]<span class="sc">$</span>mu, <span class="at">pch =</span> <span class="dv">4</span>, <span class="at">cex =</span> <span class="dv">2</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"red"</span>)</span>
+<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> COLS,</span>
+<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">sprintf</span>(<span class="st">"component %d:  pi = %.2f,  %d points"</span>,</span>
+<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>                                <span class="fu">seq_len</span>(K), th<span class="sc">$</span>pi, <span class="fu">tabulate</span>(cls, K)))</span>
+<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>               <span class="at">pch =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="dv">4</span>),</span>
+<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"grey30"</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="st">"red"</span>),</span>
+<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"current means"</span>, <span class="cf">if</span> (<span class="fu">isTRUE</span>(input<span class="sc">$</span>truth)) <span class="st">"true means"</span>))</span>
+<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>ll <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>        P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>()); it <span class="ot">&lt;-</span> <span class="fu">seq_along</span>(P<span class="sc">$</span>LL) <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="fl">4.5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(it, P<span class="sc">$</span>LL, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">xlab =</span> <span class="st">"iteration"</span>,</span>
+<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="st">"observed log-likelihood"</span>, <span class="at">main =</span> <span class="st">"must never decrease"</span>)</span>
+<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(it[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], P<span class="sc">$</span>LL[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>,</span>
+<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>              <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">nlast</span>() <span class="sc">&lt;</span> input<span class="sc">$</span>maxit)</span>
+<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>            <span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"stopped at iteration %d: a component degenerated"</span>, <span class="fu">nlast</span>()),</span>
+<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>                  <span class="at">side =</span> <span class="dv">3</span>, <span class="at">line =</span> <span class="fl">0.1</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>pis <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>        P <span class="ot">&lt;-</span> <span class="fu">path</span>(); t <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">t_cur</span>(), <span class="fu">nlast</span>()); it <span class="ot">&lt;-</span> <span class="fu">seq_along</span>(P<span class="sc">$</span>TH) <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>        PI <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(P<span class="sc">$</span>TH, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"pi"</span>))</span>
+<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="fl">4.5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>        <span class="fu">matplot</span>(it, PI, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">xlab =</span> <span class="st">"iteration"</span>,</span>
+<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a>                <span class="at">ylab =</span> <span class="st">"mixing weight"</span>, <span class="at">main =</span> <span class="st">"mixing weights"</span>)</span>
+<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>        <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(K))</span>
+<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>            <span class="fu">lines</span>(it[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>)], PI[<span class="dv">1</span><span class="sc">:</span>(t <span class="sc">+</span> <span class="dv">1</span>), k], <span class="at">type =</span> <span class="st">"b"</span>, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">cex =</span> <span class="fl">0.6</span>,</span>
+<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>                  <span class="at">col =</span> COLS[k])</span>
+<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 </div>
