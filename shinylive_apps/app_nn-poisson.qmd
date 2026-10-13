@@ -99,6 +99,11 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   n <- 0; note <- "maximum number of iterations reached"
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
+  capped <- FALSE
+  if (alg == "sgd") {                        # keep the number of mini-batch steps in check
+    cap <- max(1, floor(20000 / ceiling(n_obs / m)))
+    if (maxit > cap) { maxit <- cap; capped <- TRUE }
+  }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
   if (alg == "sgd") set.seed(11)
 
@@ -164,6 +169,8 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
     th <- th + s_prev
   }
+  if (capped && grepl("^maximum", note))
+    note <- paste0("stopped after ", maxit, " epochs (20000 mini-batch steps)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
        A = AL[i], n = n, note = note)
@@ -305,7 +312,7 @@ ui <- fluidPage(
     ## row 1: the data, the optimizer, how long to run it, and the colour scale
     fluidRow(
       row_label("Setup"),
-      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 2000,
                             value = 150, step = 50, width = "100%")),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newdata", "Regenerate data",
@@ -557,7 +564,7 @@ Fits a Poisson neural network like the one in the book's backpropagation section
 
 **The weights.** The upper network shows the thirteen weights at the current iteration. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data, **Random** draws a new set, and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
 
-**The methods.** Four of them take a step with a learning rate $\alpha$ that you set by hand: *fixed learning rate* takes the step $-\alpha\, g(\theta)$, so you can see the zig-zagging when it is too large, the crawl when it is too small, and the divergence when it is far too large; *momentum* keeps a fraction (the momentum setting) of its previous step, which damps the zig-zag and speeds up along the valley; *Adam* rescales each weight's step by a running estimate of its own gradient size, which handles weights on very different scales; and *SGD* is the fixed-rate step computed from random mini-batches of the data (choose the size, 20 by default) instead of all $n$ observations. For SGD one iteration is one *epoch*, a shuffled pass of $\lceil n/m \rceil$ mini-batch steps over all the data, so an SGD iteration costs about the same in gradient evaluations as one full-batch step of the other methods and the iteration axes are directly comparable. With the batch size equal to $n$ SGD reduces to the fixed-rate method, and the smaller the batch, the more updates each epoch makes, at the price of noisier steps. The loss and gradient norm shown are always those of the full data. The other three methods choose their step by a Wolfe line search, and conjugate gradient and BFGS also build a better search direction from the gradients they have seen. For these ten-odd parameters BFGS is hard to beat; momentum, Adam and SGD are what larger networks use, where a Hessian approximation is too expensive.
+**The methods.** Four of them take a step with a learning rate $\alpha$ that you set by hand: *fixed learning rate* takes the step $-\alpha\, g(\theta)$, so you can see the zig-zagging when it is too large, the crawl when it is too small, and the divergence when it is far too large; *momentum* keeps a fraction (the momentum setting) of its previous step, which damps the zig-zag and speeds up along the valley; *Adam* rescales each weight's step by a running estimate of its own gradient size, which handles weights on very different scales; and *SGD* is the fixed-rate step computed from random mini-batches of the data (choose the size, 20 by default) instead of all $n$ observations. For SGD one iteration is one *epoch*, a shuffled pass of $\lceil n/m \rceil$ mini-batch steps over all the data, so an SGD iteration costs about the same in gradient evaluations as one full-batch step of the other methods and the iteration axes are directly comparable. With the batch size equal to $n$ SGD reduces to the fixed-rate method, and the smaller the batch, the more updates each epoch makes, at the price of noisier steps. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer SGD's advantage over the full-batch methods becomes. To keep the browser responsive an SGD run stops after 20000 mini-batch steps in all, which the info line reports. The other three methods choose their step by a Wolfe line search, and conjugate gradient and BFGS also build a better search direction from the gradients they have seen. For these ten-odd parameters BFGS is hard to beat; momentum, Adam and SGD are what larger networks use, where a Hessian approximation is too expensive.
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
@@ -658,6 +665,11 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   n <- 0; note <- "maximum number of iterations reached"
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
+  capped <- FALSE
+  if (alg == "sgd") {                        # keep the number of mini-batch steps in check
+    cap <- max(1, floor(20000 / ceiling(n_obs / m)))
+    if (maxit > cap) { maxit <- cap; capped <- TRUE }
+  }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
   if (alg == "sgd") set.seed(11)
 
@@ -723,6 +735,8 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
     th <- th + s_prev
   }
+  if (capped && grepl("^maximum", note))
+    note <- paste0("stopped after ", maxit, " epochs (20000 mini-batch steps)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
        A = AL[i], n = n, note = note)
@@ -864,7 +878,7 @@ ui <- fluidPage(
     ## row 1: the data, the optimizer, how long to run it, and the colour scale
     fluidRow(
       row_label("Setup"),
-      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 2000,
                             value = 150, step = 50, width = "100%")),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newdata", "Regenerate data",
