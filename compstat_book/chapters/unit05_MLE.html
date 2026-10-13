@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-08">
+<meta name="dcterms.date" content="2026-10-13">
 
 <title>optimization-chapter – Elements of Statistical Computation</title>
 <style>
@@ -345,12 +345,13 @@ window.Quarto = {
   <li><a href="#sec-nr-divergence-app" id="toc-sec-nr-divergence-app" class="nav-link" data-scroll-target="#sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> Shinylive App for Safeguarded Newton-Raphson</a></li>
   </ul></li>
   </ul></li>
-  <li><a href="#example-poisson-regression-with-neural-networks" id="toc-example-poisson-regression-with-neural-networks" class="nav-link" data-scroll-target="#example-poisson-regression-with-neural-networks"><span class="header-section-number">5.4</span> Example: Poisson Regression with Neural Networks</a>
+  <li><a href="#backprogation-algorithm-for-neural-network" id="toc-backprogation-algorithm-for-neural-network" class="nav-link" data-scroll-target="#backprogation-algorithm-for-neural-network"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Network</a>
   <ul>
-  <li><a href="#what-the-model-can-represent" id="toc-what-the-model-can-represent" class="nav-link" data-scroll-target="#what-the-model-can-represent"><span class="header-section-number">5.4.1</span> What the model can represent</a></li>
-  <li><a href="#the-gradient-by-backpropagation" id="toc-the-gradient-by-backpropagation" class="nav-link" data-scroll-target="#the-gradient-by-backpropagation"><span class="header-section-number">5.4.2</span> The gradient by backpropagation</a></li>
-  <li><a href="#two-kinds-of-arrow" id="toc-two-kinds-of-arrow" class="nav-link" data-scroll-target="#two-kinds-of-arrow"><span class="header-section-number">5.4.3</span> Two kinds of arrow</a></li>
-  <li><a href="#sec-backprop-dag" id="toc-sec-backprop-dag" class="nav-link" data-scroll-target="#sec-backprop-dag"><span class="header-section-number">5.4.4</span> A General Description of Gradient of Neural Networks</a></li>
+  <li><a href="#example-of-poisson-neural-network" id="toc-example-of-poisson-neural-network" class="nav-link" data-scroll-target="#example-of-poisson-neural-network"><span class="header-section-number">5.4.1</span> Example of Poisson Neural Network</a></li>
+  <li><a href="#what-the-model-can-represent" id="toc-what-the-model-can-represent" class="nav-link" data-scroll-target="#what-the-model-can-represent"><span class="header-section-number">5.4.2</span> What the model can represent</a></li>
+  <li><a href="#the-gradient-by-backpropagation" id="toc-the-gradient-by-backpropagation" class="nav-link" data-scroll-target="#the-gradient-by-backpropagation"><span class="header-section-number">5.4.3</span> The gradient by backpropagation</a></li>
+  <li><a href="#two-kinds-of-arrow" id="toc-two-kinds-of-arrow" class="nav-link" data-scroll-target="#two-kinds-of-arrow"><span class="header-section-number">5.4.4</span> Two kinds of arrow</a></li>
+  <li><a href="#sec-backprop-dag" id="toc-sec-backprop-dag" class="nav-link" data-scroll-target="#sec-backprop-dag"><span class="header-section-number">5.4.5</span> A General Description of Gradient of Neural Networks</a></li>
   </ul></li>
   <li><a href="#gradient-based-methods" id="toc-gradient-based-methods" class="nav-link" data-scroll-target="#gradient-based-methods"><span class="header-section-number">5.5</span> Gradient-Based Methods</a>
   <ul>
@@ -409,7 +410,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 8, 2026</p>
+      <p class="date">October 13, 2026</p>
     </div>
   </div>
   
@@ -1760,7 +1761,7 @@ g(\beta) = -X^{\top}(y - p), \qquad J(\beta) = X^{\top} W X, \qquad W = \operato
 <p>Before differentiating anything it helps to fix the object being differentiated. Write the model as a <strong>computation graph</strong>: one node for every intermediate quantity — the inputs, each linear unit, each activation, the linear predictor, the loss — and one directed edge <span class="math inline">\(u \to z\)</span> whenever <span class="math inline">\(z\)</span> is computed directly from <span class="math inline">\(u\)</span>. The graph is acyclic, values flow forward along its edges, and the whole of backpropagation is two rules stated on it.</p>
 <p>The first is the <strong>node rule</strong>. Write <span class="math display">\[\delta_z = \frac{\partial \mathcal{L}_i}{\partial z}\]</span> for the sensitivity of the loss to node <span class="math inline">\(z\)</span>. Since <span class="math inline">\(z\)</span> can influence the loss only through the nodes it feeds, the multivariate chain rule gives one term per outgoing edge, <span class="math display">\[\delta_z \;=\; \sum_{p \,\in\, \mathrm{consumers}(z)} \delta_p \, \frac{\partial p}{\partial z} ,\]</span> and the recursion starts at the loss itself with <span class="math inline">\(\delta_{\mathcal{L}_i} = 1\)</span>.</p>
 <p>The second is the <strong>edge rule</strong>. Every parameter sits on an edge that forms a linear combination, and it reaches <span class="math inline">\(z\)</span> only through the single term <span class="math inline">\(\omega\, u\)</span> it contributes, so <span class="math inline">\(\partial z/\partial \omega = u\)</span> and <span class="math display">\[\frac{\partial \mathcal{L}_i}{\partial \omega_{u \to z}} \;=\; \delta_z \cdot u :\]</span> the sensitivity at the arrow’s head times the value at its tail.</p>
-<p>That is the entire algorithm. Everything below — logistic regression here, a hidden layer later in this chapter, a hundred layers in a modern network — is these two rules applied to a larger graph. Note that the graph is neither a chain nor a tree: a unit typically feeds <em>several</em> others, so most nodes have more than one consumer, and the sum in the node rule is what gathers those contributions. <a href="#sec-backprop-dag" class="quarto-xref"><span>Section 5.4.4</span></a> writes the two rules out for a network of arbitrary depth.</p>
+<p>That is the entire algorithm. Everything below — logistic regression here, a hidden layer later in this chapter, a hundred layers in a modern network — is these two rules applied to a larger graph. Note that the graph is neither a chain nor a tree: a unit typically feeds <em>several</em> others, so most nodes have more than one consumer, and the sum in the node rule is what gathers those contributions. <a href="#sec-backprop-dag" class="quarto-xref"><span>Section 5.4.5</span></a> writes the two rules out for a network of arbitrary depth.</p>
 </section>
 <section id="the-gradient-by-the-chain-rule" class="level4" data-number="5.3.5.3">
 <h4 data-number="5.3.5.3" class="anchored" data-anchor-id="the-gradient-by-the-chain-rule"><span class="header-section-number">5.3.5.3</span> The gradient by the chain rule</h4>
@@ -1805,9 +1806,8 @@ Figure&nbsp;5.16: Shows how the gradient of the negative log-likelihood is assem
 </section>
 <section id="implementation" class="level4" data-number="5.3.5.4">
 <h4 data-number="5.3.5.4" class="anchored" data-anchor-id="implementation"><span class="header-section-number">5.3.5.4</span> Implementation</h4>
+<p><strong>Gradient of Logistic Regression Model</strong></p>
 <div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="do">### numerically stable log(1 + exp(u))</span></span>
 <span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>log1pexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">pmax</span>(u, <span class="dv">0</span>) <span class="sc">+</span> <span class="fu">log1p</span>(<span class="fu">exp</span>(<span class="sc">-</span><span class="fu">abs</span>(u)))</span>
 <span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a></span>
@@ -1828,12 +1828,10 @@ Figure&nbsp;5.16: Shows how the gradient of the negative log-likelihood is assem
 <span id="cb53-18"><a href="#cb53-18" aria-hidden="true" tabindex="-1"></a>    u <span class="ot">&lt;-</span> b[<span class="dv">1</span>] <span class="sc">+</span> b[<span class="dv">2</span>] <span class="sc">*</span> x</span>
 <span id="cb53-19"><a href="#cb53-19" aria-hidden="true" tabindex="-1"></a>    <span class="sc">-</span><span class="fu">sum</span>(u <span class="sc">*</span> y <span class="sc">-</span> <span class="fu">log1pexp</span>(u))</span>
 <span id="cb53-20"><a href="#cb53-20" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
 </div>
 <p>Because we minimise the <em>negative</em> log-likelihood, the update <span class="math inline">\(\beta^{(k+1)} = \beta^{(k)} + J^{-1}S\)</span> becomes <span class="math inline">\(\beta^{(k+1)} = \beta^{(k)} - J^{-1} g(\beta^{(k)})\)</span>, which is the form coded below.</p>
+<p><strong>Newton-Raphson Iterations for Logistic Regression</strong></p>
 <div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb54-1"><a href="#cb54-1" aria-hidden="true" tabindex="-1"></a>mle_logistic_nr <span class="ot">&lt;-</span> <span class="cf">function</span>(b0, no_iter, y, x, <span class="at">debug =</span> <span class="cn">FALSE</span>) {</span>
 <span id="cb54-2"><a href="#cb54-2" aria-hidden="true" tabindex="-1"></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, no_iter <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">3</span>,</span>
 <span id="cb54-3"><a href="#cb54-3" aria-hidden="true" tabindex="-1"></a>                  <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"beta0"</span>, <span class="st">"beta1"</span>, <span class="st">"neg_loglike"</span>)))</span>
@@ -1850,7 +1848,6 @@ Figure&nbsp;5.16: Shows how the gradient of the negative log-likelihood is assem
 <span id="cb54-14"><a href="#cb54-14" aria-hidden="true" tabindex="-1"></a>    }</span>
 <span id="cb54-15"><a href="#cb54-15" aria-hidden="true" tabindex="-1"></a>    out</span>
 <span id="cb54-16"><a href="#cb54-16" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
 </div>
 <div class="cell">
 <details class="code-fold">
@@ -1960,14 +1957,17 @@ x            1.5034244  0.2089473  7.195234 6.235374e-13</code></pre>
 </section>
 </section>
 </section>
-<section id="example-poisson-regression-with-neural-networks" class="level2" data-number="5.4">
-<h2 data-number="5.4" class="anchored" data-anchor-id="example-poisson-regression-with-neural-networks"><span class="header-section-number">5.4</span> Example: Poisson Regression with Neural Networks</h2>
+<section id="backprogation-algorithm-for-neural-network" class="level2" data-number="5.4">
+<h2 data-number="5.4" class="anchored" data-anchor-id="backprogation-algorithm-for-neural-network"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Network</h2>
+<section id="example-of-poisson-neural-network" class="level3" data-number="5.4.1">
+<h3 data-number="5.4.1" class="anchored" data-anchor-id="example-of-poisson-neural-network"><span class="header-section-number">5.4.1</span> Example of Poisson Neural Network</h3>
 <p>Logistic regression was a one-unit network, and its Hessian was small enough to invert. Adding a single hidden layer breaks that comfort, and shows why the methods in this section exist.</p>
 <p>Let each observation carry <span class="math inline">\(p = 3\)</span> covariates <span class="math inline">\(x_i = (x_{i1}, x_{i2}, x_{i3})\)</span> and a count response <span class="math inline">\(y_i\)</span>. Put <span class="math inline">\(J = 3\)</span> hidden units <span class="math inline">\(h_{i1}, h_{i2}, h_{i3}\)</span> between the covariates and the mean, and use a log link so that the mean stays positive: <span class="math display">\[a_{ij} = \sum_{k=0}^{p} w_{jk}\, x_{ik}, \qquad h_{ij} = \tanh(a_{ij}), \qquad \eta_i = \sum_{j=0}^{J} v_j\, h_{ij}, \qquad \lambda_i = e^{\eta_i},\]</span> where <span class="math inline">\(x_{i0} \equiv 1\)</span> and <span class="math inline">\(h_{i0} \equiv 1\)</span> are constant inputs, so that the intercept of each hidden unit is the weight <span class="math inline">\(w_{j0}\)</span> and the intercept of the linear predictor is the weight <span class="math inline">\(v_0\)</span>, with <span class="math inline">\(y_i \mid x_i \sim \mathrm{Poisson}(\lambda_i)\)</span>. Dropping the <span class="math inline">\(\log y_i!\)</span> term, which carries no parameters, the negative log-likelihood is <span class="math display">\[\mathcal{L}(\theta) = \sum_{i=1}^{n} \mathcal{L}_i(\theta), \qquad \mathcal{L}_i(\theta) = \lambda_i - y_i \eta_i ,\]</span> where <span class="math inline">\(\theta\)</span> collects the <span class="math inline">\(J(p+1) = 12\)</span> input weights <span class="math inline">\(w_{jk}\)</span>, <span class="math inline">\(k = 0, \ldots, p\)</span>, and the <span class="math inline">\(J + 1 = 4\)</span> output weights <span class="math inline">\(v_j\)</span>, <span class="math inline">\(j = 0, \ldots, J\)</span> — sixteen parameters in all.</p>
 <p>The intercepts matter: without <span class="math inline">\(w_{j0}\)</span> every hidden unit would pass through the origin, and without <span class="math inline">\(v_0\)</span> the level of <span class="math inline">\(\lambda\)</span> could not be shifted freely. Carrying them as ordinary weights on constant inputs means they need no separate symbol and no separate rule: <span class="math inline">\(w_{j0}\)</span> and <span class="math inline">\(v_0\)</span> are differentiated exactly like every other weight, and their local derivative happens to be the tail value <span class="math inline">\(1\)</span>.</p>
 <p>Three features make this a natural home for gradient-only methods. The score equations have no closed-form solution. <span class="math inline">\(\mathcal{L}\)</span> is <strong>not convex</strong> — permuting the hidden units leaves it unchanged, so every minimum is one of <span class="math inline">\(J!\)</span> equivalent copies, and the Hessian is indefinite over much of the space, which is exactly where a raw Newton step misbehaves. And while a <span class="math inline">\(12 \times 12\)</span> Hessian is still cheap here, its size grows as <span class="math inline">\((Jp + J)^2\)</span>: widen the layer or the covariate set and the <span class="math inline">\(O(p^3)\)</span> solve becomes the bottleneck long before the gradient does.</p>
-<section id="what-the-model-can-represent" class="level3" data-number="5.4.1">
-<h3 data-number="5.4.1" class="anchored" data-anchor-id="what-the-model-can-represent"><span class="header-section-number">5.4.1</span> What the model can represent</h3>
+</section>
+<section id="what-the-model-can-represent" class="level3" data-number="5.4.2">
+<h3 data-number="5.4.2" class="anchored" data-anchor-id="what-the-model-can-represent"><span class="header-section-number">5.4.2</span> What the model can represent</h3>
 <p>With a single covariate the model is easy to see. Each <code>tanh</code> unit switches on at a location set by its intercept <span class="math inline">\(w_{j0}\)</span> and at a rate set by its weight <span class="math inline">\(w_{j1}\)</span>, and enters the linear predictor scaled by its output weight <span class="math inline">\(v_j\)</span>. It is those <em>scaled</em> units <span class="math inline">\(v_j h_j(x)\)</span> that are worth plotting: they add up, with <span class="math inline">\(v_0\)</span>, to <span class="math inline">\(\eta(x)\)</span>, and exponentiating <span class="math inline">\(\eta\)</span> gives a <span class="math inline">\(\lambda(x)\)</span> with a hump — a shape a log-linear Poisson regression, whose <span class="math inline">\(\log\lambda\)</span> is a straight line, cannot produce at all.</p>
 <div class="cell">
 <details class="code-fold">
@@ -2029,8 +2029,8 @@ Figure&nbsp;5.18: Shows what a hidden layer buys in a Poisson regression, by dis
 </div>
 <p>The counts scatter around the curve with variance equal to the mean, so they bunch near zero in the flat regions and spread out under the peak.</p>
 </section>
-<section id="the-gradient-by-backpropagation" class="level3" data-number="5.4.2">
-<h3 data-number="5.4.2" class="anchored" data-anchor-id="the-gradient-by-backpropagation"><span class="header-section-number">5.4.2</span> The gradient by backpropagation</h3>
+<section id="the-gradient-by-backpropagation" class="level3" data-number="5.4.3">
+<h3 data-number="5.4.3" class="anchored" data-anchor-id="the-gradient-by-backpropagation"><span class="header-section-number">5.4.3</span> The gradient by backpropagation</h3>
 <p>The chain rule applies exactly as in the logistic case, only with one more layer to traverse. Working backwards from the loss for a single observation:</p>
 <p><strong>Loss to the linear predictor.</strong> The two local derivatives at the output are <span class="math display">\[\frac{\partial \mathcal{L}_i}{\partial \lambda_i} = 1 - \frac{y_i}{\lambda_i}, \qquad \frac{\partial \lambda_i}{\partial \eta_i} = \lambda_i ,\]</span> whose product is again a bare prediction error, with the <span class="math inline">\(\lambda_i\)</span> cancelling just as <span class="math inline">\(p_i(1-p_i)\)</span> did for the sigmoid: <span class="math display">\[\delta_i \;=\; \frac{\partial \mathcal{L}_i}{\partial \eta_i} = \left(1 - \frac{y_i}{\lambda_i}\right)\lambda_i = \lambda_i - y_i .\]</span></p>
 <p><strong>Output layer.</strong> Since <span class="math inline">\(\partial \eta_i / \partial v_j = h_{ij}\)</span> and <span class="math inline">\(\partial \eta_i / \partial v_0 = h_{i0} = 1\)</span>, <span class="math display">\[\frac{\partial \mathcal{L}_i}{\partial v_j} = \delta_i\, h_{ij}, \qquad \frac{\partial \mathcal{L}_i}{\partial v_0} = \delta_i .\]</span></p>
@@ -2038,8 +2038,8 @@ Figure&nbsp;5.18: Shows what a hidden layer buys in a Poisson regression, by dis
 <p><strong>Input layer.</strong> Finally <span class="math inline">\(\partial a_{ij}/\partial w_{jk} = x_{ik}\)</span> for every <span class="math inline">\(k\)</span>, including <span class="math inline">\(\partial a_{ij}/\partial w_{j0} = x_{i0} = 1\)</span>, so <span class="math display">\[\frac{\partial \mathcal{L}_i}{\partial w_{jk}} = \delta_{ij}^{a}\, x_{ik}, \qquad \frac{\partial \mathcal{L}_i}{\partial w_{j0}} = \delta_{ij}^{a} .\]</span></p>
 <p>Each intercept derivative is the sensitivity at its own unit, unmultiplied. Splitting at <span class="math inline">\(a_{ij}\)</span> is also what makes the computation efficient: <span class="math inline">\(\delta_{ij}^{a}\)</span> is formed once and reused for all <span class="math inline">\(p\)</span> weights entering unit <span class="math inline">\(j\)</span>.</p>
 </section>
-<section id="two-kinds-of-arrow" class="level3" data-number="5.4.3">
-<h3 data-number="5.4.3" class="anchored" data-anchor-id="two-kinds-of-arrow"><span class="header-section-number">5.4.3</span> Two kinds of arrow</h3>
+<section id="two-kinds-of-arrow" class="level3" data-number="5.4.4">
+<h3 data-number="5.4.4" class="anchored" data-anchor-id="two-kinds-of-arrow"><span class="header-section-number">5.4.4</span> Two kinds of arrow</h3>
 <p>Every arrow in the network is one of two kinds, and the distinction organises the whole computation.</p>
 <p><strong>Arrows that carry a weight</strong>, drawn blue below, are the ones forming a linear combination: <span class="math inline">\(x_{ik} \to a_{ij}\)</span> carries <span class="math inline">\(w_{jk}\)</span>, the constant input <span class="math inline">\(x_{i0} \to a_{ij}\)</span> carries <span class="math inline">\(w_{j0}\)</span>, <span class="math inline">\(h_{ij} \to \eta_i\)</span> carries <span class="math inline">\(v_j\)</span>, and the constant hidden unit <span class="math inline">\(h_{i0} \to \eta_i\)</span> carries <span class="math inline">\(v_0\)</span>. <em>Every parameter of the model sits on one of these arrows</em>, and these are the only derivatives we ultimately want.</p>
 <p><strong>Arrows that carry no weight</strong> are the fixed transformations: <span class="math inline">\(a_{ij} \to h_{ij}\)</span> is <code>tanh</code>, <span class="math inline">\(\eta_i \to \lambda_i\)</span> is <span class="math inline">\(\exp\)</span>, <span class="math inline">\(\lambda_i \to \mathcal{L}_i\)</span> is the Poisson loss. Nothing is estimated on them, so they contribute no gradient component of their own; they only pass sensitivity along.</p>
@@ -2069,8 +2069,8 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 </div>
 </div>
 </section>
-<section id="sec-backprop-dag" class="level3" data-number="5.4.4">
-<h3 data-number="5.4.4" class="anchored" data-anchor-id="sec-backprop-dag"><span class="header-section-number">5.4.4</span> A General Description of Gradient of Neural Networks</h3>
+<section id="sec-backprop-dag" class="level3" data-number="5.4.5">
+<h3 data-number="5.4.5" class="anchored" data-anchor-id="sec-backprop-dag"><span class="header-section-number">5.4.5</span> A General Description of Gradient of Neural Networks</h3>
 <p>Neither rule of <a href="#sec-computation-graph" class="quarto-xref"><span>Section 5.3.5.2</span></a> mentions depth, so the same pair describes a network of any size. Write a feed-forward network of <span class="math inline">\(L\)</span> layers as <span class="math display">\[h^{(0)} = x, \qquad a^{(l)} = W^{(l)} h^{(l-1)}, \qquad h^{(l)} = f\!\left(a^{(l)}\right), \qquad l = 1, \ldots, L ,\]</span> with a constant entry folded into each <span class="math inline">\(h^{(l-1)}\)</span> so that the intercepts are ordinary columns of <span class="math inline">\(W^{(l)}\)</span>, exactly as <span class="math inline">\(x_0\)</span> and <span class="math inline">\(h_0\)</span> are in <a href="#fig-nn-poisson-backprop" class="quarto-xref">Figure&nbsp;<span>5.19</span></a>.</p>
 <p><strong>The backward pass has the same shape as the forward pass.</strong> Applying the node rule to a whole layer at once turns the sum over consumers into a matrix–vector product with the transposed weight matrix: <span class="math display">\[\delta_{h^{(l-1)}} = W^{(l)\top} \delta_{a^{(l)}}, \qquad \delta_{a^{(l)}} = \delta_{h^{(l)}} \odot f'\!\left(a^{(l)}\right) ,\]</span> where <span class="math inline">\(\odot\)</span> is the elementwise product. Set the two sweeps side by side and they are the same two operations:</p>
 <table class="caption-top table">
