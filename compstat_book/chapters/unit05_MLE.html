@@ -345,7 +345,7 @@ window.Quarto = {
   <li><a href="#sec-nr-divergence-app" id="toc-sec-nr-divergence-app" class="nav-link" data-scroll-target="#sec-nr-divergence-app"><span class="header-section-number">5.3.6.1</span> Shinylive App for Safeguarded Newton-Raphson</a></li>
   </ul></li>
   </ul></li>
-  <li><a href="#backprogation-algorithm-for-neural-network" id="toc-backprogation-algorithm-for-neural-network" class="nav-link" data-scroll-target="#backprogation-algorithm-for-neural-network"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Network</a>
+  <li><a href="#backprogation-algorithm-for-neural-networks" id="toc-backprogation-algorithm-for-neural-networks" class="nav-link" data-scroll-target="#backprogation-algorithm-for-neural-networks"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Networks</a>
   <ul>
   <li><a href="#example-of-poisson-neural-network" id="toc-example-of-poisson-neural-network" class="nav-link" data-scroll-target="#example-of-poisson-neural-network"><span class="header-section-number">5.4.1</span> Example of Poisson Neural Network</a></li>
   <li><a href="#what-the-model-can-represent" id="toc-what-the-model-can-represent" class="nav-link" data-scroll-target="#what-the-model-can-represent"><span class="header-section-number">5.4.2</span> What the model can represent</a></li>
@@ -1957,8 +1957,8 @@ x            1.5034244  0.2089473  7.195234 6.235374e-13</code></pre>
 </section>
 </section>
 </section>
-<section id="backprogation-algorithm-for-neural-network" class="level2" data-number="5.4">
-<h2 data-number="5.4" class="anchored" data-anchor-id="backprogation-algorithm-for-neural-network"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Network</h2>
+<section id="backprogation-algorithm-for-neural-networks" class="level2" data-number="5.4">
+<h2 data-number="5.4" class="anchored" data-anchor-id="backprogation-algorithm-for-neural-networks"><span class="header-section-number">5.4</span> Backprogation Algorithm for Neural Networks</h2>
 <section id="example-of-poisson-neural-network" class="level3" data-number="5.4.1">
 <h3 data-number="5.4.1" class="anchored" data-anchor-id="example-of-poisson-neural-network"><span class="header-section-number">5.4.1</span> Example of Poisson Neural Network</h3>
 <p>Logistic regression was a one-unit network, and its Hessian was small enough to invert. Adding a single hidden layer breaks that comfort, and shows why the methods in this section exist.</p>
@@ -2068,6 +2068,77 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 </div>
 </div>
 </div>
+<p><strong>Computation of Gradient of Poisson Neural Networks of 1-Layer Neurons</strong></p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="do">## pack/unpack the 16 parameters: W (J x p), w0 (J), v (J), v0 (1)</span></span>
+<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>J <span class="ot">&lt;-</span> <span class="dv">3</span></span>
+<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a>nn_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, X, y) {</span>
+<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ncol</span>(X)</span>
+<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a>  W  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p)</span>
+<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a>  w0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
+<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a>  v  <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
+<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a>  v0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
+<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a>  A   <span class="ot">&lt;-</span> <span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)     <span class="co"># n x J  linear units</span></span>
+<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a>  H   <span class="ot">&lt;-</span> <span class="fu">tanh</span>(A)                           <span class="co"># n x J  activations</span></span>
+<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a>  eta <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(v0 <span class="sc">+</span> H <span class="sc">%*%</span> v)</span>
+<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a>  lam <span class="ot">&lt;-</span> <span class="fu">exp</span>(eta)</span>
+<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a>  nll <span class="ot">&lt;-</span> <span class="fu">sum</span>(lam <span class="sc">-</span> y <span class="sc">*</span> eta)                <span class="co"># dropping log(y!)</span></span>
+<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a>  delta_eta <span class="ot">&lt;-</span> lam <span class="sc">-</span> y                                  <span class="co"># n      dL_i/d eta_i</span></span>
+<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a>  delta_h   <span class="ot">&lt;-</span> <span class="fu">outer</span>(delta_eta, v)                      <span class="co"># n x J  dL_i/d h_ij</span></span>
+<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a>  delta_a   <span class="ot">&lt;-</span> delta_h <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> H<span class="sc">^</span><span class="dv">2</span>)                      <span class="co"># n x J  dL_i/d a_ij</span></span>
+<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a>  d_v  <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(H) <span class="sc">%*%</span> delta_eta)                 <span class="co"># J      dL/dv_j</span></span>
+<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a>  d_v0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(delta_eta)                                <span class="co"># 1      dL/dv_0</span></span>
+<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a>  d_W  <span class="ot">&lt;-</span> <span class="fu">t</span>(delta_a) <span class="sc">%*%</span> X                              <span class="co"># J x p  dL/dw_jk</span></span>
+<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a>  d_w0 <span class="ot">&lt;-</span> <span class="fu">colSums</span>(delta_a)                              <span class="co"># J      dL/dw_j0</span></span>
+<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">nll =</span> nll, <span class="at">grad =</span> <span class="fu">c</span>(<span class="fu">as.vector</span>(d_W), d_w0, d_v, d_v0))</span>
+<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
+<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">40</span>; p <span class="ot">&lt;-</span> <span class="dv">3</span></span>
+<span id="cb65-31"><a href="#cb65-31" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(n <span class="sc">*</span> p), n, p)</span>
+<span id="cb65-32"><a href="#cb65-32" aria-hidden="true" tabindex="-1"></a>theta0 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>, <span class="at">sd =</span> <span class="fl">0.5</span>)</span>
+<span id="cb65-33"><a href="#cb65-33" aria-hidden="true" tabindex="-1"></a><span class="do">## counts simulated from the network at theta0</span></span>
+<span id="cb65-34"><a href="#cb65-34" aria-hidden="true" tabindex="-1"></a>ytrue <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="fu">local</span>({</span>
+<span id="cb65-35"><a href="#cb65-35" aria-hidden="true" tabindex="-1"></a>  W <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta0[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p); w0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
+<span id="cb65-36"><a href="#cb65-36" aria-hidden="true" tabindex="-1"></a>  v <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J];        v0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
+<span id="cb65-37"><a href="#cb65-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exp</span>(v0 <span class="sc">+</span> <span class="fu">tanh</span>(<span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)) <span class="sc">%*%</span> v)</span>
+<span id="cb65-38"><a href="#cb65-38" aria-hidden="true" tabindex="-1"></a>}))</span>
+<span id="cb65-39"><a href="#cb65-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-40"><a href="#cb65-40" aria-hidden="true" tabindex="-1"></a>back <span class="ot">&lt;-</span> <span class="fu">nn_pois</span>(theta0, X, ytrue)<span class="sc">$</span>grad</span>
+<span id="cb65-41"><a href="#cb65-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-42"><a href="#cb65-42" aria-hidden="true" tabindex="-1"></a><span class="do">## central differences, one coordinate at a time</span></span>
+<span id="cb65-43"><a href="#cb65-43" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fl">1e-6</span></span>
+<span id="cb65-44"><a href="#cb65-44" aria-hidden="true" tabindex="-1"></a>numeric_grad <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_along</span>(theta0), <span class="cf">function</span>(k) {</span>
+<span id="cb65-45"><a href="#cb65-45" aria-hidden="true" tabindex="-1"></a>  e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(theta0)); e[k] <span class="ot">&lt;-</span> h</span>
+<span id="cb65-46"><a href="#cb65-46" aria-hidden="true" tabindex="-1"></a>  (<span class="fu">nn_pois</span>(theta0 <span class="sc">+</span> e, X, ytrue)<span class="sc">$</span>nll <span class="sc">-</span> <span class="fu">nn_pois</span>(theta0 <span class="sc">-</span> e, X, ytrue)<span class="sc">$</span>nll) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h)</span>
+<span id="cb65-47"><a href="#cb65-47" aria-hidden="true" tabindex="-1"></a>}, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb65-48"><a href="#cb65-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-49"><a href="#cb65-49" aria-hidden="true" tabindex="-1"></a><span class="fu">cbind</span>(<span class="at">backprop =</span> back, <span class="at">numeric =</span> numeric_grad)[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>          backprop       numeric
+[1,]  0.4737615235  0.4737615296
+[2,] -1.0509837992 -1.0509837960
+[3,]  0.0001707534  0.0001707647
+[4,] -1.3588962590 -1.3588962613
+[5,]  4.1853262037  4.1853262047
+[6,] -0.0881340975 -0.0881340956</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">abs</span>(back <span class="sc">-</span> numeric_grad))              <span class="co"># agreement across all 16 coordinates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 1.130205e-08</code></pre>
+</div>
+</div>
 </section>
 <section id="sec-backprop-dag" class="level3" data-number="5.4.5">
 <h3 data-number="5.4.5" class="anchored" data-anchor-id="sec-backprop-dag"><span class="header-section-number">5.4.5</span> A General Description of Gradient of Neural Networks</h3>
@@ -2107,74 +2178,6 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 <p><strong>Memory.</strong> The backward sweep consumes what the forward sweep produced — <span class="math inline">\(h^{(l-1)}\)</span> for the outer product, <span class="math inline">\(f'(a^{(l)})\)</span> for the elementwise step — so the activations have to be stored, at a cost proportional to the total number of nodes. That is why the diagrams above have a forward panel at all, and it is the cost that gradient checkpointing trades back for recomputation in very deep models.</p>
 <p><strong>Two extensions.</strong> Weight sharing needs no new machinery: when one parameter sits on many edges, as in a convolutional or recurrent network, its gradient is the sum of the edge rule over all of them, which is the node rule again. And the direction of the sweep is a choice. Propagating <span class="math inline">\(\partial z / \partial \theta_k\)</span> <em>forward</em> is equally correct but costs one sweep per parameter, whereas sweeping backward costs one sweep per output and there is a single scalar output here. That asymmetry is what makes a full gradient affordable for models with millions of parameters, and it is the property the rest of this chapter relies on.</p>
 <p>Backpropagation is easy to get subtly wrong, so it is worth testing against finite differences before handing the gradient to an optimizer — the same comparison made for the univariate case earlier in this chapter.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="do">## pack/unpack the 16 parameters: W (J x p), w0 (J), v (J), v0 (1)</span></span>
-<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>J <span class="ot">&lt;-</span> <span class="dv">3</span></span>
-<span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a>nn_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, X, y) {</span>
-<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ncol</span>(X)</span>
-<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a>  W  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p)</span>
-<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a>  w0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
-<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a>  v  <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
-<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a>  v0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
-<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a>  A   <span class="ot">&lt;-</span> <span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)     <span class="co"># n x J  linear units</span></span>
-<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a>  H   <span class="ot">&lt;-</span> <span class="fu">tanh</span>(A)                           <span class="co"># n x J  activations</span></span>
-<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a>  eta <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(v0 <span class="sc">+</span> H <span class="sc">%*%</span> v)</span>
-<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a>  lam <span class="ot">&lt;-</span> <span class="fu">exp</span>(eta)</span>
-<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a>  nll <span class="ot">&lt;-</span> <span class="fu">sum</span>(lam <span class="sc">-</span> y <span class="sc">*</span> eta)                <span class="co"># dropping log(y!)</span></span>
-<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a>  d   <span class="ot">&lt;-</span> lam <span class="sc">-</span> y                           <span class="co"># n      dL/deta</span></span>
-<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a>  dv  <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(H) <span class="sc">%*%</span> d)             <span class="co"># J      dL/dv_j</span></span>
-<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a>  dv0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(d)                            <span class="co"># 1      dL/dv_0</span></span>
-<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a>  dh  <span class="ot">&lt;-</span> <span class="fu">outer</span>(d, v) <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> H<span class="sc">^</span><span class="dv">2</span>)           <span class="co"># n x J  dL/da_ij</span></span>
-<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a>  dW  <span class="ot">&lt;-</span> <span class="fu">t</span>(dh) <span class="sc">%*%</span> X                       <span class="co"># J x p  dL/dw_jk</span></span>
-<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a>  dw0 <span class="ot">&lt;-</span> <span class="fu">colSums</span>(dh)                       <span class="co"># J      dL/dw_j0</span></span>
-<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">nll =</span> nll, <span class="at">grad =</span> <span class="fu">c</span>(<span class="fu">as.vector</span>(dW), dw0, dv, dv0))</span>
-<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
-<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">40</span>; p <span class="ot">&lt;-</span> <span class="dv">3</span></span>
-<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(n <span class="sc">*</span> p), n, p)</span>
-<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a>theta0 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>, <span class="at">sd =</span> <span class="fl">0.5</span>)</span>
-<span id="cb65-31"><a href="#cb65-31" aria-hidden="true" tabindex="-1"></a><span class="do">## counts simulated from the network at theta0</span></span>
-<span id="cb65-32"><a href="#cb65-32" aria-hidden="true" tabindex="-1"></a>ytrue <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="fu">local</span>({</span>
-<span id="cb65-33"><a href="#cb65-33" aria-hidden="true" tabindex="-1"></a>  W <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta0[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p); w0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
-<span id="cb65-34"><a href="#cb65-34" aria-hidden="true" tabindex="-1"></a>  v <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J];        v0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
-<span id="cb65-35"><a href="#cb65-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exp</span>(v0 <span class="sc">+</span> <span class="fu">tanh</span>(<span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)) <span class="sc">%*%</span> v)</span>
-<span id="cb65-36"><a href="#cb65-36" aria-hidden="true" tabindex="-1"></a>}))</span>
-<span id="cb65-37"><a href="#cb65-37" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-38"><a href="#cb65-38" aria-hidden="true" tabindex="-1"></a>back <span class="ot">&lt;-</span> <span class="fu">nn_pois</span>(theta0, X, ytrue)<span class="sc">$</span>grad</span>
-<span id="cb65-39"><a href="#cb65-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-40"><a href="#cb65-40" aria-hidden="true" tabindex="-1"></a><span class="do">## central differences, one coordinate at a time</span></span>
-<span id="cb65-41"><a href="#cb65-41" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fl">1e-6</span></span>
-<span id="cb65-42"><a href="#cb65-42" aria-hidden="true" tabindex="-1"></a>numeric_grad <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_along</span>(theta0), <span class="cf">function</span>(k) {</span>
-<span id="cb65-43"><a href="#cb65-43" aria-hidden="true" tabindex="-1"></a>  e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(theta0)); e[k] <span class="ot">&lt;-</span> h</span>
-<span id="cb65-44"><a href="#cb65-44" aria-hidden="true" tabindex="-1"></a>  (<span class="fu">nn_pois</span>(theta0 <span class="sc">+</span> e, X, ytrue)<span class="sc">$</span>nll <span class="sc">-</span> <span class="fu">nn_pois</span>(theta0 <span class="sc">-</span> e, X, ytrue)<span class="sc">$</span>nll) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h)</span>
-<span id="cb65-45"><a href="#cb65-45" aria-hidden="true" tabindex="-1"></a>}, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
-<span id="cb65-46"><a href="#cb65-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-47"><a href="#cb65-47" aria-hidden="true" tabindex="-1"></a><span class="fu">cbind</span>(<span class="at">backprop =</span> back, <span class="at">numeric =</span> numeric_grad)[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>          backprop       numeric
-[1,]  0.4737615235  0.4737615296
-[2,] -1.0509837992 -1.0509837960
-[3,]  0.0001707534  0.0001707647
-[4,] -1.3588962590 -1.3588962613
-[5,]  4.1853262037  4.1853262047
-[6,] -0.0881340975 -0.0881340956</code></pre>
-</div>
-<details class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">abs</span>(back <span class="sc">-</span> numeric_grad))              <span class="co"># agreement across all 16 coordinates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 1.130205e-08</code></pre>
-</div>
-</div>
 <p>The two agree to the accuracy of the difference quotient. With a gradient this cheap and this reliable, BFGS or conjugate gradient can fit the model without ever forming a Hessian — which is what the rest of this section is about.</p>
 </section>
 </section>
