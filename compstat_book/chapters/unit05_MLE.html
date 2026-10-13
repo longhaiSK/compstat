@@ -2070,116 +2070,170 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 </div>
 <p><strong>Computation of Gradient of Poisson Neural Networks of 1-Layer Neurons</strong></p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="do">## pack/unpack the 16 parameters: W (J x p), w0 (J), v (J), v0 (1)</span></span>
-<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>J <span class="ot">&lt;-</span> <span class="dv">3</span></span>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb65-1"><a href="#cb65-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
+<span id="cb65-2"><a href="#cb65-2" aria-hidden="true" tabindex="-1"></a>J <span class="ot">&lt;-</span> <span class="dv">3</span>                                      <span class="co"># number of hidden units</span></span>
 <span id="cb65-3"><a href="#cb65-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a><span class="do">## theta = (W[J x p, by column], w0, v, v0); X holds x_1..x_p (no constant column)</span></span>
-<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a><span class="do">## workingtable = TRUE also returns the per-observation values of every node and delta</span></span>
-<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a>nn_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, X, y, <span class="at">workingtable =</span> <span class="cn">FALSE</span>) {</span>
-<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ncol</span>(X)</span>
-<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- extract weights from theta ----</span></span>
-<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a>  W  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p)      <span class="co"># input weights w_jk, k = 1..p</span></span>
-<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a>  w0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]                  <span class="co"># hidden intercepts w_j0</span></span>
-<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a>  v  <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]              <span class="co"># output weights v_j</span></span>
-<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a>  v0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]            <span class="co"># output intercept v_0</span></span>
-<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- forward pass: store a, h, eta, lambda (needed by the backward pass) ----</span></span>
-<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a>  A   <span class="ot">&lt;-</span> <span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)      <span class="co"># n x J  a_ij = w_j0 + sum_k w_jk x_ik</span></span>
-<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a>  H   <span class="ot">&lt;-</span> <span class="fu">tanh</span>(A)                            <span class="co"># n x J  h_ij = tanh(a_ij)</span></span>
-<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a>  eta <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(v0 <span class="sc">+</span> H <span class="sc">%*%</span> v)            <span class="co"># n      eta_i = v_0 + sum_j v_j h_ij</span></span>
-<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a>  lam <span class="ot">&lt;-</span> <span class="fu">exp</span>(eta)                           <span class="co"># n      lambda_i = exp(eta_i)</span></span>
-<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- loss: Poisson negative log-likelihood ----</span></span>
-<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a>  nll <span class="ot">&lt;-</span> <span class="fu">sum</span>(lam <span class="sc">-</span> y <span class="sc">*</span> eta)                 <span class="co"># dropping log(y!)</span></span>
-<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- backward pass: sensitivities delta, from the loss back to a ----</span></span>
-<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a>  delta_eta <span class="ot">&lt;-</span> lam <span class="sc">-</span> y                      <span class="co"># n      dL_i/d eta_i  (seed)</span></span>
-<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a>  delta_h   <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="fu">nrow</span>(X), J)        <span class="co"># n x J  dL_i/d h_ij = delta_eta_i * v_j</span></span>
-<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J) delta_h[, j] <span class="ot">&lt;-</span> delta_eta <span class="sc">*</span> v[j]</span>
-<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a>  delta_a   <span class="ot">&lt;-</span> delta_h <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> H<span class="sc">^</span><span class="dv">2</span>)          <span class="co"># n x J  dL_i/d a_ij = delta_h * tanh'(a_ij)</span></span>
-<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- gradients of the weights: delta at the arrow's head x value at its tail,</span></span>
-<span id="cb65-31"><a href="#cb65-31" aria-hidden="true" tabindex="-1"></a>  <span class="do">##      summed over observations (the intercepts have tail value 1) ----</span></span>
-<span id="cb65-32"><a href="#cb65-32" aria-hidden="true" tabindex="-1"></a>  d_v  <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(H) <span class="sc">%*%</span> delta_eta)     <span class="co"># J      dL/dv_j  = sum_i delta_eta_i h_ij</span></span>
-<span id="cb65-33"><a href="#cb65-33" aria-hidden="true" tabindex="-1"></a>  d_v0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(delta_eta)                    <span class="co"># 1      dL/dv_0</span></span>
-<span id="cb65-34"><a href="#cb65-34" aria-hidden="true" tabindex="-1"></a>  d_W  <span class="ot">&lt;-</span> <span class="fu">t</span>(delta_a) <span class="sc">%*%</span> X                  <span class="co"># J x p  dL/dw_jk = sum_i delta_a_ij x_ik</span></span>
-<span id="cb65-35"><a href="#cb65-35" aria-hidden="true" tabindex="-1"></a>  d_w0 <span class="ot">&lt;-</span> <span class="fu">colSums</span>(delta_a)                  <span class="co"># J      dL/dw_j0</span></span>
-<span id="cb65-36"><a href="#cb65-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-37"><a href="#cb65-37" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- optionally keep the working: one row per observation i ----</span></span>
-<span id="cb65-38"><a href="#cb65-38" aria-hidden="true" tabindex="-1"></a>  working <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
-<span id="cb65-39"><a href="#cb65-39" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (workingtable) {</span>
-<span id="cb65-40"><a href="#cb65-40" aria-hidden="true" tabindex="-1"></a>    working <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">y =</span> y, X, A, H, <span class="at">eta =</span> eta, <span class="at">lam =</span> lam,</span>
-<span id="cb65-41"><a href="#cb65-41" aria-hidden="true" tabindex="-1"></a>                          <span class="at">delta_eta =</span> delta_eta, delta_h, delta_a)</span>
-<span id="cb65-42"><a href="#cb65-42" aria-hidden="true" tabindex="-1"></a>    <span class="fu">names</span>(working) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"y"</span>, <span class="fu">paste0</span>(<span class="st">"x"</span>, <span class="dv">1</span><span class="sc">:</span>p), <span class="fu">paste0</span>(<span class="st">"a"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="fu">paste0</span>(<span class="st">"h"</span>, <span class="dv">1</span><span class="sc">:</span>J),</span>
-<span id="cb65-43"><a href="#cb65-43" aria-hidden="true" tabindex="-1"></a>                        <span class="st">"eta"</span>, <span class="st">"lam"</span>, <span class="st">"delta_eta"</span>,</span>
-<span id="cb65-44"><a href="#cb65-44" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">paste0</span>(<span class="st">"delta_h"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="fu">paste0</span>(<span class="st">"delta_a"</span>, <span class="dv">1</span><span class="sc">:</span>J))</span>
-<span id="cb65-45"><a href="#cb65-45" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb65-46"><a href="#cb65-46" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-47"><a href="#cb65-47" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- pack the gradient in the same order as theta ----</span></span>
-<span id="cb65-48"><a href="#cb65-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">nll =</span> nll, <span class="at">grad =</span> <span class="fu">c</span>(<span class="fu">as.vector</span>(d_W), d_w0, d_v, d_v0), <span class="at">working =</span> working)</span>
-<span id="cb65-49"><a href="#cb65-49" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb65-50"><a href="#cb65-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-51"><a href="#cb65-51" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
-<span id="cb65-52"><a href="#cb65-52" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">40</span>; p <span class="ot">&lt;-</span> <span class="dv">3</span></span>
-<span id="cb65-53"><a href="#cb65-53" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(n <span class="sc">*</span> p), n, p)</span>
-<span id="cb65-54"><a href="#cb65-54" aria-hidden="true" tabindex="-1"></a>theta0 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>, <span class="at">sd =</span> <span class="fl">0.5</span>)</span>
-<span id="cb65-55"><a href="#cb65-55" aria-hidden="true" tabindex="-1"></a><span class="do">## counts simulated from the network at theta0</span></span>
-<span id="cb65-56"><a href="#cb65-56" aria-hidden="true" tabindex="-1"></a>ytrue <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="fu">local</span>({</span>
-<span id="cb65-57"><a href="#cb65-57" aria-hidden="true" tabindex="-1"></a>  W <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta0[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p); w0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
-<span id="cb65-58"><a href="#cb65-58" aria-hidden="true" tabindex="-1"></a>  v <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J];        v0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
-<span id="cb65-59"><a href="#cb65-59" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exp</span>(v0 <span class="sc">+</span> <span class="fu">tanh</span>(<span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)) <span class="sc">%*%</span> v)</span>
-<span id="cb65-60"><a href="#cb65-60" aria-hidden="true" tabindex="-1"></a>}))</span>
-<span id="cb65-61"><a href="#cb65-61" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-62"><a href="#cb65-62" aria-hidden="true" tabindex="-1"></a>back <span class="ot">&lt;-</span> <span class="fu">nn_pois</span>(theta0, X, ytrue)<span class="sc">$</span>grad</span>
-<span id="cb65-63"><a href="#cb65-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-64"><a href="#cb65-64" aria-hidden="true" tabindex="-1"></a><span class="do">## central differences, one coordinate at a time</span></span>
-<span id="cb65-65"><a href="#cb65-65" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fl">1e-6</span></span>
-<span id="cb65-66"><a href="#cb65-66" aria-hidden="true" tabindex="-1"></a>numeric_grad <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_along</span>(theta0), <span class="cf">function</span>(k) {</span>
-<span id="cb65-67"><a href="#cb65-67" aria-hidden="true" tabindex="-1"></a>  e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(theta0)); e[k] <span class="ot">&lt;-</span> h</span>
-<span id="cb65-68"><a href="#cb65-68" aria-hidden="true" tabindex="-1"></a>  (<span class="fu">nn_pois</span>(theta0 <span class="sc">+</span> e, X, ytrue)<span class="sc">$</span>nll <span class="sc">-</span> <span class="fu">nn_pois</span>(theta0 <span class="sc">-</span> e, X, ytrue)<span class="sc">$</span>nll) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h)</span>
-<span id="cb65-69"><a href="#cb65-69" aria-hidden="true" tabindex="-1"></a>}, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb65-4"><a href="#cb65-4" aria-hidden="true" tabindex="-1"></a><span class="do">## math column header for gt tables</span></span>
+<span id="cb65-5"><a href="#cb65-5" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="cf">function</span>(tex) <span class="fu">html</span>(<span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, tex, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>))</span>
+<span id="cb65-6"><a href="#cb65-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-7"><a href="#cb65-7" aria-hidden="true" tabindex="-1"></a><span class="do">## theta = (W[J x p, by column], w0, v, v0); X holds x_1..x_p (no constant column)</span></span>
+<span id="cb65-8"><a href="#cb65-8" aria-hidden="true" tabindex="-1"></a><span class="do">## workingtable = TRUE also returns three gt tables (first nshow observations):</span></span>
+<span id="cb65-9"><a href="#cb65-9" aria-hidden="true" tabindex="-1"></a><span class="do">##   forward values of the nodes, backward deltas, and the gradient as inner products</span></span>
+<span id="cb65-10"><a href="#cb65-10" aria-hidden="true" tabindex="-1"></a>nn_pois <span class="ot">&lt;-</span> <span class="cf">function</span>(theta, X, y, <span class="at">workingtable =</span> <span class="cn">FALSE</span>, <span class="at">nshow =</span> <span class="dv">6</span>) {</span>
+<span id="cb65-11"><a href="#cb65-11" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ncol</span>(X)</span>
+<span id="cb65-12"><a href="#cb65-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-13"><a href="#cb65-13" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- extract weights from theta ----</span></span>
+<span id="cb65-14"><a href="#cb65-14" aria-hidden="true" tabindex="-1"></a>  W  <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p)      <span class="co"># input weights w_jk, k = 1..p</span></span>
+<span id="cb65-15"><a href="#cb65-15" aria-hidden="true" tabindex="-1"></a>  w0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]                  <span class="co"># hidden intercepts w_j0</span></span>
+<span id="cb65-16"><a href="#cb65-16" aria-hidden="true" tabindex="-1"></a>  v  <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]              <span class="co"># output weights v_j</span></span>
+<span id="cb65-17"><a href="#cb65-17" aria-hidden="true" tabindex="-1"></a>  v0 <span class="ot">&lt;-</span> theta[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]            <span class="co"># output intercept v_0</span></span>
+<span id="cb65-18"><a href="#cb65-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-19"><a href="#cb65-19" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- forward pass: store a, h, eta, lambda (needed by the backward pass) ----</span></span>
+<span id="cb65-20"><a href="#cb65-20" aria-hidden="true" tabindex="-1"></a>  A   <span class="ot">&lt;-</span> <span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)      <span class="co"># n x J  a_ij = w_j0 + sum_k w_jk x_ik</span></span>
+<span id="cb65-21"><a href="#cb65-21" aria-hidden="true" tabindex="-1"></a>  H   <span class="ot">&lt;-</span> <span class="fu">tanh</span>(A)                            <span class="co"># n x J  h_ij = tanh(a_ij)</span></span>
+<span id="cb65-22"><a href="#cb65-22" aria-hidden="true" tabindex="-1"></a>  eta <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(v0 <span class="sc">+</span> H <span class="sc">%*%</span> v)            <span class="co"># n      eta_i = v_0 + sum_j v_j h_ij</span></span>
+<span id="cb65-23"><a href="#cb65-23" aria-hidden="true" tabindex="-1"></a>  lam <span class="ot">&lt;-</span> <span class="fu">exp</span>(eta)                           <span class="co"># n      lambda_i = exp(eta_i)</span></span>
+<span id="cb65-24"><a href="#cb65-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-25"><a href="#cb65-25" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- loss: Poisson negative log-likelihood ----</span></span>
+<span id="cb65-26"><a href="#cb65-26" aria-hidden="true" tabindex="-1"></a>  nll <span class="ot">&lt;-</span> <span class="fu">sum</span>(lam <span class="sc">-</span> y <span class="sc">*</span> eta)                 <span class="co"># dropping log(y!)</span></span>
+<span id="cb65-27"><a href="#cb65-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-28"><a href="#cb65-28" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- backward pass: sensitivities delta, from the loss back to a ----</span></span>
+<span id="cb65-29"><a href="#cb65-29" aria-hidden="true" tabindex="-1"></a>  delta_eta <span class="ot">&lt;-</span> lam <span class="sc">-</span> y                      <span class="co"># n      dL_i/d eta_i  (seed)</span></span>
+<span id="cb65-30"><a href="#cb65-30" aria-hidden="true" tabindex="-1"></a>  delta_h   <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="fu">nrow</span>(X), J)        <span class="co"># n x J  dL_i/d h_ij = delta_eta_i * v_j</span></span>
+<span id="cb65-31"><a href="#cb65-31" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J) delta_h[, j] <span class="ot">&lt;-</span> delta_eta <span class="sc">*</span> v[j]</span>
+<span id="cb65-32"><a href="#cb65-32" aria-hidden="true" tabindex="-1"></a>  delta_a   <span class="ot">&lt;-</span> delta_h <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> H<span class="sc">^</span><span class="dv">2</span>)          <span class="co"># n x J  dL_i/d a_ij = delta_h * tanh'(a_ij)</span></span>
+<span id="cb65-33"><a href="#cb65-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-34"><a href="#cb65-34" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- gradients of the weights: delta at the arrow's head x value at its tail,</span></span>
+<span id="cb65-35"><a href="#cb65-35" aria-hidden="true" tabindex="-1"></a>  <span class="do">##      summed over observations (the intercepts have tail value 1) ----</span></span>
+<span id="cb65-36"><a href="#cb65-36" aria-hidden="true" tabindex="-1"></a>  d_v  <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(H) <span class="sc">%*%</span> delta_eta)     <span class="co"># J      dL/dv_j  = sum_i delta_eta_i h_ij</span></span>
+<span id="cb65-37"><a href="#cb65-37" aria-hidden="true" tabindex="-1"></a>  d_v0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(delta_eta)                    <span class="co"># 1      dL/dv_0</span></span>
+<span id="cb65-38"><a href="#cb65-38" aria-hidden="true" tabindex="-1"></a>  d_W  <span class="ot">&lt;-</span> <span class="fu">t</span>(delta_a) <span class="sc">%*%</span> X                  <span class="co"># J x p  dL/dw_jk = sum_i delta_a_ij x_ik</span></span>
+<span id="cb65-39"><a href="#cb65-39" aria-hidden="true" tabindex="-1"></a>  d_w0 <span class="ot">&lt;-</span> <span class="fu">colSums</span>(delta_a)                  <span class="co"># J      dL/dw_j0</span></span>
+<span id="cb65-40"><a href="#cb65-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-41"><a href="#cb65-41" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- pack the gradient in the same order as theta, with names ----</span></span>
+<span id="cb65-42"><a href="#cb65-42" aria-hidden="true" tabindex="-1"></a>  grad <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">as.vector</span>(d_W), d_w0, d_v, d_v0)</span>
+<span id="cb65-43"><a href="#cb65-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(grad) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">paste0</span>(<span class="st">"w"</span>, <span class="fu">rep</span>(<span class="dv">1</span><span class="sc">:</span>J, p), <span class="fu">rep</span>(<span class="dv">1</span><span class="sc">:</span>p, <span class="at">each =</span> J)),   <span class="co"># w11, w21, ..., w3p</span></span>
+<span id="cb65-44"><a href="#cb65-44" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">paste0</span>(<span class="st">"w"</span>, <span class="dv">1</span><span class="sc">:</span>J, <span class="st">"0"</span>), <span class="fu">paste0</span>(<span class="st">"v"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="st">"v0"</span>)</span>
+<span id="cb65-45"><a href="#cb65-45" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">nll =</span> nll, <span class="at">grad =</span> grad)</span>
+<span id="cb65-46"><a href="#cb65-46" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span>workingtable) <span class="fu">return</span>(out)</span>
+<span id="cb65-47"><a href="#cb65-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-48"><a href="#cb65-48" aria-hidden="true" tabindex="-1"></a>  <span class="do">## ---- working tables: one row per observation i ----</span></span>
+<span id="cb65-49"><a href="#cb65-49" aria-hidden="true" tabindex="-1"></a>  wk <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">i =</span> <span class="fu">seq_along</span>(y), <span class="at">y =</span> y, X, A, H, <span class="at">eta =</span> eta, <span class="at">lam =</span> lam,</span>
+<span id="cb65-50"><a href="#cb65-50" aria-hidden="true" tabindex="-1"></a>                   <span class="at">delta_eta =</span> delta_eta, delta_h, delta_a)</span>
+<span id="cb65-51"><a href="#cb65-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(wk) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"i"</span>, <span class="st">"y"</span>, <span class="fu">paste0</span>(<span class="st">"x"</span>, <span class="dv">1</span><span class="sc">:</span>p), <span class="fu">paste0</span>(<span class="st">"a"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="fu">paste0</span>(<span class="st">"h"</span>, <span class="dv">1</span><span class="sc">:</span>J),</span>
+<span id="cb65-52"><a href="#cb65-52" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"eta"</span>, <span class="st">"lam"</span>, <span class="st">"delta_eta"</span>, <span class="fu">paste0</span>(<span class="st">"delta_h"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="fu">paste0</span>(<span class="st">"delta_a"</span>, <span class="dv">1</span><span class="sc">:</span>J))</span>
+<span id="cb65-53"><a href="#cb65-53" aria-hidden="true" tabindex="-1"></a>  top <span class="ot">&lt;-</span> <span class="fu">head</span>(wk, nshow)</span>
+<span id="cb65-54"><a href="#cb65-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-55"><a href="#cb65-55" aria-hidden="true" tabindex="-1"></a>  <span class="do">## forward values</span></span>
+<span id="cb65-56"><a href="#cb65-56" aria-hidden="true" tabindex="-1"></a>  forward <span class="ot">&lt;-</span> top <span class="sc">|&gt;</span></span>
+<span id="cb65-57"><a href="#cb65-57" aria-hidden="true" tabindex="-1"></a>    <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb65-58"><a href="#cb65-58" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_hide</span>(<span class="fu">starts_with</span>(<span class="st">"delta"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-59"><a href="#cb65-59" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_label</span>(<span class="at">i =</span> <span class="fu">m</span>(<span class="st">"i"</span>), <span class="at">y =</span> <span class="fu">m</span>(<span class="st">"y_i"</span>),</span>
+<span id="cb65-60"><a href="#cb65-60" aria-hidden="true" tabindex="-1"></a>               <span class="at">x1 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(1)}"</span>), <span class="at">x2 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(2)}"</span>), <span class="at">x3 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(3)}"</span>),</span>
+<span id="cb65-61"><a href="#cb65-61" aria-hidden="true" tabindex="-1"></a>               <span class="at">a1 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(1)}"</span>), <span class="at">a2 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(2)}"</span>), <span class="at">a3 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(3)}"</span>),</span>
+<span id="cb65-62"><a href="#cb65-62" aria-hidden="true" tabindex="-1"></a>               <span class="at">h1 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(1)}"</span>), <span class="at">h2 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(2)}"</span>), <span class="at">h3 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(3)}"</span>),</span>
+<span id="cb65-63"><a href="#cb65-63" aria-hidden="true" tabindex="-1"></a>               <span class="at">eta =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">eta_i"</span>), <span class="at">lam =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">lambda_i"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-64"><a href="#cb65-64" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{covariates}"</span>), <span class="fu">c</span>(x1, x2, x3)) <span class="sc">|&gt;</span></span>
+<span id="cb65-65"><a href="#cb65-65" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"a_i^{(j)} = w_{j0} + </span><span class="sc">\\</span><span class="st">sum_k w_{jk} x_i^{(k)}"</span>), <span class="fu">c</span>(a1, a2, a3)) <span class="sc">|&gt;</span></span>
+<span id="cb65-66"><a href="#cb65-66" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"h_i^{(j)} = </span><span class="sc">\\</span><span class="st">tanh(a_i^{(j)})"</span>), <span class="fu">c</span>(h1, h2, h3)) <span class="sc">|&gt;</span></span>
+<span id="cb65-67"><a href="#cb65-67" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">eta_i = v_0 + </span><span class="sc">\\</span><span class="st">sum_j v_j h_i^{(j)}, </span><span class="sc">\\</span><span class="st">; </span><span class="sc">\\</span><span class="st">lambda_i = e^{</span><span class="sc">\\</span><span class="st">eta_i}"</span>), <span class="fu">c</span>(eta, lam)) <span class="sc">|&gt;</span></span>
+<span id="cb65-68"><a href="#cb65-68" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(<span class="sc">-</span><span class="fu">c</span>(i, y), <span class="at">decimals =</span> <span class="dv">3</span>) <span class="sc">|&gt;</span></span>
+<span id="cb65-69"><a href="#cb65-69" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Forward pass: values of the nodes"</span>)</span>
 <span id="cb65-70"><a href="#cb65-70" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb65-71"><a href="#cb65-71" aria-hidden="true" tabindex="-1"></a><span class="fu">cbind</span>(<span class="at">backprop =</span> back, <span class="at">numeric =</span> numeric_grad)[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb65-71"><a href="#cb65-71" aria-hidden="true" tabindex="-1"></a>  <span class="do">## backward deltas</span></span>
+<span id="cb65-72"><a href="#cb65-72" aria-hidden="true" tabindex="-1"></a>  backward <span class="ot">&lt;-</span> top <span class="sc">|&gt;</span></span>
+<span id="cb65-73"><a href="#cb65-73" aria-hidden="true" tabindex="-1"></a>    <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb65-74"><a href="#cb65-74" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_hide</span>(<span class="fu">c</span>(y, <span class="fu">starts_with</span>(<span class="st">"x"</span>), <span class="fu">starts_with</span>(<span class="st">"a"</span>), <span class="fu">starts_with</span>(<span class="st">"h"</span>), eta, lam)) <span class="sc">|&gt;</span></span>
+<span id="cb65-75"><a href="#cb65-75" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_label</span>(<span class="at">i =</span> <span class="fu">m</span>(<span class="st">"i"</span>), <span class="at">delta_eta =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i} = </span><span class="sc">\\</span><span class="st">lambda_i - y_i"</span>),</span>
+<span id="cb65-76"><a href="#cb65-76" aria-hidden="true" tabindex="-1"></a>               <span class="at">delta_h1 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(1)}}"</span>), <span class="at">delta_h2 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(2)}}"</span>),</span>
+<span id="cb65-77"><a href="#cb65-77" aria-hidden="true" tabindex="-1"></a>               <span class="at">delta_h3 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(3)}}"</span>),</span>
+<span id="cb65-78"><a href="#cb65-78" aria-hidden="true" tabindex="-1"></a>               <span class="at">delta_a1 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(1)}}"</span>), <span class="at">delta_a2 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(2)}}"</span>),</span>
+<span id="cb65-79"><a href="#cb65-79" aria-hidden="true" tabindex="-1"></a>               <span class="at">delta_a3 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(3)}}"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-80"><a href="#cb65-80" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(j)}} = </span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i}</span><span class="sc">\\</span><span class="st">, v_j"</span>), <span class="fu">starts_with</span>(<span class="st">"delta_h"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-81"><a href="#cb65-81" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(j)}} = </span><span class="sc">\\</span><span class="st">delta_{h_i^{(j)}} </span><span class="sc">\\</span><span class="st">bigl(1 - (h_i^{(j)})^2</span><span class="sc">\\</span><span class="st">bigr)"</span>), <span class="fu">starts_with</span>(<span class="st">"delta_a"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-82"><a href="#cb65-82" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(<span class="sc">-</span>i, <span class="at">decimals =</span> <span class="dv">3</span>) <span class="sc">|&gt;</span></span>
+<span id="cb65-83"><a href="#cb65-83" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Backward pass: sensitivities"</span>)</span>
+<span id="cb65-84"><a href="#cb65-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-85"><a href="#cb65-85" aria-hidden="true" tabindex="-1"></a>  <span class="do">## gradient: inner product of two columns of the full working table (all n rows)</span></span>
+<span id="cb65-86"><a href="#cb65-86" aria-hidden="true" tabindex="-1"></a>  ip <span class="ot">&lt;-</span> <span class="cf">function</span>(u, w) <span class="fu">sum</span>(wk[[u]] <span class="sc">*</span> w)</span>
+<span id="cb65-87"><a href="#cb65-87" aria-hidden="true" tabindex="-1"></a>  tex <span class="ot">&lt;-</span> val <span class="ot">&lt;-</span> <span class="fu">character</span>(<span class="dv">0</span>)</span>
+<span id="cb65-88"><a href="#cb65-88" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>p) <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J) {</span>
+<span id="cb65-89"><a href="#cb65-89" aria-hidden="true" tabindex="-1"></a>    tex <span class="ot">&lt;-</span> <span class="fu">c</span>(tex, <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{a_i^{(%d)}}</span><span class="sc">\\</span><span class="st">, x_i^{(%d)}"</span>, j, k))</span>
+<span id="cb65-90"><a href="#cb65-90" aria-hidden="true" tabindex="-1"></a>    val <span class="ot">&lt;-</span> <span class="fu">c</span>(val, <span class="fu">ip</span>(<span class="fu">paste0</span>(<span class="st">"delta_a"</span>, j), wk[[<span class="fu">paste0</span>(<span class="st">"x"</span>, k)]]))</span>
+<span id="cb65-91"><a href="#cb65-91" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb65-92"><a href="#cb65-92" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J) {</span>
+<span id="cb65-93"><a href="#cb65-93" aria-hidden="true" tabindex="-1"></a>    tex <span class="ot">&lt;-</span> <span class="fu">c</span>(tex, <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{a_i^{(%d)}}</span><span class="sc">\\</span><span class="st">cdot 1"</span>, j))</span>
+<span id="cb65-94"><a href="#cb65-94" aria-hidden="true" tabindex="-1"></a>    val <span class="ot">&lt;-</span> <span class="fu">c</span>(val, <span class="fu">ip</span>(<span class="fu">paste0</span>(<span class="st">"delta_a"</span>, j), <span class="dv">1</span>))</span>
+<span id="cb65-95"><a href="#cb65-95" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb65-96"><a href="#cb65-96" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J) {</span>
+<span id="cb65-97"><a href="#cb65-97" aria-hidden="true" tabindex="-1"></a>    tex <span class="ot">&lt;-</span> <span class="fu">c</span>(tex, <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i}</span><span class="sc">\\</span><span class="st">, h_i^{(%d)}"</span>, j))</span>
+<span id="cb65-98"><a href="#cb65-98" aria-hidden="true" tabindex="-1"></a>    val <span class="ot">&lt;-</span> <span class="fu">c</span>(val, <span class="fu">ip</span>(<span class="st">"delta_eta"</span>, wk[[<span class="fu">paste0</span>(<span class="st">"h"</span>, j)]]))</span>
+<span id="cb65-99"><a href="#cb65-99" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb65-100"><a href="#cb65-100" aria-hidden="true" tabindex="-1"></a>  tex <span class="ot">&lt;-</span> <span class="fu">c</span>(tex, <span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i}</span><span class="sc">\\</span><span class="st">cdot 1"</span>); val <span class="ot">&lt;-</span> <span class="fu">c</span>(val, <span class="fu">ip</span>(<span class="st">"delta_eta"</span>, <span class="dv">1</span>))</span>
+<span id="cb65-101"><a href="#cb65-101" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-102"><a href="#cb65-102" aria-hidden="true" tabindex="-1"></a>  par_tex <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sprintf</span>(<span class="st">"w_{%d%d}"</span>, <span class="fu">rep</span>(<span class="dv">1</span><span class="sc">:</span>J, p), <span class="fu">rep</span>(<span class="dv">1</span><span class="sc">:</span>p, <span class="at">each =</span> J)),</span>
+<span id="cb65-103"><a href="#cb65-103" aria-hidden="true" tabindex="-1"></a>               <span class="fu">sprintf</span>(<span class="st">"w_{%d0}"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="fu">sprintf</span>(<span class="st">"v_{%d}"</span>, <span class="dv">1</span><span class="sc">:</span>J), <span class="st">"v_0"</span>)</span>
+<span id="cb65-104"><a href="#cb65-104" aria-hidden="true" tabindex="-1"></a>  gradient <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">par =</span> <span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, par_tex, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>),</span>
+<span id="cb65-105"><a href="#cb65-105" aria-hidden="true" tabindex="-1"></a>                         <span class="at">inner =</span> <span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, tex, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>),</span>
+<span id="cb65-106"><a href="#cb65-106" aria-hidden="true" tabindex="-1"></a>                         <span class="at">value =</span> <span class="fu">as.numeric</span>(val), <span class="at">back =</span> <span class="fu">unname</span>(grad)) <span class="sc">|&gt;</span></span>
+<span id="cb65-107"><a href="#cb65-107" aria-hidden="true" tabindex="-1"></a>    <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
+<span id="cb65-108"><a href="#cb65-108" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_passthrough</span>(<span class="fu">c</span>(par, inner), <span class="at">escape =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb65-109"><a href="#cb65-109" aria-hidden="true" tabindex="-1"></a>    <span class="fu">cols_label</span>(<span class="at">par =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{weight}"</span>),</span>
+<span id="cb65-110"><a href="#cb65-110" aria-hidden="true" tabindex="-1"></a>               <span class="at">inner =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{inner product of two columns}"</span>),</span>
+<span id="cb65-111"><a href="#cb65-111" aria-hidden="true" tabindex="-1"></a>               <span class="at">value =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{value}"</span>), <span class="at">back =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{gradient}"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb65-112"><a href="#cb65-112" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fmt_number</span>(<span class="fu">c</span>(value, back), <span class="at">decimals =</span> <span class="dv">4</span>) <span class="sc">|&gt;</span></span>
+<span id="cb65-113"><a href="#cb65-113" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Gradient: inner products over all observations"</span>)</span>
+<span id="cb65-114"><a href="#cb65-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-115"><a href="#cb65-115" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(out, <span class="fu">list</span>(<span class="at">tables =</span> <span class="fu">list</span>(<span class="at">forward =</span> forward, <span class="at">backward =</span> backward, <span class="at">gradient =</span> gradient)))</span>
+<span id="cb65-116"><a href="#cb65-116" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb65-117"><a href="#cb65-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-118"><a href="#cb65-118" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
+<span id="cb65-119"><a href="#cb65-119" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">40</span>; p <span class="ot">&lt;-</span> <span class="dv">3</span></span>
+<span id="cb65-120"><a href="#cb65-120" aria-hidden="true" tabindex="-1"></a>X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(n <span class="sc">*</span> p), n, p)</span>
+<span id="cb65-121"><a href="#cb65-121" aria-hidden="true" tabindex="-1"></a>theta0 <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>, <span class="at">sd =</span> <span class="fl">0.5</span>)</span>
+<span id="cb65-122"><a href="#cb65-122" aria-hidden="true" tabindex="-1"></a><span class="do">## counts simulated from the network at theta0</span></span>
+<span id="cb65-123"><a href="#cb65-123" aria-hidden="true" tabindex="-1"></a>ytrue <span class="ot">&lt;-</span> <span class="fu">rpois</span>(n, <span class="fu">local</span>({</span>
+<span id="cb65-124"><a href="#cb65-124" aria-hidden="true" tabindex="-1"></a>  W <span class="ot">&lt;-</span> <span class="fu">matrix</span>(theta0[<span class="dv">1</span><span class="sc">:</span>(J <span class="sc">*</span> p)], J, p); w0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J]</span>
+<span id="cb65-125"><a href="#cb65-125" aria-hidden="true" tabindex="-1"></a>  v <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> J <span class="sc">+</span> <span class="dv">1</span><span class="sc">:</span>J];        v0 <span class="ot">&lt;-</span> theta0[J <span class="sc">*</span> p <span class="sc">+</span> <span class="dv">2</span> <span class="sc">*</span> J <span class="sc">+</span> <span class="dv">1</span>]</span>
+<span id="cb65-126"><a href="#cb65-126" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exp</span>(v0 <span class="sc">+</span> <span class="fu">tanh</span>(<span class="fu">sweep</span>(X <span class="sc">%*%</span> <span class="fu">t</span>(W), <span class="dv">2</span>, w0, <span class="st">"+"</span>)) <span class="sc">%*%</span> v)</span>
+<span id="cb65-127"><a href="#cb65-127" aria-hidden="true" tabindex="-1"></a>}))</span>
+<span id="cb65-128"><a href="#cb65-128" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-129"><a href="#cb65-129" aria-hidden="true" tabindex="-1"></a>fit  <span class="ot">&lt;-</span> <span class="fu">nn_pois</span>(theta0, X, ytrue, <span class="at">workingtable =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb65-130"><a href="#cb65-130" aria-hidden="true" tabindex="-1"></a>back <span class="ot">&lt;-</span> fit<span class="sc">$</span>grad                           <span class="co"># named gradient</span></span>
+<span id="cb65-131"><a href="#cb65-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-132"><a href="#cb65-132" aria-hidden="true" tabindex="-1"></a><span class="do">## central differences, one coordinate at a time</span></span>
+<span id="cb65-133"><a href="#cb65-133" aria-hidden="true" tabindex="-1"></a>h <span class="ot">&lt;-</span> <span class="fl">1e-6</span></span>
+<span id="cb65-134"><a href="#cb65-134" aria-hidden="true" tabindex="-1"></a>numeric_grad <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_along</span>(theta0), <span class="cf">function</span>(k) {</span>
+<span id="cb65-135"><a href="#cb65-135" aria-hidden="true" tabindex="-1"></a>  e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="fu">length</span>(theta0)); e[k] <span class="ot">&lt;-</span> h</span>
+<span id="cb65-136"><a href="#cb65-136" aria-hidden="true" tabindex="-1"></a>  (<span class="fu">nn_pois</span>(theta0 <span class="sc">+</span> e, X, ytrue)<span class="sc">$</span>nll <span class="sc">-</span> <span class="fu">nn_pois</span>(theta0 <span class="sc">-</span> e, X, ytrue)<span class="sc">$</span>nll) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h)</span>
+<span id="cb65-137"><a href="#cb65-137" aria-hidden="true" tabindex="-1"></a>}, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb65-138"><a href="#cb65-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb65-139"><a href="#cb65-139" aria-hidden="true" tabindex="-1"></a><span class="fu">cbind</span>(<span class="at">backprop =</span> back, <span class="at">numeric =</span> numeric_grad)[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
-<pre><code>          backprop       numeric
-[1,]  0.4737615235  0.4737615296
-[2,] -1.0509837992 -1.0509837960
-[3,]  0.0001707534  0.0001707647
-[4,] -1.3588962590 -1.3588962613
-[5,]  4.1853262037  4.1853262047
-[6,] -0.0881340975 -0.0881340956</code></pre>
+<pre><code>         backprop       numeric
+w11  0.4737615235  0.4737615296
+w21 -1.0509837992 -1.0509837960
+w31  0.0001707534  0.0001707647
+w12 -1.3588962590 -1.3588962613
+w22  4.1853262037  4.1853262047
+w32 -0.0881340975 -0.0881340956</code></pre>
 </div>
+<details class="code-fold">
+<summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb67"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb67-1"><a href="#cb67-1" aria-hidden="true" tabindex="-1"></a><span class="fu">max</span>(<span class="fu">abs</span>(back <span class="sc">-</span> numeric_grad))              <span class="co"># agreement across all 16 coordinates</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 1.130205e-08</code></pre>
 </div>
 </div>
-<p><strong>The working table.</strong> Calling the function with <code>workingtable = TRUE</code> keeps the values of every node and every <span class="math inline">\(\delta\)</span>, one row per observation. The forward pass fills in the first table, from the covariates to <span class="math inline">\(\lambda_i\)</span>; the backward pass fills in the second, from <span class="math inline">\(\delta_{\eta_i}\)</span> back to <span class="math inline">\(\delta_{a_i^{(j)}}\)</span> (first six of the <span class="math inline">\(n = 40\)</span> observations shown).</p>
+<p><strong>The working tables.</strong> Calling the function with <code>workingtable = TRUE</code> also returns three tables (the first six of the <span class="math inline">\(n = 40\)</span> observations are shown). The forward pass fills in the first, from the covariates to <span class="math inline">\(\lambda_i\)</span>.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
-<span id="cb69-2"><a href="#cb69-2" aria-hidden="true" tabindex="-1"></a>wt <span class="ot">&lt;-</span> <span class="fu">nn_pois</span>(theta0, X, ytrue, <span class="at">workingtable =</span> <span class="cn">TRUE</span>)<span class="sc">$</span>working</span>
-<span id="cb69-3"><a href="#cb69-3" aria-hidden="true" tabindex="-1"></a>wt<span class="sc">$</span>i <span class="ot">&lt;-</span> <span class="fu">seq_len</span>(<span class="fu">nrow</span>(wt))</span>
-<span id="cb69-4"><a href="#cb69-4" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="cf">function</span>(tex) <span class="fu">html</span>(<span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, tex, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>))   <span class="co"># math column header</span></span>
-<span id="cb69-5"><a href="#cb69-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb69-6"><a href="#cb69-6" aria-hidden="true" tabindex="-1"></a><span class="do">## forward pass: values of the nodes</span></span>
-<span id="cb69-7"><a href="#cb69-7" aria-hidden="true" tabindex="-1"></a>wt[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ] <span class="sc">|&gt;</span></span>
-<span id="cb69-8"><a href="#cb69-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
-<span id="cb69-9"><a href="#cb69-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_move_to_start</span>(i) <span class="sc">|&gt;</span></span>
-<span id="cb69-10"><a href="#cb69-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">i =</span> <span class="fu">m</span>(<span class="st">"i"</span>), <span class="at">y =</span> <span class="fu">m</span>(<span class="st">"y_i"</span>),</span>
-<span id="cb69-11"><a href="#cb69-11" aria-hidden="true" tabindex="-1"></a>             <span class="at">x1 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(1)}"</span>), <span class="at">x2 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(2)}"</span>), <span class="at">x3 =</span> <span class="fu">m</span>(<span class="st">"x_i^{(3)}"</span>),</span>
-<span id="cb69-12"><a href="#cb69-12" aria-hidden="true" tabindex="-1"></a>             <span class="at">a1 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(1)}"</span>), <span class="at">a2 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(2)}"</span>), <span class="at">a3 =</span> <span class="fu">m</span>(<span class="st">"a_i^{(3)}"</span>),</span>
-<span id="cb69-13"><a href="#cb69-13" aria-hidden="true" tabindex="-1"></a>             <span class="at">h1 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(1)}"</span>), <span class="at">h2 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(2)}"</span>), <span class="at">h3 =</span> <span class="fu">m</span>(<span class="st">"h_i^{(3)}"</span>),</span>
-<span id="cb69-14"><a href="#cb69-14" aria-hidden="true" tabindex="-1"></a>             <span class="at">eta =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">eta_i"</span>), <span class="at">lam =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">lambda_i"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb69-15"><a href="#cb69-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{covariates}"</span>), <span class="fu">c</span>(x1, x2, x3)) <span class="sc">|&gt;</span></span>
-<span id="cb69-16"><a href="#cb69-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"a = w_0 + </span><span class="sc">\\</span><span class="st">sum_k w_{jk}x^{(k)}"</span>), <span class="fu">c</span>(a1, a2, a3)) <span class="sc">|&gt;</span></span>
-<span id="cb69-17"><a href="#cb69-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"h = </span><span class="sc">\\</span><span class="st">tanh(a)"</span>), <span class="fu">c</span>(h1, h2, h3)) <span class="sc">|&gt;</span></span>
-<span id="cb69-18"><a href="#cb69-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">eta = v_0 + </span><span class="sc">\\</span><span class="st">sum_j v_j h^{(j)}"</span>), <span class="fu">c</span>(eta, lam)) <span class="sc">|&gt;</span></span>
-<span id="cb69-19"><a href="#cb69-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_hide</span>(<span class="fu">starts_with</span>(<span class="st">"delta"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb69-20"><a href="#cb69-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_number</span>(<span class="sc">-</span><span class="fu">c</span>(i, y), <span class="at">decimals =</span> <span class="dv">3</span>) <span class="sc">|&gt;</span></span>
-<span id="cb69-21"><a href="#cb69-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Forward pass: values of the nodes"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb69"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb69-1"><a href="#cb69-1" aria-hidden="true" tabindex="-1"></a>fit<span class="sc">$</span>tables<span class="sc">$</span>forward</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="vaqbossjap" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
@@ -2658,14 +2712,14 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 <th colspan="3" id="\(\text{covariates}\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
 \(\text{covariates}\)
 </div></th>
-<th colspan="3" id="\(a = w_0 + \sum_k w_{jk}x^{(k)}\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-\(a = w_0 + \sum_k w_{jk}x^{(k)}\)
+<th colspan="3" id="\(a_i^{(j)} = w_{j0} + \sum_k w_{jk} x_i^{(k)}\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+\(a_i^{(j)} = w_{j0} + \sum_k w_{jk} x_i^{(k)}\)
 </div></th>
-<th colspan="3" id="\(h = \tanh(a)\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-\(h = \tanh(a)\)
+<th colspan="3" id="\(h_i^{(j)} = \tanh(a_i^{(j)})\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+\(h_i^{(j)} = \tanh(a_i^{(j)})\)
 </div></th>
-<th colspan="2" id="\(\eta = v_0 + \sum_j v_j h^{(j)}\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-\(\eta = v_0 + \sum_j v_j h^{(j)}\)
+<th colspan="2" id="\(\eta_i = v_0 + \sum_j v_j h_i^{(j)}, \; \lambda_i = e^{\eta_i}\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+\(\eta_i = v_0 + \sum_j v_j h_i^{(j)}, \; \lambda_i = e^{\eta_i}\)
 </div></th>
 </tr>
 <tr class="gt_col_headings header">
@@ -2778,22 +2832,12 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 
 </div>
 </div>
+</div>
+<p>The backward pass fills in the second, from <span class="math inline">\(\delta_{\eta_i}\)</span> back to <span class="math inline">\(\delta_{a_i^{(j)}}\)</span>.</p>
+<div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a><span class="do">## backward pass: sensitivities delta</span></span>
-<span id="cb70-2"><a href="#cb70-2" aria-hidden="true" tabindex="-1"></a>wt[<span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>, ] <span class="sc">|&gt;</span></span>
-<span id="cb70-3"><a href="#cb70-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
-<span id="cb70-4"><a href="#cb70-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_move_to_start</span>(i) <span class="sc">|&gt;</span></span>
-<span id="cb70-5"><a href="#cb70-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">i =</span> <span class="fu">m</span>(<span class="st">"i"</span>), <span class="at">delta_eta =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i} = </span><span class="sc">\\</span><span class="st">lambda_i - y_i"</span>),</span>
-<span id="cb70-6"><a href="#cb70-6" aria-hidden="true" tabindex="-1"></a>             <span class="at">delta_h1 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(1)}}"</span>), <span class="at">delta_h2 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(2)}}"</span>),</span>
-<span id="cb70-7"><a href="#cb70-7" aria-hidden="true" tabindex="-1"></a>             <span class="at">delta_h3 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{h_i^{(3)}}"</span>),</span>
-<span id="cb70-8"><a href="#cb70-8" aria-hidden="true" tabindex="-1"></a>             <span class="at">delta_a1 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(1)}}"</span>), <span class="at">delta_a2 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(2)}}"</span>),</span>
-<span id="cb70-9"><a href="#cb70-9" aria-hidden="true" tabindex="-1"></a>             <span class="at">delta_a3 =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_{a_i^{(3)}}"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb70-10"><a href="#cb70-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_h = </span><span class="sc">\\</span><span class="st">delta_</span><span class="sc">\\</span><span class="st">eta</span><span class="sc">\\</span><span class="st">, v_j"</span>), <span class="fu">starts_with</span>(<span class="st">"delta_h"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb70-11"><a href="#cb70-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_spanner</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">delta_a = </span><span class="sc">\\</span><span class="st">delta_h (1 - h^2)"</span>), <span class="fu">starts_with</span>(<span class="st">"delta_a"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb70-12"><a href="#cb70-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_hide</span>(<span class="fu">c</span>(y, <span class="fu">starts_with</span>(<span class="st">"x"</span>), <span class="fu">starts_with</span>(<span class="st">"a"</span>), <span class="fu">starts_with</span>(<span class="st">"h"</span>), eta, lam)) <span class="sc">|&gt;</span></span>
-<span id="cb70-13"><a href="#cb70-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_number</span>(<span class="sc">-</span>i, <span class="at">decimals =</span> <span class="dv">3</span>) <span class="sc">|&gt;</span></span>
-<span id="cb70-14"><a href="#cb70-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_header</span>(<span class="at">title =</span> <span class="st">"Backward pass: sensitivities"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb70"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb70-1"><a href="#cb70-1" aria-hidden="true" tabindex="-1"></a>fit<span class="sc">$</span>tables<span class="sc">$</span>backward</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="ivsigbslnz" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
@@ -3264,11 +3308,11 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 <tr class="gt_col_headings gt_spanner_row even">
 <th rowspan="2" id="i" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(i\)</th>
 <th rowspan="2" id="delta_eta" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(\delta_{\eta_i} = \lambda_i - y_i\)</th>
-<th colspan="3" id="\(\delta_h = \delta_\eta\, v_j\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-\(\delta_h = \delta_\eta\, v_j\)
+<th colspan="3" id="\(\delta_{h_i^{(j)}} = \delta_{\eta_i}\, v_j\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+\(\delta_{h_i^{(j)}} = \delta_{\eta_i}\, v_j\)
 </div></th>
-<th colspan="3" id="\(\delta_a = \delta_h (1 - h^2)\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
-\(\delta_a = \delta_h (1 - h^2)\)
+<th colspan="3" id="\(\delta_{a_i^{(j)}} = \delta_{h_i^{(j)}} (1 - h_i^{(j)2})\)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+\(\delta_{a_i^{(j)}} = \delta_{h_i^{(j)}} (1 - h_i^{(j)2})\)
 </div></th>
 </tr>
 <tr class="gt_col_headings header">
@@ -3347,40 +3391,11 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 </div>
 </div>
 </div>
-<p>Each component of the gradient is the <strong>inner product of two columns</strong> of the working table over all <span class="math inline">\(n\)</span> observations — a <span class="math inline">\(\delta\)</span> column against the column at the tail of the weight’s arrow, or against a column of ones for an intercept.</p>
+<p>Each component of the gradient is then the <strong>inner product of two columns</strong> of the working table over all <span class="math inline">\(n\)</span> observations — a <span class="math inline">\(\delta\)</span> column against the column at the tail of the weight’s arrow, or against a column of ones for an intercept. The last column is the named gradient returned by the function.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb71"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a><span class="do">## gradient = inner product of two columns of the working table</span></span>
-<span id="cb71-2"><a href="#cb71-2" aria-hidden="true" tabindex="-1"></a>rows <span class="ot">&lt;-</span> <span class="fu">list</span>()</span>
-<span id="cb71-3"><a href="#cb71-3" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (k <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>p) <span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J)</span>
-<span id="cb71-4"><a href="#cb71-4" aria-hidden="true" tabindex="-1"></a>  rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
-<span id="cb71-5"><a href="#cb71-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">par =</span> <span class="fu">sprintf</span>(<span class="st">"w_{%d%d}"</span>, j, k), <span class="at">formula =</span> <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{a_i^{(%d)}}</span><span class="sc">\\</span><span class="st">, x_i^{(%d)}"</span>, j, k),</span>
-<span id="cb71-6"><a href="#cb71-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">value =</span> <span class="fu">sum</span>(wt[[<span class="fu">paste0</span>(<span class="st">"delta_a"</span>, j)]] <span class="sc">*</span> wt[[<span class="fu">paste0</span>(<span class="st">"x"</span>, k)]]))</span>
-<span id="cb71-7"><a href="#cb71-7" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J)</span>
-<span id="cb71-8"><a href="#cb71-8" aria-hidden="true" tabindex="-1"></a>  rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
-<span id="cb71-9"><a href="#cb71-9" aria-hidden="true" tabindex="-1"></a>    <span class="at">par =</span> <span class="fu">sprintf</span>(<span class="st">"w_{%d0}"</span>, j), <span class="at">formula =</span> <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{a_i^{(%d)}}</span><span class="sc">\\</span><span class="st">cdot 1"</span>, j),</span>
-<span id="cb71-10"><a href="#cb71-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">value =</span> <span class="fu">sum</span>(wt[[<span class="fu">paste0</span>(<span class="st">"delta_a"</span>, j)]]))</span>
-<span id="cb71-11"><a href="#cb71-11" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (j <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>J)</span>
-<span id="cb71-12"><a href="#cb71-12" aria-hidden="true" tabindex="-1"></a>  rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">list</span>(</span>
-<span id="cb71-13"><a href="#cb71-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">par =</span> <span class="fu">sprintf</span>(<span class="st">"v_{%d}"</span>, j), <span class="at">formula =</span> <span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i}</span><span class="sc">\\</span><span class="st">, h_i^{(%d)}"</span>, j),</span>
-<span id="cb71-14"><a href="#cb71-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">value =</span> <span class="fu">sum</span>(wt<span class="sc">$</span>delta_eta <span class="sc">*</span> wt[[<span class="fu">paste0</span>(<span class="st">"h"</span>, j)]]))</span>
-<span id="cb71-15"><a href="#cb71-15" aria-hidden="true" tabindex="-1"></a>rows[[<span class="fu">length</span>(rows) <span class="sc">+</span> <span class="dv">1</span>]] <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">par =</span> <span class="st">"v_0"</span>, <span class="at">formula =</span> <span class="st">"</span><span class="sc">\\</span><span class="st">sum_i </span><span class="sc">\\</span><span class="st">delta_{</span><span class="sc">\\</span><span class="st">eta_i}</span><span class="sc">\\</span><span class="st">cdot 1"</span>,</span>
-<span id="cb71-16"><a href="#cb71-16" aria-hidden="true" tabindex="-1"></a>                                 <span class="at">value =</span> <span class="fu">sum</span>(wt<span class="sc">$</span>delta_eta))</span>
-<span id="cb71-17"><a href="#cb71-17" aria-hidden="true" tabindex="-1"></a>gtab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">par =</span> <span class="fu">sapply</span>(rows, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"par"</span>), <span class="at">formula =</span> <span class="fu">sapply</span>(rows, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"formula"</span>),</span>
-<span id="cb71-18"><a href="#cb71-18" aria-hidden="true" tabindex="-1"></a>                   <span class="at">inner =</span> <span class="fu">sapply</span>(rows, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"value"</span>))</span>
-<span id="cb71-19"><a href="#cb71-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb71-20"><a href="#cb71-20" aria-hidden="true" tabindex="-1"></a><span class="do">## the rows above follow the order of theta (W by column, w0, v, v0), like back</span></span>
-<span id="cb71-21"><a href="#cb71-21" aria-hidden="true" tabindex="-1"></a>gtab<span class="sc">$</span>backprop <span class="ot">&lt;-</span> back</span>
-<span id="cb71-22"><a href="#cb71-22" aria-hidden="true" tabindex="-1"></a>gtab<span class="sc">$</span>par     <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, gtab<span class="sc">$</span>par, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>)</span>
-<span id="cb71-23"><a href="#cb71-23" aria-hidden="true" tabindex="-1"></a>gtab<span class="sc">$</span>formula <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, gtab<span class="sc">$</span>formula, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>)</span>
-<span id="cb71-24"><a href="#cb71-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb71-25"><a href="#cb71-25" aria-hidden="true" tabindex="-1"></a>gtab <span class="sc">|&gt;</span></span>
-<span id="cb71-26"><a href="#cb71-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">gt</span>() <span class="sc">|&gt;</span></span>
-<span id="cb71-27"><a href="#cb71-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">par =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{weight}"</span>), <span class="at">formula =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{inner product of columns}"</span>),</span>
-<span id="cb71-28"><a href="#cb71-28" aria-hidden="true" tabindex="-1"></a>             <span class="at">inner =</span> <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">text{value}"</span>), <span class="at">backprop =</span> <span class="st">"from nn_pois()"</span>) <span class="sc">|&gt;</span></span>
-<span id="cb71-29"><a href="#cb71-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_passthrough</span>(<span class="fu">c</span>(par, formula), <span class="at">escape =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
-<span id="cb71-30"><a href="#cb71-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_number</span>(<span class="fu">c</span>(inner, backprop), <span class="at">decimals =</span> <span class="dv">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb71"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb71-1"><a href="#cb71-1" aria-hidden="true" tabindex="-1"></a>fit<span class="sc">$</span>tables<span class="sc">$</span>gradient</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
 <div id="wugzcvovee" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
@@ -3835,109 +3850,112 @@ Figure&nbsp;5.19: This figure shows the way that backpropagation assembles the g
 
 <table class="gt_table caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
 <thead>
-<tr class="gt_col_headings header">
+<tr class="gt_heading header">
+<td colspan="4" class="gt_heading gt_title gt_font_normal gt_bottom_border">Gradient: inner products over all observations</td>
+</tr>
+<tr class="gt_col_headings even">
 <th id="par" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">\(\text{weight}\)</th>
-<th id="formula" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">\(\text{inner product of columns}\)</th>
-<th id="inner" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(\text{value}\)</th>
-<th id="backprop" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">from nn_pois()</th>
+<th id="inner" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col">\(\text{inner product of two columns}\)</th>
+<th id="value" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(\text{value}\)</th>
+<th id="back" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(\text{gradient}\)</th>
 </tr>
 </thead>
 <tbody class="gt_table_body">
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{11}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(1)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.4738</td>
-<td class="gt_row gt_right" headers="backprop">0.4738</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(1)}\)</td>
+<td class="gt_row gt_right" headers="value">0.4738</td>
+<td class="gt_row gt_right" headers="back">0.4738</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{21}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(1)}\)</td>
-<td class="gt_row gt_right" headers="inner">−1.0510</td>
-<td class="gt_row gt_right" headers="backprop">−1.0510</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(1)}\)</td>
+<td class="gt_row gt_right" headers="value">−1.0510</td>
+<td class="gt_row gt_right" headers="back">−1.0510</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{31}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(1)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.0002</td>
-<td class="gt_row gt_right" headers="backprop">0.0002</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(1)}\)</td>
+<td class="gt_row gt_right" headers="value">0.0002</td>
+<td class="gt_row gt_right" headers="back">0.0002</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{12}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(2)}\)</td>
-<td class="gt_row gt_right" headers="inner">−1.3589</td>
-<td class="gt_row gt_right" headers="backprop">−1.3589</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(2)}\)</td>
+<td class="gt_row gt_right" headers="value">−1.3589</td>
+<td class="gt_row gt_right" headers="back">−1.3589</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{22}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(2)}\)</td>
-<td class="gt_row gt_right" headers="inner">4.1853</td>
-<td class="gt_row gt_right" headers="backprop">4.1853</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(2)}\)</td>
+<td class="gt_row gt_right" headers="value">4.1853</td>
+<td class="gt_row gt_right" headers="back">4.1853</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{32}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(2)}\)</td>
-<td class="gt_row gt_right" headers="inner">−0.0881</td>
-<td class="gt_row gt_right" headers="backprop">−0.0881</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(2)}\)</td>
+<td class="gt_row gt_right" headers="value">−0.0881</td>
+<td class="gt_row gt_right" headers="back">−0.0881</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{13}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(3)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.3706</td>
-<td class="gt_row gt_right" headers="backprop">0.3706</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(1)}}\, x_i^{(3)}\)</td>
+<td class="gt_row gt_right" headers="value">0.3706</td>
+<td class="gt_row gt_right" headers="back">0.3706</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{23}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(3)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.8368</td>
-<td class="gt_row gt_right" headers="backprop">0.8368</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(2)}}\, x_i^{(3)}\)</td>
+<td class="gt_row gt_right" headers="value">0.8368</td>
+<td class="gt_row gt_right" headers="back">0.8368</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{33}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(3)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.0974</td>
-<td class="gt_row gt_right" headers="backprop">0.0974</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(3)}}\, x_i^{(3)}\)</td>
+<td class="gt_row gt_right" headers="value">0.0974</td>
+<td class="gt_row gt_right" headers="back">0.0974</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{10}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(1)}}\cdot 1\)</td>
-<td class="gt_row gt_right" headers="inner">−0.9575</td>
-<td class="gt_row gt_right" headers="backprop">−0.9575</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(1)}}\cdot 1\)</td>
+<td class="gt_row gt_right" headers="value">−0.9575</td>
+<td class="gt_row gt_right" headers="back">−0.9575</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(w_{20}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(2)}}\cdot 1\)</td>
-<td class="gt_row gt_right" headers="inner">1.3059</td>
-<td class="gt_row gt_right" headers="backprop">1.3059</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(2)}}\cdot 1\)</td>
+<td class="gt_row gt_right" headers="value">1.3059</td>
+<td class="gt_row gt_right" headers="back">1.3059</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(w_{30}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{a_i^{(3)}}\cdot 1\)</td>
-<td class="gt_row gt_right" headers="inner">−0.0694</td>
-<td class="gt_row gt_right" headers="backprop">−0.0694</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{a_i^{(3)}}\cdot 1\)</td>
+<td class="gt_row gt_right" headers="value">−0.0694</td>
+<td class="gt_row gt_right" headers="back">−0.0694</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(v_{1}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{\eta_i}\, h_i^{(1)}\)</td>
-<td class="gt_row gt_right" headers="inner">−0.6237</td>
-<td class="gt_row gt_right" headers="backprop">−0.6237</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{\eta_i}\, h_i^{(1)}\)</td>
+<td class="gt_row gt_right" headers="value">−0.6237</td>
+<td class="gt_row gt_right" headers="back">−0.6237</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(v_{2}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{\eta_i}\, h_i^{(2)}\)</td>
-<td class="gt_row gt_right" headers="inner">−1.8297</td>
-<td class="gt_row gt_right" headers="backprop">−1.8297</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{\eta_i}\, h_i^{(2)}\)</td>
+<td class="gt_row gt_right" headers="value">−1.8297</td>
+<td class="gt_row gt_right" headers="back">−1.8297</td>
 </tr>
 <tr class="odd">
 <td class="gt_row gt_left" headers="par">\(v_{3}\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{\eta_i}\, h_i^{(3)}\)</td>
-<td class="gt_row gt_right" headers="inner">0.8358</td>
-<td class="gt_row gt_right" headers="backprop">0.8358</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{\eta_i}\, h_i^{(3)}\)</td>
+<td class="gt_row gt_right" headers="value">0.8358</td>
+<td class="gt_row gt_right" headers="back">0.8358</td>
 </tr>
 <tr class="even">
 <td class="gt_row gt_left" headers="par">\(v_0\)</td>
-<td class="gt_row gt_left" headers="formula">\(\sum_i \delta_{\eta_i}\cdot 1\)</td>
-<td class="gt_row gt_right" headers="inner">−1.3255</td>
-<td class="gt_row gt_right" headers="backprop">−1.3255</td>
+<td class="gt_row gt_left" headers="inner">\(\sum_i \delta_{\eta_i}\cdot 1\)</td>
+<td class="gt_row gt_right" headers="value">−1.3255</td>
+<td class="gt_row gt_right" headers="back">−1.3255</td>
 </tr>
 </tbody>
 </table>

@@ -1971,13 +1971,16 @@ fan of arrows whose weights they belong to.
 
 ```{r}
 #| label: nn-poisson-grad
-#| code-fold: false
-## pack/unpack the 16 parameters: W (J x p), w0 (J), v (J), v0 (1)
-J <- 3
+library(gt)
+J <- 3                                      # number of hidden units
+
+## math column header for gt tables
+m <- function(tex) html(paste0("\\(", tex, "\\)"))
 
 ## theta = (W[J x p, by column], w0, v, v0); X holds x_1..x_p (no constant column)
-## workingtable = TRUE also returns the per-observation values of every node and delta
-nn_pois <- function(theta, X, y, workingtable = FALSE) {
+## workingtable = TRUE also returns three gt tables (first nshow observations):
+##   forward values of the nodes, backward deltas, and the gradient as inner products
+nn_pois <- function(theta, X, y, workingtable = FALSE, nshow = 6) {
   p <- ncol(X)
 
   ## ---- extract weights from theta ----
@@ -2008,18 +2011,81 @@ nn_pois <- function(theta, X, y, workingtable = FALSE) {
   d_W  <- t(delta_a) %*% X                  # J x p  dL/dw_jk = sum_i delta_a_ij x_ik
   d_w0 <- colSums(delta_a)                  # J      dL/dw_j0
 
-  ## ---- optionally keep the working: one row per observation i ----
-  working <- NULL
-  if (workingtable) {
-    working <- data.frame(y = y, X, A, H, eta = eta, lam = lam,
-                          delta_eta = delta_eta, delta_h, delta_a)
-    names(working) <- c("y", paste0("x", 1:p), paste0("a", 1:J), paste0("h", 1:J),
-                        "eta", "lam", "delta_eta",
-                        paste0("delta_h", 1:J), paste0("delta_a", 1:J))
-  }
+  ## ---- pack the gradient in the same order as theta, with names ----
+  grad <- c(as.vector(d_W), d_w0, d_v, d_v0)
+  names(grad) <- c(paste0("w", rep(1:J, p), rep(1:p, each = J)),   # w11, w21, ..., w3p
+                   paste0("w", 1:J, "0"), paste0("v", 1:J), "v0")
+  out <- list(nll = nll, grad = grad)
+  if (!workingtable) return(out)
 
-  ## ---- pack the gradient in the same order as theta ----
-  list(nll = nll, grad = c(as.vector(d_W), d_w0, d_v, d_v0), working = working)
+  ## ---- working tables: one row per observation i ----
+  wk <- data.frame(i = seq_along(y), y = y, X, A, H, eta = eta, lam = lam,
+                   delta_eta = delta_eta, delta_h, delta_a)
+  names(wk) <- c("i", "y", paste0("x", 1:p), paste0("a", 1:J), paste0("h", 1:J),
+                 "eta", "lam", "delta_eta", paste0("delta_h", 1:J), paste0("delta_a", 1:J))
+  top <- head(wk, nshow)
+
+  ## forward values
+  forward <- top |>
+    gt() |>
+    cols_hide(starts_with("delta")) |>
+    cols_label(i = m("i"), y = m("y_i"),
+               x1 = m("x_i^{(1)}"), x2 = m("x_i^{(2)}"), x3 = m("x_i^{(3)}"),
+               a1 = m("a_i^{(1)}"), a2 = m("a_i^{(2)}"), a3 = m("a_i^{(3)}"),
+               h1 = m("h_i^{(1)}"), h2 = m("h_i^{(2)}"), h3 = m("h_i^{(3)}"),
+               eta = m("\\eta_i"), lam = m("\\lambda_i")) |>
+    tab_spanner(m("\\text{covariates}"), c(x1, x2, x3)) |>
+    tab_spanner(m("a_i^{(j)} = w_{j0} + \\sum_k w_{jk} x_i^{(k)}"), c(a1, a2, a3)) |>
+    tab_spanner(m("h_i^{(j)} = \\tanh(a_i^{(j)})"), c(h1, h2, h3)) |>
+    tab_spanner(m("\\eta_i = v_0 + \\sum_j v_j h_i^{(j)}, \\; \\lambda_i = e^{\\eta_i}"), c(eta, lam)) |>
+    fmt_number(-c(i, y), decimals = 3) |>
+    tab_header(title = "Forward pass: values of the nodes")
+
+  ## backward deltas
+  backward <- top |>
+    gt() |>
+    cols_hide(c(y, starts_with("x"), starts_with("a"), starts_with("h"), eta, lam)) |>
+    cols_label(i = m("i"), delta_eta = m("\\delta_{\\eta_i} = \\lambda_i - y_i"),
+               delta_h1 = m("\\delta_{h_i^{(1)}}"), delta_h2 = m("\\delta_{h_i^{(2)}}"),
+               delta_h3 = m("\\delta_{h_i^{(3)}}"),
+               delta_a1 = m("\\delta_{a_i^{(1)}}"), delta_a2 = m("\\delta_{a_i^{(2)}}"),
+               delta_a3 = m("\\delta_{a_i^{(3)}}")) |>
+    tab_spanner(m("\\delta_{h_i^{(j)}} = \\delta_{\\eta_i}\\, v_j"), starts_with("delta_h")) |>
+    tab_spanner(m("\\delta_{a_i^{(j)}} = \\delta_{h_i^{(j)}} \\bigl(1 - (h_i^{(j)})^2\\bigr)"), starts_with("delta_a")) |>
+    fmt_number(-i, decimals = 3) |>
+    tab_header(title = "Backward pass: sensitivities")
+
+  ## gradient: inner product of two columns of the full working table (all n rows)
+  ip <- function(u, w) sum(wk[[u]] * w)
+  tex <- val <- character(0)
+  for (k in 1:p) for (j in 1:J) {
+    tex <- c(tex, sprintf("\\sum_i \\delta_{a_i^{(%d)}}\\, x_i^{(%d)}", j, k))
+    val <- c(val, ip(paste0("delta_a", j), wk[[paste0("x", k)]]))
+  }
+  for (j in 1:J) {
+    tex <- c(tex, sprintf("\\sum_i \\delta_{a_i^{(%d)}}\\cdot 1", j))
+    val <- c(val, ip(paste0("delta_a", j), 1))
+  }
+  for (j in 1:J) {
+    tex <- c(tex, sprintf("\\sum_i \\delta_{\\eta_i}\\, h_i^{(%d)}", j))
+    val <- c(val, ip("delta_eta", wk[[paste0("h", j)]]))
+  }
+  tex <- c(tex, "\\sum_i \\delta_{\\eta_i}\\cdot 1"); val <- c(val, ip("delta_eta", 1))
+
+  par_tex <- c(sprintf("w_{%d%d}", rep(1:J, p), rep(1:p, each = J)),
+               sprintf("w_{%d0}", 1:J), sprintf("v_{%d}", 1:J), "v_0")
+  gradient <- data.frame(par = paste0("\\(", par_tex, "\\)"),
+                         inner = paste0("\\(", tex, "\\)"),
+                         value = as.numeric(val), back = unname(grad)) |>
+    gt() |>
+    fmt_passthrough(c(par, inner), escape = FALSE) |>
+    cols_label(par = m("\\text{weight}"),
+               inner = m("\\text{inner product of two columns}"),
+               value = m("\\text{value}"), back = m("\\text{gradient}")) |>
+    fmt_number(c(value, back), decimals = 4) |>
+    tab_header(title = "Gradient: inner products over all observations")
+
+  c(out, list(tables = list(forward = forward, backward = backward, gradient = gradient)))
 }
 
 set.seed(3)
@@ -2033,7 +2099,8 @@ ytrue <- rpois(n, local({
   exp(v0 + tanh(sweep(X %*% t(W), 2, w0, "+")) %*% v)
 }))
 
-back <- nn_pois(theta0, X, ytrue)$grad
+fit  <- nn_pois(theta0, X, ytrue, workingtable = TRUE)
+back <- fit$grad                           # named gradient
 
 ## central differences, one coordinate at a time
 h <- 1e-6
@@ -2046,88 +2113,30 @@ cbind(backprop = back, numeric = numeric_grad)[1:6, ]
 max(abs(back - numeric_grad))              # agreement across all 16 coordinates
 ```
 
-**The working table.** Calling the function with `workingtable = TRUE` keeps the
-values of every node and every $\delta$, one row per observation. The forward
-pass fills in the first table, from the covariates to $\lambda_i$; the backward
-pass fills in the second, from $\delta_{\eta_i}$ back to $\delta_{a_i^{(j)}}$
-(first six of the $n = 40$ observations shown).
+**The working tables.** Calling the function with `workingtable = TRUE` also
+returns three tables (the first six of the $n = 40$ observations are shown). The
+forward pass fills in the first, from the covariates to $\lambda_i$.
 
 ```{r}
-#| label: nn-poisson-working
-library(gt)
-wt <- nn_pois(theta0, X, ytrue, workingtable = TRUE)$working
-wt$i <- seq_len(nrow(wt))
-m <- function(tex) html(paste0("\\(", tex, "\\)"))   # math column header
-
-## forward pass: values of the nodes
-wt[1:6, ] |>
-  gt() |>
-  cols_move_to_start(i) |>
-  cols_label(i = m("i"), y = m("y_i"),
-             x1 = m("x_i^{(1)}"), x2 = m("x_i^{(2)}"), x3 = m("x_i^{(3)}"),
-             a1 = m("a_i^{(1)}"), a2 = m("a_i^{(2)}"), a3 = m("a_i^{(3)}"),
-             h1 = m("h_i^{(1)}"), h2 = m("h_i^{(2)}"), h3 = m("h_i^{(3)}"),
-             eta = m("\\eta_i"), lam = m("\\lambda_i")) |>
-  tab_spanner(m("\\text{covariates}"), c(x1, x2, x3)) |>
-  tab_spanner(m("a = w_0 + \\sum_k w_{jk}x^{(k)}"), c(a1, a2, a3)) |>
-  tab_spanner(m("h = \\tanh(a)"), c(h1, h2, h3)) |>
-  tab_spanner(m("\\eta = v_0 + \\sum_j v_j h^{(j)}"), c(eta, lam)) |>
-  cols_hide(starts_with("delta")) |>
-  fmt_number(-c(i, y), decimals = 3) |>
-  tab_header(title = "Forward pass: values of the nodes")
-
-## backward pass: sensitivities delta
-wt[1:6, ] |>
-  gt() |>
-  cols_move_to_start(i) |>
-  cols_label(i = m("i"), delta_eta = m("\\delta_{\\eta_i} = \\lambda_i - y_i"),
-             delta_h1 = m("\\delta_{h_i^{(1)}}"), delta_h2 = m("\\delta_{h_i^{(2)}}"),
-             delta_h3 = m("\\delta_{h_i^{(3)}}"),
-             delta_a1 = m("\\delta_{a_i^{(1)}}"), delta_a2 = m("\\delta_{a_i^{(2)}}"),
-             delta_a3 = m("\\delta_{a_i^{(3)}}")) |>
-  tab_spanner(m("\\delta_h = \\delta_\\eta\\, v_j"), starts_with("delta_h")) |>
-  tab_spanner(m("\\delta_a = \\delta_h (1 - h^2)"), starts_with("delta_a")) |>
-  cols_hide(c(y, starts_with("x"), starts_with("a"), starts_with("h"), eta, lam)) |>
-  fmt_number(-i, decimals = 3) |>
-  tab_header(title = "Backward pass: sensitivities")
+#| label: nn-poisson-forward
+fit$tables$forward
 ```
 
-Each component of the gradient is the **inner product of two columns** of the
+The backward pass fills in the second, from $\delta_{\eta_i}$ back to $\delta_{a_i^{(j)}}$.
+
+```{r}
+#| label: nn-poisson-backward
+fit$tables$backward
+```
+
+Each component of the gradient is then the **inner product of two columns** of the
 working table over all $n$ observations — a $\delta$ column against the column at
-the tail of the weight's arrow, or against a column of ones for an intercept.
+the tail of the weight's arrow, or against a column of ones for an intercept. The
+last column is the named gradient returned by the function.
 
 ```{r}
 #| label: nn-poisson-innerprod
-## gradient = inner product of two columns of the working table
-rows <- list()
-for (k in 1:p) for (j in 1:J)
-  rows[[length(rows) + 1]] <- list(
-    par = sprintf("w_{%d%d}", j, k), formula = sprintf("\\sum_i \\delta_{a_i^{(%d)}}\\, x_i^{(%d)}", j, k),
-    value = sum(wt[[paste0("delta_a", j)]] * wt[[paste0("x", k)]]))
-for (j in 1:J)
-  rows[[length(rows) + 1]] <- list(
-    par = sprintf("w_{%d0}", j), formula = sprintf("\\sum_i \\delta_{a_i^{(%d)}}\\cdot 1", j),
-    value = sum(wt[[paste0("delta_a", j)]]))
-for (j in 1:J)
-  rows[[length(rows) + 1]] <- list(
-    par = sprintf("v_{%d}", j), formula = sprintf("\\sum_i \\delta_{\\eta_i}\\, h_i^{(%d)}", j),
-    value = sum(wt$delta_eta * wt[[paste0("h", j)]]))
-rows[[length(rows) + 1]] <- list(par = "v_0", formula = "\\sum_i \\delta_{\\eta_i}\\cdot 1",
-                                 value = sum(wt$delta_eta))
-gtab <- data.frame(par = sapply(rows, `[[`, "par"), formula = sapply(rows, `[[`, "formula"),
-                   inner = sapply(rows, `[[`, "value"))
-
-## the rows above follow the order of theta (W by column, w0, v, v0), like back
-gtab$backprop <- back
-gtab$par     <- paste0("\\(", gtab$par, "\\)")
-gtab$formula <- paste0("\\(", gtab$formula, "\\)")
-
-gtab |>
-  gt() |>
-  cols_label(par = m("\\text{weight}"), formula = m("\\text{inner product of columns}"),
-             inner = m("\\text{value}"), backprop = "from nn_pois()") |>
-  fmt_passthrough(c(par, formula), escape = FALSE) |>
-  fmt_number(c(inner, backprop), decimals = 4)
+fit$tables$gradient
 ```
 
 ### A General Description of Gradient of Neural Networks {#sec-backprop-dag}
