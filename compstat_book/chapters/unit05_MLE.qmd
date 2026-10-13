@@ -1972,28 +1972,38 @@ fan of arrows whose weights they belong to.
 ## pack/unpack the 16 parameters: W (J x p), w0 (J), v (J), v0 (1)
 J <- 3
 
+## theta = (W[J x p, by column], w0, v, v0); X holds x_1..x_p (no constant column)
 nn_pois <- function(theta, X, y) {
   p <- ncol(X)
-  W  <- matrix(theta[1:(J * p)], J, p)
-  w0 <- theta[J * p + 1:J]
-  v  <- theta[J * p + J + 1:J]
-  v0 <- theta[J * p + 2 * J + 1]
 
-  A   <- sweep(X %*% t(W), 2, w0, "+")     # n x J  linear units
-  H   <- tanh(A)                           # n x J  activations
-  eta <- as.vector(v0 + H %*% v)
-  lam <- exp(eta)
+  ## ---- extract weights from theta ----
+  W  <- matrix(theta[1:(J * p)], J, p)      # input weights w_jk, k = 1..p
+  w0 <- theta[J * p + 1:J]                  # hidden intercepts w_j0
+  v  <- theta[J * p + J + 1:J]              # output weights v_j
+  v0 <- theta[J * p + 2 * J + 1]            # output intercept v_0
 
-  nll <- sum(lam - y * eta)                # dropping log(y!)
+  ## ---- forward pass: store a, h, eta, lambda (needed by the backward pass) ----
+  A   <- sweep(X %*% t(W), 2, w0, "+")      # n x J  a_ij = w_j0 + sum_k w_jk x_ik
+  H   <- tanh(A)                            # n x J  h_ij = tanh(a_ij)
+  eta <- as.vector(v0 + H %*% v)            # n      eta_i = v_0 + sum_j v_j h_ij
+  lam <- exp(eta)                           # n      lambda_i = exp(eta_i)
 
-  delta_eta <- lam - y                                  # n      dL_i/d eta_i
-  delta_h   <- outer(delta_eta, v)                      # n x J  dL_i/d h_ij
-  delta_a   <- delta_h * (1 - H^2)                      # n x J  dL_i/d a_ij
+  ## ---- loss: Poisson negative log-likelihood ----
+  nll <- sum(lam - y * eta)                 # dropping log(y!)
 
-  d_v  <- as.vector(t(H) %*% delta_eta)                 # J      dL/dv_j
-  d_v0 <- sum(delta_eta)                                # 1      dL/dv_0
-  d_W  <- t(delta_a) %*% X                              # J x p  dL/dw_jk
-  d_w0 <- colSums(delta_a)                              # J      dL/dw_j0
+  ## ---- backward pass: sensitivities delta, from the loss back to a ----
+  delta_eta <- lam - y                      # n      dL_i/d eta_i  (seed)
+  delta_h   <- outer(delta_eta, v)          # n x J  dL_i/d h_ij = delta_eta * v_j
+  delta_a   <- delta_h * (1 - H^2)          # n x J  dL_i/d a_ij = delta_h * tanh'(a_ij)
+
+  ## ---- gradients of the weights: delta at the arrow's head x value at its tail,
+  ##      summed over observations (the intercepts have tail value 1) ----
+  d_v  <- as.vector(t(H) %*% delta_eta)     # J      dL/dv_j  = sum_i delta_eta_i h_ij
+  d_v0 <- sum(delta_eta)                    # 1      dL/dv_0
+  d_W  <- t(delta_a) %*% X                  # J x p  dL/dw_jk = sum_i delta_a_ij x_ik
+  d_w0 <- colSums(delta_a)                  # J      dL/dw_j0
+
+  ## ---- pack the gradient in the same order as theta ----
   list(nll = nll, grad = c(as.vector(d_W), d_w0, d_v, d_v0))
 }
 
