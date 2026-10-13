@@ -28,6 +28,9 @@ fwd <- function(th, x) {
 }
 lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
 
+## the scaled units v_j h_j(x), one column per hidden unit
+unit_terms <- function(th, x) sweep(fwd(th, x)$H, 2, th[2 * J + 1:J], "*")
+
 ## average Poisson negative log-likelihood (the log y! term dropped)
 nll <- function(th, x, y) {
   e <- fwd(th, x)$eta
@@ -304,11 +307,10 @@ ui <- fluidPage(
                "those that generated the data.")),
     ## ---- right: the fitted mean, and how the optimizer is doing -----------
     column(6,
-      checkboxInput("showparts",
-                    "Show each unit's curve exp(v_j h_j + v_0)",
-                    TRUE),
-      plotOutput("fit", height = "400px"),
-      plotOutput("conv", height = "240px"),
+      checkboxInput("showparts", "Show how the units build the curve", TRUE),
+      plotOutput("fit", height = "380px"),
+      conditionalPanel("input.showparts", plotOutput("eta", height = "250px")),
+      plotOutput("conv", height = "230px"),
       htmlOutput("info"))
   )
 )
@@ -396,6 +398,9 @@ server <- function(input, output, session) {
              arrows = FALSE, digits = 3)
   })
 
+  ## colours for the units, a blue-to-purple range
+  PCOL <- adjustcolor(c("#2B6CB0", "#4C51BF", "#7B3FBF", "#A23FB5"), 0.85)
+
   output$fit <- renderPlot({
     C <- cur(); R <- C$R; D <- DAT()
     xg <- seq(-3, 3, length.out = 300)
@@ -404,14 +409,14 @@ server <- function(input, output, session) {
          col = adjustcolor("#E8820C", 0.5), ylim = c(0, max(D$y) + 1),
          xlab = "x", ylab = expression(lambda(x) ~ "and counts y"),
          main = "fitted mean and the generated data")
-    ## the curve each unit would give alone, exp(v_j h_j(x) + v_0), in light
-    ## colours: lambda(x) is built from these (its log is v_0 + sum_j v_j h_j)
-    pcol <- adjustcolor(c("#2B6CB0", "#4C51BF", "#7B3FBF", "#A23FB5"), 0.8)
+    ## log(lambda) = v_0 + sum_j v_j h_j, so lambda is built by adding the units
+    ## one at a time in the exponent: draw exp(v_0 + v_1 h_1),
+    ## exp(v_0 + v_1 h_1 + v_2 h_2), ... ; the last one is the fit itself
     if (isTRUE(input$showparts)) {
-      Hc <- fwd(C$th, xg)$H
-      for (j in 1:J)
-        lines(xg, exp(C$th[3 * J + 1] + C$th[2 * J + j] * Hc[, j]),
-              col = pcol[j], lwd = 2.5, lty = 3)
+      VH <- unit_terms(C$th, xg)
+      for (k in 1:(J - 1))
+        lines(xg, exp(C$th[3 * J + 1] + rowSums(VH[, 1:k, drop = FALSE])),
+              col = PCOL[k], lwd = 2.5, lty = 3)
     }
     lines(xg, lambda_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
     lines(xg, lambda_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
@@ -422,11 +427,33 @@ server <- function(input, output, session) {
       col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
       stringsAsFactors = FALSE)
     if (isTRUE(input$showparts))
-      leg <- rbind(leg, data.frame(lab = paste0("exp(v", 1:J, " h", 1:J, " + v0)"),
-                                   lwd = 2.5, lty = 3, pch = NA, col = pcol,
-                                   stringsAsFactors = FALSE))
-    legend("topright", bty = "n", cex = 0.8, ncol = if (isTRUE(input$showparts)) 2 else 1, lwd = leg$lwd, lty = leg$lty,
+      leg <- rbind(leg, data.frame(
+        lab = paste0("exp(v0 + ", sapply(1:(J - 1), function(k)
+                paste0("v", 1:k, "h", 1:k, collapse = " + ")), ")"),
+        lwd = 2.5, lty = 3, pch = NA, col = PCOL[1:(J - 1)],
+        stringsAsFactors = FALSE))
+    legend("topright", bty = "n", cex = 0.78, lwd = leg$lwd, lty = leg$lty,
            pch = leg$pch, col = leg$col, legend = leg$lab)
+  })
+
+  ## the same fit on the log scale, where the units simply add up
+  output$eta <- renderPlot({
+    C <- cur(); xg <- seq(-3, 3, length.out = 300)
+    VH <- unit_terms(C$th, xg)
+    eta <- C$th[3 * J + 1] + rowSums(VH)
+    eta_true <- log(lambda_fun(TRUE_THETA, xg))
+    par(mar = c(4, 4.2, 2.5, 1))
+    matplot(xg, VH, type = "l", lty = 3, lwd = 2.5, col = PCOL,
+            ylim = pmax(-8, pmin(8, range(VH, eta, eta_true))),
+            xlab = "x", ylab = expression(log ~ lambda(x)),
+            main = "log scale: the scaled units v_j h_j add up to the fit")
+    abline(h = 0, lty = 3, col = "grey70")
+    lines(xg, eta_true, col = "red", lty = 2, lwd = 2)
+    lines(xg, eta, col = "#2E8B57", lwd = 3)
+    legend("topright", bty = "n", cex = 0.78, ncol = 2,
+           lwd = c(rep(2.5, J), 3, 2), lty = c(rep(3, J), 1, 2),
+           col = c(PCOL, "#2E8B57", "red"),
+           legend = c(paste0("v", 1:J, " h", 1:J), "sum + v0 (fit)", "true"))
   })
 
   output$conv <- renderPlot({
@@ -468,7 +495,7 @@ Fits a Poisson neural network like the one in the book's backpropagation section
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
-**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). The dotted blue-to-purple curves are $\exp(v_j h_j(x) + v_0)$, the curve each hidden unit would give alone; the fit is built from them, since $\log\lambda = v_0 + \sum_j v_j h_j$, and the box above the plot switches them off. Beneath the fit are the loss and the gradient norm per iteration. Use the playback buttons to step through the run. The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
+**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding the curves. The dotted blue-to-purple curves show this build-up: $\exp(v_0 + v_1 h_1)$, then $\exp(v_0 + v_1 h_1 + v_2 h_2)$, and so on, the last one being the fit. The second plot shows the same fit on the log scale, where the scaled units $v_j h_j$ (dotted) simply add up to $\log\lambda$ (green) and the true $\log\lambda$ (dashed red) is the target; the box above the plots hides both. Beneath the fit are the loss and the gradient norm per iteration. Use the playback buttons to step through the run. The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -493,6 +520,9 @@ fwd <- function(th, x) {
   list(H = H, eta = as.vector(th[3 * J + 1] + H %*% th[2 * J + 1:J]))
 }
 lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
+
+## the scaled units v_j h_j(x), one column per hidden unit
+unit_terms <- function(th, x) sweep(fwd(th, x)$H, 2, th[2 * J + 1:J], "*")
 
 ## average Poisson negative log-likelihood (the log y! term dropped)
 nll <- function(th, x, y) {
@@ -770,11 +800,10 @@ ui <- fluidPage(
                "those that generated the data.")),
     ## ---- right: the fitted mean, and how the optimizer is doing -----------
     column(6,
-      checkboxInput("showparts",
-                    "Show each unit's curve exp(v_j h_j + v_0)",
-                    TRUE),
-      plotOutput("fit", height = "400px"),
-      plotOutput("conv", height = "240px"),
+      checkboxInput("showparts", "Show how the units build the curve", TRUE),
+      plotOutput("fit", height = "380px"),
+      conditionalPanel("input.showparts", plotOutput("eta", height = "250px")),
+      plotOutput("conv", height = "230px"),
       htmlOutput("info"))
   )
 )
@@ -862,6 +891,9 @@ server <- function(input, output, session) {
              arrows = FALSE, digits = 3)
   })
 
+  ## colours for the units, a blue-to-purple range
+  PCOL <- adjustcolor(c("#2B6CB0", "#4C51BF", "#7B3FBF", "#A23FB5"), 0.85)
+
   output$fit <- renderPlot({
     C <- cur(); R <- C$R; D <- DAT()
     xg <- seq(-3, 3, length.out = 300)
@@ -870,14 +902,14 @@ server <- function(input, output, session) {
          col = adjustcolor("#E8820C", 0.5), ylim = c(0, max(D$y) + 1),
          xlab = "x", ylab = expression(lambda(x) ~ "and counts y"),
          main = "fitted mean and the generated data")
-    ## the curve each unit would give alone, exp(v_j h_j(x) + v_0), in light
-    ## colours: lambda(x) is built from these (its log is v_0 + sum_j v_j h_j)
-    pcol <- adjustcolor(c("#2B6CB0", "#4C51BF", "#7B3FBF", "#A23FB5"), 0.8)
+    ## log(lambda) = v_0 + sum_j v_j h_j, so lambda is built by adding the units
+    ## one at a time in the exponent: draw exp(v_0 + v_1 h_1),
+    ## exp(v_0 + v_1 h_1 + v_2 h_2), ... ; the last one is the fit itself
     if (isTRUE(input$showparts)) {
-      Hc <- fwd(C$th, xg)$H
-      for (j in 1:J)
-        lines(xg, exp(C$th[3 * J + 1] + C$th[2 * J + j] * Hc[, j]),
-              col = pcol[j], lwd = 2.5, lty = 3)
+      VH <- unit_terms(C$th, xg)
+      for (k in 1:(J - 1))
+        lines(xg, exp(C$th[3 * J + 1] + rowSums(VH[, 1:k, drop = FALSE])),
+              col = PCOL[k], lwd = 2.5, lty = 3)
     }
     lines(xg, lambda_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
     lines(xg, lambda_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
@@ -888,11 +920,33 @@ server <- function(input, output, session) {
       col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
       stringsAsFactors = FALSE)
     if (isTRUE(input$showparts))
-      leg <- rbind(leg, data.frame(lab = paste0("exp(v", 1:J, " h", 1:J, " + v0)"),
-                                   lwd = 2.5, lty = 3, pch = NA, col = pcol,
-                                   stringsAsFactors = FALSE))
-    legend("topright", bty = "n", cex = 0.8, ncol = if (isTRUE(input$showparts)) 2 else 1, lwd = leg$lwd, lty = leg$lty,
+      leg <- rbind(leg, data.frame(
+        lab = paste0("exp(v0 + ", sapply(1:(J - 1), function(k)
+                paste0("v", 1:k, "h", 1:k, collapse = " + ")), ")"),
+        lwd = 2.5, lty = 3, pch = NA, col = PCOL[1:(J - 1)],
+        stringsAsFactors = FALSE))
+    legend("topright", bty = "n", cex = 0.78, lwd = leg$lwd, lty = leg$lty,
            pch = leg$pch, col = leg$col, legend = leg$lab)
+  })
+
+  ## the same fit on the log scale, where the units simply add up
+  output$eta <- renderPlot({
+    C <- cur(); xg <- seq(-3, 3, length.out = 300)
+    VH <- unit_terms(C$th, xg)
+    eta <- C$th[3 * J + 1] + rowSums(VH)
+    eta_true <- log(lambda_fun(TRUE_THETA, xg))
+    par(mar = c(4, 4.2, 2.5, 1))
+    matplot(xg, VH, type = "l", lty = 3, lwd = 2.5, col = PCOL,
+            ylim = pmax(-8, pmin(8, range(VH, eta, eta_true))),
+            xlab = "x", ylab = expression(log ~ lambda(x)),
+            main = "log scale: the scaled units v_j h_j add up to the fit")
+    abline(h = 0, lty = 3, col = "grey70")
+    lines(xg, eta_true, col = "red", lty = 2, lwd = 2)
+    lines(xg, eta, col = "#2E8B57", lwd = 3)
+    legend("topright", bty = "n", cex = 0.78, ncol = 2,
+           lwd = c(rep(2.5, J), 3, 2), lty = c(rep(3, J), 1, 2),
+           col = c(PCOL, "#2E8B57", "red"),
+           legend = c(paste0("v", 1:J, " h", 1:J), "sum + v0 (fit)", "true"))
   })
 
   output$conv <- renderPlot({
