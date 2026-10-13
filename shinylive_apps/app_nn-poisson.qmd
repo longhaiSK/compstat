@@ -137,25 +137,28 @@ ALGS <- c("Gradient descent + line search"      = "gd",
           "BFGS (quasi-Newton)"                 = "bfgs")
 
 ## --------------------------------------------------------- network layout
-## Input layer: the constant 1 (carries the hidden intercepts) above x.
-## Hidden layer: the constant 1 (carries the output intercept) above h1..h3.
-N0 <- c(0.07, 0.97); NX <- c(0.07, 0.38)            # (x, y) of the input nodes
-M0 <- c(0.60, 0.97); YH <- c(0.80, 0.50, 0.20)      # hidden-layer constant, h_j
+## Weights sit on the edges; each intercept is a node of its own, a box with
+## the value and its arrows, hung on the neuron it shifts.
+NX <- c(0.07, 0.50)                                 # (x, y) of the input node
+YH <- c(0.80, 0.50, 0.20); XH <- 0.60               # hidden nodes
 NO <- c(1.13, 0.50)                                 # output node
 at <- function(p, q, f) p + f * (q - p)             # a point along an edge
-## where each weight's adjuster sits: on the edge that carries it
+YB <- YH + c(0.14, 0.14, -0.14)                     # hidden intercepts: above, above, below
+BIAS <- c(0.56, 0.56, 0.56, 1.00)                   # x of the four intercept boxes
+BIASY <- c(YB, 0.18)                                # y of the four intercept boxes
+## where each weight's value and arrows sit
 ADJ <- local({
-  hj <- lapply(1:J, function(j) c(0.60, YH[j]))
-  pos <- c(lapply(1:J, function(j) at(NX, hj[[j]], 0.46)),    # w_j1: x -> h_j
-           lapply(1:J, function(j) at(N0, hj[[j]], 0.70)),    # w_j0: 1 -> h_j
+  hj <- lapply(1:J, function(j) c(XH, YH[j]))
+  pos <- c(lapply(1:J, function(j) at(NX, hj[[j]], 0.50)),    # w_j1: x -> h_j
+           lapply(1:J, function(j) c(BIAS[j], BIASY[j])),     # w_j0: box on h_j
            lapply(1:J, function(j) at(hj[[j]], NO, 0.50)),    # v_j: h_j -> out
-           list(at(M0, NO, 0.45)))                            # v_0: 1 -> out
+           list(c(BIAS[4], BIASY[4])))                        # v_0: box on output
   data.frame(idx = 1:10, sym = NAMES,
              x = sapply(pos, `[`, 1), y = sapply(pos, `[`, 2),
              stringsAsFactors = FALSE)
 })
 ## the up / down arrow beside each value (also the click targets)
-AX <- 0.088                                  # arrow offset from the value
+AX <- 0.104                                  # arrow offset from the value
 ARROWS <- rbind(
   data.frame(idx = ADJ$idx, dir = +1, ax = ADJ$x + AX, ay = ADJ$y + 0.028),
   data.frame(idx = ADJ$idx, dir = -1, ax = ADJ$x + AX, ay = ADJ$y - 0.028))
@@ -177,31 +180,40 @@ draw_net <- function(v, vmax, k, main, arrows = TRUE, digits = 2) {
   col <- hcol(v, vmax, k); lw <- 0.8 + 6 * abs(tone(v, vmax, k))
   plot.new(); plot.window(c(0, 1.2), c(-0.15, 1.06))
   title(main = main, cex.main = 1.05)
-  H <- cbind(0.60, YH)
-  ## edges, each carrying one weight: 1 -> h_j (w_j0), x -> h_j (w_j1),
-  ## h_j -> output (v_j), 1 -> output (v_0)
+  H <- cbind(XH, YH)
+  ## edges, each carrying one weight: x -> h_j (w_j1), h_j -> output (v_j)
   for (j in 1:J) {
-    segments(N0[1], N0[2], H[j, 1], H[j, 2], col = col[3 + j], lwd = lw[3 + j], lend = 1)
     segments(NX[1], NX[2], H[j, 1], H[j, 2], col = col[j],     lwd = lw[j],     lend = 1)
     segments(H[j, 1], H[j, 2], NO[1], NO[2], col = col[6 + j], lwd = lw[6 + j], lend = 1)
   }
-  segments(M0[1], M0[2], NO[1], NO[2], col = col[10], lwd = lw[10], lend = 1)
+  ## intercept nodes: a thin arrow from each box to the neuron it shifts
+  tgt <- rbind(H, NO)
+  for (i in 1:4) {
+    b <- ADJ[c(4:6, 10)[i], ]
+    dy <- sign(tgt[i, 2] - b$y)
+    if (i == 4) arrows(b$x, b$y + 0.03, NO[1] - 0.03, NO[2] - 0.03, length = 0.08,
+                       col = "grey45", lwd = 1.4)
+    else arrows(b$x, b$y + dy * 0.035, tgt[i, 1], tgt[i, 2] - dy * 0.035,
+                length = 0.08, col = "grey45", lwd = 1.4)
+  }
   ## nodes
-  nodes <- rbind(N0, NX, M0, H, NO)
-  points(nodes, pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
-  text(N0[1], N0[2], "1", font = 2); text(NX[1], NX[2], "x", font = 2)
-  text(M0[1], M0[2], "1", font = 2)
+  points(rbind(NX, H, NO), pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
+  text(NX[1], NX[2], "x", font = 2)
   text(H[, 1], H[, 2], paste0("h", 1:J), cex = 0.8)
   text(NO[1], NO[2], expression(lambda), cex = 1.1)
-  ## each weight: its value (on a white patch so the edge does not strike
-  ## through it) and, if editable, an up and a down arrow
+  ## values: an intercept is a box coloured by its value; an edge weight is
+  ## plain text on a white patch so the edge does not strike through it
   for (i in 1:10) {
-    b <- ADJ[i, ]
-    rect(b$x - 0.072, b$y - 0.028, b$x + 0.072, b$y + 0.028,
-         col = adjustcolor("white", 0.8), border = NA)
+    b <- ADJ[i, ]; isb <- i %in% c(4:6, 10)
+    if (isb) rect(b$x - 0.075, b$y - 0.036, b$x + 0.075, b$y + 0.036,
+                  col = col[i], border = "grey35")
+    else rect(b$x - 0.072, b$y - 0.028, b$x + 0.072, b$y + 0.028,
+              col = adjustcolor("white", 0.8), border = NA)
+    dark <- abs(tone(v[i], vmax, k)) > 0.62
     text(b$x, b$y, sprintf(paste0("%s=%.", digits, "f"), b$sym, v[i]),
-         cex = 0.85, col = if (abs(tone(v[i], vmax, k)) > 0.62) col[i] else "grey20",
-         font = 2)
+         cex = 0.85, font = if (isb) 1 else 2,
+         col = if (isb) { if (dark) "white" else "black" }
+               else if (dark) col[i] else "grey20")
   }
   if (arrows) for (r in seq_len(nrow(ARROWS))) {
     a <- ARROWS[r, ]
@@ -412,9 +424,9 @@ shinyApp(ui, server)
 
 Fits the Poisson neural network of the book's backpropagation section, with one covariate and three `tanh` hidden units, to counts generated from known weights, and lets you watch gradient descent with a line search, conjugate gradient, and BFGS work on it.
 
-**The weights.** The upper network is drawn as in the book's diagram: the constant inputs, the node labelled 1 on the input layer and on the hidden layer, send the intercepts $w_{j0}$ and $v_0$ along their own arrows, so every one of the ten weights sits on an edge. The edge's colour and width show the weight's value (blue negative, red positive), and the number beside it gives the value. The up and down arrows beside a value change that weight, and the starting point of the run changes with it. **Set to the true values** loads the weights that generated the data, and **Random start** draws a new set.
+**The weights.** The upper network shows the ten weights at the current iteration. The six weights on edges (`w11, w21, w31` from $x$ to the hidden units and `v1, v2, v3` from the hidden units to the output) are written on their edges, and each intercept (`w10, w20, w30` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The up and down arrows beside a value change that weight, and the starting point of the run changes with it. **Set to the true values** loads the weights that generated the data, and **Random start** draws a new set.
 
-**The gradient.** The lower network has the same layout, with each edge coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
+**The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
 **The fit.** The right panel shows the generated counts, the true mean curve (dashed red), the mean curve at the starting weights (grey) and the current fit (green), with the loss and the gradient norm per iteration beneath it. Use the playback buttons to step through the run. The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
 
@@ -551,25 +563,28 @@ ALGS <- c("Gradient descent + line search"      = "gd",
           "BFGS (quasi-Newton)"                 = "bfgs")
 
 ## --------------------------------------------------------- network layout
-## Input layer: the constant 1 (carries the hidden intercepts) above x.
-## Hidden layer: the constant 1 (carries the output intercept) above h1..h3.
-N0 <- c(0.07, 0.97); NX <- c(0.07, 0.38)            # (x, y) of the input nodes
-M0 <- c(0.60, 0.97); YH <- c(0.80, 0.50, 0.20)      # hidden-layer constant, h_j
+## Weights sit on the edges; each intercept is a node of its own, a box with
+## the value and its arrows, hung on the neuron it shifts.
+NX <- c(0.07, 0.50)                                 # (x, y) of the input node
+YH <- c(0.80, 0.50, 0.20); XH <- 0.60               # hidden nodes
 NO <- c(1.13, 0.50)                                 # output node
 at <- function(p, q, f) p + f * (q - p)             # a point along an edge
-## where each weight's adjuster sits: on the edge that carries it
+YB <- YH + c(0.14, 0.14, -0.14)                     # hidden intercepts: above, above, below
+BIAS <- c(0.56, 0.56, 0.56, 1.00)                   # x of the four intercept boxes
+BIASY <- c(YB, 0.18)                                # y of the four intercept boxes
+## where each weight's value and arrows sit
 ADJ <- local({
-  hj <- lapply(1:J, function(j) c(0.60, YH[j]))
-  pos <- c(lapply(1:J, function(j) at(NX, hj[[j]], 0.46)),    # w_j1: x -> h_j
-           lapply(1:J, function(j) at(N0, hj[[j]], 0.70)),    # w_j0: 1 -> h_j
+  hj <- lapply(1:J, function(j) c(XH, YH[j]))
+  pos <- c(lapply(1:J, function(j) at(NX, hj[[j]], 0.50)),    # w_j1: x -> h_j
+           lapply(1:J, function(j) c(BIAS[j], BIASY[j])),     # w_j0: box on h_j
            lapply(1:J, function(j) at(hj[[j]], NO, 0.50)),    # v_j: h_j -> out
-           list(at(M0, NO, 0.45)))                            # v_0: 1 -> out
+           list(c(BIAS[4], BIASY[4])))                        # v_0: box on output
   data.frame(idx = 1:10, sym = NAMES,
              x = sapply(pos, `[`, 1), y = sapply(pos, `[`, 2),
              stringsAsFactors = FALSE)
 })
 ## the up / down arrow beside each value (also the click targets)
-AX <- 0.088                                  # arrow offset from the value
+AX <- 0.104                                  # arrow offset from the value
 ARROWS <- rbind(
   data.frame(idx = ADJ$idx, dir = +1, ax = ADJ$x + AX, ay = ADJ$y + 0.028),
   data.frame(idx = ADJ$idx, dir = -1, ax = ADJ$x + AX, ay = ADJ$y - 0.028))
@@ -591,31 +606,40 @@ draw_net <- function(v, vmax, k, main, arrows = TRUE, digits = 2) {
   col <- hcol(v, vmax, k); lw <- 0.8 + 6 * abs(tone(v, vmax, k))
   plot.new(); plot.window(c(0, 1.2), c(-0.15, 1.06))
   title(main = main, cex.main = 1.05)
-  H <- cbind(0.60, YH)
-  ## edges, each carrying one weight: 1 -> h_j (w_j0), x -> h_j (w_j1),
-  ## h_j -> output (v_j), 1 -> output (v_0)
+  H <- cbind(XH, YH)
+  ## edges, each carrying one weight: x -> h_j (w_j1), h_j -> output (v_j)
   for (j in 1:J) {
-    segments(N0[1], N0[2], H[j, 1], H[j, 2], col = col[3 + j], lwd = lw[3 + j], lend = 1)
     segments(NX[1], NX[2], H[j, 1], H[j, 2], col = col[j],     lwd = lw[j],     lend = 1)
     segments(H[j, 1], H[j, 2], NO[1], NO[2], col = col[6 + j], lwd = lw[6 + j], lend = 1)
   }
-  segments(M0[1], M0[2], NO[1], NO[2], col = col[10], lwd = lw[10], lend = 1)
+  ## intercept nodes: a thin arrow from each box to the neuron it shifts
+  tgt <- rbind(H, NO)
+  for (i in 1:4) {
+    b <- ADJ[c(4:6, 10)[i], ]
+    dy <- sign(tgt[i, 2] - b$y)
+    if (i == 4) arrows(b$x, b$y + 0.03, NO[1] - 0.03, NO[2] - 0.03, length = 0.08,
+                       col = "grey45", lwd = 1.4)
+    else arrows(b$x, b$y + dy * 0.035, tgt[i, 1], tgt[i, 2] - dy * 0.035,
+                length = 0.08, col = "grey45", lwd = 1.4)
+  }
   ## nodes
-  nodes <- rbind(N0, NX, M0, H, NO)
-  points(nodes, pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
-  text(N0[1], N0[2], "1", font = 2); text(NX[1], NX[2], "x", font = 2)
-  text(M0[1], M0[2], "1", font = 2)
+  points(rbind(NX, H, NO), pch = 21, cex = 3.2, bg = "white", lwd = 1.6)
+  text(NX[1], NX[2], "x", font = 2)
   text(H[, 1], H[, 2], paste0("h", 1:J), cex = 0.8)
   text(NO[1], NO[2], expression(lambda), cex = 1.1)
-  ## each weight: its value (on a white patch so the edge does not strike
-  ## through it) and, if editable, an up and a down arrow
+  ## values: an intercept is a box coloured by its value; an edge weight is
+  ## plain text on a white patch so the edge does not strike through it
   for (i in 1:10) {
-    b <- ADJ[i, ]
-    rect(b$x - 0.072, b$y - 0.028, b$x + 0.072, b$y + 0.028,
-         col = adjustcolor("white", 0.8), border = NA)
+    b <- ADJ[i, ]; isb <- i %in% c(4:6, 10)
+    if (isb) rect(b$x - 0.075, b$y - 0.036, b$x + 0.075, b$y + 0.036,
+                  col = col[i], border = "grey35")
+    else rect(b$x - 0.072, b$y - 0.028, b$x + 0.072, b$y + 0.028,
+              col = adjustcolor("white", 0.8), border = NA)
+    dark <- abs(tone(v[i], vmax, k)) > 0.62
     text(b$x, b$y, sprintf(paste0("%s=%.", digits, "f"), b$sym, v[i]),
-         cex = 0.85, col = if (abs(tone(v[i], vmax, k)) > 0.62) col[i] else "grey20",
-         font = 2)
+         cex = 0.85, font = if (isb) 1 else 2,
+         col = if (isb) { if (dark) "white" else "black" }
+               else if (dark) col[i] else "grey20")
   }
   if (arrows) for (r in seq_len(nrow(ARROWS))) {
     a <- ARROWS[r, ]
