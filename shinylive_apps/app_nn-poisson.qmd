@@ -287,7 +287,7 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
                style = "flex: 1; padding: 6px 0;")
 
 row_label <- function(txt)
-  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+  column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
   ## small text for the row of weight buttons
@@ -296,52 +296,58 @@ ui <- fluidPage(
     .wbar label { font-size: 12px; margin-bottom: 1px; }
     .wbar .form-group { margin-bottom: 0; }
     .wbar .selectize-input, .wbar select { font-size: 12px; min-height: 26px;
-                                           padding: 3px 8px; }"))),
+                                           padding: 3px 8px; }
+    .steprule { display: flex; gap: 14px; }
+    .steprule > div { flex: 1; min-width: 0; }"))),
   titlePanel("Shinylive App for Fitting a Poisson Neural Network by Gradient Methods"),
   ## ---- control panel, at the top -------------------------------------------
   wellPanel(
+    ## row 1: the data, the optimizer, how long to run it, and the colour scale
     fluidRow(
-      row_label("Optimizer"),
-      column(3, selectInput("alg", "Method", choices = ALGS, selected = "bfgs",
+      row_label("Setup"),
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+                            value = 150, step = 50, width = "100%")),
+      column(2, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate data",
+                                 class = "btn-warning", style = "width:100%;"))),
+      column(3, selectInput("alg", "Optimizer", choices = ALGS, selected = "bfgs",
                             width = "100%")),
-      column(4, sliderInput("maxit", "Iterations (epochs for SGD)", min = 5, max = 1000,
-                            value = 100, step = 5, width = "100%")),
-      column(3, sliderInput("ctr", "Colour contrast", min = 1, max = 40,
-                            value = 8, step = 1, width = "100%"))
-    ),
-    ## the step rule of the fixed-rate methods
-    conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
-      hr(style = "margin: 4px 0 8px;"),
-      fluidRow(
-        row_label("Step rule"),
-        column(3, sliderInput("lr", "Learning rate", min = 0.005, max = 1,
-                              value = 0.1, step = 0.005, width = "100%")),
-        column(3, conditionalPanel("input.alg == 'mom'",
-                 sliderInput("mom", "Momentum", min = 0, max = 0.99,
-                             value = 0.9, step = 0.01, width = "100%"))),
-        column(3, conditionalPanel("input.alg == 'sgd'",
-                 selectInput("batch", "Mini-batch size",
-                             choices = c(5, 10, 20, 50, 100), selected = 20,
-                             width = "100%")))
-      )
+      column(2, selectInput("maxit", "Max iterations",
+                            choices = c(10, 20, 50, 100, 200, 500, 1000),
+                            selected = 100, width = "100%")),
+      column(2, selectInput("ctr", "Colour contrast",
+                            choices = c(1, 2, 4, 8, 16, 32), selected = 8,
+                            width = "100%"))
     ),
     hr(style = "margin: 4px 0 8px;"),
+    ## row 2: the step rule, the play buttons, and the iteration to show
     fluidRow(
-      row_label("Play control"),
+      row_label("Run"),
+      column(5,
+        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
+          div(class = "steprule",
+            div(sliderInput("lr", "Learning rate", min = 0.005, max = 1,
+                            value = 0.1, step = 0.005, width = "100%")),
+            conditionalPanel("input.alg == 'mom'",
+              div(sliderInput("mom", "Momentum", min = 0, max = 0.99,
+                              value = 0.9, step = 0.01, width = "100%"))),
+            conditionalPanel("input.alg == 'sgd'",
+              div(selectInput("batch", "Mini-batch size",
+                              choices = c(5, 10, 20, 50, 100), selected = 20,
+                              width = "100%"))))),
+        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) < 0",
+          div(style = "padding-top: 28px;",
+              helpText("The step length comes from a Wolfe line search.")))),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
                     ctrl_btn("play",  "play",          "Play / pause",
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
-                    ctrl_btn("toend", "forward-fast",  "To the end"))),
-      column(2, div(style = "padding-top: 8px;",
-                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
-      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
-                            value = 150, step = 50, width = "100%")),
-      column(3, div(style = "padding-top: 25px;",
-                    actionButton("newdata", "Regenerate the dataset",
-                                 class = "btn-warning", style = "width:100%;")))
+                    ctrl_btn("toend", "forward-fast",  "To the end")),
+             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+      column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
+                            value = 0, step = 1, width = "100%"))
     )
   ),
   fluidRow(
@@ -406,7 +412,7 @@ server <- function(input, output, session) {
   run <- reactive({
     D <- DAT()
     fixed <- input$alg %in% c("gdfix", "sgd", "mom", "adam")
-    run_alg(input$alg, theta0(), D$x, D$y, input$maxit,
+    run_alg(input$alg, theta0(), D$x, D$y, as.numeric(input$maxit),
             lr  = if (fixed) input$lr else NA,
             mom = if (input$alg == "mom") input$mom else NA,
             m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
@@ -414,7 +420,15 @@ server <- function(input, output, session) {
 
   observeEvent(run(), {
     kpos(0L)
+    updateSliderInput(session, "kshow", min = 0, max = run()$n - 1L, value = 0)
     playing(isTRUE(input$autoplay) && run()$n > 1)
+  })
+
+  ## the iteration slider follows the run, and scrubs it when dragged
+  observeEvent(kpos(), updateSliderInput(session, "kshow", value = kpos()))
+  observeEvent(input$kshow, {
+    if (!isTRUE(playing()) && input$kshow != kpos())
+      kpos(min(as.integer(input$kshow), run()$n - 1L))
   })
 
   observeEvent(input$play, {
@@ -450,7 +464,7 @@ server <- function(input, output, session) {
     C <- cur(); R <- C$R
     vmax <- max(3, quantile(abs(R$P), 0.95))
     par(mar = c(1, 1, 3, 1))
-    draw_net(C$th, vmax, input$ctr,
+    draw_net(C$th, vmax, as.numeric(input$ctr),
              sprintf("weights, iteration %d   (loss %.4f)", C$k - 1L, R$F[C$k]))
   })
 
@@ -458,7 +472,7 @@ server <- function(input, output, session) {
     C <- cur()
     gmax <- max(1e-8, max(abs(C$g)))
     par(mar = c(1, 1, 3, 1))
-    draw_net(C$g, gmax, input$ctr,
+    draw_net(C$g, gmax, as.numeric(input$ctr),
              sprintf("gradient of the loss, iteration %d", C$k - 1L),
              arrows = FALSE, digits = 3)
   })
@@ -547,7 +561,7 @@ Fits a Poisson neural network like the one in the book's backpropagation section
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
-**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. Use the playback buttons to step through the run. The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
+**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. The top row of controls sets up the data (sample size and a new dataset), the optimizer, the maximum number of iterations and the colour contrast; the second row holds the step rule of the chosen method, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -832,7 +846,7 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
                style = "flex: 1; padding: 6px 0;")
 
 row_label <- function(txt)
-  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+  column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
   ## small text for the row of weight buttons
@@ -841,52 +855,58 @@ ui <- fluidPage(
     .wbar label { font-size: 12px; margin-bottom: 1px; }
     .wbar .form-group { margin-bottom: 0; }
     .wbar .selectize-input, .wbar select { font-size: 12px; min-height: 26px;
-                                           padding: 3px 8px; }"))),
+                                           padding: 3px 8px; }
+    .steprule { display: flex; gap: 14px; }
+    .steprule > div { flex: 1; min-width: 0; }"))),
   titlePanel("Shinylive App for Fitting a Poisson Neural Network by Gradient Methods"),
   ## ---- control panel, at the top -------------------------------------------
   wellPanel(
+    ## row 1: the data, the optimizer, how long to run it, and the colour scale
     fluidRow(
-      row_label("Optimizer"),
-      column(3, selectInput("alg", "Method", choices = ALGS, selected = "bfgs",
+      row_label("Setup"),
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+                            value = 150, step = 50, width = "100%")),
+      column(2, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate data",
+                                 class = "btn-warning", style = "width:100%;"))),
+      column(3, selectInput("alg", "Optimizer", choices = ALGS, selected = "bfgs",
                             width = "100%")),
-      column(4, sliderInput("maxit", "Iterations (epochs for SGD)", min = 5, max = 1000,
-                            value = 100, step = 5, width = "100%")),
-      column(3, sliderInput("ctr", "Colour contrast", min = 1, max = 40,
-                            value = 8, step = 1, width = "100%"))
-    ),
-    ## the step rule of the fixed-rate methods
-    conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
-      hr(style = "margin: 4px 0 8px;"),
-      fluidRow(
-        row_label("Step rule"),
-        column(3, sliderInput("lr", "Learning rate", min = 0.005, max = 1,
-                              value = 0.1, step = 0.005, width = "100%")),
-        column(3, conditionalPanel("input.alg == 'mom'",
-                 sliderInput("mom", "Momentum", min = 0, max = 0.99,
-                             value = 0.9, step = 0.01, width = "100%"))),
-        column(3, conditionalPanel("input.alg == 'sgd'",
-                 selectInput("batch", "Mini-batch size",
-                             choices = c(5, 10, 20, 50, 100), selected = 20,
-                             width = "100%")))
-      )
+      column(2, selectInput("maxit", "Max iterations",
+                            choices = c(10, 20, 50, 100, 200, 500, 1000),
+                            selected = 100, width = "100%")),
+      column(2, selectInput("ctr", "Colour contrast",
+                            choices = c(1, 2, 4, 8, 16, 32), selected = 8,
+                            width = "100%"))
     ),
     hr(style = "margin: 4px 0 8px;"),
+    ## row 2: the step rule, the play buttons, and the iteration to show
     fluidRow(
-      row_label("Play control"),
+      row_label("Run"),
+      column(5,
+        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
+          div(class = "steprule",
+            div(sliderInput("lr", "Learning rate", min = 0.005, max = 1,
+                            value = 0.1, step = 0.005, width = "100%")),
+            conditionalPanel("input.alg == 'mom'",
+              div(sliderInput("mom", "Momentum", min = 0, max = 0.99,
+                              value = 0.9, step = 0.01, width = "100%"))),
+            conditionalPanel("input.alg == 'sgd'",
+              div(selectInput("batch", "Mini-batch size",
+                              choices = c(5, 10, 20, 50, 100), selected = 20,
+                              width = "100%"))))),
+        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) < 0",
+          div(style = "padding-top: 28px;",
+              helpText("The step length comes from a Wolfe line search.")))),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
                     ctrl_btn("play",  "play",          "Play / pause",
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
-                    ctrl_btn("toend", "forward-fast",  "To the end"))),
-      column(2, div(style = "padding-top: 8px;",
-                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
-      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
-                            value = 150, step = 50, width = "100%")),
-      column(3, div(style = "padding-top: 25px;",
-                    actionButton("newdata", "Regenerate the dataset",
-                                 class = "btn-warning", style = "width:100%;")))
+                    ctrl_btn("toend", "forward-fast",  "To the end")),
+             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+      column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
+                            value = 0, step = 1, width = "100%"))
     )
   ),
   fluidRow(
@@ -951,7 +971,7 @@ server <- function(input, output, session) {
   run <- reactive({
     D <- DAT()
     fixed <- input$alg %in% c("gdfix", "sgd", "mom", "adam")
-    run_alg(input$alg, theta0(), D$x, D$y, input$maxit,
+    run_alg(input$alg, theta0(), D$x, D$y, as.numeric(input$maxit),
             lr  = if (fixed) input$lr else NA,
             mom = if (input$alg == "mom") input$mom else NA,
             m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
@@ -959,7 +979,15 @@ server <- function(input, output, session) {
 
   observeEvent(run(), {
     kpos(0L)
+    updateSliderInput(session, "kshow", min = 0, max = run()$n - 1L, value = 0)
     playing(isTRUE(input$autoplay) && run()$n > 1)
+  })
+
+  ## the iteration slider follows the run, and scrubs it when dragged
+  observeEvent(kpos(), updateSliderInput(session, "kshow", value = kpos()))
+  observeEvent(input$kshow, {
+    if (!isTRUE(playing()) && input$kshow != kpos())
+      kpos(min(as.integer(input$kshow), run()$n - 1L))
   })
 
   observeEvent(input$play, {
@@ -995,7 +1023,7 @@ server <- function(input, output, session) {
     C <- cur(); R <- C$R
     vmax <- max(3, quantile(abs(R$P), 0.95))
     par(mar = c(1, 1, 3, 1))
-    draw_net(C$th, vmax, input$ctr,
+    draw_net(C$th, vmax, as.numeric(input$ctr),
              sprintf("weights, iteration %d   (loss %.4f)", C$k - 1L, R$F[C$k]))
   })
 
@@ -1003,7 +1031,7 @@ server <- function(input, output, session) {
     C <- cur()
     gmax <- max(1e-8, max(abs(C$g)))
     par(mar = c(1, 1, 3, 1))
-    draw_net(C$g, gmax, input$ctr,
+    draw_net(C$g, gmax, as.numeric(input$ctr),
              sprintf("gradient of the loss, iteration %d", C$k - 1L),
              arrows = FALSE, digits = 3)
   })
