@@ -451,12 +451,13 @@ run_alg &lt;- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
 }
 
 ALGS &lt;- c("Gradient descent, fixed learning rate" = "gdfix",
+          "Gradient descent + line search"      = "gd",
           "SGD (mini-batch)"                    = "sgd",
           "Gradient descent + momentum"         = "mom",
           "Adam"                                = "adam",
-          "Gradient descent + line search"      = "gd",
           "Conjugate gradient (Polak-Ribiere+)" = "cg",
-          "BFGS (quasi-Newton)"                 = "bfgs")
+          "BFGS (quasi-Newton)"                 = "bfgs"
+)
 
 ## --------------------------------------------------------- network layout
 ## Weights sit on the edges; each intercept is a node of its own, a box with
@@ -832,11 +833,76 @@ server &lt;- function(input, output, session) {
 shinyApp(ui, server)</code></pre>
 <section id="about-the-app" class="level2">
 <h2 class="anchored" data-anchor-id="about-the-app">About the app</h2>
-<p>Fits a Poisson neural network like the one in the book’s backpropagation section, with one covariate and four <code>tanh</code> hidden units, to counts generated from known weights, and lets you watch gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient, and BFGS work on it. The four units are enough for a mean with two modes: the true weights switch units 1 and 2 on and off around <span class="math inline">\(x \in (-2.2, -0.8)\)</span>, and units 3 and 4 around <span class="math inline">\((0.8, 2.2)\)</span>.</p>
+<p>Fits a Poisson neural network like the one in the book’s backpropagation section, with one covariate and four <code>tanh</code> hidden units, to counts generated from known weights, and lets you watch seven optimizers work on it: gradient descent with a fixed learning rate, SGD, momentum, Adam, gradient descent with a line search, conjugate gradient, and BFGS. The four units are enough for a mean with two modes: the true weights switch units 1 and 2 on and off around <span class="math inline">\(x \in (-2.2, -0.8)\)</span>, and units 3 and 4 around <span class="math inline">\((0.8, 2.2)\)</span>.</p>
 <p><strong>The weights.</strong> The upper network shows the thirteen weights at the current iteration. The eight weights on edges (<code>w11, …, w41</code> from <span class="math inline">\(x\)</span> to the hidden units and <code>v1, …, v4</code> from the hidden units to the output) are written on their edges, and each intercept (<code>w10, …, w40</code> and <code>v0</code>) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. <strong>True Value</strong> loads the weights that generated the data, <strong>Random</strong> draws a new set, and <strong>Zero</strong> sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only <span class="math inline">\(v_0\)</span> has a nonzero gradient). <strong>Adjust Size</strong> sets how much one click on an arrow changes a weight.</p>
-<p><strong>The methods.</strong> Four of them take a step with a learning rate <span class="math inline">\(\alpha\)</span> that you set by hand: <em>fixed learning rate</em> takes the step <span class="math inline">\(-\alpha\, g(\theta)\)</span>, so you can see the zig-zagging when it is too large, the crawl when it is too small, and the divergence when it is far too large; <em>momentum</em> keeps a fraction (the momentum setting) of its previous step, which damps the zig-zag and speeds up along the valley; <em>Adam</em> rescales each weight’s step by a running estimate of its own gradient size, which handles weights on very different scales; and <em>SGD</em> is the fixed-rate step computed from random mini-batches of the data (choose the size, 20 by default) instead of all <span class="math inline">\(n\)</span> observations. For SGD one iteration is one <em>epoch</em>, a shuffled pass of <span class="math inline">\(\lceil n/m \rceil\)</span> mini-batch steps over all the data, so an SGD iteration costs about the same in gradient evaluations as one full-batch step of the other methods and the iteration axes are directly comparable. With the batch size equal to <span class="math inline">\(n\)</span> SGD reduces to the fixed-rate method, and the smaller the batch, the more updates each epoch makes, at the price of noisier steps. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger <span class="math inline">\(n\)</span> is, the more mini-batch updates an epoch holds (<span class="math inline">\(n/m\)</span>), and the clearer SGD’s advantage over the full-batch methods becomes. To keep the browser responsive an SGD run stops after 20000 mini-batch steps in all, which the info line reports. The other three methods choose their step by a Wolfe line search, and conjugate gradient and BFGS also build a better search direction from the gradients they have seen. For these ten-odd parameters BFGS is hard to beat; momentum, Adam and SGD are what larger networks use, where a Hessian approximation is too expensive.</p>
+<p><strong>The methods.</strong> Write <span class="math inline">\(g_k = \nabla L(\theta_k)\)</span> for the gradient of the average loss <span class="math inline">\(L\)</span> over all <span class="math inline">\(n\)</span> observations at the current weights, and <span class="math inline">\(\ell_i\)</span> for the loss of observation <span class="math inline">\(i\)</span>. Every optimizer in the menu, in the order of the menu, can be written as one update</p>
+<p><span class="math display">\[\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,\]</span></p>
+<p>where <span class="math inline">\(m_k\)</span> is the gradient actually used (the gradient itself, a sampled version of it, or a smoothed version of it), <span class="math inline">\(P_k\)</span> is a <em>preconditioner</em> that rescales or rotates the step, and <span class="math inline">\(\alpha_k\)</span> is the step size.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 17%">
+<col style="width: 32%">
+<col style="width: 26%">
+<col style="width: 23%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Optimizer</th>
+<th style="text-align: left;">Gradient used, <span class="math inline">\(m_k\)</span></th>
+<th style="text-align: left;">Preconditioner, <span class="math inline">\(P_k\)</span></th>
+<th style="text-align: left;">Step size, <span class="math inline">\(\alpha_k\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>Fixed-rate GD</strong></td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>SGD</strong></td>
+<td style="text-align: left;"><span class="math inline">\(g_k^{B} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)\)</span> for a random mini-batch <span class="math inline">\(B_k\)</span> of size <span class="math inline">\(m\)</span>, so that <span class="math inline">\(E\,g_k^{B} = g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>Momentum</strong></td>
+<td style="text-align: left;"><span class="math inline">\(v_k = \mu\, v_{k-1} + g_k\)</span>, an exponentially weighted sum of past gradients</td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Adam</strong></td>
+<td style="text-align: left;"><span class="math inline">\(\hat m_k = \dfrac{(1-\beta_1)\sum_{j \le k} \beta_1^{k-j} g_j}{1-\beta_1^{k}}\)</span>, a bias-corrected average of past gradients</td>
+<td style="text-align: left;"><span class="math inline">\(\mathrm{diag}\big(1/(\sqrt{\hat v_k} + \epsilon)\big)\)</span>, with <span class="math inline">\(\hat v_k = \dfrac{(1-\beta_2)\sum_{j \le k} \beta_2^{k-j} g_j \odot g_j}{1-\beta_2^{k}}\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>GD + line search</strong></td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a Wolfe line search</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>Conjugate gradient (PR+)</strong></td>
+<td style="text-align: left;"><span class="math inline">\(d_k = -g_k + \beta_k d_{k-1}\)</span>, with <span class="math inline">\(\beta_k = \max\!\Big(0, \dfrac{g_k^\top (g_k - g_{k-1})}{g_{k-1}^\top g_{k-1}}\Big)\)</span></td>
+<td style="text-align: left;">implicit: the new gradient is combined with the previous direction</td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a Wolfe line search</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>BFGS</strong></td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(B_k \approx H^{-1}\)</span>, a full matrix, updated by <span class="math inline">\(B_{k+1} = (I - \rho\, s y^\top) B_k (I - \rho\, y s^\top) + \rho\, s s^\top\)</span> with <span class="math inline">\(s = \theta_{k+1} - \theta_k\)</span>, <span class="math inline">\(y = g_{k+1} - g_k\)</span>, <span class="math inline">\(\rho = 1/(s^\top y)\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a Wolfe line search</td>
+</tr>
+</tbody>
+</table>
+<p>In the app <span class="math inline">\(\beta_1 = 0.9\)</span>, <span class="math inline">\(\beta_2 = 0.999\)</span> and <span class="math inline">\(\epsilon = 10^{-8}\)</span> for Adam. Momentum is coded as <span class="math inline">\(v \leftarrow \mu v - \alpha g\)</span>, <span class="math inline">\(\theta \leftarrow \theta + v\)</span>, the same update written with the sign and <span class="math inline">\(\alpha\)</span> absorbed into <span class="math inline">\(v\)</span>. A Wolfe line search takes the step <span class="math inline">\(\alpha\)</span> along <span class="math inline">\(d_k = -P_k m_k\)</span> that satisfies both <span class="math inline">\(L(\theta_k + \alpha d_k) \le L(\theta_k) + c_1 \alpha\, g_k^\top d_k\)</span> (sufficient decrease) and <span class="math inline">\(\nabla L(\theta_k + \alpha d_k)^\top d_k \ge c_2\, g_k^\top d_k\)</span> (curvature), with <span class="math inline">\(c_1 = 10^{-4}\)</span> and <span class="math inline">\(c_2 = 0.9\)</span>.</p>
+<p><em>What each one changes.</em> Fixed-rate GD, SGD and momentum do not change the direction’s shape at all: <span class="math inline">\(P_k = I\)</span>. SGD changes <em>which gradient</em> is used (a noisy but cheap one) and momentum changes it by averaging over the past, which damps the zig-zag across a valley and speeds up progress along it. Neither uses curvature or Fisher information. Adam is the first to precondition: dividing by <span class="math inline">\(\sqrt{\hat v_k}\)</span> shrinks the step of weights with consistently large gradients and enlarges that of weights with small ones. For this model <span class="math inline">\(\nabla \ell_i = (\lambda_i - y_i)\nabla \eta_i\)</span>, and the <em>empirical Fisher information</em> is <span class="math inline">\(\hat F = \frac{1}{n}\sum_i (\lambda_i - y_i)^2 \nabla\eta_i \nabla\eta_i^\top\)</span>, whereas the true Fisher information is <span class="math inline">\(F = \frac{1}{n}\sum_i \lambda_i\, \nabla\eta_i \nabla\eta_i^\top\)</span>. The running average of <span class="math inline">\(g \odot g\)</span> in Adam is, per observation, the diagonal of <span class="math inline">\(\hat F\)</span>, so Adam acts as a diagonal preconditioner built from <span class="math inline">\(\hat F^{1/2}\)</span>, a cheap stand-in for curvature. It is the square root, not the inverse, so it is not a natural-gradient step (which would use <span class="math inline">\(F^{-1}\)</span>); and because the app feeds Adam the full-data gradient, <span class="math inline">\(\hat v_k\)</span> here averages <span class="math inline">\(g_k^2\)</span> over iterations rather than over observations, so the reading as <span class="math inline">\(\hat F\)</span> is an approximation. The line-search methods keep the gradient but choose the step by the Wolfe conditions, so there is no learning rate to tune. Conjugate gradient builds its direction from the previous one, which on a quadratic makes successive directions conjugate with respect to the Hessian. BFGS learns an approximation of the inverse Hessian from the gradient differences alone, the only method here with a full-matrix preconditioner; compare Newton’s method, <span class="math inline">\(P_k = H^{-1}\)</span>, and Fisher scoring, <span class="math inline">\(P_k = F^{-1}\)</span>.</p>
+<p><em>Epochs and mini-batches.</em> For SGD one iteration is one <em>epoch</em>: a shuffled pass of <span class="math inline">\(\lceil n/m \rceil\)</span> mini-batch steps over all the data. An SGD iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. With the batch size equal to <span class="math inline">\(n\)</span> SGD reduces to the fixed-rate method; the smaller the batch, the more updates each epoch makes, at the price of noisier steps. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger <span class="math inline">\(n\)</span> is, the more mini-batch updates an epoch holds (<span class="math inline">\(n/m\)</span>), and the clearer SGD’s advantage over the full-batch methods becomes. To keep the browser responsive an SGD run stops after 20000 mini-batch steps in all, which the info line reports. For these thirteen parameters BFGS is hard to beat; momentum, Adam and SGD are what larger networks use, where a Hessian approximation is too expensive.</p>
 <p><strong>The gradient.</strong> The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.</p>
-<p><strong>The fit.</strong> The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Because <span class="math inline">\(\log\lambda = v_0 + \sum_j v_j h_j\)</span>, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units <span class="math inline">\(v_j h_j\)</span> (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to <span class="math inline">\(\log\lambda\)</span> (green), and the true <span class="math inline">\(\log\lambda\)</span> (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. The top row of controls sets up the data (sample size and a new dataset), the optimizer, the maximum number of iterations and the colour contrast; the second row holds the step rule of the chosen method, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try <strong>Random start</strong> a few times.</p>
+<p><strong>The fit.</strong> The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Because <span class="math inline">\(\log\lambda = v_0 + \sum_j v_j h_j\)</span>, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units <span class="math inline">\(v_j h_j\)</span> (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to <span class="math inline">\(\log\lambda\)</span> (green), and the true <span class="math inline">\(\log\lambda\)</span> (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. The top row of controls sets up the data (sample size and a new dataset), the optimizer, the maximum number of iterations and the colour contrast; the second row holds the step rule of the chosen method, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try <strong>Random</strong> a few times.</p>
 <div class="callout callout-style-default callout-note callout-titled" title="R source for this app">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
