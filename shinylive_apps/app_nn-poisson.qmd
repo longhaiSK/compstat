@@ -1,0 +1,803 @@
+---
+engine: markdown
+title: "Fitting a Poisson Neural Network by Gradient-Based Methods"
+pagetitle: "nn-poisson-shinylive"
+---
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 1500
+library(shiny)
+
+## ------------------------------------------------------------------- model
+## One covariate x, three tanh hidden units, log link, Poisson counts:
+##   a_j = w_j1 x + w_j0,  h_j = tanh(a_j),  eta = v_0 + sum_j v_j h_j,
+##   lambda = exp(eta).
+## theta = (w11, w21, w31,  w10, w20, w30,  v1, v2, v3,  v0)
+J <- 3
+NAMES <- c("w11", "w21", "w31", "w10", "w20", "w30", "v1", "v2", "v3", "v0")
+TRUE_THETA <- c(3, 3, 1,   1.5, -1.5, 0,   1.2, -1.2, 0.3,   -0.3)
+
+fwd <- function(th, x) {
+  H <- tanh(outer(x, th[1:J]) + rep(th[J + 1:J], each = length(x)))
+  list(H = H, eta = as.vector(th[3 * J + 1] + H %*% th[2 * J + 1:J]))
+}
+lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
+
+## average Poisson negative log-likelihood (the log y! term dropped)
+nll <- function(th, x, y) {
+  e <- fwd(th, x)$eta
+  v <- mean(exp(e) - y * e)
+  if (is.finite(v)) v else Inf
+}
+
+## its gradient by backpropagation:  delta_eta -> delta_a -> weights
+nll_grad <- function(th, x, y) {
+  E <- fwd(th, x)
+  d_eta <- exp(E$eta) - y                                   # n
+  d_a   <- (1 - E$H^2) * outer(d_eta, th[2 * J + 1:J])      # n x J
+  c(colSums(d_a * x),                                       # w_j1
+    colSums(d_a),                                           # w_j0
+    as.vector(crossprod(E$H, d_eta)),                       # v_j
+    sum(d_eta)) / length(x)                                 # v_0
+}
+
+make_data <- function(n, seed) {
+  set.seed(100 + seed)
+  x <- runif(n, -3, 3)
+  list(x = x, y = rpois(n, lambda_fun(TRUE_THETA, x)))
+}
+
+rand_start <- function(seed) {
+  set.seed(2000 + seed)
+  c(rnorm(9, 0, 1), 0)
+}
+
+## ------------------------------------------------------- Wolfe line search
+line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
+  f0 <- f(x); gd0 <- sum(g(x) * d)
+  if (!is.finite(gd0) || gd0 >= 0) return(list(alpha = 0, ok = FALSE))
+  lo <- 0; hi <- Inf; a <- a0
+  for (it in 1:60) {
+    fa <- f(x + a * d)
+    if (!is.finite(fa) || fa > f0 + c1 * a * gd0) {
+      hi <- a; a <- 0.5 * (lo + hi)
+    } else {
+      if (sum(g(x + a * d) * d) < c2 * gd0) {
+        lo <- a
+        a <- if (is.finite(hi)) 0.5 * (lo + hi) else min(2 * a, 1e4)
+      } else {
+        return(list(alpha = a, ok = TRUE))
+      }
+    }
+    if (a < 1e-14) return(list(alpha = 0, ok = FALSE))
+  }
+  list(alpha = a, ok = (a > 0))
+}
+
+## ------------------------------------------------------------- algorithms
+## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
+## that led to it.
+run_alg <- function(alg, th0, x, y, maxit, tol = 1e-6) {
+  p <- length(th0)
+  f <- function(th) nll(th, x, y)
+  g <- function(th) nll_grad(th, x, y)
+  P <- G <- matrix(NA_real_, maxit + 1, p)
+  Fv <- AL <- rep(NA_real_, maxit + 1)
+  th <- th0; B <- diag(p)
+  g_prev <- d_prev <- s_prev <- NULL
+  n <- 0; note <- "maximum number of iterations reached"
+
+  for (k in 1:(maxit + 1)) {
+    gk <- g(th); fk <- f(th)
+    P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
+    if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
+    if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
+    if (k > maxit) break
+
+    if (alg == "gd") {
+      d <- -gk
+    } else if (alg == "cg") {
+      if (is.null(d_prev)) {
+        d <- -gk
+      } else {
+        yk <- gk - g_prev
+        beta <- max(0, sum(gk * yk) / max(sum(g_prev^2), 1e-300))   # PR+
+        d <- -gk + beta * d_prev
+      }
+      if (sum(gk * d) > -1e-12) d <- -gk                           # restart
+    } else {                                                       # BFGS
+      if (!is.null(s_prev)) {
+        yk <- gk - g_prev; sy <- sum(s_prev * yk)
+        if (sy > 1e-10) {
+          if (k == 2) B <- (sy / sum(yk^2)) * diag(p)    # scale the first B
+          rho <- 1 / sy
+          V <- diag(p) - rho * outer(s_prev, yk)
+          B <- V %*% B %*% t(V) + rho * outer(s_prev, s_prev)
+        }
+      }
+      d <- -as.vector(B %*% gk)
+      if (sum(gk * d) > -1e-12) { B <- diag(p); d <- -gk }
+    }
+
+    a0 <- if (alg == "bfgs" && k > 1) 1 else min(1, 1 / sqrt(sum(d^2)))
+    ls <- line_search(f, g, th, d, a0)
+    if (!ls$ok) { note <- "line search failed"; break }
+    AL[k + 1] <- ls$alpha
+    s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
+    th <- th + s_prev
+  }
+  i <- seq_len(n)
+  list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
+       A = AL[i], n = n, note = note)
+}
+
+ALGS <- c("Gradient descent + line search"      = "gd",
+          "Conjugate gradient (Polak-Ribiere+)" = "cg",
+          "BFGS (quasi-Newton)"                 = "bfgs")
+
+## --------------------------------------------------------- network layout
+XI <- 0.07; XH <- 0.60; XO <- 1.13        # x of the input, hidden, output nodes
+YH <- c(0.86, 0.52, 0.18); YO <- 0.52     # y of the hidden nodes and output
+BW <- 0.085                               # half-width of a value box
+## where each of the ten value boxes sits: input weights on the first edges,
+## hidden intercepts beside the hidden nodes, output weights on the last edges
+BOX <- data.frame(
+  idx = 1:10, sym = NAMES,
+  x = c(rep(0.31, 3), rep(0.56, 3), rep(0.86, 3), 1.00),
+  y = c(YO + 0.45 * (YH - YO), YH + c(0.12, 0.12, -0.12),
+        YH + 0.55 * (YO - YH), 0.18),
+  stringsAsFactors = FALSE)
+## the up / down arrow beside each box (also the click targets)
+ARROWS <- rbind(
+  data.frame(idx = BOX$idx, dir = +1, ax = BOX$x + BW + 0.03, ay = BOX$y + 0.03),
+  data.frame(idx = BOX$idx, dir = -1, ax = BOX$x + BW + 0.03, ay = BOX$y - 0.03))
+
+## ---------------------------------------------------------------- colours
+## Diverging ramp: blue = negative, red = positive, depth by magnitude.
+DIV <- colorRampPalette(c("#08306B", "#2171B5", "#6BAED6", "#DEEBF7",
+                          "#F7F7F7",
+                          "#FEE0D2", "#FC9272", "#CB181D", "#67000D"))(201)
+
+## compander: maps v in [-vmax, vmax] to [-1, 1], boosting small values
+tone <- function(v, vmax, k) {
+  u <- pmax(-1, pmin(1, v / vmax))
+  sign(u) * log1p(k * abs(u)) / log1p(k)
+}
+hcol <- function(v, vmax, k) DIV[round((tone(v, vmax, k) + 1) * 100) + 1]
+
+draw_net <- function(v, vmax, k, main, arrows = TRUE, digits = 2) {
+  col <- hcol(v, vmax, k); lw <- 0.8 + 6 * abs(tone(v, vmax, k))
+  plot.new(); plot.window(c(0, 1.2), c(-0.15, 1.04))
+  title(main = main, cex.main = 1.05)
+  ## edges: x -> h_j carries w_j1, h_j -> output carries v_j
+  for (j in 1:J) {
+    segments(XI, YO, XH, YH[j], col = col[j], lwd = lw[j], lend = 1)
+    segments(XH, YH[j], XO, YO, col = col[6 + j], lwd = lw[6 + j], lend = 1)
+    ## hidden intercepts hang off their node
+    segments(BOX$x[3 + j], BOX$y[3 + j], XH, YH[j], col = "grey65", lwd = 1)
+  }
+  points(XI, YO, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(XI, YO, "x", font = 2)
+  points(rep(XH, J), YH, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(rep(XH, J), YH, paste0("h", 1:J), cex = 0.8)
+  points(XO, YO, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(XO, YO, expression(lambda), cex = 1.1)
+  ## value boxes, heat-coloured
+  for (i in 1:10) {
+    b <- BOX[i, ]
+    rect(b$x - BW, b$y - 0.04, b$x + BW, b$y + 0.04, col = col[i],
+         border = "grey35")
+    text(b$x, b$y, sprintf(paste0("%s=%.", digits, "f"), b$sym, v[i]),
+         cex = 0.78, col = if (abs(tone(v[i], vmax, k)) > 0.62) "white" else "black")
+  }
+  if (arrows) for (r in seq_len(nrow(ARROWS))) {
+    a <- ARROWS[r, ]
+    polygon(a$ax + c(-0.028, 0.028, 0), a$ay + a$dir * c(-0.017, -0.017, 0.022),
+            col = "grey30", border = NA)
+  }
+  ## signed colour bar
+  xs <- seq(0.12, 1.08, length.out = 201)
+  rect(xs, -0.14, xs + diff(xs)[1], -0.09, col = DIV, border = NA)
+  lab <- formatC(vmax, format = "g", digits = 2)
+  text(c(0.12, 0.60, 1.08), -0.06, c(paste0("-", lab), "0", paste0("+", lab)),
+       cex = 0.72)
+}
+
+## --------------------------------------------------------------------- UI
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+  actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+               style = "flex: 1; padding: 6px 0;")
+
+row_label <- function(txt)
+  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
+ui <- fluidPage(
+  titlePanel("Shinylive App for Fitting a Poisson Neural Network by Gradient Methods"),
+  ## ---- control panel, at the top -------------------------------------------
+  wellPanel(
+    fluidRow(
+      row_label("Optimizer"),
+      column(4, selectInput("alg", "Method", choices = ALGS, selected = "bfgs",
+                            width = "100%")),
+      column(3, sliderInput("maxit", "Iterations", min = 5, max = 300,
+                            value = 100, step = 5, width = "100%")),
+      column(3, sliderInput("ctr", "Colour contrast", min = 1, max = 40,
+                            value = 8, step = 1, width = "100%"))
+    ),
+    hr(style = "margin: 4px 0 8px;"),
+    fluidRow(
+      row_label("Play control"),
+      column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
+                    ctrl_btn("first", "backward-fast", "Back to the start"),
+                    ctrl_btn("back",  "backward-step", "One iteration back"),
+                    ctrl_btn("play",  "play",          "Play / pause",
+                             class = "btn-primary"),
+                    ctrl_btn("step",  "forward-step",  "One iteration forward"),
+                    ctrl_btn("toend", "forward-fast",  "To the end"))),
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+                            value = 150, step = 50, width = "100%")),
+      column(3, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate the dataset",
+                                 class = "btn-warning", style = "width:100%;")))
+    )
+  ),
+  fluidRow(
+    ## ---- left: the network of values above the network of gradients -----
+    column(6,
+      div(style = "display: flex; gap: 8px; align-items: flex-end;",
+          actionButton("settrue", "Set to the true values",
+                       class = "btn-success"),
+          actionButton("newstart", "Random start"),
+          div(style = "flex: 1; max-width: 180px;",
+              sliderInput("astep", "Arrow step", min = 0.05, max = 1,
+                          value = 0.25, step = 0.05, width = "100%"))),
+      plotOutput("netv", height = "330px", click = "netv_click"),
+      plotOutput("netg", height = "330px"),
+      helpText("Click the up / down arrows beside a weight to change the ",
+               "starting value (this restarts the run). The true values are ",
+               "those that generated the data.")),
+    ## ---- right: the fitted mean, and how the optimizer is doing -----------
+    column(6,
+      plotOutput("fit", height = "400px"),
+      plotOutput("conv", height = "240px"),
+      htmlOutput("info"))
+  )
+)
+
+## ----------------------------------------------------------------- server
+server <- function(input, output, session) {
+
+  dseed <- reactiveVal(1); rseed <- reactiveVal(1)
+  theta0 <- reactiveVal(rand_start(1))        # the starting weights
+  playing <- reactiveVal(FALSE)
+  kpos <- reactiveVal(0L)                     # current iteration, 0 .. R$n - 1
+
+  observeEvent(input$newdata, dseed(dseed() + 1))
+  observeEvent(input$settrue, theta0(TRUE_THETA))
+  observeEvent(input$newstart, {
+    rseed(rseed() + 1); theta0(rand_start(rseed()))
+  })
+  ## an arrow click moves the nearest arrow's weight by one step
+  observeEvent(input$netv_click, {
+    cl <- input$netv_click
+    d <- ((cl$x - ARROWS$ax) / 0.05)^2 + ((cl$y - ARROWS$ay) / 0.045)^2
+    i <- which.min(d)
+    if (d[i] < 2) {
+      th <- theta0()
+      th[ARROWS$idx[i]] <- th[ARROWS$idx[i]] + ARROWS$dir[i] * input$astep
+      theta0(th)
+    }
+  })
+
+  DAT <- reactive(make_data(input$n, dseed()))
+  run <- reactive({
+    D <- DAT()
+    run_alg(input$alg, theta0(), D$x, D$y, input$maxit)
+  })
+
+  observeEvent(run(), {
+    kpos(0L)
+    playing(isTRUE(input$autoplay) && run()$n > 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) playing(FALSE)
+    else {
+      if (kpos() >= run()$n - 1) kpos(0L)
+      playing(TRUE)
+    }
+  })
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       icon = icon(if (isTRUE(playing())) "pause" else "play"))
+  })
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax <- isolate(run()$n) - 1
+    k <- isolate(kpos())
+    if (k >= kmax) { playing(FALSE); return() }
+    invalidateLater(300, session)
+    kpos(k + 1L)
+  })
+  observeEvent(input$step,  { playing(FALSE); kpos(min(kpos() + 1L, run()$n - 1L)) })
+  observeEvent(input$back,  { playing(FALSE); kpos(max(kpos() - 1L, 0L)) })
+  observeEvent(input$first, { playing(FALSE); kpos(0L) })
+  observeEvent(input$toend, { playing(FALSE); kpos(run()$n - 1L) })
+
+  cur <- reactive({
+    R <- run(); k <- min(kpos(), R$n - 1L) + 1L
+    list(R = R, k = k, th = R$P[k, ], g = R$G[k, ])
+  })
+
+  output$netv <- renderPlot({
+    C <- cur(); R <- C$R
+    vmax <- max(3, quantile(abs(R$P), 0.95))
+    par(mar = c(1, 1, 3, 1))
+    draw_net(C$th, vmax, input$ctr,
+             sprintf("weights, iteration %d   (loss %.4f)", C$k - 1L, R$F[C$k]))
+  })
+
+  output$netg <- renderPlot({
+    C <- cur()
+    gmax <- max(1e-8, max(abs(C$g)))
+    par(mar = c(1, 1, 3, 1))
+    draw_net(C$g, gmax, input$ctr,
+             sprintf("gradient of the loss, iteration %d", C$k - 1L),
+             arrows = FALSE, digits = 3)
+  })
+
+  output$fit <- renderPlot({
+    C <- cur(); R <- C$R; D <- DAT()
+    xg <- seq(-3, 3, length.out = 300)
+    par(mar = c(4, 4.2, 2.5, 1))
+    plot(D$x, jitter(D$y, amount = 0.12), pch = 19, cex = 0.7,
+         col = adjustcolor("#E8820C", 0.5), ylim = c(0, max(D$y) + 1),
+         xlab = "x", ylab = expression(lambda(x) ~ "and counts y"),
+         main = "fitted mean and the generated data")
+    lines(xg, lambda_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
+    lines(xg, lambda_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
+    lines(xg, lambda_fun(C$th, xg), col = "#2E8B57", lwd = 3)
+    legend("topright", bty = "n", cex = 0.85, lwd = c(2, 2, 3, NA),
+           lty = c(2, 1, 1, NA), pch = c(NA, NA, NA, 19),
+           col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
+           legend = c("true mean", "starting weights", "current fit", "counts"))
+  })
+
+  output$conv <- renderPlot({
+    C <- cur(); R <- C$R
+    it <- 0:(R$n - 1)
+    gn <- sqrt(rowSums(R$G^2))
+    par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+    plot(it, R$F, type = "b", pch = 20, xlab = "iteration", ylab = "loss",
+         main = "average negative log-likelihood")
+    points(it[C$k], R$F[C$k], pch = 19, col = "red", cex = 1.6)
+    plot(it, log10(gn), type = "b", pch = 20, xlab = "iteration",
+         ylab = expression(log[10] ~ "||gradient||"), main = "gradient norm")
+    points(it[C$k], log10(gn[C$k]), pch = 19, col = "red", cex = 1.6)
+  })
+
+  output$info <- renderUI({
+    C <- cur(); R <- C$R
+    a <- R$A[C$k]
+    HTML(paste0(
+      "<b>iteration</b> ", C$k - 1L, " of ", R$n - 1L,
+      " &nbsp; <b>loss</b> ", formatC(R$F[C$k], digits = 5, format = "f"),
+      " &nbsp; <b>||gradient||</b> ", formatC(sqrt(sum(C$g^2)), digits = 3, format = "g"),
+      if (is.finite(a)) paste0(" &nbsp; <b>step length</b> ",
+                               formatC(a, digits = 3, format = "g")) else "",
+      "<br><i>", R$note, "</i>"))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Fits the Poisson neural network of the book's backpropagation section, with one covariate and three `tanh` hidden units, to counts generated from known weights, and lets you watch gradient descent with a line search, conjugate gradient, and BFGS work on it.
+
+**The weights.** The upper network shows the ten weights at the current iteration, each in a box coloured by its value (blue negative, red positive; the same colour drives the width of the edge). Before a run starts, the up and down arrows beside a box change that weight, and the starting point of the run changes with it. **Set to the true values** loads the weights that generated the data, and **Random start** draws a new set.
+
+**The gradient.** The lower network has the same layout, with each box and edge coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
+
+**The fit.** The right panel shows the generated counts, the true mean curve (dashed red), the mean curve at the starting weights (grey) and the current fit (green), with the loss and the gradient norm per iteration beneath it. Use the playback buttons to step through the run. The loss is not convex, so different starts can end at different fits; try **Random start** a few times.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+## ------------------------------------------------------------------- model
+## One covariate x, three tanh hidden units, log link, Poisson counts:
+##   a_j = w_j1 x + w_j0,  h_j = tanh(a_j),  eta = v_0 + sum_j v_j h_j,
+##   lambda = exp(eta).
+## theta = (w11, w21, w31,  w10, w20, w30,  v1, v2, v3,  v0)
+J <- 3
+NAMES <- c("w11", "w21", "w31", "w10", "w20", "w30", "v1", "v2", "v3", "v0")
+TRUE_THETA <- c(3, 3, 1,   1.5, -1.5, 0,   1.2, -1.2, 0.3,   -0.3)
+
+fwd <- function(th, x) {
+  H <- tanh(outer(x, th[1:J]) + rep(th[J + 1:J], each = length(x)))
+  list(H = H, eta = as.vector(th[3 * J + 1] + H %*% th[2 * J + 1:J]))
+}
+lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
+
+## average Poisson negative log-likelihood (the log y! term dropped)
+nll <- function(th, x, y) {
+  e <- fwd(th, x)$eta
+  v <- mean(exp(e) - y * e)
+  if (is.finite(v)) v else Inf
+}
+
+## its gradient by backpropagation:  delta_eta -> delta_a -> weights
+nll_grad <- function(th, x, y) {
+  E <- fwd(th, x)
+  d_eta <- exp(E$eta) - y                                   # n
+  d_a   <- (1 - E$H^2) * outer(d_eta, th[2 * J + 1:J])      # n x J
+  c(colSums(d_a * x),                                       # w_j1
+    colSums(d_a),                                           # w_j0
+    as.vector(crossprod(E$H, d_eta)),                       # v_j
+    sum(d_eta)) / length(x)                                 # v_0
+}
+
+make_data <- function(n, seed) {
+  set.seed(100 + seed)
+  x <- runif(n, -3, 3)
+  list(x = x, y = rpois(n, lambda_fun(TRUE_THETA, x)))
+}
+
+rand_start <- function(seed) {
+  set.seed(2000 + seed)
+  c(rnorm(9, 0, 1), 0)
+}
+
+## ------------------------------------------------------- Wolfe line search
+line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
+  f0 <- f(x); gd0 <- sum(g(x) * d)
+  if (!is.finite(gd0) || gd0 >= 0) return(list(alpha = 0, ok = FALSE))
+  lo <- 0; hi <- Inf; a <- a0
+  for (it in 1:60) {
+    fa <- f(x + a * d)
+    if (!is.finite(fa) || fa > f0 + c1 * a * gd0) {
+      hi <- a; a <- 0.5 * (lo + hi)
+    } else {
+      if (sum(g(x + a * d) * d) < c2 * gd0) {
+        lo <- a
+        a <- if (is.finite(hi)) 0.5 * (lo + hi) else min(2 * a, 1e4)
+      } else {
+        return(list(alpha = a, ok = TRUE))
+      }
+    }
+    if (a < 1e-14) return(list(alpha = 0, ok = FALSE))
+  }
+  list(alpha = a, ok = (a > 0))
+}
+
+## ------------------------------------------------------------- algorithms
+## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
+## that led to it.
+run_alg <- function(alg, th0, x, y, maxit, tol = 1e-6) {
+  p <- length(th0)
+  f <- function(th) nll(th, x, y)
+  g <- function(th) nll_grad(th, x, y)
+  P <- G <- matrix(NA_real_, maxit + 1, p)
+  Fv <- AL <- rep(NA_real_, maxit + 1)
+  th <- th0; B <- diag(p)
+  g_prev <- d_prev <- s_prev <- NULL
+  n <- 0; note <- "maximum number of iterations reached"
+
+  for (k in 1:(maxit + 1)) {
+    gk <- g(th); fk <- f(th)
+    P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
+    if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
+    if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
+    if (k > maxit) break
+
+    if (alg == "gd") {
+      d <- -gk
+    } else if (alg == "cg") {
+      if (is.null(d_prev)) {
+        d <- -gk
+      } else {
+        yk <- gk - g_prev
+        beta <- max(0, sum(gk * yk) / max(sum(g_prev^2), 1e-300))   # PR+
+        d <- -gk + beta * d_prev
+      }
+      if (sum(gk * d) > -1e-12) d <- -gk                           # restart
+    } else {                                                       # BFGS
+      if (!is.null(s_prev)) {
+        yk <- gk - g_prev; sy <- sum(s_prev * yk)
+        if (sy > 1e-10) {
+          if (k == 2) B <- (sy / sum(yk^2)) * diag(p)    # scale the first B
+          rho <- 1 / sy
+          V <- diag(p) - rho * outer(s_prev, yk)
+          B <- V %*% B %*% t(V) + rho * outer(s_prev, s_prev)
+        }
+      }
+      d <- -as.vector(B %*% gk)
+      if (sum(gk * d) > -1e-12) { B <- diag(p); d <- -gk }
+    }
+
+    a0 <- if (alg == "bfgs" && k > 1) 1 else min(1, 1 / sqrt(sum(d^2)))
+    ls <- line_search(f, g, th, d, a0)
+    if (!ls$ok) { note <- "line search failed"; break }
+    AL[k + 1] <- ls$alpha
+    s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
+    th <- th + s_prev
+  }
+  i <- seq_len(n)
+  list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
+       A = AL[i], n = n, note = note)
+}
+
+ALGS <- c("Gradient descent + line search"      = "gd",
+          "Conjugate gradient (Polak-Ribiere+)" = "cg",
+          "BFGS (quasi-Newton)"                 = "bfgs")
+
+## --------------------------------------------------------- network layout
+XI <- 0.07; XH <- 0.60; XO <- 1.13        # x of the input, hidden, output nodes
+YH <- c(0.86, 0.52, 0.18); YO <- 0.52     # y of the hidden nodes and output
+BW <- 0.085                               # half-width of a value box
+## where each of the ten value boxes sits: input weights on the first edges,
+## hidden intercepts beside the hidden nodes, output weights on the last edges
+BOX <- data.frame(
+  idx = 1:10, sym = NAMES,
+  x = c(rep(0.31, 3), rep(0.56, 3), rep(0.86, 3), 1.00),
+  y = c(YO + 0.45 * (YH - YO), YH + c(0.12, 0.12, -0.12),
+        YH + 0.55 * (YO - YH), 0.18),
+  stringsAsFactors = FALSE)
+## the up / down arrow beside each box (also the click targets)
+ARROWS <- rbind(
+  data.frame(idx = BOX$idx, dir = +1, ax = BOX$x + BW + 0.03, ay = BOX$y + 0.03),
+  data.frame(idx = BOX$idx, dir = -1, ax = BOX$x + BW + 0.03, ay = BOX$y - 0.03))
+
+## ---------------------------------------------------------------- colours
+## Diverging ramp: blue = negative, red = positive, depth by magnitude.
+DIV <- colorRampPalette(c("#08306B", "#2171B5", "#6BAED6", "#DEEBF7",
+                          "#F7F7F7",
+                          "#FEE0D2", "#FC9272", "#CB181D", "#67000D"))(201)
+
+## compander: maps v in [-vmax, vmax] to [-1, 1], boosting small values
+tone <- function(v, vmax, k) {
+  u <- pmax(-1, pmin(1, v / vmax))
+  sign(u) * log1p(k * abs(u)) / log1p(k)
+}
+hcol <- function(v, vmax, k) DIV[round((tone(v, vmax, k) + 1) * 100) + 1]
+
+draw_net <- function(v, vmax, k, main, arrows = TRUE, digits = 2) {
+  col <- hcol(v, vmax, k); lw <- 0.8 + 6 * abs(tone(v, vmax, k))
+  plot.new(); plot.window(c(0, 1.2), c(-0.15, 1.04))
+  title(main = main, cex.main = 1.05)
+  ## edges: x -> h_j carries w_j1, h_j -> output carries v_j
+  for (j in 1:J) {
+    segments(XI, YO, XH, YH[j], col = col[j], lwd = lw[j], lend = 1)
+    segments(XH, YH[j], XO, YO, col = col[6 + j], lwd = lw[6 + j], lend = 1)
+    ## hidden intercepts hang off their node
+    segments(BOX$x[3 + j], BOX$y[3 + j], XH, YH[j], col = "grey65", lwd = 1)
+  }
+  points(XI, YO, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(XI, YO, "x", font = 2)
+  points(rep(XH, J), YH, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(rep(XH, J), YH, paste0("h", 1:J), cex = 0.8)
+  points(XO, YO, pch = 21, cex = 3.4, bg = "white", lwd = 1.6)
+  text(XO, YO, expression(lambda), cex = 1.1)
+  ## value boxes, heat-coloured
+  for (i in 1:10) {
+    b <- BOX[i, ]
+    rect(b$x - BW, b$y - 0.04, b$x + BW, b$y + 0.04, col = col[i],
+         border = "grey35")
+    text(b$x, b$y, sprintf(paste0("%s=%.", digits, "f"), b$sym, v[i]),
+         cex = 0.78, col = if (abs(tone(v[i], vmax, k)) > 0.62) "white" else "black")
+  }
+  if (arrows) for (r in seq_len(nrow(ARROWS))) {
+    a <- ARROWS[r, ]
+    polygon(a$ax + c(-0.028, 0.028, 0), a$ay + a$dir * c(-0.017, -0.017, 0.022),
+            col = "grey30", border = NA)
+  }
+  ## signed colour bar
+  xs <- seq(0.12, 1.08, length.out = 201)
+  rect(xs, -0.14, xs + diff(xs)[1], -0.09, col = DIV, border = NA)
+  lab <- formatC(vmax, format = "g", digits = 2)
+  text(c(0.12, 0.60, 1.08), -0.06, c(paste0("-", lab), "0", paste0("+", lab)),
+       cex = 0.72)
+}
+
+## --------------------------------------------------------------------- UI
+## an icon-only playback button; the title shows as a tooltip
+ctrl_btn <- function(id, icon_name, title, class = "btn-default")
+  actionButton(id, NULL, icon = icon(icon_name), title = title, class = class,
+               style = "flex: 1; padding: 6px 0;")
+
+row_label <- function(txt)
+  column(2, div(style = "padding-top: 28px;", tags$b(txt)))
+
+ui <- fluidPage(
+  titlePanel("Shinylive App for Fitting a Poisson Neural Network by Gradient Methods"),
+  ## ---- control panel, at the top -------------------------------------------
+  wellPanel(
+    fluidRow(
+      row_label("Optimizer"),
+      column(4, selectInput("alg", "Method", choices = ALGS, selected = "bfgs",
+                            width = "100%")),
+      column(3, sliderInput("maxit", "Iterations", min = 5, max = 300,
+                            value = 100, step = 5, width = "100%")),
+      column(3, sliderInput("ctr", "Colour contrast", min = 1, max = 40,
+                            value = 8, step = 1, width = "100%"))
+    ),
+    hr(style = "margin: 4px 0 8px;"),
+    fluidRow(
+      row_label("Play control"),
+      column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
+                    ctrl_btn("first", "backward-fast", "Back to the start"),
+                    ctrl_btn("back",  "backward-step", "One iteration back"),
+                    ctrl_btn("play",  "play",          "Play / pause",
+                             class = "btn-primary"),
+                    ctrl_btn("step",  "forward-step",  "One iteration forward"),
+                    ctrl_btn("toend", "forward-fast",  "To the end"))),
+      column(2, div(style = "padding-top: 8px;",
+                    checkboxInput("autoplay", "Autoplay on change", FALSE))),
+      column(2, sliderInput("n", "Sample size n", min = 50, max = 500,
+                            value = 150, step = 50, width = "100%")),
+      column(3, div(style = "padding-top: 25px;",
+                    actionButton("newdata", "Regenerate the dataset",
+                                 class = "btn-warning", style = "width:100%;")))
+    )
+  ),
+  fluidRow(
+    ## ---- left: the network of values above the network of gradients -----
+    column(6,
+      div(style = "display: flex; gap: 8px; align-items: flex-end;",
+          actionButton("settrue", "Set to the true values",
+                       class = "btn-success"),
+          actionButton("newstart", "Random start"),
+          div(style = "flex: 1; max-width: 180px;",
+              sliderInput("astep", "Arrow step", min = 0.05, max = 1,
+                          value = 0.25, step = 0.05, width = "100%"))),
+      plotOutput("netv", height = "330px", click = "netv_click"),
+      plotOutput("netg", height = "330px"),
+      helpText("Click the up / down arrows beside a weight to change the ",
+               "starting value (this restarts the run). The true values are ",
+               "those that generated the data.")),
+    ## ---- right: the fitted mean, and how the optimizer is doing -----------
+    column(6,
+      plotOutput("fit", height = "400px"),
+      plotOutput("conv", height = "240px"),
+      htmlOutput("info"))
+  )
+)
+
+## ----------------------------------------------------------------- server
+server <- function(input, output, session) {
+
+  dseed <- reactiveVal(1); rseed <- reactiveVal(1)
+  theta0 <- reactiveVal(rand_start(1))        # the starting weights
+  playing <- reactiveVal(FALSE)
+  kpos <- reactiveVal(0L)                     # current iteration, 0 .. R$n - 1
+
+  observeEvent(input$newdata, dseed(dseed() + 1))
+  observeEvent(input$settrue, theta0(TRUE_THETA))
+  observeEvent(input$newstart, {
+    rseed(rseed() + 1); theta0(rand_start(rseed()))
+  })
+  ## an arrow click moves the nearest arrow's weight by one step
+  observeEvent(input$netv_click, {
+    cl <- input$netv_click
+    d <- ((cl$x - ARROWS$ax) / 0.05)^2 + ((cl$y - ARROWS$ay) / 0.045)^2
+    i <- which.min(d)
+    if (d[i] < 2) {
+      th <- theta0()
+      th[ARROWS$idx[i]] <- th[ARROWS$idx[i]] + ARROWS$dir[i] * input$astep
+      theta0(th)
+    }
+  })
+
+  DAT <- reactive(make_data(input$n, dseed()))
+  run <- reactive({
+    D <- DAT()
+    run_alg(input$alg, theta0(), D$x, D$y, input$maxit)
+  })
+
+  observeEvent(run(), {
+    kpos(0L)
+    playing(isTRUE(input$autoplay) && run()$n > 1)
+  })
+
+  observeEvent(input$play, {
+    if (isTRUE(playing())) playing(FALSE)
+    else {
+      if (kpos() >= run()$n - 1) kpos(0L)
+      playing(TRUE)
+    }
+  })
+  observeEvent(playing(), {
+    updateActionButton(session, "play",
+                       icon = icon(if (isTRUE(playing())) "pause" else "play"))
+  })
+  observe({
+    if (!isTRUE(playing())) return()
+    kmax <- isolate(run()$n) - 1
+    k <- isolate(kpos())
+    if (k >= kmax) { playing(FALSE); return() }
+    invalidateLater(300, session)
+    kpos(k + 1L)
+  })
+  observeEvent(input$step,  { playing(FALSE); kpos(min(kpos() + 1L, run()$n - 1L)) })
+  observeEvent(input$back,  { playing(FALSE); kpos(max(kpos() - 1L, 0L)) })
+  observeEvent(input$first, { playing(FALSE); kpos(0L) })
+  observeEvent(input$toend, { playing(FALSE); kpos(run()$n - 1L) })
+
+  cur <- reactive({
+    R <- run(); k <- min(kpos(), R$n - 1L) + 1L
+    list(R = R, k = k, th = R$P[k, ], g = R$G[k, ])
+  })
+
+  output$netv <- renderPlot({
+    C <- cur(); R <- C$R
+    vmax <- max(3, quantile(abs(R$P), 0.95))
+    par(mar = c(1, 1, 3, 1))
+    draw_net(C$th, vmax, input$ctr,
+             sprintf("weights, iteration %d   (loss %.4f)", C$k - 1L, R$F[C$k]))
+  })
+
+  output$netg <- renderPlot({
+    C <- cur()
+    gmax <- max(1e-8, max(abs(C$g)))
+    par(mar = c(1, 1, 3, 1))
+    draw_net(C$g, gmax, input$ctr,
+             sprintf("gradient of the loss, iteration %d", C$k - 1L),
+             arrows = FALSE, digits = 3)
+  })
+
+  output$fit <- renderPlot({
+    C <- cur(); R <- C$R; D <- DAT()
+    xg <- seq(-3, 3, length.out = 300)
+    par(mar = c(4, 4.2, 2.5, 1))
+    plot(D$x, jitter(D$y, amount = 0.12), pch = 19, cex = 0.7,
+         col = adjustcolor("#E8820C", 0.5), ylim = c(0, max(D$y) + 1),
+         xlab = "x", ylab = expression(lambda(x) ~ "and counts y"),
+         main = "fitted mean and the generated data")
+    lines(xg, lambda_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
+    lines(xg, lambda_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
+    lines(xg, lambda_fun(C$th, xg), col = "#2E8B57", lwd = 3)
+    legend("topright", bty = "n", cex = 0.85, lwd = c(2, 2, 3, NA),
+           lty = c(2, 1, 1, NA), pch = c(NA, NA, NA, 19),
+           col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
+           legend = c("true mean", "starting weights", "current fit", "counts"))
+  })
+
+  output$conv <- renderPlot({
+    C <- cur(); R <- C$R
+    it <- 0:(R$n - 1)
+    gn <- sqrt(rowSums(R$G^2))
+    par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+    plot(it, R$F, type = "b", pch = 20, xlab = "iteration", ylab = "loss",
+         main = "average negative log-likelihood")
+    points(it[C$k], R$F[C$k], pch = 19, col = "red", cex = 1.6)
+    plot(it, log10(gn), type = "b", pch = 20, xlab = "iteration",
+         ylab = expression(log[10] ~ "||gradient||"), main = "gradient norm")
+    points(it[C$k], log10(gn[C$k]), pch = 19, col = "red", cex = 1.6)
+  })
+
+  output$info <- renderUI({
+    C <- cur(); R <- C$R
+    a <- R$A[C$k]
+    HTML(paste0(
+      "<b>iteration</b> ", C$k - 1L, " of ", R$n - 1L,
+      " &nbsp; <b>loss</b> ", formatC(R$F[C$k], digits = 5, format = "f"),
+      " &nbsp; <b>||gradient||</b> ", formatC(sqrt(sum(C$g^2)), digits = 3, format = "g"),
+      if (is.finite(a)) paste0(" &nbsp; <b>step length</b> ",
+                               formatC(a, digits = 3, format = "g")) else "",
+      "<br><i>", R$note, "</i>"))
+  })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Optimization for Maximum Likelihood Estimation](../compstat_book/chapters/unit05_MLE.html#backprogation-algorithm-for-neural-networks)* in the book.
