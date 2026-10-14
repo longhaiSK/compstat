@@ -1008,6 +1008,29 @@ for (m in c("naive", "mle")) {
 
 The naive estimator is biased upward, and severely so when $\lambda$ is small, since that is when most of the probability mass sits on the discarded zero. Its bias does not shrink with sample size: it reflects the wrong model, not too little data. The MLE is centred on the truth with a standard deviation matching the information-based standard error of the previous section. The optimization was the means; the correct estimator was the end.
 
+## Nelder–Mead Method for Multivariate Optimization
+
+Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
+
+1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
+
+2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
+
+3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
+
+```{r}
+#| label: nelder-mead-rosenbrock
+rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
+nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
+```
+
+The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
+
+### Shinylive App for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
+
+There is a [shinylive app](../../shinylive_apps/app_nelder-mead.html) to show how the Nelder-Mead method finds a minimum without derivatives, by repeatedly reflecting, expanding, contracting, and shrinking a simplex.
+
+
 ## Multivariate Newton-Raphson Optimzation Methods
 
 
@@ -2556,29 +2579,8 @@ Its minimum is not zero but about $\sigma^2/2$, the **noise floor**, which the a
 
 With a log link, $\lambda_i = e^{\eta_i}$, and counts $y_i \mid x_i \sim \mathrm{Poisson}(\lambda_i)$, the loss is $\mathcal{L} = \frac1n\sum_i(\lambda_i - y_i\eta_i)$ and $\delta_{\eta_i} = \lambda_i - y_i$; this is the model whose gradient is worked out in full in the backpropagation section above. The log link makes the hidden units add on the log scale, so $\lambda(x)$ is a *product* of their contributions $e^{v_j h_j(x)}$, and the loss is much more sensitive to a weight that is too large than in the Gaussian case, so a fixed learning rate is harder to choose. The [Poisson app](../../shinylive_apps/app_nn-poisson.html) offers the same controls as the Gaussian one, with the sample size going up to $2000$ so that mini-batch SGD can be compared with the full-batch methods when $n$ is large.
 
-## Nelder–Mead (Simplex Method)
 
-Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
-
-1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
-
-2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
-
-3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
-
-```{r}
-#| label: nelder-mead-rosenbrock
-rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
-nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
-```
-
-The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
-
-### Shinylive App for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
-
-There is a [shinylive app](../../shinylive_apps/app_nelder-mead.html) to show how the Nelder-Mead method finds a minimum without derivatives, by repeatedly reflecting, expanding, contracting, and shrinking a simplex.
-
-## Comparing All the Methods
+## Summary of Optimization Methods
 
 The chapter has covered a lot of ground, from bisection on a scalar gradient $g$ to stochastic gradient descent on millions of parameters. This section collects the gradient-based methods, Newton–Raphson included, into one reference: first as a single update rule in which they differ only in the gradient they use and in how it is modified, then by what each needs and costs, then by which R function to reach for and how to choose among them. Derivative-free methods such as Nelder–Mead are left out.
 
@@ -2667,25 +2669,39 @@ model.fit(x, y, batch_size=32, epochs=200, verbose=0)    # mini-batch gradients 
 
 Replacing `Adam` by `tf.keras.optimizers.SGD(learning_rate=0.05, momentum=0.9)` gives the momentum method, and omitting `momentum` gives plain mini-batch SGD. The same loop written by hand, with `tf.GradientTape` to obtain $g_k$ and `optimizer.apply_gradients` to apply the modified update, is what the Keras `fit` does internally. The code above is a sketch; it is not run in this book.
 
-### Choosing a method
 
-| Situation | Suggested approach |
-|:---|:---|
-| Hessian derivable, $p$ small, standard errors wanted | Newton–Raphson or Fisher scoring |
-| GLM or a model expressible as one | `glm` (IRLS) |
-| Gradient available, $p$ moderate | BFGS via `optim(method = "BFGS")` |
-| Gradient available, $p$ large | L-BFGS |
-| Analytic gradient unavailable | Finite-difference gradients (the default in `optim`), or automatic differentiation |
-| Divergence or poor conditioning suspected | `nlm` or `nlminb`; rescale the parameters |
-| Objective a sum over very many observations | Stochastic gradient descent, momentum or Adam on mini-batches |
-| Neural network, $p$ large | Adam or SGD with momentum on mini-batches; BFGS only for small networks |
-| Multiple local maxima suspected | Multiple random starts with any of the above |
+### Example of Fitting NN with Tensorflow
 
-: Gives practical rules for choosing an optimizer according to the features of the problem. Practical guidance on method selection {#tbl-choosing}
+The Gaussian network of the first app, with one input, one hidden layer of four `tanh` units and a linear output (two layers of weights, thirteen parameters), written in Keras. The data are generated from the same two-bump mean as in the app, with noise standard deviation $\sigma = 0.3$, so the smallest attainable loss is the noise floor $\sigma^2/2 = 0.045$.
 
-The last row deserves emphasis. Every method in this chapter is a *local*
-method: each converges to a stationary point near where it started, and none
-can certify that the point found is the global maximum. Restarting from a
-dispersed set of initial values and comparing the attained log-likelihoods is
-the only general safeguard, and it should be routine for any likelihood that is
-not known to be concave.
+```python
+import numpy as np
+import tensorflow as tf
+
+# data: y = mu(x) + noise, with the mean of the Gaussian app (four tanh units)
+rng = np.random.default_rng(1)
+n = 500
+x = rng.uniform(-3, 3, size=(n, 1)).astype("float32")
+W, w0 = np.array([[2.5, 2.5, 2.5, 2.5]]), np.array([5.5, 2, -2, -5.5])
+v, v0 = np.array([1.2, -1.2, 1.0, -1.0]), -0.5
+mu = np.tanh(x @ W + w0) @ v + v0
+y = (mu + 0.3 * rng.normal(size=n)).astype("float32").reshape(-1, 1)
+
+# the model: eta = v_0 + sum_j v_j tanh(w_j1 x + w_j0), identity link
+model = tf.keras.Sequential([
+    tf.keras.layers.Input(shape=(1,)),
+    tf.keras.layers.Dense(4, activation="tanh"),    # hidden layer: W (1 x 4), w_0 (4)
+    tf.keras.layers.Dense(1),                       # output layer: v (4 x 1), v_0
+])
+
+# loss: half the mean squared error, the L(theta) of the app
+half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
+
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05), loss=half_mse)
+history = model.fit(x, y, batch_size=50, epochs=300, verbose=0)   # one epoch = n/50 mini-batch steps
+
+print(history.history["loss"][-1])      # close to 0.045 when the fit is good
+print(model.get_weights())              # [W, w_0, v, v_0]
+```
+
+Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the app: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.05)`. Setting `batch_size=n` makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits; the code above is a sketch that is not run in this book.
