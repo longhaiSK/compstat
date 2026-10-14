@@ -2703,12 +2703,19 @@ model = tf.keras.Sequential([
     tf.keras.layers.Dense(1),                       # output layer: v (16 x 1), v_0
 ])
 
-# the loss is chosen separately: half the mean squared error, which is the Gaussian
-# negative log-likelihood for sigma = 1 up to a constant; the 1/2 cancels the 2 from
-# differentiating the square, so that delta_eta = mu - y
+# the loss is chosen separately from the model. Keras calls it as loss(y_true, y_pred):
+#   y_true = a mini-batch of the targets y_tr passed to fit()
+#   y_pred = the output of the last layer of the network for the same rows, here eta = mu;
+#            Keras does not check that this suits the loss, so the output layer and the
+#            loss have to be chosen together. The names y, mu are free.
+# half the mean squared error is the Gaussian negative log-likelihood for sigma = 1 up to
+# a constant; the 1/2 cancels the 2 from differentiating the square, so that delta_eta = mu - y
 half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
 
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=half_mse)
+
+# fit(x, y): x is fed to the network, y is held back as the targets of the loss; the rows
+# of x_tr and y_tr are shuffled together and cut into mini-batches of 50 observations
 history = model.fit(x_tr, y_tr, batch_size=50, epochs=600, verbose=0)   # one epoch = 1200/50 mini-batch steps
 
 print("training loss:", history.history["loss"][-1], "  noise floor:", sigma**2 / 2)
@@ -2747,3 +2754,18 @@ plt.show()
 ```
 
 In Keras the model only defines the network, $x \mapsto \eta(x;\theta)$; the response enters through the `loss` given to `compile`. Choosing the loss $\tfrac12(y-\mu)^2$ is what makes this a Gaussian model with an identity link. For counts one would end the network with the same linear layer and use the loss $e^{\eta} - y\eta$ of the Poisson model, so the output layer and the loss have to be chosen consistently by the user. Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the apps: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.01)`. Setting `batch_size=ntr` makes each step a full-batch one. The loss is not convex, so different random initial weights can end in different, equally good fits. The $R^2$ cannot reach $1$ even for the true mean, because the noise variance $0.04$ is part of the variance of $y$; the contour plot is the better check that all four modes have been found. The test $R^2$ is close to the training one because the network has $65$ weights for $1200$ observations; a network with many more weights would show the gap that the test set exists to reveal.
+
+The same network gives a Poisson regression by changing only the loss. The last layer is still a linear `Dense(1)`, whose output is now the log-mean $\eta_i = \log\lambda_i$, so the loss must exponentiate it:
+
+```python
+# Poisson negative log-likelihood per observation, dropping log(y!):  lambda - y * eta,
+# with lambda = exp(eta); here the second argument is eta = log(lambda), not lambda
+poisson_nll = lambda y, eta: tf.reduce_mean(tf.exp(eta) - y * eta)
+
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=poisson_nll)
+model.fit(x_tr, y_tr, batch_size=50, epochs=600, verbose=0)    # y_tr now holds counts
+
+lambda_hat = np.exp(model.predict(x_te, verbose=0))            # predictions are on the eta scale
+```
+
+Keras also ships such losses, for example `tf.keras.losses.Poisson`, but that one expects the *mean* $\lambda$ as its second argument and uses $\lambda - y\log\lambda$, so it would need an `exp` activation on the last layer. Writing the loss on the $\eta$ scale as above is numerically safer and matches the loss $\lambda_i - y_i\eta_i$ of the chapter. The code above is shown, not run.
