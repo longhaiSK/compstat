@@ -346,7 +346,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // chapters menu: the book's chapters, collected from the sidebar before it is trimmed
-    const menuBtn = iconButton('tb-chapters', '<span class="tb-glyph">&#9776;</span><span class="tb-label">Chapters</span>', 'Choose a chapter');
+    const menuBtn = iconButton('tb-chapters', '<span class="tb-cur"></span><span class="tb-caret">&#9662;</span>', 'Choose a chapter');
     const drawer = document.createElement('nav');
     drawer.id = 'chapter-drawer';
     const list = document.createElement('ul');
@@ -376,9 +376,7 @@ document.addEventListener("DOMContentLoaded", function() {
     tocBtn.innerHTML = '<span class="tb-glyph"><i class="bi bi-layout-sidebar-inset"></i></span><span class="tb-label">Contents</span>';
     tocBtn.title = 'Show or hide the contents of this chapter';
 
-    const title = document.createElement('div');
-    title.id = 'tb-title';
-    title.textContent = currentText;
+    menuBtn.querySelector('.tb-cur').textContent = currentText || 'Chapters';
 
     const gear = iconButton('tb-settings', '<span class="tb-glyph">&#9881;</span><span class="tb-label">Settings</span>', 'Font size, font family and background');
 
@@ -390,11 +388,10 @@ document.addEventListener("DOMContentLoaded", function() {
     book.href = bookLink ? bookLink.getAttribute('href') : '#';
     book.title = 'Book home';
 
-    // order: contents toggle, chapters menu, book title, chapter title, settings
+    // order: contents toggle, book title, chapter selector, GitHub link, settings
     bar.appendChild(tocBtn);
-    bar.appendChild(menuBtn);
     bar.appendChild(book);
-    bar.appendChild(title);
+    bar.appendChild(menuBtn);
     // the source-code link of the sidebar header moves to the bar, left of the settings
     const gh = document.querySelector('#quarto-sidebar .sidebar-tools-main a');
     if (gh) {
@@ -411,7 +408,12 @@ document.addEventListener("DOMContentLoaded", function() {
     menuBtn.addEventListener('click', e => {
       e.stopPropagation();
       const open = !body.classList.contains('chapters-open');
-      closePanels(); if (open) body.classList.add('chapters-open');
+      closePanels();
+      if (open) {
+        body.classList.add('chapters-open');           // shown first, so that its width can be measured
+        const w = drawer.getBoundingClientRect().width;
+        drawer.style.left = Math.max(0, Math.min(menuBtn.getBoundingClientRect().left, window.innerWidth - w)) + 'px';
+      }
     });
     gear.addEventListener('click', e => {
       e.stopPropagation();
