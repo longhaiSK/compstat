@@ -2660,7 +2660,7 @@ The Gaussian network with a linear output (identity link) written in Keras, now 
 $$
 \mu(x_1, x_2) = \sum_{k=1}^{4} h_k \exp\!\Big(-\frac{(x_1 - c_{k1})^2 + (x_2 - c_{k2})^2}{2 \cdot 0.8^2}\Big),
 $$
-with centres $c_1 = (-1.5, -1.5)$, $c_2 = (-1.5, 1.5)$, $c_3 = (1.5, -1.5)$, $c_4 = (1.5, 1.5)$ and heights $h = (2.0, 1.5, 1.0, 1.8)$, and $y = \mu(x_1, x_2) + \varepsilon$ with $\varepsilon \sim N(0, 0.2^2)$, so that the smallest attainable loss is the noise floor $0.2^2/2 = 0.02$. The network has one hidden layer of 16 `tanh` units and a linear output, that is two layers of weights and $2\cdot 16 + 16 + 16 + 1 = 65$ parameters. The data are split into a training and a test set; the network is fitted to the training set only, and the test set shows how well it predicts new observations.
+with centres $c_1 = (-1.5, -1.5)$, $c_2 = (-1.5, 1.5)$, $c_3 = (1.5, -1.5)$, $c_4 = (1.5, 1.5)$ and heights $h = (2.0, 1.5, 1.0, 1.8)$, and $y = \mu(x_1, x_2) + \varepsilon$ with $\varepsilon \sim N(0, 0.2^2)$, so that the smallest attainable loss is the noise floor. The network has one hidden layer of 16 `tanh` units and a linear output, that is two layers of weights and $2\cdot 16 + 16 + 16 + 1 = 65$ parameters. The data are split into a training and a test set; the network is fitted to the training set only, and the test set shows how well it predicts new observations.
 
 ```{python}
 #| label: fig-tf-gaussian-nn
@@ -2672,9 +2672,13 @@ with centres $c_1 = (-1.5, -1.5)$, $c_2 = (-1.5, 1.5)$, $c_3 = (1.5, -1.5)$, $c_
 #|   Left and middle: contours of the true mean $\\mu(x_1, x_2)$, with its four modes, and of the fitted mean on the same levels. Right: fitted value $\\hat y_i$ against the observed $y_i$ for the training and the test sets, with the $R^2$ of each in the legend."
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"          # quiet TensorFlow's start-up messages
+os.environ["TF_USE_LEGACY_KERAS"] = "1"           # tensorflow_probability layers need the tf_keras package
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 import matplotlib.pyplot as plt
+
+tfd = tfp.distributions
 
 tf.keras.utils.set_random_seed(1)                 # numpy, python and TensorFlow seeds
 
@@ -2695,21 +2699,25 @@ y = (mu_true(x) + sigma * rng.normal(size=(n, 1))).astype("float32")
 ntr = 1200
 x_tr, y_tr, x_te, y_te = x[:ntr], y[:ntr], x[ntr:], y[ntr:]
 
-# the model: eta = v_0 + sum_j v_j tanh(w_j1 x_1 + w_j2 x_2 + w_j0), identity link
+# the model is the whole probability model, y | x ~ N(mu(x), 1), mu = eta, identity link:
+#   eta = v_0 + sum_j v_j tanh(w_j1 x_1 + w_j2 x_2 + w_j0)
 model = tf.keras.Sequential([
     tf.keras.layers.Input(shape=(2,)),
     tf.keras.layers.Dense(16, activation="tanh"),   # hidden layer: W (2 x 16), w_0 (16)
     tf.keras.layers.Dense(1),                       # output layer: v (16 x 1), v_0
+    tfp.layers.DistributionLambda(lambda eta: tfd.Normal(loc=eta, scale=1.0),
+                                  convert_to_tensor_fn=tfd.Distribution.mean),
 ])
 
-# loss: half the mean squared error (the Gaussian nll for sigma = 1, up to a constant;
-# the 1/2 cancels the 2 from differentiating the square), the L(theta) of the app
-half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
+# the loss is the negative log-likelihood of that distribution; the 1/2 of the squared
+# error is its quadratic part, and it gives delta_eta = mu - y with no factor of 2
+nll = lambda y, dist: -dist.log_prob(y)
 
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=half_mse)
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=nll)
 history = model.fit(x_tr, y_tr, batch_size=50, epochs=600, verbose=0)   # one epoch = 1200/50 mini-batch steps
 
-print("training loss:", history.history["loss"][-1], "  noise floor:", sigma**2 / 2)
+floor = 0.5 * np.log(2 * np.pi) + sigma**2 / 2    # smallest expected nll per observation
+print("training loss:", history.history["loss"][-1], "  noise floor:", floor)
 print("number of weights:", model.count_params())
 
 # fitted values, and R^2 = 1 - SSE / SST on each set
@@ -2744,4 +2752,4 @@ ax[2].legend(frameon=False, loc="upper left")
 plt.show()
 ```
 
-Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the apps: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.01)`. Setting `batch_size=ntr` makes each step a full-batch one. The loss is not convex, so different random initial weights can end in different, equally good fits. The $R^2$ cannot reach $1$ even for the true mean, because the noise variance $0.04$ is part of the variance of $y$; the contour plot is the better check that all four modes have been found. The test $R^2$ is close to the training one because the network has $65$ weights for $1200$ observations; a network with many more weights would show the gap that the test set exists to reveal.
+The model is the probability model: the last layer turns the network output $\eta_i$ into the distribution $N(\eta_i, 1)$, and the loss is the negative log-likelihood of that distribution, so that changing the response distribution, for example to `tfd.Poisson(log_rate=eta)` for counts, changes the model and the loss together. With $\sigma = 1$ fixed the loss is $\frac12(y_i-\mu_i)^2 + \frac12\log 2\pi$, so its smallest expected value, the noise floor, is $\frac12\log 2\pi + \frac{0.2^2}{2} = 0.939$ for the true noise standard deviation $0.2$; the constant $\frac12\log 2\pi = 0.919$ is what Keras includes and the app's loss leaves out. The `TF_USE_LEGACY_KERAS` line is needed because `tensorflow_probability` layers are built on the older `tf_keras` package. Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the apps: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.01)`. Setting `batch_size=ntr` makes each step a full-batch one. The loss is not convex, so different random initial weights can end in different, equally good fits. The $R^2$ cannot reach $1$ even for the true mean, because the noise variance $0.04$ is part of the variance of $y$; the contour plot is the better check that all four modes have been found. The test $R^2$ is close to the training one because the network has $65$ weights for $1200$ observations; a network with many more weights would show the gap that the test set exists to reveal.

@@ -6,5 +6,5 @@ if (file.exists(py)) {
 } else {
   warning("Python environment not found at ", py, ". Python chunks (the TensorFlow example) ",
           "will use RETICULATE_PYTHON = '", Sys.getenv("RETICULATE_PYTHON"), "', which needs ",
-          "numpy, tensorflow and matplotlib.", call. = FALSE)
+          "numpy, tensorflow, tensorflow-probability, tf-keras and matplotlib.", call. = FALSE)
 }
