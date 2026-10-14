@@ -3,8 +3,8 @@ source("renv/activate.R")
 py <- path.expand("~/Github/bin/.venv/bin/python")
 if (file.exists(py)) {
   Sys.setenv(RETICULATE_PYTHON = py)
-} else if (!nzchar(Sys.getenv("RETICULATE_PYTHON"))) {
-  warning("Python environment not found at ", py, ": python chunks (TensorFlow example) ",
-          "need RETICULATE_PYTHON to point to a Python with numpy, tensorflow and matplotlib.",
-          call. = FALSE)
+} else {
+  warning("Python environment not found at ", py, ". Python chunks (the TensorFlow example) ",
+          "will use RETICULATE_PYTHON = '", Sys.getenv("RETICULATE_PYTHON"), "', which needs ",
+          "numpy, tensorflow and matplotlib.", call. = FALSE)
 }
