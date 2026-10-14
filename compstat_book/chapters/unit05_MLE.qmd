@@ -2525,6 +2525,17 @@ rbind(sgd      = sgd_family(data$x, data$y, c(0, 0), "sgd", gamma = 0.1),
       nlm      = logit_nlm$estimate)
 ```
 
+### Optimization in Actions for Deep Learning
+
+Fitting a deep network is the setting for which the methods of this section are used at the largest scale, with $p$ from millions to hundreds of billions and $n$ so large that a full pass through the data is rarely made. The practice differs from the small examples of this chapter in four ways.
+
+- **Only mini-batch gradients.** The gradient comes from backpropagation (@sec-backprop-dag) on a mini-batch, and it is the only derivative information used. Full-batch methods, and second-order methods such as Newton–Raphson or BFGS, need a full pass or $O(p^2)$ storage, which is out of reach. Their place is taken by the diagonal preconditioners of Adam, and in research by cheaper approximations of curvature such as Shampoo and K-FAC.
+- **Adam-type methods as the default.** AdamW, which is Adam with the weight decay applied directly to the weights rather than through the gradient, is the usual choice for transformers and language models, mainly because it needs little tuning and is robust to badly scaled weights. SGD with momentum, usually with a carefully tuned schedule and weight decay, remains common for image classification, where it is often reported to generalize slightly better; this is a rule of thumb that depends on the model and the data, not a theorem.
+- **The learning-rate schedule matters as much as the optimizer.** A typical recipe is a short warmup followed by a cosine or linear decay of $\alpha_k$, in the spirit of the Robbins–Monro condition above. Gradient clipping, large batches with a rescaled learning rate, and mixed-precision arithmetic are further standard ingredients.
+- **The loss is not the only goal.** The objective is highly non-convex, with many equivalent minima, and a loss driven to its exact minimum can overfit. Practitioners stop early, regularize, and judge the fit on held-out data, so convergence to a stationary point is rarely checked in the sense used earlier in this chapter.
+
+The two apps in the next section are deliberately tiny, with one input and four hidden units, so that the effect of each optimizer on the weights, the gradient and the fitted curve can be seen. The same update rules, with the same formulas, are what runs inside the deep learning libraries.
+
 ## Examples of Fitting Neural Networks {#sec-nn-examples}
 
 Both examples below use one input $x$ and four `tanh` hidden units, so that $\theta$ has $13$ weights and the fit can be drawn as a curve. They differ only in the likelihood, hence in the output link and in the starting value $\delta_{\eta_i}$ of backpropagation (@sec-backprop-dag); every other step of the gradient computation is the same. Each app fits the same data with seven optimizers: fixed-rate gradient descent, mini-batch SGD, momentum, Adam, gradient descent with a Wolfe line search, conjugate gradient and BFGS. One SGD iteration is an epoch, so that its progress can be compared with the full-batch methods.
