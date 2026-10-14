@@ -2367,9 +2367,9 @@ All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `o
 
 There is a [shinylive app](../../shinylive_apps/app_gradient-methods.html) to let you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability.
 
-## Stochastic Gradient Descent
+### Stochastic Gradient Descent
 
-### Motivation: Large $n$
+#### Motivation: Large $n$
 
 For iid data the negative log-likelihood and its gradient are **sums over observations**:
 $$
@@ -2384,7 +2384,7 @@ E_i\big[g_i(\theta)\big] = \frac{1}{n}g(\theta),
 $$
 so a noisy but cheap gradient estimate is often enough to make progress — the same Monte Carlo idea used elsewhere in this book, now applied to optimization rather than integration.
 
-### The SGD Algorithm
+#### The SGD Algorithm
 
 For $t = 1, 2, \ldots$:
 
@@ -2401,7 +2401,7 @@ $$
 $$
 which reduces the variance of the gradient estimate by a factor of $1/m$ at $m$ times the per-step cost, and is what lets the computation vectorize efficiently or run on a GPU. The **learning rate** $\gamma_t$ plays the role that a line search played for the deterministic methods above — a line search itself would need a full pass over the data to evaluate $\mathcal{L}$, defeating the purpose.
 
-### Learning Rate and Convergence
+#### Learning Rate and Convergence
 
 Because each update uses a noisy gradient, a constant learning rate $\gamma$ makes $\theta_t$ **bounce around** the optimum indefinitely, with a variance proportional to $\gamma$. The classical result of Robbins and Monro (1951) is that $\theta_t$ converges to the optimum provided
 $$
@@ -2409,13 +2409,9 @@ $$
 $$
 the first condition allowing the iterate to travel arbitrarily far from its start, and the second forcing the noise to die out fast enough for it to settle.
 
-A learning rate that is too large causes divergence or persistent noise; one that is too small is painfully slow. Convergence is only **sublinear** — far slower than Newton's quadratic rate *per iteration* — but each SGD iteration costs $O(p)$ or $O(mp)$ rather than $O(np)$ for a full gradient or $O(np^2)$ for a Hessian, and early progress is often fast even when final convergence is not. Common refinements include **momentum** (averaging past gradients to damp the noise), **Adam** (per-coordinate adaptive learning rates), and **Polyak–Ruppert averaging** of the iterates, $\overline\theta_T = \tfrac1T\sum_{t\le T}\theta_t$, which restores the $\sqrt n$-efficiency of the MLE that the noisy path alone does not have.
+A learning rate that is too large causes divergence or persistent noise; one that is too small is painfully slow. Convergence is only **sublinear** — far slower than Newton's quadratic rate *per iteration* — but each SGD iteration costs $O(p)$ or $O(mp)$ rather than $O(np)$ for a full gradient or $O(np^2)$ for a Hessian, and early progress is often fast even when final convergence is not. Common refinements are **momentum** and **Adam**, described in the next two sections, and **Polyak–Ruppert averaging** of the iterates, $\overline\theta_T = \tfrac1T\sum_{t\le T}\theta_t$, which restores the $\sqrt n$-efficiency of the MLE that the noisy path alone does not have.
 
-### Shinylive App for Stochastic Gradient Descent {#sec-sgd-app}
-
-There is a [shinylive app](../../shinylive_apps/app_sgd.html) that fits a small Gaussian neural network (one input, four hidden units) with seven optimizers, among them mini-batch SGD, momentum and Adam, to illustrate how stochastic gradient descent trades the accuracy of each step for lower cost: SGD iterations are epochs, so its progress can be compared with the full-batch methods on the same data and starting weights.
-
-### Example: SGD for Logistic Regression in R
+#### Example: SGD for Logistic Regression in R
 
 Returning one last time to the running logistic-regression example, mini-batch SGD needs only the per-observation gradient already coded for Newton–Raphson, applied to a small random subset at each update:
 
@@ -2444,7 +2440,7 @@ sg <- sgd_logistic(data$x, data$y, c(0, 0))
 rbind(sgd = sg$est, nlm = logit_nlm$estimate, truth = beta_true)
 ```
 
-### SGD Trajectory vs. Newton–Raphson
+#### SGD Trajectory vs. Newton–Raphson
 
 ```{r}
 #| label: fig-sgd-vs-newton
@@ -2468,6 +2464,82 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
 ```
 
 Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
+
+### Momentum
+
+Plain SGD follows each noisy gradient immediately, so it zig-zags across narrow valleys just as steepest descent does. **Momentum** (the heavy-ball method) keeps an exponentially weighted velocity $m_t$ of past gradients and steps along it:
+$$
+m_t = \beta\, m_{t-1} + g_t, \qquad \theta_{t+1} = \theta_t - \gamma\, m_t,
+$$
+where $g_t$ is the (mini-batch) gradient at $\theta_t$ and $\beta \in [0, 1)$, commonly $0.9$, sets the memory. Components of the gradient that keep their sign add up, so the step grows along the valley floor; components that flip sign from step to step cancel, which damps the zig-zag and a good part of the mini-batch noise. With $\beta = 0$ it reduces to SGD, and the effective step along a persistent direction is $\gamma/(1-\beta)$, which is why $\gamma$ is usually reduced when $\beta$ is raised. The modification is of the *direction* only: the preconditioner is still the identity, and no curvature information is used.
+
+### Adam
+
+**Adam** (adaptive moment estimation) adds a per-coordinate step size to momentum. It keeps an exponential average of the gradient and of its elementwise square,
+$$
+m_t = \beta_1 m_{t-1} + (1-\beta_1)\, g_t, \qquad
+s_t = \beta_2 s_{t-1} + (1-\beta_2)\, g_t \odot g_t,
+$$
+corrects both for their start at zero, $\hat m_t = m_t/(1-\beta_1^t)$ and $\hat s_t = s_t/(1-\beta_2^t)$, and updates
+$$
+\theta_{t+1} = \theta_t - \gamma\, \frac{\hat m_t}{\sqrt{\hat s_t} + \varepsilon},
+$$
+with the usual defaults $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\varepsilon = 10^{-8}$. The squared gradients averaged in $\hat s_t$ estimate the diagonal of the **empirical Fisher information** $\frac1n\sum_i g_i g_i'$, so Adam divides each coordinate by an estimate of its gradient scale: a diagonal, square-root rescaling that is cheap and needs no Hessian. Coordinates with consistently large gradients take smaller steps and rarely-moving ones larger steps, which makes the method far less sensitive to how the weights are scaled than SGD. It is the default optimizer for neural networks.
+
+#### Example: the three methods on logistic regression
+
+One function with a switch for the update rule shows that only the last lines of the loop change:
+
+```{r}
+#| label: sgd-mom-adam-logistic
+sgd_family <- function(x, y, b0, method = c("sgd", "momentum", "adam"),
+                       gamma = 0.1, beta = 0.9, beta2 = 0.999,
+                       epochs = 30, batch = 10) {
+  method <- match.arg(method)
+  n <- length(x); b <- b0; t <- 0; m <- s <- rep(0, length(b0))
+  for (e in 1:epochs) {
+    idx <- sample(n)
+    for (st in seq(1, n, by = batch)) {
+      i <- idx[st:min(st + batch - 1, n)]; t <- t + 1
+      p <- plogis(b[1] + b[2] * x[i])
+      g <- -c(sum(y[i] - p), sum(x[i] * (y[i] - p))) / length(i)   # gradient of the mean nll
+      if (method == "sgd") {
+        b <- b - gamma * g
+      } else if (method == "momentum") {
+        m <- beta * m + g
+        b <- b - gamma * m
+      } else {
+        m <- beta * m + (1 - beta) * g
+        s <- beta2 * s + (1 - beta2) * g^2
+        b <- b - gamma * (m / (1 - beta^t)) / (sqrt(s / (1 - beta2^t)) + 1e-8)
+      }
+    }
+  }
+  b
+}
+
+set.seed(3)
+rbind(sgd      = sgd_family(data$x, data$y, c(0, 0), "sgd", gamma = 0.1),
+      momentum = sgd_family(data$x, data$y, c(0, 0), "momentum", gamma = 0.02),
+      adam     = sgd_family(data$x, data$y, c(0, 0), "adam", gamma = 0.05),
+      nlm      = logit_nlm$estimate)
+```
+
+## Examples of Fitting Neural Networks {#sec-nn-examples}
+
+Both examples below use one input $x$ and four `tanh` hidden units, so that $\theta$ has $13$ weights and the fit can be drawn as a curve. They differ only in the likelihood, hence in the output link and in the starting value $\delta_\eta$ of backpropagation (@sec-backprop-dag); every other step of the gradient computation is the same. Each app fits the same data with seven optimizers: fixed-rate gradient descent, mini-batch SGD, momentum, Adam, gradient descent with a Wolfe line search, conjugate gradient and BFGS. One SGD iteration is an epoch, so that its progress can be compared with the full-batch methods.
+
+### Gaussian Neural Network {#sec-sgd-app}
+
+For $y_i = \mu(x_i) + \varepsilon_i$ with $\varepsilon_i \sim N(0, \sigma^2)$ the mean is the network output itself (identity link), $\mu_i = \eta_i = \sum_{j=0}^{4} v_j h_{ij}$, and the loss is half the mean squared error,
+$$
+\mathcal{L}(\theta) = \frac{1}{2n}\sum_{i=1}^n (y_i - \mu_i)^2, \qquad \delta_{\eta,i} = \mu_i - y_i.
+$$
+Its minimum is not zero but about $\sigma^2/2$, the **noise floor**, which the app draws as a dashed line. The model is non-convex: the four units can be permuted, and several of them can end up doing nearly the same work, so different optimizers and starting weights may reach different, equally good fits, and only some find a good one quickly. The [Gaussian app](../../shinylive_apps/app_sgd.html) lets you set the noise level $\sigma$, draws the weights and their gradient as networks, and shows on the data scale how the four scaled hidden units add up to the fitted mean.
+
+### Poisson Neural Network {#sec-nn-poisson-app}
+
+With a log link, $\lambda_i = e^{\eta_i}$, and counts $y_i \mid x_i \sim \mathrm{Poisson}(\lambda_i)$, the loss is $\mathcal{L} = \frac1n\sum_i(\lambda_i - y_i\eta_i)$ and $\delta_{\eta,i} = \lambda_i - y_i$; this is the model whose gradient is worked out in full in the backpropagation section above. The log link makes the hidden units add on the log scale, so $\lambda(x)$ is a *product* of their contributions $e^{v_j h_j(x)}$, and the loss is much more sensitive to a weight that is too large than in the Gaussian case, so a fixed learning rate is harder to choose. The [Poisson app](../../shinylive_apps/app_nn-poisson.html) offers the same controls as the Gaussian one, with the sample size going up to $2000$ so that mini-batch SGD can be compared with the full-batch methods when $n$ is large.
 
 ## Nelder–Mead (Simplex Method)
 
