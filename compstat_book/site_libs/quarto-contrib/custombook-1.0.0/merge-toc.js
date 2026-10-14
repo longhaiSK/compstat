@@ -197,9 +197,56 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
+
+  // --- PART E: DRAGGABLE SIDEBAR WIDTH ---
+  // Drag the thin handle on the right edge of the sidebar to change its width;
+  // double-click it to restore the default. The width is remembered in localStorage.
+  function createSidebarResizer() {
+    if (document.getElementById('sidebar-resizer')) return;
+    const MIN = 180, MAX = 700, KEY = 'sidebar-width';
+    const root = document.documentElement;
+    const clamp = w => Math.max(MIN, Math.min(Math.min(MAX, window.innerWidth - 300), w));
+    const defaultWidth = getComputedStyle(root).getPropertyValue('--quarto-sidebar-width').trim();
+    const setWidth = w => root.style.setProperty('--quarto-sidebar-width', clamp(w) + 'px');
+
+    try {
+      const saved = parseInt(localStorage.getItem(KEY));
+      if (saved) setWidth(saved);
+    } catch (e) { /* storage may be blocked */ }
+
+    const handle = document.createElement('div');
+    handle.id = 'sidebar-resizer';
+    handle.title = 'Drag to resize the sidebar (double-click to reset)';
+    document.body.appendChild(handle);
+
+    handle.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      handle.setPointerCapture(e.pointerId);
+      document.body.classList.add('sidebar-resizing');
+    });
+    handle.addEventListener('pointermove', function(e) {
+      if (!document.body.classList.contains('sidebar-resizing')) return;
+      setWidth(e.clientX);
+    });
+    function stop(e) {
+      if (!document.body.classList.contains('sidebar-resizing')) return;
+      document.body.classList.remove('sidebar-resizing');
+      try {
+        localStorage.setItem(KEY, String(parseInt(getComputedStyle(root).getPropertyValue('--quarto-sidebar-width'))));
+      } catch (err) { /* ignore */ }
+    }
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    handle.addEventListener('dblclick', function() {
+      root.style.setProperty('--quarto-sidebar-width', defaultWidth || '300px');
+      try { localStorage.removeItem(KEY); } catch (err) { /* ignore */ }
+    });
+  }
+
   // --- EXECUTION ---
   function run() {
     try { createSidebarToggle(); } catch(e) { console.error(e); }
+    try { createSidebarResizer(); } catch(e) { console.error(e); }
     try { formatChapters(); } catch(e) { console.error(e); }
     try { moveToc(); } catch(e) { console.error(e); }
     document.querySelector('#quarto-sidebar .sidebar-menu-container')?.classList.add('loaded');
