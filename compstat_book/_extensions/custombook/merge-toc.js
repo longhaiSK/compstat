@@ -346,7 +346,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // chapters menu: the book's chapters, collected from the sidebar before it is trimmed
-    const menuBtn = iconButton('tb-chapters', '<span class="tb-cur"></span><span class="tb-caret">&#9662;</span>', 'Choose a chapter');
+    const menuBtn = iconButton('tb-chapters', '<span class="tb-glyph">&#9776;</span>', 'Choose a chapter');
     const drawer = document.createElement('nav');
     drawer.id = 'chapter-drawer';
     const list = document.createElement('ul');
@@ -373,12 +373,11 @@ document.addEventListener("DOMContentLoaded", function() {
     // contents toggle: the sidebar button created earlier moves into the bar
     const tocBtn = document.getElementById('custom-sidebar-toggle') || iconButton('custom-sidebar-toggle', '', '');
     tocBtn.classList.add('tb-btn');
-    tocBtn.innerHTML = '<span class="tb-glyph"><i class="bi bi-layout-sidebar-inset"></i></span><span class="tb-label">Contents</span>';
+    tocBtn.innerHTML = '<span class="tb-glyph"><i class="bi bi-layout-sidebar-inset"></i></span>';
     tocBtn.title = 'Show or hide the contents of this chapter';
 
-    menuBtn.querySelector('.tb-cur').textContent = currentText || 'Chapters';
 
-    const gear = iconButton('tb-settings', '<span class="tb-glyph">&#9881;</span><span class="tb-label">Settings</span>', 'Font size, font family and background');
+    const gear = iconButton('tb-settings', '<span class="tb-glyph"><i class="bi bi-eye"></i></span>', 'Reading settings: font size, font family and background');
 
     // book title: the link the sidebar header used to show
     const bookLink = document.querySelector('#quarto-sidebar .sidebar-title a');
@@ -388,10 +387,13 @@ document.addEventListener("DOMContentLoaded", function() {
     book.href = bookLink ? bookLink.getAttribute('href') : '#';
     book.title = 'Book home';
 
-    // order: contents toggle, book title, chapter selector, GitHub link, settings
+    // order: contents toggle, book title, chapters menu, (space), GitHub link, search, settings
+    const spacer = document.createElement('div');
+    spacer.id = 'tb-spacer';
     bar.appendChild(tocBtn);
     bar.appendChild(book);
     bar.appendChild(menuBtn);
+    bar.appendChild(spacer);
     // the source-code link of the sidebar header moves to the bar, left of the settings
     const gh = document.querySelector('#quarto-sidebar .sidebar-tools-main a');
     if (gh) {
