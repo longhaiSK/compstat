@@ -399,6 +399,15 @@ document.addEventListener("DOMContentLoaded", function() {
       g.id = 'tb-github'; g.className = 'tb-btn';
       bar.appendChild(g);
     }
+    // the book search box moves from the sidebar to the bar, left of the GitHub link
+    const search = document.getElementById('quarto-search');
+    if (search) {
+      const holder = document.createElement('div');
+      holder.id = 'tb-search';
+      holder.appendChild(search);
+      const ghEl = document.getElementById('tb-github');
+      bar.insertBefore(holder, ghEl || null);
+    }
     bar.appendChild(gear);
     document.body.insertAdjacentElement('afterbegin', bar);
     document.body.appendChild(drawer);
