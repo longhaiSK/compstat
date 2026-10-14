@@ -2672,27 +2672,37 @@ Replacing `Adam` by `tf.keras.optimizers.SGD(learning_rate=0.05, momentum=0.9)` 
 
 ### Example of Fitting NN with Tensorflow
 
-The Gaussian network of the first app, with one input, one hidden layer of four `tanh` units and a linear output (two layers of weights, thirteen parameters), written in Keras. The data are generated from the same two-bump mean as in the app, with noise standard deviation $\sigma = 0.3$, so the smallest attainable loss is the noise floor $\sigma^2/2 = 0.045$.
+The Gaussian network of the first app, with one input, one hidden layer of four `tanh` units and a linear output (two layers of weights, thirteen parameters), written in Keras. The data are generated from the same two-bump mean as in the app, with noise standard deviation $\sigma = 0.3$, so the smallest attainable loss is the noise floor $\sigma^2/2 = 0.045$. The data are split into a training and a test set; the network is fitted to the training set only, and the test set shows how well it predicts new observations.
 
 ```{python}
-#| label: tf-gaussian-nn
+#| label: fig-tf-gaussian-nn
 #| cache: false
 #| code-fold: false
+#| fig-width: 10
+#| fig-height: 4.5
+#| fig-cap: "Shows the result of fitting the Gaussian network with Keras: how close the fitted curve is to the true mean, and how well the fitted values predict training and test responses.
+#|   Left: training data (grey), test data (light blue), the true mean (dashed red) and the fitted mean (green). Right: fitted value $\\hat y_i$ against the observed $y_i$ for the training and the test sets, with the $R^2$ of each in the legend."
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"          # quiet TensorFlow's start-up messages
 import numpy as np
 import tensorflow as tf
+import matplotlib.pyplot as plt
 
-tf.keras.utils.set_random_seed(1)            # numpy, python and TensorFlow seeds
+tf.keras.utils.set_random_seed(1)                 # numpy, python and TensorFlow seeds
 
 # data: y = mu(x) + noise, with the mean of the Gaussian app (four tanh units)
+W, w0 = np.array([[2.5, 2.5, 2.5, 2.5]]), np.array([5.5, 2, -2, -5.5])
+v, v0 = np.array([1.2, -1.2, 1.0, -1.0]), -0.5
+mu_true = lambda x: np.tanh(x @ W + w0) @ v + v0
+
 rng = np.random.default_rng(1)
 n = 500
 x = rng.uniform(-3, 3, size=(n, 1)).astype("float32")
-W, w0 = np.array([[2.5, 2.5, 2.5, 2.5]]), np.array([5.5, 2, -2, -5.5])
-v, v0 = np.array([1.2, -1.2, 1.0, -1.0]), -0.5
-mu = np.tanh(x @ W + w0) @ v + v0
-y = (mu + 0.3 * rng.normal(size=n)).astype("float32").reshape(-1, 1)
+y = (mu_true(x) + 0.3 * rng.normal(size=n)).astype("float32").reshape(-1, 1)
+
+# train / test split: the first 400 observations fit the network, the last 100 test it
+ntr = 400
+x_tr, y_tr, x_te, y_te = x[:ntr], y[:ntr], x[ntr:], y[ntr:]
 
 # the model: eta = v_0 + sum_j v_j tanh(w_j1 x + w_j0), identity link
 model = tf.keras.Sequential([
@@ -2705,11 +2715,38 @@ model = tf.keras.Sequential([
 half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
 
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05), loss=half_mse)
-history = model.fit(x, y, batch_size=50, epochs=300, verbose=0)   # one epoch = n/50 mini-batch steps
+history = model.fit(x_tr, y_tr, batch_size=50, epochs=300, verbose=0)   # one epoch = 400/50 mini-batch steps
 
-print(history.history["loss"][-1])      # the noise floor is 0.045
+print("training loss:", history.history["loss"][-1], "  noise floor:", 0.3**2 / 2)
 for name, w in zip(["W", "w_0", "v", "v_0"], model.get_weights()):
     print(name, np.round(w.ravel(), 2))
+
+# fitted values, and R^2 = 1 - SSE / SST on each set
+r2 = lambda y, yhat: 1 - np.sum((y - yhat)**2) / np.sum((y - y.mean())**2)
+yhat_tr = model.predict(x_tr, verbose=0)
+yhat_te = model.predict(x_te, verbose=0)
+
+fig, ax = plt.subplots(1, 2, figsize=(10, 4.5))
+
+# left: data, true mean and fitted mean
+grid = np.linspace(-3, 3, 300, dtype="float32").reshape(-1, 1)
+ax[0].scatter(x_tr, y_tr, s=10, color="grey", alpha=0.6, label="training data")
+ax[0].scatter(x_te, y_te, s=14, color="deepskyblue", alpha=0.8, label="test data")
+ax[0].plot(grid, mu_true(grid), "r--", lw=2, label="true mean")
+ax[0].plot(grid, model.predict(grid, verbose=0), color="green", lw=2, label="fitted mean")
+ax[0].set_xlabel("x"); ax[0].set_ylabel("y")
+ax[0].legend(frameon=False, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 1.0))
+
+# right: fitted value against observed response
+ax[1].scatter(y_tr, yhat_tr, s=10, color="grey", alpha=0.6,
+              label=f"training, $R^2$ = {r2(y_tr, yhat_tr):.3f}")
+ax[1].scatter(y_te, yhat_te, s=14, color="deepskyblue", alpha=0.8,
+              label=f"test, $R^2$ = {r2(y_te, yhat_te):.3f}")
+lim = [y.min(), y.max()]
+ax[1].plot(lim, lim, "k:", lw=1)
+ax[1].set_xlabel("observed y"); ax[1].set_ylabel(r"fitted $\hat{y}$")
+ax[1].legend(frameon=False, ncol=1, loc="lower right")
+plt.tight_layout(); plt.show()
 ```
 
-Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the app: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.05)`. Setting `batch_size=n` makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits, and the hidden units may come out in a different order or with the signs of $(w_j, v_j)$ flipped relative to the true weights.
+Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the app: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.05)`. Setting `batch_size=ntr` makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits, and the hidden units may come out in a different order or with the signs of $(w_j, v_j)$ flipped relative to the true weights. The test $R^2$ is close to the training one because the network has only thirteen weights for $400$ observations; a network with many more weights would show the gap that the test set exists to reveal.
