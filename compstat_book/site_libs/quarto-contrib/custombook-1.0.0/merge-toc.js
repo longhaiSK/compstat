@@ -370,11 +370,17 @@ document.addEventListener("DOMContentLoaded", function() {
     });
     drawer.appendChild(list);
 
-    // contents toggle: the sidebar button created earlier moves into the bar
+    // sidebar toggle: the button created earlier moves to the top of the sidebar itself
     const tocBtn = document.getElementById('custom-sidebar-toggle') || iconButton('custom-sidebar-toggle', '', '');
-    tocBtn.classList.add('tb-btn');
-    tocBtn.innerHTML = '<span class="tb-glyph"><i class="bi bi-layout-sidebar-inset"></i></span>';
-    tocBtn.title = 'Show or hide the contents of this chapter';
+    tocBtn.innerHTML = '<i class="bi bi-chevron-bar-left sb-icon-open"></i><i class="bi bi-chevron-bar-right sb-icon-closed"></i>';
+    tocBtn.title = 'Hide or show the sidebar';
+    const sidebar = document.getElementById('quarto-sidebar');
+    if (sidebar && !document.getElementById('sidebar-collapse-row')) {
+      const row = document.createElement('div');
+      row.id = 'sidebar-collapse-row';
+      row.appendChild(tocBtn);
+      sidebar.insertBefore(row, sidebar.firstChild);
+    }
 
 
     const gear = iconButton('tb-settings', '<span class="tb-glyph"><i class="bi bi-eye"></i></span>', 'Reading settings: font size, font family and background');
@@ -387,12 +393,11 @@ document.addEventListener("DOMContentLoaded", function() {
     book.href = bookLink ? bookLink.getAttribute('href') : '#';
     book.title = 'Book home';
 
-    // order: contents toggle, book title, chapters menu, (space), GitHub link, search, settings
+    // order: chapters menu, book title, (space), GitHub link, search, settings
     const spacer = document.createElement('div');
     spacer.id = 'tb-spacer';
-    bar.appendChild(tocBtn);
-    bar.appendChild(book);
     bar.appendChild(menuBtn);
+    bar.appendChild(book);
     bar.appendChild(spacer);
     // the source-code link of the sidebar header moves to the bar, left of the settings
     const gh = document.querySelector('#quarto-sidebar .sidebar-tools-main a');
