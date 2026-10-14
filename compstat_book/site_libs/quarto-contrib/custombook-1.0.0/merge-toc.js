@@ -327,8 +327,91 @@ document.addEventListener("DOMContentLoaded", function() {
       state = { scale: 1, font: 'default', bg: 0 }; apply();
     });
 
-    main.insertBefore(bar, main.firstChild);
+    document.body.appendChild(bar);
     apply();
+  }
+
+
+  // --- PART G: TOP BAR (chapters menu, contents toggle, settings) ---
+  function createTopBar() {
+    if (document.getElementById('topbar')) return;
+    const bar = document.createElement('div');
+    bar.id = 'topbar';
+
+    function iconButton(id, html, title) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.id = id; b.className = 'tb-btn';
+      b.innerHTML = html; b.title = title;
+      return b;
+    }
+
+    // chapters menu: the book's chapters, collected from the sidebar before it is trimmed
+    const menuBtn = iconButton('tb-chapters', '<span class="tb-glyph">&#9776;</span><span class="tb-label">Chapters</span>', 'Choose a chapter');
+    const drawer = document.createElement('nav');
+    drawer.id = 'chapter-drawer';
+    const list = document.createElement('ul');
+    const sidebarLinks = Array.from(document.querySelectorAll('#quarto-sidebar .sidebar-menu-container a.sidebar-link'))
+      .filter(a => !a.closest('.injected-page-toc'));
+    let currentText = '';
+    sidebarLinks.forEach(a => {
+      const num = a.querySelector('.chapter-number');
+      const title = a.querySelector('.chapter-title');
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = a.getAttribute('href');
+      const n = num ? num.textContent.trim() : '';
+      const t = title ? title.textContent.trim() : a.textContent.replace(/\s+/g, ' ').trim();
+      link.innerHTML = (n ? '<span class="dr-num">' + n + '</span>' : '<span class="dr-num"></span>') +
+                       '<span class="dr-text"></span>';
+      link.querySelector('.dr-text').textContent = t;
+      if (a.classList.contains('active')) { link.classList.add('current'); currentText = (n ? n + '  ' : '') + t; }
+      li.appendChild(link);
+      list.appendChild(li);
+    });
+    drawer.appendChild(list);
+
+    // contents toggle: the sidebar button created earlier moves into the bar
+    const tocBtn = document.getElementById('custom-sidebar-toggle') || iconButton('custom-sidebar-toggle', '', '');
+    tocBtn.classList.add('tb-btn');
+    tocBtn.innerHTML = '<span class="tb-glyph"><i class="bi bi-layout-sidebar-inset"></i></span><span class="tb-label">Contents</span>';
+    tocBtn.title = 'Show or hide the contents of this chapter';
+
+    const title = document.createElement('div');
+    title.id = 'tb-title';
+    title.textContent = currentText;
+
+    const gear = iconButton('tb-settings', '<span class="tb-glyph">&#9881;</span><span class="tb-label">Settings</span>', 'Font size, font family and background');
+
+    bar.appendChild(menuBtn);
+    bar.appendChild(tocBtn);
+    bar.appendChild(title);
+    bar.appendChild(gear);
+    document.body.insertAdjacentElement('afterbegin', bar);
+    document.body.appendChild(drawer);
+
+    const body = document.body;
+    function closePanels() { body.classList.remove('chapters-open', 'settings-open'); }
+    menuBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = !body.classList.contains('chapters-open');
+      closePanels(); if (open) body.classList.add('chapters-open');
+    });
+    gear.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = !body.classList.contains('settings-open');
+      closePanels(); if (open) body.classList.add('settings-open');
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#chapter-drawer, #reading-settings')) closePanels();
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanels(); });
+    drawer.addEventListener('click', e => { if (e.target.closest('a')) closePanels(); });
+
+    // the sidebar shows only the contents of this chapter
+    document.querySelectorAll('#quarto-sidebar .sidebar-menu-container > ul > li.sidebar-item').forEach(li => {
+      if (!li.querySelector('a.sidebar-link.active')) li.classList.add('not-current');
+    });
+    body.classList.add('has-topbar');
   }
 
   // --- EXECUTION ---
@@ -336,6 +419,7 @@ document.addEventListener("DOMContentLoaded", function() {
     try { createSidebarToggle(); } catch(e) { console.error(e); }
     try { createSidebarResizer(); } catch(e) { console.error(e); }
     try { createReadingSettings(); } catch(e) { console.error(e); }
+    try { createTopBar(); } catch(e) { console.error(e); }
     try { formatChapters(); } catch(e) { console.error(e); }
     try { moveToc(); } catch(e) { console.error(e); }
     document.querySelector('#quarto-sidebar .sidebar-menu-container')?.classList.add('loaded');
