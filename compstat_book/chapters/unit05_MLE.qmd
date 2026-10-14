@@ -2699,20 +2699,24 @@ y = (mu_true(x) + sigma * rng.normal(size=(n, 1))).astype("float32")
 ntr = 1200
 x_tr, y_tr, x_te, y_te = x[:ntr], y[:ntr], x[ntr:], y[ntr:]
 
-# the model is the whole probability model, y | x ~ N(mu(x), 1), mu = eta, identity link:
-#   eta = v_0 + sum_j v_j tanh(w_j1 x_1 + w_j2 x_2 + w_j0)
-model = tf.keras.Sequential([
-    tf.keras.layers.Input(shape=(2,)),
-    tf.keras.layers.Dense(16, activation="tanh"),   # hidden layer: W (2 x 16), w_0 (16)
-    tf.keras.layers.Dense(1),                       # output layer: v (16 x 1), v_0
-    tfp.layers.DistributionLambda(lambda eta: tfd.Normal(loc=eta, scale=1.0),
-                                  convert_to_tensor_fn=tfd.Distribution.mean),
-])
+# a network is "hidden layer + response family": the last layer maps eta to a distribution,
+# so that the model carries its likelihood, as the family argument of glm does
+families = {
+    "gaussian":  lambda eta: tfd.Normal(loc=eta, scale=1.0),         # mu = eta
+    "poisson":   lambda eta: tfd.Poisson(log_rate=eta),              # lambda = exp(eta)
+    "bernoulli": lambda eta: tfd.Bernoulli(logits=eta),              # p = 1 / (1 + exp(-eta))
+}
+def nn_model(p, hidden, family="gaussian"):
+    return tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(p,)),
+        tf.keras.layers.Dense(hidden, activation="tanh"),    # a_j, h_j = tanh(a_j)
+        tf.keras.layers.Dense(1),                            # eta = v_0 + sum_j v_j h_j
+        tfp.layers.DistributionLambda(families[family],
+                                      convert_to_tensor_fn=tfd.Distribution.mean),
+    ])
+nll = lambda y, dist: -dist.log_prob(y)        # the loss: negative log-likelihood of the family
 
-# the loss is the negative log-likelihood of that distribution; the 1/2 of the squared
-# error is its quadratic part, and it gives delta_eta = mu - y with no factor of 2
-nll = lambda y, dist: -dist.log_prob(y)
-
+model = nn_model(p=2, hidden=16, family="gaussian")
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=nll)
 history = model.fit(x_tr, y_tr, batch_size=50, epochs=600, verbose=0)   # one epoch = 1200/50 mini-batch steps
 
@@ -2752,4 +2756,4 @@ ax[2].legend(frameon=False, loc="upper left")
 plt.show()
 ```
 
-The model is the probability model: the last layer turns the network output $\eta_i$ into the distribution $N(\eta_i, 1)$, and the loss is the negative log-likelihood of that distribution, so that changing the response distribution, for example to `tfd.Poisson(log_rate=eta)` for counts, changes the model and the loss together. With $\sigma = 1$ fixed the loss is $\frac12(y_i-\mu_i)^2 + \frac12\log 2\pi$, so its smallest expected value, the noise floor, is $\frac12\log 2\pi + \frac{0.2^2}{2} = 0.939$ for the true noise standard deviation $0.2$; the constant $\frac12\log 2\pi = 0.919$ is what Keras includes and the app's loss leaves out. The `TF_USE_LEGACY_KERAS` line is needed because `tensorflow_probability` layers are built on the older `tf_keras` package. Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the apps: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.01)`. Setting `batch_size=ntr` makes each step a full-batch one. The loss is not convex, so different random initial weights can end in different, equally good fits. The $R^2$ cannot reach $1$ even for the true mean, because the noise variance $0.04$ is part of the variance of $y$; the contour plot is the better check that all four modes have been found. The test $R^2$ is close to the training one because the network has $65$ weights for $1200$ observations; a network with many more weights would show the gap that the test set exists to reveal.
+The model is the probability model: `nn_model(..., family="gaussian")` ends in a layer that turns the network output $\eta_i$ into the distribution $N(\eta_i, 1)$, and the loss is the negative log-likelihood of that distribution. This is the counterpart of the `family` argument of `glm`: `family="poisson"` gives the Poisson network with the log link, `"bernoulli"` a logistic network, and the loss follows the family. With $\sigma = 1$ fixed the loss is $\frac12(y_i-\mu_i)^2 + \frac12\log 2\pi$, so its smallest expected value, the noise floor, is $\frac12\log 2\pi + \frac{0.2^2}{2} = 0.939$ for the true noise standard deviation $0.2$; the constant $\frac12\log 2\pi = 0.919$ is what Keras includes and the app's loss leaves out. The `TF_USE_LEGACY_KERAS` line is needed because `tensorflow_probability` layers are built on the older `tf_keras` package. Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the apps: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.01)`. Setting `batch_size=ntr` makes each step a full-batch one. The loss is not convex, so different random initial weights can end in different, equally good fits. The $R^2$ cannot reach $1$ even for the true mean, because the noise variance $0.04$ is part of the variance of $y$; the contour plot is the better check that all four modes have been found. The test $R^2$ is close to the training one because the network has $65$ weights for $1200$ observations; a network with many more weights would show the gap that the test set exists to reveal.
