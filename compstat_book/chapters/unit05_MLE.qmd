@@ -2626,22 +2626,46 @@ Read down the table and the progression of the chapter appears. Steepest descent
 
 : Summarizes the trade-offs among the gradient-based methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of gradient-based optimization methods. $p$ is the number of parameters and $m$ the L-BFGS memory length (typically 5–20). {#tbl-comparison}
 
-### Implementations in R
+### Software Packages for Optimization
 
-| Function | Package | Methods available | Notes |
+The methods of this chapter are rarely coded by hand. The packages below are the commonly used ones, grouped by the job they do: general-purpose numerical optimizers, statistical model fitting, and automatic differentiation with mini-batch optimizers for neural networks.
+
+| Language | Package, function | Methods available | Notes |
 |:---|:---|:---|:---|
-| `optim` | stats | BFGS, CG, L-BFGS-B | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
-| `nlm` | stats | Newton-type with ridging | Uses analytic gradient/Hessian if attached as attributes, otherwise numerical; returns `$hessian` |
-| `nlminb` | stats | Trust-region (PORT) | Reliable on badly scaled problems; supports box constraints |
-| `optimize`, `uniroot` | stats | Golden section, Brent | One dimension only |
-| `glm` | stats | IRLS (Fisher scoring) | The specialised case; use `start` when separation is suspected |
-| `nls` | stats | Gauss–Newton, Golub–Pereyra | Nonlinear least squares; `port` algorithm adds constraints |
-| `optimx` | optimx | Unified front end to a dozen optimizers | Useful for comparing methods on the same objective |
-| `nloptr` | nloptr | Large NLopt collection, with constraints | Gradient-based and global options |
-| `torch` | torch | SGD, momentum, Adam (`optim_sgd`, `optim_adam`) | Automatic differentiation and mini-batch training of neural networks |
-| `Rsolnp`, `alabama` | — | Nonlinear equality and inequality constraints | For genuinely constrained problems |
+| R | `optim` (stats) | BFGS, CG, L-BFGS-B | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
+| R | `nlm` (stats) | Newton-type with ridging | Uses the analytic gradient and Hessian if attached as attributes, otherwise numerical; returns `$hessian` |
+| R | `nlminb` (stats) | Trust-region (PORT) | Reliable on badly scaled problems; supports box constraints |
+| R | `optimize`, `uniroot` (stats) | Golden section, Brent | One dimension only |
+| R | `glm` (stats) | IRLS (Fisher scoring) | The specialised case for generalized linear models; use `start` when separation is suspected |
+| R | `nloptr` | Large NLopt collection | Gradient-based and global methods, with constraints |
+| R | `torch` | SGD, momentum, Adam, L-BFGS | Automatic differentiation and mini-batch training of neural networks |
+| Python | `scipy.optimize` | `minimize` with BFGS, L-BFGS-B, CG, Newton-CG, trust-region methods; `root`; `minimize_scalar` | The standard general-purpose library; the counterpart of `optim` and `nlm` |
+| Python | `statsmodels` | IRLS for GLMs, Newton–Raphson and BFGS for discrete-choice and other likelihood models | Returns standard errors from the Hessian |
+| Python | `scikit-learn` | `LogisticRegression` solvers `lbfgs`, `newton-cg`, `sag`, `saga`; `SGDClassifier`, `SGDRegressor` | Fitting of standard models; the optimizer is chosen by an argument |
+| Python | PyTorch (`torch.optim`) | SGD (with momentum), Adam, AdamW, RMSprop, L-BFGS | Gradients by `autograd`; the training loop is written explicitly |
+| Python | TensorFlow / Keras (`tf.keras.optimizers`) | SGD (with momentum), Adam, AdamW, RMSprop, Adagrad | Gradients by `tf.GradientTape`; `model.fit` runs the mini-batch loop; BFGS and L-BFGS in TensorFlow Probability (`tfp.optimizer`) |
+| Python | JAX with Optax | SGD, momentum, Adam, AdamW; `jax.scipy.optimize.minimize` for BFGS | `jax.grad` differentiates ordinary numerical functions; the optimizers are composable |
 
-: Maps the optimization methods to the R functions and packages that implement them. R interfaces to multivariate optimizers {#tbl-r-functions}
+: Lists the commonly used software for the optimization methods of this chapter, in R and in Python, with the methods each offers. Software packages for optimization {#tbl-software}
+
+For small and moderate likelihood problems the first rows are all that is needed: supply the negative log-likelihood and, if possible, its gradient, and let BFGS or a Newton-type method do the rest. Fitting a neural network is different. The gradient is obtained by automatic differentiation, which carries out the backpropagation of @sec-backprop-dag for any model written with the library's operations, and the update is applied to mini-batches by one of the optimizers of this chapter. **TensorFlow** and **PyTorch** are the two dominant libraries for this, and the Keras interface of TensorFlow makes the choice of optimizer a single argument. The Poisson network of this chapter, with the loss $\lambda_i - y_i\eta_i$ and four hidden units, is fitted by Adam as follows.
+
+```python
+import tensorflow as tf
+
+# x: (n, 1) covariate, y: (n, 1) counts
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(4, activation="tanh"),   # a_j, h_j = tanh(a_j)
+    tf.keras.layers.Dense(1),                      # eta = v_0 + sum_j v_j h_j
+])
+poisson_nll = lambda y, eta: tf.reduce_mean(tf.exp(eta) - y * eta)   # lambda - y * eta
+
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05),
+              loss=poisson_nll)
+model.fit(x, y, batch_size=32, epochs=200, verbose=0)    # mini-batch gradients by backpropagation
+```
+
+Replacing `Adam` by `tf.keras.optimizers.SGD(learning_rate=0.05, momentum=0.9)` gives the momentum method, and omitting `momentum` gives plain mini-batch SGD. The same loop written by hand, with `tf.GradientTape` to obtain $g_k$ and `optimizer.apply_gradients` to apply the modified update, is what the Keras `fit` does internally. The code above is a sketch; it is not run in this book.
 
 ### Choosing a method
 
