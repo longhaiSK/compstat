@@ -1010,21 +1010,144 @@ The naive estimator is biased upward, and severely so when $\lambda$ is small, s
 
 ## Nelder–Mead Method for Multivariate Optimization
 
-Nelder–Mead maintains a **simplex** of $p+1$ points (a triangle in 2D) and moves it downhill using only function values, with no derivatives at all:
+Golden section search needs a bracket, which exists only in one dimension. Nelder–Mead generalizes the idea: it keeps $p+1$ points, a **simplex**, in $\mathbb{R}^p$ (a segment in 1D, a triangle in 2D, a tetrahedron in 3D) and, at each iteration, replaces the worst point by a better one, using **only function values**: no gradient, no Hessian, no bracket. The simplex then crawls downhill, stretching where the objective falls steadily and shrinking around a minimum, so that it adapts its shape to the local contours of $\mathcal{L}$ without ever computing a derivative.
 
-1. Order the vertices $f(\theta_{(1)}) \le \cdots \le f(\theta_{(p+1)})$; let $\overline\theta$ be the centroid of the best $p$.
+### One iteration
 
-2. **Reflect** the worst vertex through $\overline\theta$; if the reflected point is the new best, try **expanding** further.
+Write $f = \mathcal{L}$ for the objective. Order the $p+1$ vertices so that
+$$
+f(v_1) \le f(v_2) \le \cdots \le f(v_{p+1}),
+$$
+so that $v_1$ is the best and $v_{p+1}$ the worst, and let $c = \frac1p\sum_{j=1}^{p} v_j$ be the centroid of all vertices except the worst. The worst vertex is reflected through $c$, and, depending on how good the new point is, the simplex is expanded, contracted or shrunk. The trial points are
+$$
+x_r = c + \alpha\,(c - v_{p+1}), \qquad
+x_e = c + \gamma\,(x_r - c), \qquad
+x_c = c + \rho\,(v_{p+1} - c),
+$$
+the **reflection**, the **expansion** and the (inside) **contraction**, with coefficients $\alpha = 1$, $\gamma = 2$, $\rho = \tfrac12$ and shrink factor $\sigma = \tfrac12$, the values used by `optim`.
 
-3. If reflection is poor, **contract** toward $\overline\theta$; if that also fails, **shrink** all vertices toward the best.
+```{r}
+#| label: fig-nm-moves
+#| echo: false
+#| fig-width: 7
+#| fig-height: 3.6
+#| fig-cap: "Shows the trial points of one Nelder-Mead iteration, which are all on the line through the worst vertex and the centroid of the other two.
+#|   A triangle with vertices $v_1$ (best), $v_2$ and $v_3$ (worst): the reflection $x_r$, the expansion $x_e$ beyond it, and the contraction $x_c$ between $c$ and the worst vertex."
+par(mar = c(0, 0, 0, 0))
+B <- c(0.2, 0.3); G <- c(2.2, 0.6); W <- c(1.0, 2.0)
+cen <- (B + G) / 2
+xr <- cen + (cen - W); xe <- cen + 2 * (xr - cen); xc <- cen + 0.5 * (W - cen)
+plot(NA, xlim = c(-0.4, 2.7), ylim = c(-2.9, 2.3), axes = FALSE, ann = FALSE, asp = 1)
+polygon(rbind(B, G, W), lwd = 2, border = "grey30")
+segments(W[1], W[2], xe[1], xe[2], lty = 3, col = "grey50")
+points(rbind(B, G, W), pch = 19)
+points(rbind(xr, xe, xc), pch = 19, col = c(2, 4, "orange3"))
+points(cen[1], cen[2], pch = 4, lwd = 2)
+text(B[1], B[2], expression(v[1]), pos = 2); text(G[1], G[2], expression(v[2]), pos = 4)
+text(W[1], W[2], expression(paste(v[3], " (worst)")), pos = 3); text(cen[1], cen[2], "c", pos = 4)
+text(xr[1], xr[2], expression(paste(x[r], " reflect")), pos = 4, col = 2)
+text(xe[1], xe[2], expression(paste(x[e], " expand")), pos = 4, col = 4)
+text(xc[1], xc[2], expression(paste(x[c], " contract")), pos = 2, col = "orange3")
+```
+
+The decision rule compares $f(x_r)$ with the current values:
+
+| Outcome of the reflection | Action |
+|:---|:---|
+| $f(x_r) < f(v_1)$, better than the best | Try the **expansion** $x_e$; keep the better of $x_e$ and $x_r$ in place of $v_{p+1}$ |
+| $f(v_1) \le f(x_r) < f(v_p)$, better than the second worst | Accept $x_r$ in place of $v_{p+1}$ |
+| $f(v_p) \le f(x_r) < f(v_{p+1})$, only slightly better than the worst | **Outside contraction** $x_c = c + \rho(x_r - c)$; accept it if $f(x_c) \le f(x_r)$, otherwise shrink |
+| $f(x_r) \ge f(v_{p+1})$, no better than the worst | **Inside contraction** $x_c = c + \rho(v_{p+1} - c)$; accept it if $f(x_c) < f(v_{p+1})$, otherwise shrink |
+| Contraction failed | **Shrink**: $v_j \leftarrow v_1 + \sigma (v_j - v_1)$ for $j = 2, \ldots, p+1$ |
+
+: Lists the actions of one Nelder–Mead iteration according to how good the reflected point is. Decision rule of the Nelder–Mead method. {#tbl-nm-rule}
+
+A typical iteration costs one or two function evaluations; only a shrink costs $p$ more. The simplex needs a starting point and a size: `optim` builds the initial simplex from the starting value $\theta_0$ by moving each coordinate in turn by a step proportional to the scale of the parameter. The iteration stops when the spread of the function values over the simplex, $|f(v_{p+1}) - f(v_1)|$, falls below a tolerance (`reltol`, default $10^{-8}$ relative), which is a criterion on $f$ rather than on the gradient: it does not certify that a stationary point has been reached.
+
+### Implementation
+
+The whole algorithm fits in a few lines. The function below returns the final point and also all the simplices visited, so that the path can be drawn.
+
+```{r}
+#| label: nelder-mead-fn
+## Nelder-Mead for f(theta); x0 is the start, step the size of the initial simplex
+nelder_mead <- function(f, x0, step = 0.5, maxit = 500, tol = 1e-10,
+                        alpha = 1, gamma = 2, rho = 0.5, sigma = 0.5) {
+  p <- length(x0)
+  V <- rbind(x0, t(sapply(1:p, function(j) x0 + step * (1:p == j))))   # (p+1) x p simplex
+  fv <- apply(V, 1, f); nev <- p + 1; hist <- list(V)
+  for (it in 1:maxit) {
+    o <- order(fv); V <- V[o, , drop = FALSE]; fv <- fv[o]            # v_1 best, v_{p+1} worst
+    if (abs(fv[p + 1] - fv[1]) < tol * (abs(fv[1]) + tol)) break      # spread of f over the simplex
+    cen <- colMeans(V[1:p, , drop = FALSE])                           # centroid of all but the worst
+    xr <- cen + alpha * (cen - V[p + 1, ]); fr <- f(xr); nev <- nev + 1
+    if (fr < fv[1]) {                                                 # better than the best: expand
+      xe <- cen + gamma * (xr - cen); fe <- f(xe); nev <- nev + 1
+      if (fe < fr) { V[p + 1, ] <- xe; fv[p + 1] <- fe } else { V[p + 1, ] <- xr; fv[p + 1] <- fr }
+    } else if (fr < fv[p]) {                                          # better than the second worst
+      V[p + 1, ] <- xr; fv[p + 1] <- fr
+    } else {                                                          # poor: contract, outside or inside
+      xc <- if (fr < fv[p + 1]) cen + rho * (xr - cen) else cen + rho * (V[p + 1, ] - cen)
+      fc <- f(xc); nev <- nev + 1
+      if (fc < min(fr, fv[p + 1])) {
+        V[p + 1, ] <- xc; fv[p + 1] <- fc
+      } else {                                                        # contraction failed: shrink
+        for (i in 2:(p + 1)) V[i, ] <- V[1, ] + sigma * (V[i, ] - V[1, ])
+        fv[2:(p + 1)] <- apply(V[2:(p + 1), , drop = FALSE], 1, f); nev <- nev + p
+      }
+    }
+    hist[[length(hist) + 1]] <- V
+  }
+  o <- order(fv)
+  list(par = V[o[1], ], value = unname(fv[o[1]]), iterations = it, evals = nev, hist = hist)
+}
+```
+
+### Example: the Rosenbrock banana
+
+The Rosenbrock function $f(\theta) = (1-\theta_1)^2 + 100(\theta_2 - \theta_1^2)^2$ has its minimum at $(1, 1)$, at the bottom of a long, curved, narrow valley: easy to find, hard to follow. It is the standard test of an optimizer.
 
 ```{r}
 #| label: nelder-mead-rosenbrock
 rosen <- function(v) (1 - v[1])^2 + 100 * (v[2] - v[1]^2)^2       # Rosenbrock "banana", min at (1, 1)
-nm <- optim(c(-1.2, 1), rosen, method = "Nelder-Mead"); c(nm$par, evals = nm$counts["function"])
+rosen_gr <- function(v) c(-2 * (1 - v[1]) - 400 * v[1] * (v[2] - v[1]^2), 200 * (v[2] - v[1]^2))
+
+nm <- nelder_mead(rosen, c(-1.2, 1))
+c(nm$par, f = nm$value, iterations = nm$iterations, evals = nm$evals)
+
+## the same method in optim, and gradient-based methods on the same problem
+cmp <- rbind("Nelder-Mead (optim)" = optim(c(-1.2, 1), rosen, method = "Nelder-Mead")$counts,
+             "BFGS, numerical gradient" = optim(c(-1.2, 1), rosen, method = "BFGS")$counts,
+             "BFGS, analytic gradient" = optim(c(-1.2, 1), rosen, rosen_gr, method = "BFGS")$counts)
+cmp
 ```
 
-The method needs no derivatives and tolerates mild non-smoothness, but it converges slowly, degrades badly as $p$ grows past roughly 10–20, and can stall at non-stationary points. It is `optim`'s default, which makes it by far the most-used — and most-overused — method in R: a reasonable first look at an unfamiliar objective, but a poor choice for a likelihood you will fit thousands of times.
+```{r}
+#| label: fig-nelder-mead-path
+#| fig-width: 8
+#| fig-height: 5
+#| fig-cap: "Shows how the Nelder-Mead simplex follows the curved valley of the Rosenbrock function using only function values.
+#|   Contours of the Rosenbrock function with the successive simplices of Nelder-Mead (grey triangles, every second iteration) and the path of the best vertex (red); the method starts at $(-1.2, 1)$ and ends at the minimum $(1, 1)$ (blue)."
+g1 <- seq(-1.6, 1.6, length.out = 200); g2 <- seq(-0.6, 2.2, length.out = 200)
+z <- outer(g1, g2, Vectorize(function(a, b) rosen(c(a, b))))
+contour(g1, g2, log10(z + 1e-3), nlevels = 18, col = "grey70", xlab = expression(theta[1]),
+        ylab = expression(theta[2]), drawlabels = FALSE)
+for (k in seq(1, length(nm$hist), by = 2)) polygon(nm$hist[[k]], border = "grey40", lwd = 0.7)
+best <- t(sapply(nm$hist, function(V) V[which.min(apply(V, 1, rosen)), ]))
+lines(best, col = 2, lwd = 2); points(best[1, 1], best[1, 2], pch = 19, col = 2)
+points(1, 1, pch = 19, col = 4, cex = 1.3)
+```
+
+Starting from $(-1.2, 1)$ the simplex first stretches and tumbles down into the valley, then follows it round the bend, shrinking as it goes, and finally collapses onto $(1,1)$. The counts in the table show the price: many more function evaluations than BFGS needs, and no gradient evaluations at all.
+
+### Strengths and limits
+
+- **No derivatives.** It needs only $f$, so it applies to noisy, non-differentiable or awkward objectives, such as those from simulations or a likelihood with an integral that has no usable derivative, and when coding a gradient is not worth the effort.
+- **Robust to a poor start.** The simplex is large at first and does not rely on a quadratic model, so it rarely diverges as Newton–Raphson can.
+- **Slow and unreliable in high dimension.** The simplex has $p+1$ vertices to improve, convergence is only sublinear, and beyond about ten parameters it becomes impractical. It can also stall on a ridge or in a valley, giving a point that is not a stationary point; restarting from the returned value, with a new simplex, is the usual remedy.
+- **No standard errors.** It produces no curvature. After Nelder–Mead the Hessian must be obtained by numerical differentiation at the solution, as `optim(..., hessian = TRUE)` does.
+
+This makes it, as `optim`'s default method, a reasonable first look at an unfamiliar objective with a few parameters, but a poor choice for a smooth likelihood that is fitted many times or has many parameters, where the gradient-based methods of the next sections are far more efficient.
 
 ### Shinylive App for the Nelder–Mead Algorithm {#sec-nelder-mead-app}
 
