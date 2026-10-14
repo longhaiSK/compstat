@@ -243,10 +243,99 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   }
 
+
+  // --- PART F: READING SETTINGS (font size, font family, background) ---
+  function createReadingSettings() {
+    if (document.getElementById('reading-settings')) return;
+    const main = document.querySelector('main.content');
+    if (!main) return;
+    const root = document.documentElement;
+    const KEY = 'reading-settings';
+    const FONTS = {
+      'default': ['Default', ''],
+      'sans':    ['Sans-serif', 'Helvetica, Arial, sans-serif'],
+      'serif':   ['Serif', 'Georgia, "Times New Roman", Times, serif'],
+      'book':    ['Book (Palatino)', '"Palatino Linotype", Palatino, "Book Antiqua", serif'],
+      'mono':    ['Monospace', '"SFMono-Regular", Menlo, Consolas, monospace']
+    };
+    const BACKGROUNDS = [
+      ['White',  '#ffffff', '#000000'],
+      ['Cream',  '#fbf3e0', '#2b2118'],
+      ['Gray',   '#e9ecef', '#1a1a1a'],
+      ['Green',  '#e3f1e3', '#16241a'],
+      ['Blue',   '#e6eef8', '#14202e']
+    ];
+    let state = { scale: 1, font: 'default', bg: 0 };
+    try { Object.assign(state, JSON.parse(localStorage.getItem(KEY)) || {}); } catch (e) { /* ignore */ }
+
+    function apply() {
+      state.scale = Math.max(0.7, Math.min(1.8, Math.round(state.scale * 10) / 10));
+      root.style.setProperty('--reading-scale', state.scale);
+      const f = FONTS[state.font] || FONTS['default'];
+      root.classList.toggle('has-reading-font', !!f[1]);
+      root.style.setProperty('--reading-font', f[1] || 'inherit');
+      const b = BACKGROUNDS[state.bg] || BACKGROUNDS[0];
+      root.style.setProperty('--background', b[1]);
+      root.style.setProperty('--textcolor', b[2]);
+      value.textContent = Math.round(state.scale * 100) + '%';
+      fontSel.value = state.font;
+      swatches.forEach((s, i) => s.classList.toggle('selected', i === state.bg));
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    }
+
+    const bar = document.createElement('div');
+    bar.id = 'reading-settings';
+
+    function group(title) {
+      const g = document.createElement('span');
+      g.className = 'rs-group'; g.title = title;
+      bar.appendChild(g);
+      return g;
+    }
+    function button(parent, text, title, onclick) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = text; b.title = title;
+      b.addEventListener('click', onclick);
+      parent.appendChild(b);
+      return b;
+    }
+
+    const gSize = group('Font size');
+    button(gSize, 'A−', 'Smaller text', () => { state.scale -= 0.1; apply(); });
+    const value = button(gSize, '100%', 'Reset the text size', () => { state.scale = 1; apply(); });
+    value.classList.add('rs-size-value');
+    button(gSize, 'A+', 'Larger text', () => { state.scale += 0.1; apply(); });
+
+    const gFont = group('Font family');
+    const fontSel = document.createElement('select');
+    Object.keys(FONTS).forEach(k => {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = FONTS[k][0];
+      fontSel.appendChild(o);
+    });
+    fontSel.addEventListener('change', () => { state.font = fontSel.value; apply(); });
+    gFont.appendChild(fontSel);
+
+    const gBg = group('Background colour');
+    const swatches = BACKGROUNDS.map((b, i) => {
+      const s = button(gBg, '', b[0] + ' background', () => { state.bg = i; apply(); });
+      s.className = 'rs-swatch';
+      s.style.backgroundColor = b[1];
+      return s;
+    });
+    button(gBg, 'Reset', 'Back to the default size, font and background', () => {
+      state = { scale: 1, font: 'default', bg: 0 }; apply();
+    });
+
+    main.insertBefore(bar, main.firstChild);
+    apply();
+  }
+
   // --- EXECUTION ---
   function run() {
     try { createSidebarToggle(); } catch(e) { console.error(e); }
     try { createSidebarResizer(); } catch(e) { console.error(e); }
+    try { createReadingSettings(); } catch(e) { console.error(e); }
     try { formatChapters(); } catch(e) { console.error(e); }
     try { moveToc(); } catch(e) { console.error(e); }
     document.querySelector('#quarto-sidebar .sidebar-menu-container')?.classList.add('loaded');
