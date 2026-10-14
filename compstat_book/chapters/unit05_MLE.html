@@ -4764,34 +4764,50 @@ Table&nbsp;5.5: Lists the commonly used software for the optimization methods of
 <section id="example-of-fitting-nn-with-tensorflow" class="level3" data-number="5.8.4">
 <h3 data-number="5.8.4" class="anchored" data-anchor-id="example-of-fitting-nn-with-tensorflow"><span class="header-section-number">5.8.4</span> Example of Fitting NN with Tensorflow</h3>
 <p>The Gaussian network of the first app, with one input, one hidden layer of four <code>tanh</code> units and a linear output (two layers of weights, thirteen parameters), written in Keras. The data are generated from the same two-bump mean as in the app, with noise standard deviation <span class="math inline">\(\sigma = 0.3\)</span>, so the smallest attainable loss is the noise floor <span class="math inline">\(\sigma^2/2 = 0.045\)</span>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb87"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
-<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
-<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb87-4"><a href="#cb87-4" aria-hidden="true" tabindex="-1"></a><span class="co"># data: y = mu(x) + noise, with the mean of the Gaussian app (four tanh units)</span></span>
-<span id="cb87-5"><a href="#cb87-5" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">1</span>)</span>
-<span id="cb87-6"><a href="#cb87-6" aria-hidden="true" tabindex="-1"></a>n <span class="op">=</span> <span class="dv">500</span></span>
-<span id="cb87-7"><a href="#cb87-7" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> rng.uniform(<span class="op">-</span><span class="dv">3</span>, <span class="dv">3</span>, size<span class="op">=</span>(n, <span class="dv">1</span>)).astype(<span class="st">"float32"</span>)</span>
-<span id="cb87-8"><a href="#cb87-8" aria-hidden="true" tabindex="-1"></a>W, w0 <span class="op">=</span> np.array([[<span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>]]), np.array([<span class="fl">5.5</span>, <span class="dv">2</span>, <span class="op">-</span><span class="dv">2</span>, <span class="op">-</span><span class="fl">5.5</span>])</span>
-<span id="cb87-9"><a href="#cb87-9" aria-hidden="true" tabindex="-1"></a>v, v0 <span class="op">=</span> np.array([<span class="fl">1.2</span>, <span class="op">-</span><span class="fl">1.2</span>, <span class="fl">1.0</span>, <span class="op">-</span><span class="fl">1.0</span>]), <span class="op">-</span><span class="fl">0.5</span></span>
-<span id="cb87-10"><a href="#cb87-10" aria-hidden="true" tabindex="-1"></a>mu <span class="op">=</span> np.tanh(x <span class="op">@</span> W <span class="op">+</span> w0) <span class="op">@</span> v <span class="op">+</span> v0</span>
-<span id="cb87-11"><a href="#cb87-11" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> (mu <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> rng.normal(size<span class="op">=</span>n)).astype(<span class="st">"float32"</span>).reshape(<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>)</span>
-<span id="cb87-12"><a href="#cb87-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb87-13"><a href="#cb87-13" aria-hidden="true" tabindex="-1"></a><span class="co"># the model: eta = v_0 + sum_j v_j tanh(w_j1 x + w_j0), identity link</span></span>
-<span id="cb87-14"><a href="#cb87-14" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> tf.keras.Sequential([</span>
-<span id="cb87-15"><a href="#cb87-15" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Input(shape<span class="op">=</span>(<span class="dv">1</span>,)),</span>
-<span id="cb87-16"><a href="#cb87-16" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">4</span>, activation<span class="op">=</span><span class="st">"tanh"</span>),    <span class="co"># hidden layer: W (1 x 4), w_0 (4)</span></span>
-<span id="cb87-17"><a href="#cb87-17" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">1</span>),                       <span class="co"># output layer: v (4 x 1), v_0</span></span>
-<span id="cb87-18"><a href="#cb87-18" aria-hidden="true" tabindex="-1"></a>])</span>
-<span id="cb87-19"><a href="#cb87-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb87-20"><a href="#cb87-20" aria-hidden="true" tabindex="-1"></a><span class="co"># loss: half the mean squared error, the L(theta) of the app</span></span>
-<span id="cb87-21"><a href="#cb87-21" aria-hidden="true" tabindex="-1"></a>half_mse <span class="op">=</span> <span class="kw">lambda</span> y, mu: <span class="fl">0.5</span> <span class="op">*</span> tf.reduce_mean(tf.square(y <span class="op">-</span> mu))</span>
-<span id="cb87-22"><a href="#cb87-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb87-23"><a href="#cb87-23" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(optimizer<span class="op">=</span>tf.keras.optimizers.Adam(learning_rate<span class="op">=</span><span class="fl">0.05</span>), loss<span class="op">=</span>half_mse)</span>
-<span id="cb87-24"><a href="#cb87-24" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> model.fit(x, y, batch_size<span class="op">=</span><span class="dv">50</span>, epochs<span class="op">=</span><span class="dv">300</span>, verbose<span class="op">=</span><span class="dv">0</span>)   <span class="co"># one epoch = n/50 mini-batch steps</span></span>
-<span id="cb87-25"><a href="#cb87-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb87-26"><a href="#cb87-26" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(history.history[<span class="st">"loss"</span>][<span class="op">-</span><span class="dv">1</span>])      <span class="co"># close to 0.045 when the fit is good</span></span>
-<span id="cb87-27"><a href="#cb87-27" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(model.get_weights())              <span class="co"># [W, w_0, v, v_0]</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Everything the chapter did by hand happens inside <code>fit</code>: the forward pass computes <span class="math inline">\(\mu_i\)</span>, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update <span class="math inline">\(\theta_{k+1} = \theta_k - \alpha_k P_k m_k\)</span> of <a href="#tbl-common-form" class="quarto-xref">Table&nbsp;<span>5.3</span></a>. The optimizer is the only line to change in order to repeat the comparison of the app: <code>SGD(learning_rate=0.1)</code>, <code>SGD(learning_rate=0.1, momentum=0.9)</code> or <code>Adam(0.05)</code>. Setting <code>batch_size=n</code> makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits; the code above is a sketch that is not run in this book.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb87"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb87-2"><a href="#cb87-2" aria-hidden="true" tabindex="-1"></a>os.environ[<span class="st">"TF_CPP_MIN_LOG_LEVEL"</span>] <span class="op">=</span> <span class="st">"3"</span>          <span class="co"># quiet TensorFlow's start-up messages</span></span>
+<span id="cb87-3"><a href="#cb87-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb87-4"><a href="#cb87-4" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tensorflow <span class="im">as</span> tf</span>
+<span id="cb87-5"><a href="#cb87-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-6"><a href="#cb87-6" aria-hidden="true" tabindex="-1"></a>tf.keras.utils.set_random_seed(<span class="dv">1</span>)            <span class="co"># numpy, python and TensorFlow seeds</span></span>
+<span id="cb87-7"><a href="#cb87-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-8"><a href="#cb87-8" aria-hidden="true" tabindex="-1"></a><span class="co"># data: y = mu(x) + noise, with the mean of the Gaussian app (four tanh units)</span></span>
+<span id="cb87-9"><a href="#cb87-9" aria-hidden="true" tabindex="-1"></a>rng <span class="op">=</span> np.random.default_rng(<span class="dv">1</span>)</span>
+<span id="cb87-10"><a href="#cb87-10" aria-hidden="true" tabindex="-1"></a>n <span class="op">=</span> <span class="dv">500</span></span>
+<span id="cb87-11"><a href="#cb87-11" aria-hidden="true" tabindex="-1"></a>x <span class="op">=</span> rng.uniform(<span class="op">-</span><span class="dv">3</span>, <span class="dv">3</span>, size<span class="op">=</span>(n, <span class="dv">1</span>)).astype(<span class="st">"float32"</span>)</span>
+<span id="cb87-12"><a href="#cb87-12" aria-hidden="true" tabindex="-1"></a>W, w0 <span class="op">=</span> np.array([[<span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>]]), np.array([<span class="fl">5.5</span>, <span class="dv">2</span>, <span class="op">-</span><span class="dv">2</span>, <span class="op">-</span><span class="fl">5.5</span>])</span>
+<span id="cb87-13"><a href="#cb87-13" aria-hidden="true" tabindex="-1"></a>v, v0 <span class="op">=</span> np.array([<span class="fl">1.2</span>, <span class="op">-</span><span class="fl">1.2</span>, <span class="fl">1.0</span>, <span class="op">-</span><span class="fl">1.0</span>]), <span class="op">-</span><span class="fl">0.5</span></span>
+<span id="cb87-14"><a href="#cb87-14" aria-hidden="true" tabindex="-1"></a>mu <span class="op">=</span> np.tanh(x <span class="op">@</span> W <span class="op">+</span> w0) <span class="op">@</span> v <span class="op">+</span> v0</span>
+<span id="cb87-15"><a href="#cb87-15" aria-hidden="true" tabindex="-1"></a>y <span class="op">=</span> (mu <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> rng.normal(size<span class="op">=</span>n)).astype(<span class="st">"float32"</span>).reshape(<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>)</span>
+<span id="cb87-16"><a href="#cb87-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-17"><a href="#cb87-17" aria-hidden="true" tabindex="-1"></a><span class="co"># the model: eta = v_0 + sum_j v_j tanh(w_j1 x + w_j0), identity link</span></span>
+<span id="cb87-18"><a href="#cb87-18" aria-hidden="true" tabindex="-1"></a>model <span class="op">=</span> tf.keras.Sequential([</span>
+<span id="cb87-19"><a href="#cb87-19" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Input(shape<span class="op">=</span>(<span class="dv">1</span>,)),</span>
+<span id="cb87-20"><a href="#cb87-20" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">4</span>, activation<span class="op">=</span><span class="st">"tanh"</span>),    <span class="co"># hidden layer: W (1 x 4), w_0 (4)</span></span>
+<span id="cb87-21"><a href="#cb87-21" aria-hidden="true" tabindex="-1"></a>    tf.keras.layers.Dense(<span class="dv">1</span>),                       <span class="co"># output layer: v (4 x 1), v_0</span></span>
+<span id="cb87-22"><a href="#cb87-22" aria-hidden="true" tabindex="-1"></a>])</span>
+<span id="cb87-23"><a href="#cb87-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-24"><a href="#cb87-24" aria-hidden="true" tabindex="-1"></a><span class="co"># loss: half the mean squared error, the L(theta) of the app</span></span>
+<span id="cb87-25"><a href="#cb87-25" aria-hidden="true" tabindex="-1"></a>half_mse <span class="op">=</span> <span class="kw">lambda</span> y, mu: <span class="fl">0.5</span> <span class="op">*</span> tf.reduce_mean(tf.square(y <span class="op">-</span> mu))</span>
+<span id="cb87-26"><a href="#cb87-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-27"><a href="#cb87-27" aria-hidden="true" tabindex="-1"></a>model.<span class="bu">compile</span>(optimizer<span class="op">=</span>tf.keras.optimizers.Adam(learning_rate<span class="op">=</span><span class="fl">0.05</span>), loss<span class="op">=</span>half_mse)</span>
+<span id="cb87-28"><a href="#cb87-28" aria-hidden="true" tabindex="-1"></a>history <span class="op">=</span> model.fit(x, y, batch_size<span class="op">=</span><span class="dv">50</span>, epochs<span class="op">=</span><span class="dv">300</span>, verbose<span class="op">=</span><span class="dv">0</span>)   <span class="co"># one epoch = n/50 mini-batch steps</span></span>
+<span id="cb87-29"><a href="#cb87-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb87-30"><a href="#cb87-30" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(history.history[<span class="st">"loss"</span>][<span class="op">-</span><span class="dv">1</span>])      <span class="co"># the noise floor is 0.045</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>0.05603807792067528</code></pre>
+</div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb89"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> name, w <span class="kw">in</span> <span class="bu">zip</span>([<span class="st">"W"</span>, <span class="st">"w_0"</span>, <span class="st">"v"</span>, <span class="st">"v_0"</span>], model.get_weights()):</span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a>    <span class="bu">print</span>(name, np.<span class="bu">round</span>(w.ravel(), <span class="dv">2</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>W [-2.58  1.61  0.89  2.05]
+w_0 [ 2.02  1.55  1.78 -4.56]
+v [-1.04 -2.41  2.99 -1.04]
+v_0 [-1.1]</code></pre>
+</div>
+</div>
+<p>Everything the chapter did by hand happens inside <code>fit</code>: the forward pass computes <span class="math inline">\(\mu_i\)</span>, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update <span class="math inline">\(\theta_{k+1} = \theta_k - \alpha_k P_k m_k\)</span> of <a href="#tbl-common-form" class="quarto-xref">Table&nbsp;<span>5.3</span></a>. The optimizer is the only line to change in order to repeat the comparison of the app: <code>SGD(learning_rate=0.1)</code>, <code>SGD(learning_rate=0.1, momentum=0.9)</code> or <code>Adam(0.05)</code>. Setting <code>batch_size=n</code> makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits, and the hidden units may come out in a different order or with the signs of <span class="math inline">\((w_j, v_j)\)</span> flipped relative to the true weights.</p>
 
 
 </section>

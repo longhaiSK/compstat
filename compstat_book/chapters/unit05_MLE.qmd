@@ -2674,9 +2674,16 @@ Replacing `Adam` by `tf.keras.optimizers.SGD(learning_rate=0.05, momentum=0.9)` 
 
 The Gaussian network of the first app, with one input, one hidden layer of four `tanh` units and a linear output (two layers of weights, thirteen parameters), written in Keras. The data are generated from the same two-bump mean as in the app, with noise standard deviation $\sigma = 0.3$, so the smallest attainable loss is the noise floor $\sigma^2/2 = 0.045$.
 
-```python
+```{python}
+#| label: tf-gaussian-nn
+#| cache: false
+#| code-fold: false
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"          # quiet TensorFlow's start-up messages
 import numpy as np
 import tensorflow as tf
+
+tf.keras.utils.set_random_seed(1)            # numpy, python and TensorFlow seeds
 
 # data: y = mu(x) + noise, with the mean of the Gaussian app (four tanh units)
 rng = np.random.default_rng(1)
@@ -2700,8 +2707,9 @@ half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05), loss=half_mse)
 history = model.fit(x, y, batch_size=50, epochs=300, verbose=0)   # one epoch = n/50 mini-batch steps
 
-print(history.history["loss"][-1])      # close to 0.045 when the fit is good
-print(model.get_weights())              # [W, w_0, v, v_0]
+print(history.history["loss"][-1])      # the noise floor is 0.045
+for name, w in zip(["W", "w_0", "v", "v_0"], model.get_weights()):
+    print(name, np.round(w.ravel(), 2))
 ```
 
-Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the app: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.05)`. Setting `batch_size=n` makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits; the code above is a sketch that is not run in this book.
+Everything the chapter did by hand happens inside `fit`: the forward pass computes $\mu_i$, backpropagation produces the gradient of the mini-batch loss, and Adam turns that gradient into the update $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$ of @tbl-common-form. The optimizer is the only line to change in order to repeat the comparison of the app: `SGD(learning_rate=0.1)`, `SGD(learning_rate=0.1, momentum=0.9)` or `Adam(0.05)`. Setting `batch_size=n` makes each step a full-batch one. As in the app, the loss is not convex, so different random initial weights can end in different, equally good fits, and the hidden units may come out in a different order or with the signs of $(w_j, v_j)$ flipped relative to the true weights.
