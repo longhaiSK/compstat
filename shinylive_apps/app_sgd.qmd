@@ -295,6 +295,19 @@ row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
+  ## the iteration slider: a drag is reported as "kuser" (so playing resumes from
+  ## there) and the server does not move the thumb while it is being dragged
+  tags$head(tags$script(HTML("
+    var kdrag = false;
+    $(document).on('mousedown touchstart', '.irs', function() {
+      if ($(this).closest('.shiny-input-container').find('#kshow').length) kdrag = true; });
+    $(document).on('mouseup touchend', function() { kdrag = false; });
+    $(document).on('change', '#kshow', function() {
+      if (kdrag) Shiny.setInputValue('kuser', parseInt($(this).val()), {priority: 'event'}); });
+    Shiny.addCustomMessageHandler('setk', function(v) {
+      if (kdrag) return;
+      var s = $('#kshow').data('ionRangeSlider'); if (s) s.update({from: v}); });
+  "))),
   ## small text for the row of weight buttons
   tags$head(tags$style(HTML("
     .wbar .btn { font-size: 12px; padding: 3px 10px; }
@@ -432,10 +445,10 @@ server <- function(input, output, session) {
   })
 
   ## the iteration slider follows the run, and scrubs it when dragged
-  observeEvent(kpos(), updateSliderInput(session, "kshow", value = kpos()))
-  observeEvent(input$kshow, {
-    if (!isTRUE(playing()) && input$kshow != kpos())
-      kpos(min(as.integer(input$kshow), run()$n - 1L))
+  observeEvent(kpos(), session$sendCustomMessage("setk", kpos()))
+  observeEvent(input$kuser, {
+    if (input$kuser != kpos())
+      kpos(min(as.integer(input$kuser), run()$n - 1L))
   })
 
   observeEvent(input$play, {
@@ -885,6 +898,19 @@ row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
+  ## the iteration slider: a drag is reported as "kuser" (so playing resumes from
+  ## there) and the server does not move the thumb while it is being dragged
+  tags$head(tags$script(HTML("
+    var kdrag = false;
+    $(document).on('mousedown touchstart', '.irs', function() {
+      if ($(this).closest('.shiny-input-container').find('#kshow').length) kdrag = true; });
+    $(document).on('mouseup touchend', function() { kdrag = false; });
+    $(document).on('change', '#kshow', function() {
+      if (kdrag) Shiny.setInputValue('kuser', parseInt($(this).val()), {priority: 'event'}); });
+    Shiny.addCustomMessageHandler('setk', function(v) {
+      if (kdrag) return;
+      var s = $('#kshow').data('ionRangeSlider'); if (s) s.update({from: v}); });
+  "))),
   ## small text for the row of weight buttons
   tags$head(tags$style(HTML("
     .wbar .btn { font-size: 12px; padding: 3px 10px; }
@@ -1022,10 +1048,10 @@ server <- function(input, output, session) {
   })
 
   ## the iteration slider follows the run, and scrubs it when dragged
-  observeEvent(kpos(), updateSliderInput(session, "kshow", value = kpos()))
-  observeEvent(input$kshow, {
-    if (!isTRUE(playing()) && input$kshow != kpos())
-      kpos(min(as.integer(input$kshow), run()$n - 1L))
+  observeEvent(kpos(), session$sendCustomMessage("setk", kpos()))
+  observeEvent(input$kuser, {
+    if (input$kuser != kpos())
+      kpos(min(as.integer(input$kuser), run()$n - 1L))
   })
 
   observeEvent(input$play, {
