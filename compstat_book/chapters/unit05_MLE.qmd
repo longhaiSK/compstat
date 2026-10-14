@@ -2580,14 +2580,43 @@ There is a [shinylive app](../../shinylive_apps/app_nelder-mead.html) to show ho
 
 ## Comparing All the Methods
 
-The chapter has covered a lot of ground, from bisection on a scalar gradient $g$ to stochastic gradient descent on millions of parameters. The three tables below collect it into a single reference: which method needs what, which R function to reach for, and how to choose among them for a given problem.
+The chapter has covered a lot of ground, from bisection on a scalar gradient $g$ to stochastic gradient descent on millions of parameters. This section collects the gradient-based methods, Newton–Raphson included, into one reference: first as a single update rule in which they differ only in the gradient they use and in how it is modified, then by what each needs and costs, then by which R function to reach for and how to choose among them. Derivative-free methods such as Nelder–Mead are left out.
+
+### One Form for All the Methods
+
+Every method of this chapter that uses the gradient can be written as the same update,
+$$
+\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,
+$$
+where $g_k = \nabla f(\theta_k)$ is the gradient of the objective $f = \mathcal{L}$ at the current iterate, and the three remaining ingredients are what distinguishes the methods:
+
+- $m_k$ is the **gradient used**: the gradient itself, a sampled version of it (mini-batches), or a smoothed version of it (a running average of past gradients);
+- $P_k$ is the **modifier** or *preconditioner*, a matrix that rescales or rotates the step, built from curvature, from Fisher information, or from the history of gradients, with $P_k = I$ when there is none;
+- $\alpha_k$ is the **step size**: set by hand, found by a line search, or fixed at $1$.
+
+| Method | Gradient used, $m_k$ | Modifier, $P_k$ | Step size, $\alpha_k$ |
+|:---|:---|:---|:---|
+| Steepest descent, fixed rate | $g_k$ | $I$ | $\alpha$, set by hand |
+| Steepest descent, line search | $g_k$ | $I$ | $\alpha_k$ from a Wolfe line search |
+| Momentum | $v_k = \beta v_{k-1} + g_k$, a weighted sum of past gradients | $I$ | $\alpha$, set by hand |
+| Adam | $\hat m_k$, a bias-corrected exponential average of past gradients | $\mathrm{diag}\big(1/(\sqrt{\hat s_k} + \varepsilon)\big)$, with $\hat s_k$ the average of $g_j \odot g_j$ (diagonal of the empirical Fisher information) | $\alpha$, set by hand |
+| Conjugate gradient | $d_k = -g_k + \beta_k d_{k-1}$, the gradient combined with the previous direction | implicit: successive directions conjugate with respect to the Hessian | $\alpha_k$ from a line search |
+| BFGS, L-BFGS | $g_k$ | $B_k \approx J(\theta_k)^{-1}$, built from $s_k = \theta_{k+1}-\theta_k$ and $y_k = g_{k+1}-g_k$; L-BFGS keeps only the last $m$ pairs | $\alpha_k$ from a Wolfe line search |
+| Newton–Raphson | $g_k$ | $J(\theta_k)^{-1}$, the inverse observed information | $1$, or step-halving as a safeguard |
+| Fisher scoring, IRLS | $g_k$ | $I(\theta_k)^{-1}$, the inverse expected information | $1$ |
+| Stochastic gradient descent | $g_k^{B} = \frac1m\sum_{i\in B_k}\nabla\mathcal{L}_i(\theta_k)$ on a random mini-batch, with $E\,g_k^B = g_k$ | $I$ | $\alpha_k$ decreasing, set by hand |
+
+: Writes every gradient-based method of this chapter as $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$, showing the gradient each one uses, how it modifies it, and how the step size is chosen. The common form of the gradient-based methods. {#tbl-common-form}
+
+Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Momentum and conjugate gradient change *which direction* is used, by averaging the gradient over the past, which damps the zig-zag across a valley. Adam changes the *scale* of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves $P_k$ alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.
 
 ### Comparison
 
 | Method | Derivatives | Storage | Cost per iteration | Local rate | Robust start | Hessian for SEs |
 |:---|:---|:---|:---|:---|:---|:---|
-| Nelder–Mead | none | $O(p^2)$ | $O(p)$ evaluations | sublinear | good | no |
 | Steepest descent | gradient | $O(p)$ | 1 gradient + line search | linear (slow) | good | no |
+| Momentum | gradient | $O(p)$ | 1 gradient + $O(p)$ | linear (faster along valleys) | good | no |
+| Adam | gradient | $O(p)$ | 1 gradient + $O(p)$ | sublinear, noisy near the optimum | good | no |
 | Conjugate gradient | gradient | $O(p)$ | 1 gradient + line search | linear (fast) | moderate | no |
 | BFGS | gradient | $O(p^2)$ | 1 gradient + $O(p^2)$ | superlinear | moderate | approximate |
 | L-BFGS | gradient | $O(mp)$ | 1 gradient + $O(mp)$ | superlinear | moderate | no |
@@ -2595,20 +2624,21 @@ The chapter has covered a lot of ground, from bisection on a scalar gradient $g$
 | Fisher scoring / IRLS | gradient, expected information | $O(p^2)$ | 1 weighted LS fit | near-quadratic | fair | exact |
 | Stochastic gradient | minibatch gradient | $O(p)$ | $O(\text{batch})$ | sublinear | good | no |
 
-: Summarizes the trade-offs among the multivariate optimization methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of multivariate optimization methods. $p$ is the number of parameters and $m$ the L-BFGS memory length (typically 5–20). {#tbl-comparison}
+: Summarizes the trade-offs among the gradient-based methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of gradient-based optimization methods. $p$ is the number of parameters and $m$ the L-BFGS memory length (typically 5–20). {#tbl-comparison}
 
 ### Implementations in R
 
 | Function | Package | Methods available | Notes |
 |:---|:---|:---|:---|
-| `optim` | stats | Nelder–Mead, BFGS, CG, L-BFGS-B, SANN | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
+| `optim` | stats | BFGS, CG, L-BFGS-B | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
 | `nlm` | stats | Newton-type with ridging | Uses analytic gradient/Hessian if attached as attributes, otherwise numerical; returns `$hessian` |
 | `nlminb` | stats | Trust-region (PORT) | Reliable on badly scaled problems; supports box constraints |
 | `optimize`, `uniroot` | stats | Golden section, Brent | One dimension only |
 | `glm` | stats | IRLS (Fisher scoring) | The specialised case; use `start` when separation is suspected |
 | `nls` | stats | Gauss–Newton, Golub–Pereyra | Nonlinear least squares; `port` algorithm adds constraints |
 | `optimx` | optimx | Unified front end to a dozen optimizers | Useful for comparing methods on the same objective |
-| `nloptr` | nloptr | Large NLopt collection, with constraints | Global and derivative-free options |
+| `nloptr` | nloptr | Large NLopt collection, with constraints | Gradient-based and global options |
+| `torch` | torch | SGD, momentum, Adam (`optim_sgd`, `optim_adam`) | Automatic differentiation and mini-batch training of neural networks |
 | `Rsolnp`, `alabama` | — | Nonlinear equality and inequality constraints | For genuinely constrained problems |
 
 : Maps the optimization methods to the R functions and packages that implement them. R interfaces to multivariate optimizers {#tbl-r-functions}
@@ -2621,10 +2651,10 @@ The chapter has covered a lot of ground, from bisection on a scalar gradient $g$
 | GLM or a model expressible as one | `glm` (IRLS) |
 | Gradient available, $p$ moderate | BFGS via `optim(method = "BFGS")` |
 | Gradient available, $p$ large | L-BFGS |
-| Derivatives unavailable, $p < 10$ | Nelder–Mead as a first pass, then refine |
-| Objective noisy or non-smooth | Nelder–Mead or simulated annealing |
+| Analytic gradient unavailable | Finite-difference gradients (the default in `optim`), or automatic differentiation |
 | Divergence or poor conditioning suspected | `nlm` or `nlminb`; rescale the parameters |
-| Objective a sum over very many observations | Stochastic gradient descent and variants |
+| Objective a sum over very many observations | Stochastic gradient descent, momentum or Adam on mini-batches |
+| Neural network, $p$ large | Adam or SGD with momentum on mini-batches; BFGS only for small networks |
 | Multiple local maxima suspected | Multiple random starts with any of the above |
 
 : Gives practical rules for choosing an optimizer according to the features of the problem. Practical guidance on method selection {#tbl-choosing}

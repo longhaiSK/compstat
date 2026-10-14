@@ -389,9 +389,10 @@ window.Quarto = {
   </ul></li>
   <li><a href="#comparing-all-the-methods" id="toc-comparing-all-the-methods" class="nav-link" data-scroll-target="#comparing-all-the-methods"><span class="header-section-number">5.8</span> Comparing All the Methods</a>
   <ul>
-  <li><a href="#comparison" id="toc-comparison" class="nav-link" data-scroll-target="#comparison"><span class="header-section-number">5.8.1</span> Comparison</a></li>
-  <li><a href="#implementations-in-r" id="toc-implementations-in-r" class="nav-link" data-scroll-target="#implementations-in-r"><span class="header-section-number">5.8.2</span> Implementations in R</a></li>
-  <li><a href="#choosing-a-method" id="toc-choosing-a-method" class="nav-link" data-scroll-target="#choosing-a-method"><span class="header-section-number">5.8.3</span> Choosing a method</a></li>
+  <li><a href="#one-form-for-all-the-methods" id="toc-one-form-for-all-the-methods" class="nav-link" data-scroll-target="#one-form-for-all-the-methods"><span class="header-section-number">5.8.1</span> One Form for All the Methods</a></li>
+  <li><a href="#comparison" id="toc-comparison" class="nav-link" data-scroll-target="#comparison"><span class="header-section-number">5.8.2</span> Comparison</a></li>
+  <li><a href="#implementations-in-r" id="toc-implementations-in-r" class="nav-link" data-scroll-target="#implementations-in-r"><span class="header-section-number">5.8.3</span> Implementations in R</a></li>
+  <li><a href="#choosing-a-method" id="toc-choosing-a-method" class="nav-link" data-scroll-target="#choosing-a-method"><span class="header-section-number">5.8.4</span> Choosing a method</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -4426,13 +4427,106 @@ nlm      -0.2725325 1.503424</code></pre>
 </section>
 <section id="comparing-all-the-methods" class="level2" data-number="5.8">
 <h2 data-number="5.8" class="anchored" data-anchor-id="comparing-all-the-methods"><span class="header-section-number">5.8</span> Comparing All the Methods</h2>
-<p>The chapter has covered a lot of ground, from bisection on a scalar gradient <span class="math inline">\(g\)</span> to stochastic gradient descent on millions of parameters. The three tables below collect it into a single reference: which method needs what, which R function to reach for, and how to choose among them for a given problem.</p>
-<section id="comparison" class="level3" data-number="5.8.1">
-<h3 data-number="5.8.1" class="anchored" data-anchor-id="comparison"><span class="header-section-number">5.8.1</span> Comparison</h3>
+<p>The chapter has covered a lot of ground, from bisection on a scalar gradient <span class="math inline">\(g\)</span> to stochastic gradient descent on millions of parameters. This section collects the gradient-based methods, Newton–Raphson included, into one reference: first as a single update rule in which they differ only in the gradient they use and in how it is modified, then by what each needs and costs, then by which R function to reach for and how to choose among them. Derivative-free methods such as Nelder–Mead are left out.</p>
+<section id="one-form-for-all-the-methods" class="level3" data-number="5.8.1">
+<h3 data-number="5.8.1" class="anchored" data-anchor-id="one-form-for-all-the-methods"><span class="header-section-number">5.8.1</span> One Form for All the Methods</h3>
+<p>Every method of this chapter that uses the gradient can be written as the same update, <span class="math display">\[
+\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,
+\]</span> where <span class="math inline">\(g_k = \nabla f(\theta_k)\)</span> is the gradient of the objective <span class="math inline">\(f = \mathcal{L}\)</span> at the current iterate, and the three remaining ingredients are what distinguishes the methods:</p>
+<ul>
+<li><span class="math inline">\(m_k\)</span> is the <strong>gradient used</strong>: the gradient itself, a sampled version of it (mini-batches), or a smoothed version of it (a running average of past gradients);</li>
+<li><span class="math inline">\(P_k\)</span> is the <strong>modifier</strong> or <em>preconditioner</em>, a matrix that rescales or rotates the step, built from curvature, from Fisher information, or from the history of gradients, with <span class="math inline">\(P_k = I\)</span> when there is none;</li>
+<li><span class="math inline">\(\alpha_k\)</span> is the <strong>step size</strong>: set by hand, found by a line search, or fixed at <span class="math inline">\(1\)</span>.</li>
+</ul>
+<div id="tbl-common-form" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-common-form-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;5.3: Writes every gradient-based method of this chapter as <span class="math inline">\(\theta_{k+1} = \theta_k - \alpha_k P_k m_k\)</span>, showing the gradient each one uses, how it modifies it, and how the step size is chosen. The common form of the gradient-based methods.
+</figcaption>
+<div aria-describedby="tbl-common-form-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Method</th>
+<th style="text-align: left;">Gradient used, <span class="math inline">\(m_k\)</span></th>
+<th style="text-align: left;">Modifier, <span class="math inline">\(P_k\)</span></th>
+<th style="text-align: left;">Step size, <span class="math inline">\(\alpha_k\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Steepest descent, fixed rate</td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Steepest descent, line search</td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a Wolfe line search</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Momentum</td>
+<td style="text-align: left;"><span class="math inline">\(v_k = \beta v_{k-1} + g_k\)</span>, a weighted sum of past gradients</td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Adam</td>
+<td style="text-align: left;"><span class="math inline">\(\hat m_k\)</span>, a bias-corrected exponential average of past gradients</td>
+<td style="text-align: left;"><span class="math inline">\(\mathrm{diag}\big(1/(\sqrt{\hat s_k} + \varepsilon)\big)\)</span>, with <span class="math inline">\(\hat s_k\)</span> the average of <span class="math inline">\(g_j \odot g_j\)</span> (diagonal of the empirical Fisher information)</td>
+<td style="text-align: left;"><span class="math inline">\(\alpha\)</span>, set by hand</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Conjugate gradient</td>
+<td style="text-align: left;"><span class="math inline">\(d_k = -g_k + \beta_k d_{k-1}\)</span>, the gradient combined with the previous direction</td>
+<td style="text-align: left;">implicit: successive directions conjugate with respect to the Hessian</td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a line search</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">BFGS, L-BFGS</td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(B_k \approx J(\theta_k)^{-1}\)</span>, built from <span class="math inline">\(s_k = \theta_{k+1}-\theta_k\)</span> and <span class="math inline">\(y_k = g_{k+1}-g_k\)</span>; L-BFGS keeps only the last <span class="math inline">\(m\)</span> pairs</td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> from a Wolfe line search</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Newton–Raphson</td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(J(\theta_k)^{-1}\)</span>, the inverse observed information</td>
+<td style="text-align: left;"><span class="math inline">\(1\)</span>, or step-halving as a safeguard</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Fisher scoring, IRLS</td>
+<td style="text-align: left;"><span class="math inline">\(g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I(\theta_k)^{-1}\)</span>, the inverse expected information</td>
+<td style="text-align: left;"><span class="math inline">\(1\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Stochastic gradient descent</td>
+<td style="text-align: left;"><span class="math inline">\(g_k^{B} = \frac1m\sum_{i\in B_k}\nabla\mathcal{L}_i(\theta_k)\)</span> on a random mini-batch, with <span class="math inline">\(E\,g_k^B = g_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(I\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\alpha_k\)</span> decreasing, set by hand</td>
+</tr>
+</tbody>
+</table>
+</div>
+</figure>
+</div>
+<p>Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Momentum and conjugate gradient change <em>which direction</em> is used, by averaging the gradient over the past, which damps the zig-zag across a valley. Adam changes the <em>scale</em> of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves <span class="math inline">\(P_k\)</span> alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.</p>
+</section>
+<section id="comparison" class="level3" data-number="5.8.2">
+<h3 data-number="5.8.2" class="anchored" data-anchor-id="comparison"><span class="header-section-number">5.8.2</span> Comparison</h3>
 <div id="tbl-comparison" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-comparison-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of multivariate optimization methods. <span class="math inline">\(p\)</span> is the number of parameters and <span class="math inline">\(m\)</span> the L-BFGS memory length (typically 5–20).
+Table&nbsp;5.4: Summarizes the trade-offs among the gradient-based methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of gradient-based optimization methods. <span class="math inline">\(p\)</span> is the number of parameters and <span class="math inline">\(m\)</span> the L-BFGS memory length (typically 5–20).
 </figcaption>
 <div aria-describedby="tbl-comparison-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <table class="caption-top table">
@@ -4458,15 +4552,6 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 </thead>
 <tbody>
 <tr class="odd">
-<td style="text-align: left;">Nelder–Mead</td>
-<td style="text-align: left;">none</td>
-<td style="text-align: left;"><span class="math inline">\(O(p^2)\)</span></td>
-<td style="text-align: left;"><span class="math inline">\(O(p)\)</span> evaluations</td>
-<td style="text-align: left;">sublinear</td>
-<td style="text-align: left;">good</td>
-<td style="text-align: left;">no</td>
-</tr>
-<tr class="even">
 <td style="text-align: left;">Steepest descent</td>
 <td style="text-align: left;">gradient</td>
 <td style="text-align: left;"><span class="math inline">\(O(p)\)</span></td>
@@ -4475,7 +4560,25 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">good</td>
 <td style="text-align: left;">no</td>
 </tr>
+<tr class="even">
+<td style="text-align: left;">Momentum</td>
+<td style="text-align: left;">gradient</td>
+<td style="text-align: left;"><span class="math inline">\(O(p)\)</span></td>
+<td style="text-align: left;">1 gradient + <span class="math inline">\(O(p)\)</span></td>
+<td style="text-align: left;">linear (faster along valleys)</td>
+<td style="text-align: left;">good</td>
+<td style="text-align: left;">no</td>
+</tr>
 <tr class="odd">
+<td style="text-align: left;">Adam</td>
+<td style="text-align: left;">gradient</td>
+<td style="text-align: left;"><span class="math inline">\(O(p)\)</span></td>
+<td style="text-align: left;">1 gradient + <span class="math inline">\(O(p)\)</span></td>
+<td style="text-align: left;">sublinear, noisy near the optimum</td>
+<td style="text-align: left;">good</td>
+<td style="text-align: left;">no</td>
+</tr>
+<tr class="even">
 <td style="text-align: left;">Conjugate gradient</td>
 <td style="text-align: left;">gradient</td>
 <td style="text-align: left;"><span class="math inline">\(O(p)\)</span></td>
@@ -4484,7 +4587,7 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">moderate</td>
 <td style="text-align: left;">no</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">BFGS</td>
 <td style="text-align: left;">gradient</td>
 <td style="text-align: left;"><span class="math inline">\(O(p^2)\)</span></td>
@@ -4493,7 +4596,7 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">moderate</td>
 <td style="text-align: left;">approximate</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">L-BFGS</td>
 <td style="text-align: left;">gradient</td>
 <td style="text-align: left;"><span class="math inline">\(O(mp)\)</span></td>
@@ -4502,7 +4605,7 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">moderate</td>
 <td style="text-align: left;">no</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">Newton–Raphson</td>
 <td style="text-align: left;">gradient, Hessian</td>
 <td style="text-align: left;"><span class="math inline">\(O(p^2)\)</span></td>
@@ -4511,7 +4614,7 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">poor</td>
 <td style="text-align: left;">exact</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">Fisher scoring / IRLS</td>
 <td style="text-align: left;">gradient, expected information</td>
 <td style="text-align: left;"><span class="math inline">\(O(p^2)\)</span></td>
@@ -4520,7 +4623,7 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 <td style="text-align: left;">fair</td>
 <td style="text-align: left;">exact</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">Stochastic gradient</td>
 <td style="text-align: left;">minibatch gradient</td>
 <td style="text-align: left;"><span class="math inline">\(O(p)\)</span></td>
@@ -4535,12 +4638,12 @@ Table&nbsp;5.3: Summarizes the trade-offs among the multivariate optimization me
 </figure>
 </div>
 </section>
-<section id="implementations-in-r" class="level3" data-number="5.8.2">
-<h3 data-number="5.8.2" class="anchored" data-anchor-id="implementations-in-r"><span class="header-section-number">5.8.2</span> Implementations in R</h3>
+<section id="implementations-in-r" class="level3" data-number="5.8.3">
+<h3 data-number="5.8.3" class="anchored" data-anchor-id="implementations-in-r"><span class="header-section-number">5.8.3</span> Implementations in R</h3>
 <div id="tbl-r-functions" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-r-functions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;5.4: Maps the optimization methods to the R functions and packages that implement them. R interfaces to multivariate optimizers
+Table&nbsp;5.5: Maps the optimization methods to the R functions and packages that implement them. R interfaces to multivariate optimizers
 </figcaption>
 <div aria-describedby="tbl-r-functions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <table class="caption-top table">
@@ -4562,7 +4665,7 @@ Table&nbsp;5.4: Maps the optimization methods to the R functions and packages th
 <tr class="odd">
 <td style="text-align: left;"><code>optim</code></td>
 <td style="text-align: left;">stats</td>
-<td style="text-align: left;">Nelder–Mead, BFGS, CG, L-BFGS-B, SANN</td>
+<td style="text-align: left;">BFGS, CG, L-BFGS-B</td>
 <td style="text-align: left;">General workhorse; supply <code>gr</code> or the gradient is differenced; <code>hessian = TRUE</code> for inference; L-BFGS-B allows box constraints</td>
 </tr>
 <tr class="even">
@@ -4605,9 +4708,15 @@ Table&nbsp;5.4: Maps the optimization methods to the R functions and packages th
 <td style="text-align: left;"><code>nloptr</code></td>
 <td style="text-align: left;">nloptr</td>
 <td style="text-align: left;">Large NLopt collection, with constraints</td>
-<td style="text-align: left;">Global and derivative-free options</td>
+<td style="text-align: left;">Gradient-based and global options</td>
 </tr>
 <tr class="odd">
+<td style="text-align: left;"><code>torch</code></td>
+<td style="text-align: left;">torch</td>
+<td style="text-align: left;">SGD, momentum, Adam (<code>optim_sgd</code>, <code>optim_adam</code>)</td>
+<td style="text-align: left;">Automatic differentiation and mini-batch training of neural networks</td>
+</tr>
+<tr class="even">
 <td style="text-align: left;"><code>Rsolnp</code>, <code>alabama</code></td>
 <td style="text-align: left;">—</td>
 <td style="text-align: left;">Nonlinear equality and inequality constraints</td>
@@ -4619,12 +4728,12 @@ Table&nbsp;5.4: Maps the optimization methods to the R functions and packages th
 </figure>
 </div>
 </section>
-<section id="choosing-a-method" class="level3" data-number="5.8.3">
-<h3 data-number="5.8.3" class="anchored" data-anchor-id="choosing-a-method"><span class="header-section-number">5.8.3</span> Choosing a method</h3>
+<section id="choosing-a-method" class="level3" data-number="5.8.4">
+<h3 data-number="5.8.4" class="anchored" data-anchor-id="choosing-a-method"><span class="header-section-number">5.8.4</span> Choosing a method</h3>
 <div id="tbl-choosing" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-choosing-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;5.5: Gives practical rules for choosing an optimizer according to the features of the problem. Practical guidance on method selection
+Table&nbsp;5.6: Gives practical rules for choosing an optimizer according to the features of the problem. Practical guidance on method selection
 </figcaption>
 <div aria-describedby="tbl-choosing-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <table class="caption-top table">
@@ -4656,20 +4765,20 @@ Table&nbsp;5.5: Gives practical rules for choosing an optimizer according to the
 <td style="text-align: left;">L-BFGS</td>
 </tr>
 <tr class="odd">
-<td style="text-align: left;">Derivatives unavailable, <span class="math inline">\(p &lt; 10\)</span></td>
-<td style="text-align: left;">Nelder–Mead as a first pass, then refine</td>
+<td style="text-align: left;">Analytic gradient unavailable</td>
+<td style="text-align: left;">Finite-difference gradients (the default in <code>optim</code>), or automatic differentiation</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">Objective noisy or non-smooth</td>
-<td style="text-align: left;">Nelder–Mead or simulated annealing</td>
-</tr>
-<tr class="odd">
 <td style="text-align: left;">Divergence or poor conditioning suspected</td>
 <td style="text-align: left;"><code>nlm</code> or <code>nlminb</code>; rescale the parameters</td>
 </tr>
-<tr class="even">
+<tr class="odd">
 <td style="text-align: left;">Objective a sum over very many observations</td>
-<td style="text-align: left;">Stochastic gradient descent and variants</td>
+<td style="text-align: left;">Stochastic gradient descent, momentum or Adam on mini-batches</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Neural network, <span class="math inline">\(p\)</span> large</td>
+<td style="text-align: left;">Adam or SGD with momentum on mini-batches; BFGS only for small networks</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Multiple local maxima suspected</td>
