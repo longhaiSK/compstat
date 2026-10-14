@@ -2365,25 +2365,6 @@ legend("topleft", c("gradient descent", "conjugate gradient"), col = c(2, 4), lw
 
 BFGS sits between the gradient methods above and Newton's method: it builds an approximation $B_k \approx J(\theta_k)$ from successive gradient differences $s_k = \theta_{k+1} - \theta_k$, $y_k = g_{k+1} - g_k$, via a rank-two update that keeps $B_k$ positive definite by construction (which is exactly why the Wolfe curvature condition of an earlier section matters: it is what guarantees $s_k'y_k > 0$, and hence a well-defined update). Steps are $\theta_{k+1} = \theta_k - \alpha_k B_k^{-1} g_k$ with a line search, giving **superlinear** convergence from only first derivatives — again a rescaling of $g_k$ rather than $g_k$ itself. BFGS itself stores a full $p \times p$ approximation; **L-BFGS** keeps only the last few update vectors, reducing storage to $O(mp)$ and making it the default choice for high-dimensional smooth problems. For most likelihood problems where the Hessian is awkward to derive, BFGS with an analytic gradient is the best practical compromise.
 
-### Example with Logistic Regression
-
-Returning to the logistic-regression example, `optim()` can fit it with no Hessian at all — Nelder–Mead needs only the log-likelihood, CG and BFGS also take the analytic gradient already coded for Newton–Raphson:
-
-```{r}
-#| label: bfgs-vs-nm-cg
-#| code-fold: false
-negll_fn  <- function(b) neg_logp_logistic(b, data$x, data$y)
-neggr_fn  <- function(b) nll_grad_info(b, data$y, data$x)$grad
-
-fits <- list(NM   = optim(c(0, 0), negll_fn, method = "Nelder-Mead"),
-             CG   = optim(c(0, 0), negll_fn, neggr_fn, method = "CG"),
-             BFGS = optim(c(0, 0), negll_fn, neggr_fn, method = "BFGS", hessian = TRUE))
-t(sapply(fits, function(f) c(f$par, f_evals = f$counts[1], g_evals = f$counts[2])))
-sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hessian at the optimum
-```
-
-All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for a method that never formed one during the iterations.
-
 ### Shinylive App for Comparing the Optimizers {#sec-gradient-methods-app}
 
 There is a [shinylive app](../../shinylive_apps/app_gradient-methods.html) to let you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability.
@@ -2432,9 +2413,32 @@ the first condition allowing the iterate to travel arbitrarily far from its star
 
 A learning rate that is too large causes divergence or persistent noise; one that is too small is painfully slow. Convergence is only **sublinear** — far slower than Newton's quadratic rate *per iteration* — but each SGD iteration costs $O(p)$ or $O(mp)$ rather than $O(np)$ for a full gradient or $O(np^2)$ for a Hessian, and early progress is often fast even when final convergence is not. Common refinements are the **momentum** and **Adam** modifications of the gradient described earlier in this section, which apply equally to mini-batch gradients, and **Polyak–Ruppert averaging** of the iterates, $\overline\theta_T = \tfrac1T\sum_{t\le T}\theta_t$, which restores the $\sqrt n$-efficiency of the MLE that the noisy path alone does not have.
 
-#### Example: SGD for Logistic Regression in R
+### Example of Fitting Logistic Regression
 
-Returning one last time to the running logistic-regression example, mini-batch SGD needs only the per-observation gradient already coded for Newton–Raphson, applied to a small random subset at each update:
+The running logistic-regression example is fitted below with the gradient-based methods of this section, from the derivative-free and deterministic ones to the stochastic ones.
+
+#### Nelder–Mead, Conjugate Gradient and BFGS with `optim()`
+
+Returning to the logistic-regression example, `optim()` can fit it with no Hessian at all — Nelder–Mead needs only the log-likelihood, CG and BFGS also take the analytic gradient already coded for Newton–Raphson:
+
+```{r}
+#| label: bfgs-vs-nm-cg
+#| code-fold: false
+negll_fn  <- function(b) neg_logp_logistic(b, data$x, data$y)
+neggr_fn  <- function(b) nll_grad_info(b, data$y, data$x)$grad
+
+fits <- list(NM   = optim(c(0, 0), negll_fn, method = "Nelder-Mead"),
+             CG   = optim(c(0, 0), negll_fn, neggr_fn, method = "CG"),
+             BFGS = optim(c(0, 0), negll_fn, neggr_fn, method = "BFGS", hessian = TRUE))
+t(sapply(fits, function(f) c(f$par, f_evals = f$counts[1], g_evals = f$counts[2])))
+sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hessian at the optimum
+```
+
+All three land on the same estimate as `mle_logistic_nr` and `glm` above, and `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for a method that never formed one during the iterations.
+
+#### Mini-Batch SGD
+
+Mini-batch SGD needs only the per-observation gradient already coded for Newton–Raphson, applied to a small random subset at each update:
 
 ```{r}
 #| label: sgd-logistic
@@ -2486,7 +2490,7 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
 
 Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
 
-### Example: Momentum and Adam with Mini-Batches
+#### Momentum and Adam with Mini-Batches
 
 Momentum and Adam only change the last lines of the update, so one function with a switch for the rule covers SGD, momentum and Adam on the same mini-batches:
 
