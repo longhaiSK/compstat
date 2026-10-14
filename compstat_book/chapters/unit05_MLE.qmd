@@ -2573,7 +2573,7 @@ For $y_i = \mu(x_i) + \varepsilon_i$ with $\varepsilon_i \sim N(0, \sigma^2)$ th
 $$
 \mathcal{L}(\theta) = \frac{1}{2n}\sum_{i=1}^n (y_i - \mu_i)^2, \qquad \delta_{\eta_i} = \mu_i - y_i.
 $$
-Its minimum is not zero but about $\sigma^2/2$, the **noise floor**, which the app draws as a dashed line. The model is non-convex: the four units can be permuted, and several of them can end up doing nearly the same work, so different optimizers and starting weights may reach different, equally good fits, and only some find a good one quickly. The [Gaussian app](../../shinylive_apps/app_sgd.html) lets you set the noise level $\sigma$, draws the weights and their gradient as networks, and shows on the data scale how the four scaled hidden units add up to the fitted mean.
+The factor $\tfrac12$ changes neither the minimizer nor the shape of the loss. It is there because it makes the loss the Gaussian negative log-likelihood per observation, $-\log N(y_i \mid \mu_i, \sigma^2) = \frac{(y_i-\mu_i)^2}{2\sigma^2} + \text{const}$, with $\sigma^2 = 1$ and the constant dropped, and because it cancels the $2$ produced by differentiating the square, so that $\delta_{\eta_i} = \mu_i - y_i$ without a factor. Its minimum is not zero but about $\sigma^2/2$, the **noise floor**, which the app draws as a dashed line. The model is non-convex: the four units can be permuted, and several of them can end up doing nearly the same work, so different optimizers and starting weights may reach different, equally good fits, and only some find a good one quickly. The [Gaussian app](../../shinylive_apps/app_sgd.html) lets you set the noise level $\sigma$, draws the weights and their gradient as networks, and shows on the data scale how the four scaled hidden units add up to the fitted mean.
 
 ### Poisson Neural Network {#sec-nn-poisson-app}
 
@@ -2652,22 +2652,6 @@ The methods of this chapter are rarely coded by hand. The packages below are the
 
 For small and moderate likelihood problems the first rows are all that is needed: supply the negative log-likelihood and, if possible, its gradient, and let BFGS or a Newton-type method do the rest. Fitting a neural network is different. The gradient is obtained by automatic differentiation, which carries out the backpropagation of @sec-backprop-dag for any model written with the library's operations, and the update is applied to mini-batches by one of the optimizers of this chapter. **TensorFlow** and **PyTorch** are the two dominant libraries for this, and the Keras interface of TensorFlow makes the choice of optimizer a single argument. The Poisson network of this chapter, with the loss $\lambda_i - y_i\eta_i$ and four hidden units, is fitted by Adam as follows.
 
-```python
-import tensorflow as tf
-
-# x: (n, 1) covariate, y: (n, 1) counts
-model = tf.keras.Sequential([
-    tf.keras.layers.Dense(4, activation="tanh"),   # a_j, h_j = tanh(a_j)
-    tf.keras.layers.Dense(1),                      # eta = v_0 + sum_j v_j h_j
-])
-poisson_nll = lambda y, eta: tf.reduce_mean(tf.exp(eta) - y * eta)   # lambda - y * eta
-
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.05),
-              loss=poisson_nll)
-model.fit(x, y, batch_size=32, epochs=200, verbose=0)    # mini-batch gradients by backpropagation
-```
-
-Replacing `Adam` by `tf.keras.optimizers.SGD(learning_rate=0.05, momentum=0.9)` gives the momentum method, and omitting `momentum` gives plain mini-batch SGD. The same loop written by hand, with `tf.GradientTape` to obtain $g_k$ and `optimizer.apply_gradients` to apply the modified update, is what the Keras `fit` does internally. The code above is a sketch; it is not run in this book.
 
 
 ### Example of Fitting NN with Tensorflow
@@ -2718,7 +2702,8 @@ model = tf.keras.Sequential([
     tf.keras.layers.Dense(1),                       # output layer: v (16 x 1), v_0
 ])
 
-# loss: half the mean squared error, the L(theta) of the app
+# loss: half the mean squared error (the Gaussian nll for sigma = 1, up to a constant;
+# the 1/2 cancels the 2 from differentiating the square), the L(theta) of the app
 half_mse = lambda y, mu: 0.5 * tf.reduce_mean(tf.square(y - mu))
 
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.01), loss=half_mse)
