@@ -382,9 +382,26 @@ document.addEventListener("DOMContentLoaded", function() {
 
     const gear = iconButton('tb-settings', '<span class="tb-glyph">&#9881;</span><span class="tb-label">Settings</span>', 'Font size, font family and background');
 
-    bar.appendChild(menuBtn);
+    // book title: the link the sidebar header used to show
+    const bookLink = document.querySelector('#quarto-sidebar .sidebar-title a');
+    const book = document.createElement('a');
+    book.id = 'tb-book';
+    book.textContent = bookLink ? bookLink.textContent.trim() : document.title;
+    book.href = bookLink ? bookLink.getAttribute('href') : '#';
+    book.title = 'Book home';
+
+    // order: contents toggle, chapters menu, book title, chapter title, settings
     bar.appendChild(tocBtn);
+    bar.appendChild(menuBtn);
+    bar.appendChild(book);
     bar.appendChild(title);
+    // the source-code link of the sidebar header moves to the bar, left of the settings
+    const gh = document.querySelector('#quarto-sidebar .sidebar-tools-main a');
+    if (gh) {
+      const g = gh.cloneNode(true);
+      g.id = 'tb-github'; g.className = 'tb-btn';
+      bar.appendChild(g);
+    }
     bar.appendChild(gear);
     document.body.insertAdjacentElement('afterbegin', bar);
     document.body.appendChild(drawer);
