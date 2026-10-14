@@ -298,18 +298,37 @@ row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
-  ## the iteration slider: a drag is reported as "kuser" (so playing resumes from
-  ## there) and the server does not move the thumb while it is being dragged
+  ## the iteration slider is the only state: the browser moves it (play timer, buttons,
+  ## dragging), and the server just reads input$kshow
   tags$head(tags$script(HTML("
-    var kdrag = false;
+    var ktimer = null, kdrag = false;
+    function kslider() { return $('#kshow').data('ionRangeSlider'); }
+    function kset(v) {
+      var s = kslider(); if (!s) return;
+      s.update({from: Math.max(s.options.min, Math.min(s.options.max, v))});
+      $('#kshow').trigger('change'); }
+    function kplay(on) {
+      if (ktimer) { clearInterval(ktimer); ktimer = null; }
+      $('#play i').removeClass('fa-play fa-pause').addClass(on ? 'fa-pause' : 'fa-play');
+      if (!on) return;
+      var s = kslider(); if (s && s.result.from >= s.options.max) kset(0);
+      ktimer = setInterval(function() {
+        if (kdrag) return;
+        var s = kslider();
+        if (s.result.from >= s.options.max) kplay(false); else kset(s.result.from + 1);
+      }, 300); }
     $(document).on('mousedown touchstart', '.irs', function() {
       if ($(this).closest('.shiny-input-container').find('#kshow').length) kdrag = true; });
     $(document).on('mouseup touchend', function() { kdrag = false; });
-    $(document).on('change', '#kshow', function() {
-      if (kdrag) Shiny.setInputValue('kuser', parseInt($(this).val()), {priority: 'event'}); });
-    Shiny.addCustomMessageHandler('setk', function(v) {
-      if (kdrag) return;
-      var s = $('#kshow').data('ionRangeSlider'); if (s) s.update({from: v}); });
+    $(document).on('click', '#play', function() { kplay(!ktimer); });
+    $(document).on('click', '#step',  function() { kplay(false); kset(kslider().result.from + 1); });
+    $(document).on('click', '#back',  function() { kplay(false); kset(kslider().result.from - 1); });
+    $(document).on('click', '#first', function() { kplay(false); kset(0); });
+    $(document).on('click', '#toend', function() { kplay(false); kset(kslider().options.max); });
+    Shiny.addCustomMessageHandler('krun', function(m) {
+      kplay(false);
+      var s = kslider(); if (s) { s.update({max: m.max, from: 0}); $('#kshow').trigger('change'); }
+      if (m.play) kplay(true); });
   "))),
   ## small text for the row of weight buttons
   tags$head(tags$style(HTML("
@@ -403,8 +422,6 @@ server <- function(input, output, session) {
 
   dseed <- reactiveVal(1); rseed <- reactiveVal(1)
   theta0 <- reactiveVal(rand_start(1))        # the starting weights
-  playing <- reactiveVal(FALSE)
-  kpos <- reactiveVal(0L)                     # current iteration, 0 .. R$n - 1
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
@@ -439,42 +456,12 @@ server <- function(input, output, session) {
             m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
   })
 
+  ## the browser owns the iteration (slider, play timer, buttons); a new run restarts it
   observeEvent(run(), {
-    kpos(0L)
-    updateSliderInput(session, "kshow", min = 0, max = run()$n - 1L, value = 0)
-    playing(isTRUE(input$autoplay) && run()$n > 1)
+    session$sendCustomMessage("krun", list(max = run()$n - 1L,
+                                           play = isTRUE(input$autoplay) && run()$n > 1))
   })
-
-  ## the iteration slider follows the run, and scrubs it when dragged
-  observeEvent(kpos(), session$sendCustomMessage("setk", kpos()))
-  observeEvent(input$kuser, {
-    if (input$kuser != kpos())
-      kpos(min(as.integer(input$kuser), run()$n - 1L))
-  })
-
-  observeEvent(input$play, {
-    if (isTRUE(playing())) playing(FALSE)
-    else {
-      if (kpos() >= run()$n - 1) kpos(0L)
-      playing(TRUE)
-    }
-  })
-  observeEvent(playing(), {
-    updateActionButton(session, "play",
-                       icon = icon(if (isTRUE(playing())) "pause" else "play"))
-  })
-  observe({
-    if (!isTRUE(playing())) return()
-    kmax <- isolate(run()$n) - 1
-    k <- isolate(kpos())
-    if (k >= kmax) { playing(FALSE); return() }
-    invalidateLater(300, session)
-    kpos(k + 1L)
-  })
-  observeEvent(input$step,  { playing(FALSE); kpos(min(kpos() + 1L, run()$n - 1L)) })
-  observeEvent(input$back,  { playing(FALSE); kpos(max(kpos() - 1L, 0L)) })
-  observeEvent(input$first, { playing(FALSE); kpos(0L) })
-  observeEvent(input$toend, { playing(FALSE); kpos(run()$n - 1L) })
+  kpos <- reactive(min(as.integer(if (is.null(input$kshow)) 0L else input$kshow), run()$n - 1L))
 
   cur <- reactive({
     R <- run(); k <- min(kpos(), R$n - 1L) + 1L
@@ -899,18 +886,37 @@ row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
 ui <- fluidPage(
-  ## the iteration slider: a drag is reported as "kuser" (so playing resumes from
-  ## there) and the server does not move the thumb while it is being dragged
+  ## the iteration slider is the only state: the browser moves it (play timer, buttons,
+  ## dragging), and the server just reads input$kshow
   tags$head(tags$script(HTML("
-    var kdrag = false;
+    var ktimer = null, kdrag = false;
+    function kslider() { return $('#kshow').data('ionRangeSlider'); }
+    function kset(v) {
+      var s = kslider(); if (!s) return;
+      s.update({from: Math.max(s.options.min, Math.min(s.options.max, v))});
+      $('#kshow').trigger('change'); }
+    function kplay(on) {
+      if (ktimer) { clearInterval(ktimer); ktimer = null; }
+      $('#play i').removeClass('fa-play fa-pause').addClass(on ? 'fa-pause' : 'fa-play');
+      if (!on) return;
+      var s = kslider(); if (s && s.result.from >= s.options.max) kset(0);
+      ktimer = setInterval(function() {
+        if (kdrag) return;
+        var s = kslider();
+        if (s.result.from >= s.options.max) kplay(false); else kset(s.result.from + 1);
+      }, 300); }
     $(document).on('mousedown touchstart', '.irs', function() {
       if ($(this).closest('.shiny-input-container').find('#kshow').length) kdrag = true; });
     $(document).on('mouseup touchend', function() { kdrag = false; });
-    $(document).on('change', '#kshow', function() {
-      if (kdrag) Shiny.setInputValue('kuser', parseInt($(this).val()), {priority: 'event'}); });
-    Shiny.addCustomMessageHandler('setk', function(v) {
-      if (kdrag) return;
-      var s = $('#kshow').data('ionRangeSlider'); if (s) s.update({from: v}); });
+    $(document).on('click', '#play', function() { kplay(!ktimer); });
+    $(document).on('click', '#step',  function() { kplay(false); kset(kslider().result.from + 1); });
+    $(document).on('click', '#back',  function() { kplay(false); kset(kslider().result.from - 1); });
+    $(document).on('click', '#first', function() { kplay(false); kset(0); });
+    $(document).on('click', '#toend', function() { kplay(false); kset(kslider().options.max); });
+    Shiny.addCustomMessageHandler('krun', function(m) {
+      kplay(false);
+      var s = kslider(); if (s) { s.update({max: m.max, from: 0}); $('#kshow').trigger('change'); }
+      if (m.play) kplay(true); });
   "))),
   ## small text for the row of weight buttons
   tags$head(tags$style(HTML("
@@ -1004,8 +1010,6 @@ server <- function(input, output, session) {
 
   dseed <- reactiveVal(1); rseed <- reactiveVal(1)
   theta0 <- reactiveVal(rand_start(1))        # the starting weights
-  playing <- reactiveVal(FALSE)
-  kpos <- reactiveVal(0L)                     # current iteration, 0 .. R$n - 1
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
@@ -1040,42 +1044,12 @@ server <- function(input, output, session) {
             m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
   })
 
+  ## the browser owns the iteration (slider, play timer, buttons); a new run restarts it
   observeEvent(run(), {
-    kpos(0L)
-    updateSliderInput(session, "kshow", min = 0, max = run()$n - 1L, value = 0)
-    playing(isTRUE(input$autoplay) && run()$n > 1)
+    session$sendCustomMessage("krun", list(max = run()$n - 1L,
+                                           play = isTRUE(input$autoplay) && run()$n > 1))
   })
-
-  ## the iteration slider follows the run, and scrubs it when dragged
-  observeEvent(kpos(), session$sendCustomMessage("setk", kpos()))
-  observeEvent(input$kuser, {
-    if (input$kuser != kpos())
-      kpos(min(as.integer(input$kuser), run()$n - 1L))
-  })
-
-  observeEvent(input$play, {
-    if (isTRUE(playing())) playing(FALSE)
-    else {
-      if (kpos() >= run()$n - 1) kpos(0L)
-      playing(TRUE)
-    }
-  })
-  observeEvent(playing(), {
-    updateActionButton(session, "play",
-                       icon = icon(if (isTRUE(playing())) "pause" else "play"))
-  })
-  observe({
-    if (!isTRUE(playing())) return()
-    kmax <- isolate(run()$n) - 1
-    k <- isolate(kpos())
-    if (k >= kmax) { playing(FALSE); return() }
-    invalidateLater(300, session)
-    kpos(k + 1L)
-  })
-  observeEvent(input$step,  { playing(FALSE); kpos(min(kpos() + 1L, run()$n - 1L)) })
-  observeEvent(input$back,  { playing(FALSE); kpos(max(kpos() - 1L, 0L)) })
-  observeEvent(input$first, { playing(FALSE); kpos(0L) })
-  observeEvent(input$toend, { playing(FALSE); kpos(run()$n - 1L) })
+  kpos <- reactive(min(as.integer(if (is.null(input$kshow)) 0L else input$kshow), run()$n - 1L))
 
   cur <- reactive({
     R <- run(); k <- min(kpos(), R$n - 1L) + 1L
