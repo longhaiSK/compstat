@@ -1269,7 +1269,7 @@ g(\theta_k + \alpha d_k)^\top d_k \ \ge\ c_2\, g_k^\top d_k,
 </tr>
 <tr class="odd">
 <td style="text-align: left;">SGD</td>
-<td style="text-align: left;"><span class="math inline">g_i</span> on a mini-batch</td>
+<td style="text-align: left;"><span class="math inline">g^{(B)}</span> on a mini-batch <span class="math inline">B</span></td>
 <td style="text-align: left;"><span class="math inline">O(mp)</span></td>
 <td style="text-align: left;">large <span class="math inline">n</span> and <span class="math inline">p</span></td>
 </tr>
@@ -1307,46 +1307,15 @@ g(\theta_k + \alpha d_k)^\top d_k \ \ge\ c_2\, g_k^\top d_k,
 
 <img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-8-1.png" width="672" class="r-stretch"><p>The number of iterations grows with the <strong>condition number</strong> of the Hessian (ratio of largest to smallest eigenvalue).</p>
 </section>
-<section id="momentum-heavy-ball" class="slide level2">
-<h2>Momentum (Heavy Ball)</h2>
-<p>Gradient descent zig-zags because <span class="math inline">g_k</span> is dominated by the steep direction <strong>across</strong> the valley. Momentum <strong>averages</strong> the gradients over past iterations and steps along the average: <span class="math display">
-m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
-</span></p>
-<ul>
-<li><p>Across-valley components change sign from step to step and <strong>cancel</strong> in the average; along-valley components keep their sign and <strong>add up</strong>, so the step lengthens along the valley floor.</p></li>
-<li><p><span class="math inline">\beta = 0</span> is gradient descent with a fixed step; along a persistent direction the effective step is <span class="math inline">\alpha/(1-\beta)</span>, so <span class="math inline">\alpha</span> is lowered when <span class="math inline">\beta</span> is raised.</p></li>
-<li><p>Only the gradient is modified: no curvature, no line search. <span class="math inline">g_k</span> can be the full gradient or a noisy mini-batch gradient, whose noise the averaging also damps.</p></li>
-</ul>
-</section>
-<section id="adam-a-step-size-for-each-coordinate" class="slide level2 smaller">
-<h2>Adam: a Step Size for Each Coordinate</h2>
-<p>Momentum fixes the direction, not the scale: one <span class="math inline">\alpha</span> serves every coordinate. <strong>Adam</strong> (adaptive moment estimation) also averages the <strong>squared</strong> gradient, elementwise, <span class="math display">
-m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
-s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
-</span> corrects both for starting at zero, <span class="math inline">\hat m_k = m_k/(1-\beta_1^k)</span>, <span class="math inline">\hat s_k = s_k/(1-\beta_2^k)</span>, and updates <span class="math display">
-\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999,\ \varepsilon = 10^{-8} .
-</span></p>
-<ul>
-<li><p>Each coordinate moves roughly <span class="math inline">\alpha</span> per step <strong>whatever the scale</strong> of <span class="math inline">\mathcal{L}</span>: large-gradient coordinates take smaller steps, flat ones larger steps.</p></li>
-<li><p><span class="math inline">s_k</span> estimates the diagonal of the empirical Fisher information <span class="math inline">\frac1n\sum_i g_ig_i'</span>, so Adam is a cheap, <strong>diagonal</strong> stand-in for the preconditioner <span class="math inline">I(\theta)^{-1}</span> of Fisher scoring.</p></li>
-<li><p>Diagonal means it ignores the correlation between coordinates: no fast local convergence like scoring or BFGS. It is the default optimizer for neural networks.</p></li>
-</ul>
-</section>
-<section id="fixed-step-momentum-and-adam-on-the-quadratic" class="slide level2">
-<h2>Fixed Step, Momentum and Adam on the Quadratic</h2>
-
-<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-9-1.png" width="864" class="r-stretch"><ul>
-<li>Momentum cuts the iterations by building speed along the valley. Adam’s per-coordinate scaling cannot help when the valley runs <strong>diagonally</strong>, which needs the off-diagonal curvature that only Newton, scoring or BFGS use.</li>
-</ul>
-</section>
-<section id="conjugate-gradient" class="slide level2">
+<section id="conjugate-gradient" class="slide level2 smaller">
 <h2>Conjugate Gradient</h2>
 <p>Fix the zig-zag by making each new direction <strong>conjugate</strong> to the previous ones with respect to the Hessian <span class="math inline">Q</span>: <span class="math inline">d_i'Qd_j = 0</span> for <span class="math inline">i \ne j</span>. For a quadratic <span class="math inline">\mathcal{L}(\theta) = \tfrac12\theta'Q\theta - b'\theta</span>, minimizing along <span class="math inline">p</span> such directions reaches the exact minimum in <strong>at most <span class="math inline">p</span> steps</strong>.</p>
 <p>The nonlinear version builds directions from gradients only: <span class="math display">
-d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k, \qquad
+d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k,
 </span> <span class="math display">
-\beta_k^{FR} = \frac{g_{k+1}'g_{k+1}}{g_k'g_k}\ \text{(Fletcher–Reeves)}, \quad
-\beta_k^{PR} = \frac{g_{k+1}'(g_{k+1} - g_k)}{g_k'g_k}\ \text{(Polak–Ribière)},
+\beta_k^{FR} = \frac{g_{k+1}'g_{k+1}}{g_k'g_k}\ \text{(Fletcher–Reeves)},
+</span> <span class="math display">
+\beta_k^{PR} = \frac{g_{k+1}'\big(g_{k+1} - g_k\big)}{g_k'g_k}\ \text{(Polak–Ribière)},
 </span> with <span class="math inline">\theta_{k+1} = \theta_k + \alpha_k d_k</span> from a line search and <span class="math inline">g_k = g(\theta_k) = \nabla\mathcal{L}(\theta_k)</span>.</p>
 <ul>
 <li><p>Memory: only two vectors. No matrix ever formed. Ideal for very large <span class="math inline">p</span>.</p></li>
@@ -1375,7 +1344,7 @@ d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k, \qquad
 </details>
 
 </div>
-<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-10-1.png" width="672" class="r-stretch"></section>
+<img data-src="Lec_05_MLE_files/figure-revealjs/cg-vs-gd-1.png" width="672" class="r-stretch"></section>
 <section id="quasi-newton-bfgs" class="slide level2">
 <h2>Quasi-Newton: BFGS</h2>
 <p>Between gradient methods and Newton: build an approximation <span class="math inline">B_k \approx \nabla^2\mathcal{L}</span> from successive gradient differences <span class="math inline">s_k = \theta_{k+1} - \theta_k</span>, <span class="math inline">y_k = g_{k+1} - g_k</span>, via a rank-two update that keeps <span class="math inline">B_k</span> positive definite. Steps are <span class="math inline">d_k = -B_k^{-1}g_k</span> with a line search.</p>
@@ -1404,24 +1373,17 @@ BFGS -0.5956291 0.8618954 -1.840956               35               13</code></pr
 </div>
 <p><code>optim(..., hessian = TRUE)</code> returns a finite-difference Hessian at the solution, so standard errors are available even for gradient-only methods.</p>
 </section>
-<section id="app-comparing-the-optimizers" class="slide level2">
-<h2>App: Comparing the Optimizers</h2>
-<p>The <a href="../shinylive_apps/app_gradient-methods.html" target="_blank">gradient-methods app</a> runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin’s many local minima.</p>
-<ul>
-<li><p>Click a starting point, then step or play through the iterations; overlay a second method as a dashed path.</p></li>
-<li><p>Try momentum on the banana and raise its rate <span class="math inline">\eta</span> until it diverges; compare Adam’s <span class="math inline">\alpha = 0.1</span>, which works on all six functions, with momentum, which needs a rate for each.</p></li>
-</ul>
-</section>
-<section id="stochastic-gradient-descent-motivation" class="slide level2">
+<section id="stochastic-gradient-descent-motivation" class="slide level2 smaller">
 <h2>Stochastic Gradient Descent: Motivation</h2>
 <p>For iid data the negative log-likelihood and its gradient are <strong>sums over observations</strong>: <span class="math display">
-\mathcal{L}(\theta) = \sum_{i=1}^n \mathcal{L}_i(\theta), \qquad g(\theta) = \sum_{i=1}^n g_i(\theta), \qquad g_i = \nabla\mathcal{L}_i .
+\mathcal{L}(\theta) = \sum_{i=1}^n \mathcal{L}_i(\theta), \qquad g(\theta) = \sum_{i=1}^n g^{(i)}(\theta), \qquad g^{(i)} = \nabla\mathcal{L}_i .
 </span></p>
 <p>Every method so far needs the <strong>full</strong> gradient, an <span class="math inline">O(np)</span> pass through all data, per iteration (and Newton needs <span class="math inline">O(np^2)</span> for the Hessian). With <span class="math inline">n</span> in the millions and <span class="math inline">p</span> in the millions (neural networks), even one full gradient is expensive.</p>
-<p><strong>Idea.</strong> <span class="math inline">g_i(\theta)</span> for a randomly chosen <span class="math inline">i</span> is an <strong>unbiased estimate</strong> of the average gradient: <span class="math display">
-E_i\big[g_i(\theta)\big] = \frac{1}{n}\,g(\theta).
+<p><strong>Idea.</strong> <span class="math inline">g^{(i)}(\theta)</span> for a randomly chosen <span class="math inline">i</span> is an <strong>unbiased estimate</strong> of the average gradient: <span class="math display">
+E_i\big[g^{(i)}(\theta)\big] = \frac{1}{n}\,g(\theta).
 </span></p>
 <p>A noisy but cheap gradient estimate is enough to make progress — a Monte Carlo idea applied to optimization.</p>
+<p><strong>Notation.</strong> <span class="math inline">g^{(i)}</span> is the gradient of case <span class="math inline">i</span>; <span class="math inline">g^{(B)} = \frac{1}{m}\sum_{i\in B} g^{(i)}</span> the average over a mini-batch <span class="math inline">B</span> of <span class="math inline">m</span> cases; <span class="math inline">g_k</span> the gradient used at iteration <span class="math inline">k</span>, either <span class="math inline">g(\theta_k)</span> or <span class="math inline">g^{(B_k)}(\theta_k)</span>.</p>
 </section>
 <section id="the-sgd-algorithm" class="slide level2 smaller">
 <h2>The SGD Algorithm</h2>
@@ -1429,11 +1391,11 @@ E_i\big[g_i(\theta)\big] = \frac{1}{n}\,g(\theta).
 <ol type="1">
 <li><p>Sample an index <span class="math inline">i_t</span> uniformly from <span class="math inline">\{1, \ldots, n\}</span> (or shuffle the data and cycle through it; one pass is an <strong>epoch</strong>).</p></li>
 <li><p>Update in the descent direction of that single observation’s negative log-likelihood: <span class="math display">
-\theta_{t+1} = \theta_t - \gamma_t\,g_{i_t}(\theta_t).
+\theta_{t+1} = \theta_t - \gamma_t\,g^{(i_t)}(\theta_t).
 </span></p></li>
 </ol>
 <p><strong>Mini-batch SGD</strong> averages the gradient over a batch <span class="math inline">B_t</span> of <span class="math inline">m</span> observations (<span class="math inline">m = 32</span>–<span class="math inline">512</span> typical): <span class="math display">
-\theta_{t+1} = \theta_t - \gamma_t\,\frac{1}{m}\sum_{i\in B_t}g_i(\theta_t),
+\theta_{t+1} = \theta_t - \gamma_t\, g^{(B_t)}(\theta_t), \qquad g^{(B_t)} = \frac{1}{m}\sum_{i\in B_t}g^{(i)} ,
 </span> reducing the variance by <span class="math inline">1/m</span> at <span class="math inline">m</span> times the cost, and using vectorized/GPU arithmetic.</p>
 <p>The <strong>learning rate</strong> <span class="math inline">\gamma_t</span> replaces the line search (a line search would need full-data evaluations).</p>
 </section>
@@ -1445,7 +1407,7 @@ E_i\big[g_i(\theta)\big] = \frac{1}{n}\,g(\theta).
 <ul>
 <li><p><span class="math inline">\gamma</span> too large: divergence or persistent noise. <span class="math inline">\gamma</span> too small: painfully slow.</p></li>
 <li><p>Convergence is only <strong>sublinear</strong>, far slower than Newton <em>per iteration</em> — but each iteration costs <span class="math inline">O(p)</span> instead of <span class="math inline">O(np)</span>, and early progress is fast.</p></li>
-<li><p>Common refinements: <strong>momentum</strong> and <strong>Adam</strong> from above, which apply unchanged to mini-batch gradients, and <strong>averaging</strong> the iterates <span class="math inline">\overline\theta_T = \frac1T\sum_t\theta_t</span> (Polyak–Ruppert), which restores the <span class="math inline">\sqrt n</span>-efficiency of the MLE.</p></li>
+<li><p>Common refinements: <strong>momentum</strong> and <strong>Adam</strong> (next), which modify the mini-batch gradient, and <strong>averaging</strong> the iterates <span class="math inline">\overline\theta_T = \frac1T\sum_t\theta_t</span> (Polyak–Ruppert), which restores the <span class="math inline">\sqrt n</span>-efficiency of the MLE.</p></li>
 </ul>
 </section>
 <section id="a-smaller-logistic-regression-for-sgd" class="slide level2 smaller">
@@ -1523,9 +1485,119 @@ truth  0.0000000 1.500000</code></pre>
 <section id="sgd-trajectory-vs.-newtonraphson" class="slide level2">
 <h2>SGD Trajectory vs.&nbsp;Newton–Raphson</h2>
 
-<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-14-1.png" width="672" class="r-stretch"><ul>
+<img data-src="Lec_05_MLE_files/figure-revealjs/sgd-vs-newton-1.png" width="672" class="r-stretch"><ul>
 <li><p>Newton–Raphson converges in a handful of full-data passes; SGD made 600 cheap updates over 30 epochs and lands near the MLE with residual noise.</p></li>
 <li><p>Per data pass, Newton–Raphson is far more efficient here (<span class="math inline">n = 200</span>, <span class="math inline">p = 2</span>); SGD earns its keep when one full gradient — or the <span class="math inline">O(p^3)</span> Hessian solve — is prohibitively expensive.</p></li>
+</ul>
+</section>
+<section id="momentum-heavy-ball" class="slide level2">
+<h2>Momentum (Heavy Ball)</h2>
+<p>Gradient descent zig-zags because <span class="math inline">g_k</span> is dominated by the steep direction <strong>across</strong> the valley. Momentum <strong>averages</strong> the gradients over past iterations and steps along the average: <span class="math display">
+m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
+</span></p>
+<ul>
+<li><p>Across-valley components change sign from step to step and <strong>cancel</strong> in the average; along-valley components keep their sign and <strong>add up</strong>, so the step lengthens along the valley floor.</p></li>
+<li><p><span class="math inline">\beta = 0</span> is gradient descent with a fixed step; along a persistent direction the effective step is <span class="math inline">\alpha/(1-\beta)</span>, so <span class="math inline">\alpha</span> is lowered when <span class="math inline">\beta</span> is raised.</p></li>
+<li><p>Only the gradient is modified: no curvature, no line search. <span class="math inline">g_k</span> can be the full gradient <span class="math inline">g(\theta_k)</span> or a noisy mini-batch gradient <span class="math inline">g^{(B_k)}(\theta_k)</span>, whose noise the averaging also damps.</p></li>
+</ul>
+</section>
+<section id="adam-a-step-size-for-each-coordinate" class="slide level2 smaller">
+<h2>Adam: a Step Size for Each Coordinate</h2>
+<p>Momentum uses one <span class="math inline">\alpha</span> for every coordinate. <strong>Adam</strong> also averages the <strong>squared</strong> gradient, elementwise: <span class="math display">
+m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
+s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
+</span> <span class="math display">
+\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad
+\hat m_k = \frac{m_k}{1-\beta_1^k},\ \hat s_k = \frac{s_k}{1-\beta_2^k}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999 .
+</span></p>
+<ul>
+<li>The update needs only <span class="math inline">g_k</span>: <span class="math inline">s_k</span> is a running average of the squared gradient <strong>over iterations</strong>, from <span class="math inline">s_0 = m_0 = 0</span> (the bias correction removes the start). Adam applies to any differentiable <span class="math inline">\mathcal{L}</span>; each coordinate moves about <span class="math inline">\alpha</span> per step <strong>whatever the scale</strong> of <span class="math inline">\mathcal{L}</span>.</li>
+</ul>
+</section>
+<section id="fixed-step-momentum-and-adam-on-the-quadratic" class="slide level2">
+<h2>Fixed Step, Momentum and Adam on the Quadratic</h2>
+
+<img data-src="Lec_05_MLE_files/figure-revealjs/fixed-mom-adam-1.png" width="864" class="r-stretch"><ul>
+<li>Momentum cuts the iterations by building speed along the valley. Adam’s per-coordinate scaling cannot help when the valley runs <strong>diagonally</strong>, which needs the off-diagonal curvature that only Newton, scoring or BFGS use.</li>
+</ul>
+</section>
+<section id="extensions-of-adam-with-empirical-fisher" class="slide level2 smaller">
+<h2>Extensions of Adam with Empirical Fisher</h2>
+<p>For a loss that is a sum over cases, <span class="math inline">\mathcal{L} = \sum_i \mathcal{L}_i</span>, the per-case gradients <span class="math inline">g^{(i)}</span> give the <strong>empirical Fisher information</strong> <span class="math inline">\hat F(\theta) = \sum_i g^{(i)}{g^{(i)}}'</span>. Since <span class="math inline">E[g^{(i)}{g^{(i)}}'] = I(\theta)</span> (information equality), it estimates the curvature from <strong>first derivatives only</strong>, and it is positive semidefinite.</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">method: <span class="math inline">\theta_{k+1} = \theta_k - \alpha_k M^{-1} g(\theta_k)</span></th>
+<th style="text-align: left;">curvature <span class="math inline">M</span></th>
+<th style="text-align: left;">needs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Newton–Raphson</td>
+<td style="text-align: left;">Hessian <span class="math inline">J(\theta)</span></td>
+<td style="text-align: left;">second derivatives</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Fisher scoring</td>
+<td style="text-align: left;"><span class="math inline">I(\theta) = E[J(\theta)]</span></td>
+<td style="text-align: left;">an expectation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>BHHH</strong> (outer product of gradients)</td>
+<td style="text-align: left;">empirical Fisher <span class="math inline">\hat F(\theta)</span></td>
+<td style="text-align: left;">per-case gradients</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>BHHH (Berndt, Hall, Hall and Hausman, 1974) always steps downhill; <span class="math inline">\hat F^{-1}</span> at the optimum is the <strong>OPG variance estimate</strong>. It is poor far from the MLE or under misspecification.</li>
+<li><span class="math inline">\hat F</span> is <span class="math inline">p \times p</span>: <span class="math inline">O(p^2)</span> storage and an <span class="math inline">O(p^3)</span> solve, impossible for <span class="math inline">p</span> in the millions. <strong>Keep only its diagonal</strong>: <span class="math inline">p</span> numbers, one step size per coordinate, the idea behind Adam.</li>
+</ul>
+</section>
+<section id="using-only-the-diagonal-of-the-empirical-fisher" class="slide level2 smaller">
+<h2>Using Only the Diagonal of the Empirical Fisher</h2>
+<p><span class="math inline">\operatorname{diag}\hat F = \sum_i g^{(i)} \odot g^{(i)}</span> gives each coordinate its own scale. The adaptive methods estimate it from the mini-batch gradients <span class="math inline">g_k = g^{(B_k)}(\theta_k)</span>, <strong>averaged over iterations</strong> (squares taken elementwise), and divide by its <strong>square root</strong>:</p>
+<table class="caption-top">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">method</th>
+<th style="text-align: left;">estimate <span class="math inline">s_k</span> of <span class="math inline">\operatorname{diag}\hat F</span> (up to scale)</th>
+<th style="text-align: left;">step</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">AdaGrad (2011)</td>
+<td style="text-align: left;"><span class="math inline">\sum_{j \le k} g_j^2</span></td>
+<td style="text-align: left;"><span class="math inline">\alpha\, g_k / \sqrt{s_k}</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">RMSProp (2012)</td>
+<td style="text-align: left;"><span class="math inline">\beta_2 s_{k-1} + (1-\beta_2) g_k^2</span></td>
+<td style="text-align: left;"><span class="math inline">\alpha\, g_k / \sqrt{s_k}</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Adam (2014)</td>
+<td style="text-align: left;">as RMSProp, bias-corrected</td>
+<td style="text-align: left;"><span class="math inline">\alpha\, \hat m_k / \sqrt{\hat s_k}</span> (momentum)</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>With batches of <span class="math inline">m</span> cases, near the optimum: <span class="math inline">\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F</span>, so Adam in SGD is a <strong>diagonal empirical-Fisher preconditioner</strong>.</li>
+<li>Power <span class="math inline">-1/2</span>, not <span class="math inline">-1</span> as in BHHH: <span class="math inline">\hat F^{-1}</span> would amplify the gradient noise in flat coordinates; <span class="math inline">\hat F^{-1/2}</span> moves each coordinate about <span class="math inline">\alpha</span> per step.</li>
+<li>Between full and diagonal: <strong>K-FAC</strong> keeps a Kronecker-factored block per layer.</li>
 </ul>
 </section>
 <section id="momentum-and-adam-with-mini-batches" class="slide level2 smaller">
@@ -1570,6 +1642,14 @@ adam     -0.2609139 1.502514
 nlm      -0.2725325 1.503424</code></pre>
 </div>
 </div>
+</section>
+<section id="app-comparing-the-optimizers" class="slide level2">
+<h2>App: Comparing the Optimizers</h2>
+<p>The <a href="../shinylive_apps/app_gradient-methods.html" target="_blank">gradient-methods app</a> runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin’s many local minima.</p>
+<ul>
+<li><p>Click a starting point, then step or play through the iterations; overlay a second method as a dashed path.</p></li>
+<li><p>Try momentum on the banana and raise its rate <span class="math inline">\eta</span> until it diverges; compare Adam’s <span class="math inline">\alpha = 0.1</span>, which works on all six functions, with momentum, which needs a rate for each.</p></li>
+</ul>
 </section>
 <section id="optimization-in-practice-deep-learning" class="slide level2 smaller">
 <h2>Optimization in Practice: Deep Learning</h2>
