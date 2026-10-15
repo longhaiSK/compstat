@@ -397,6 +397,14 @@ document.addEventListener("DOMContentLoaded", function() {
     const spacer = document.createElement('div');
     spacer.id = 'tb-spacer';
     bar.appendChild(menuBtn);
+    // narrow screens: Quarto's own header is hidden, so this button opens its sidebar
+    const contentsBtn = iconButton('tb-contents', '<i class="bi bi-layout-text-sidebar-reverse"></i>', 'Contents of this chapter');
+    contentsBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const q = document.querySelector('#quarto-header .quarto-btn-toggle');
+      if (q) q.click();
+    });
+    bar.appendChild(contentsBtn);
     bar.appendChild(book);
     bar.appendChild(spacer);
     // the source-code link of the sidebar header moves to the bar, left of the settings
