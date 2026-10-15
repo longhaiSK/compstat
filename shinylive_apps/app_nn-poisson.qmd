@@ -453,6 +453,9 @@ ui <- fluidPage(
       plotOutput("fit", height = "380px"),
       conditionalPanel("input.showparts", plotOutput("eta", height = "250px")),
       plotOutput("conv", height = "230px"),
+      radioButtons("lscale", NULL, inline = TRUE,
+                   choices = c("log10 loss" = "log", "log10 (loss - smallest reached)" = "exc",
+                               "loss" = "lin")),
       htmlOutput("info"))
   )
 )
@@ -591,18 +594,26 @@ server <- function(input, output, session) {
     gn <- sqrt(rowSums(R$G^2))
     par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
     xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
-    plot(it, R$F, type = "b", pch = 20, col = "#2E8B57", xlab = "iteration", ylab = "loss",
-         xlim = xl, ylim = range(c(R$F, RF$F), finite = TRUE),
+    ## the loss on the scale chosen below: as is, its log10, or the log10 of its excess
+    ## over the smallest value either run reaches (so differences near the floor show)
+    sc <- if (is.null(input$lscale)) "log" else input$lscale
+    best <- min(c(R$F, RF$F), na.rm = TRUE)
+    ls_fun <- function(v) switch(sc, lin = v, log = log10(pmax(v, 1e-12)),
+                                 exc = log10(pmax(v - best, 1e-12)))
+    ls_lab <- switch(sc, lin = "loss", log = expression(log[10] ~ "loss"),
+                     exc = expression(log[10] ~ "(loss - smallest reached)"))
+    plot(it, ls_fun(R$F), type = "b", pch = 20, col = "#2E8B57", xlab = "iteration",
+         ylab = ls_lab, xlim = xl, ylim = range(c(ls_fun(R$F), ls_fun(RF$F)), finite = TRUE),
          main = "average negative log-likelihood")
     if (!is.null(RF)) {
-      lines(0:(RF$n - 1), RF$F, type = "b", pch = 20, col = "#1F5FBF")
+      lines(0:(RF$n - 1), ls_fun(RF$F), type = "b", pch = 20, col = "#1F5FBF")
       kb <- min(kraw(), RF$n - 1L)
-      points(kb, RF$F[kb + 1L], pch = 19, col = "#1F5FBF", cex = 1.6)
+      points(kb, ls_fun(RF$F[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.6)
       legend("topright", bty = "n", cex = 0.8, lty = 1, pch = 20,
              col = c("#2E8B57", "#1F5FBF"),
              legend = c(paste("A:", alg_name(input$algA)), paste("B:", alg_name(input$algB))))
     }
-    points(it[C$k], R$F[C$k], pch = 19, col = "#2E8B57", cex = 1.6)
+    points(it[C$k], ls_fun(R$F[C$k]), pch = 19, col = "#2E8B57", cex = 1.6)
     gnr <- if (is.null(RF)) NULL else log10(sqrt(rowSums(RF$G^2)))
     plot(it, log10(gn), type = "b", pch = 20, col = "#2E8B57", xlab = "iteration",
          xlim = xl, ylim = range(c(log10(gn), gnr), finite = TRUE),
@@ -667,7 +678,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
-**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss and gradient-norm plots show both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. The first row of controls sets up the data (sample size and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
+**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss and gradient-norm plots show both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots hides this second plot. Beneath the fit are the loss and the gradient norm per iteration. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data (sample size and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
 
 A Gaussian version of this app, for regression with normal noise, is [Fitting a Gaussian Neural Network by Gradient Methods](app_sgd.html).
 
@@ -1120,6 +1131,9 @@ ui <- fluidPage(
       plotOutput("fit", height = "380px"),
       conditionalPanel("input.showparts", plotOutput("eta", height = "250px")),
       plotOutput("conv", height = "230px"),
+      radioButtons("lscale", NULL, inline = TRUE,
+                   choices = c("log10 loss" = "log", "log10 (loss - smallest reached)" = "exc",
+                               "loss" = "lin")),
       htmlOutput("info"))
   )
 )
@@ -1258,18 +1272,26 @@ server <- function(input, output, session) {
     gn <- sqrt(rowSums(R$G^2))
     par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
     xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
-    plot(it, R$F, type = "b", pch = 20, col = "#2E8B57", xlab = "iteration", ylab = "loss",
-         xlim = xl, ylim = range(c(R$F, RF$F), finite = TRUE),
+    ## the loss on the scale chosen below: as is, its log10, or the log10 of its excess
+    ## over the smallest value either run reaches (so differences near the floor show)
+    sc <- if (is.null(input$lscale)) "log" else input$lscale
+    best <- min(c(R$F, RF$F), na.rm = TRUE)
+    ls_fun <- function(v) switch(sc, lin = v, log = log10(pmax(v, 1e-12)),
+                                 exc = log10(pmax(v - best, 1e-12)))
+    ls_lab <- switch(sc, lin = "loss", log = expression(log[10] ~ "loss"),
+                     exc = expression(log[10] ~ "(loss - smallest reached)"))
+    plot(it, ls_fun(R$F), type = "b", pch = 20, col = "#2E8B57", xlab = "iteration",
+         ylab = ls_lab, xlim = xl, ylim = range(c(ls_fun(R$F), ls_fun(RF$F)), finite = TRUE),
          main = "average negative log-likelihood")
     if (!is.null(RF)) {
-      lines(0:(RF$n - 1), RF$F, type = "b", pch = 20, col = "#1F5FBF")
+      lines(0:(RF$n - 1), ls_fun(RF$F), type = "b", pch = 20, col = "#1F5FBF")
       kb <- min(kraw(), RF$n - 1L)
-      points(kb, RF$F[kb + 1L], pch = 19, col = "#1F5FBF", cex = 1.6)
+      points(kb, ls_fun(RF$F[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.6)
       legend("topright", bty = "n", cex = 0.8, lty = 1, pch = 20,
              col = c("#2E8B57", "#1F5FBF"),
              legend = c(paste("A:", alg_name(input$algA)), paste("B:", alg_name(input$algB))))
     }
-    points(it[C$k], R$F[C$k], pch = 19, col = "#2E8B57", cex = 1.6)
+    points(it[C$k], ls_fun(R$F[C$k]), pch = 19, col = "#2E8B57", cex = 1.6)
     gnr <- if (is.null(RF)) NULL else log10(sqrt(rowSums(RF$G^2)))
     plot(it, log10(gn), type = "b", pch = 20, col = "#2E8B57", xlab = "iteration",
          xlim = xl, ylim = range(c(log10(gn), gnr), finite = TRUE),
