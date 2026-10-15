@@ -11,7 +11,7 @@ pagetitle: "gradient-methods-shinylive"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 820
+#| viewerHeight: 870
 library(shiny)
 
 ## ---------------------------------------------------------------- objectives
@@ -65,6 +65,11 @@ FNS <- list(
   )
 )
 
+## default learning rates for the momentum method: a fixed step has to suit
+## the scale of each function (larger values diverge on (b), (d) and (e))
+ETA <- c(quad = 0.1, banana = 0.002, mix = 0.03, himmel = 0.01,
+         beale = 0.01, rastrigin = 0.003)
+
 ## ------------------------------------------------- numerical derivatives
 num_grad <- function(f, x) {
   h <- 1e-5 * (1 + abs(x))
@@ -113,20 +118,45 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 }
 
 ## ------------------------------------------------------------- algorithms
-run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
+run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6,
+                    eta = 0.01, beta = 0.9, alpha = 0.1, beta2 = 0.999) {
   f <- FN$f
+  ## no line search: a fixed step needs many more iterations
+  if (alg %in% c("mom", "adam")) maxit <- 200
   X <- matrix(NA_real_, maxit + 1, 2); G <- matrix(NA_real_, maxit + 1, 2)
   D <- matrix(NA_real_, maxit + 1, 2); Fv <- rep(NA_real_, maxit + 1)
   AL <- rep(NA_real_, maxit + 1)
   x <- x0; B <- diag(2)
-  g_prev <- NULL; d_prev <- NULL; s_prev <- NULL
+  g_prev <- NULL; d_prev <- NULL; s_prev <- NULL; v <- c(0, 0)
+  m <- c(0, 0); m2 <- c(0, 0)                  # Adam's averages of g and g^2
   n <- 0; note <- "maximum number of iterations reached"
 
   for (k in seq_len(maxit)) {
+    if (any(!is.finite(x)) || max(abs(x)) > 1e6) { note <- "diverged"; break }
     g <- num_grad(f, x); gn <- sqrt(sum(g^2))
     X[k, ] <- x; G[k, ] <- g; Fv[k] <- f(x); n <- k
     if (!is.finite(gn)) { note <- "diverged"; break }
     if (gn < tol) { note <- "converged (||grad|| < 1e-6)"; break }
+
+    if (alg == "mom") {
+      ## heavy ball: the step keeps a fraction beta of the previous step;
+      ## no line search, the learning rate eta is fixed
+      v <- beta * v - eta * g
+      D[k, ] <- v; AL[k] <- eta
+      x <- x + v
+      next
+    }
+    if (alg == "adam") {
+      ## Adam: momentum on g, divided coordinate-wise by the root of a running
+      ## average of g^2, so each coordinate moves about alpha per step
+      ## whatever the scale of f; both averages are bias-corrected
+      m  <- beta  * m  + (1 - beta)  * g
+      m2 <- beta2 * m2 + (1 - beta2) * g^2
+      v  <- -alpha * (m / (1 - beta^k)) / (sqrt(m2 / (1 - beta2^k)) + 1e-8)
+      D[k, ] <- v; AL[k] <- alpha
+      x <- x + v
+      next
+    }
 
     if (alg == "nr") {
       H <- num_hess(f, x); H <- (H + t(H)) / 2
@@ -174,7 +204,9 @@ run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
 ALGS <- c("Safeguarded Newton (modified Hessian + line search)" = "nr",
           "Gradient descent + line search"    = "gd",
           "Conjugate gradient (PR+)"          = "cg",
-          "BFGS (quasi-Newton)"               = "bfgs")
+          "BFGS (quasi-Newton)"               = "bfgs",
+          "Momentum (heavy ball, fixed step)" = "mom",
+          "Adam (step scaled per coordinate)" = "adam")
 
 ## ---------------------------- widen the data box to the device aspect ratio
 expand_box <- function(xlim, ylim, pin) {
@@ -216,6 +248,24 @@ ui <- fluidPage(
                "starting value."),
       selectInput("compare", "overlay the path of",
                   c("none" = "none", ALGS)),
+      ## settings of momentum and Adam, each shown when its method is used;
+      ## beta is shared (Adam's beta_1 plays the role of the momentum beta)
+      conditionalPanel(
+        "['mom', 'adam'].includes(input.alg) || ['mom', 'adam'].includes(input.compare)",
+        div(style = "display: flex; gap: 10px;",
+            conditionalPanel(
+              "input.alg == 'mom' || input.compare == 'mom'", style = "flex: 1;",
+              numericInput("eta", HTML("momentum &eta;"),
+                           value = ETA[[1]], min = 0, step = 0.001,
+                           width = "100%")),
+            conditionalPanel(
+              "input.alg == 'adam' || input.compare == 'adam'", style = "flex: 1;",
+              numericInput("alpha", HTML("Adam &alpha;"),
+                           value = 0.1, min = 0, step = 0.01, width = "100%")),
+            div(style = "flex: 1;",
+                numericInput("beta", HTML("&beta; (Adam &beta;<sub>1</sub>)"),
+                             value = 0.9, min = 0, max = 0.999, step = 0.05,
+                             width = "100%")))),
       checkboxInput("autoplay", "autoplay when the start changes", TRUE),
       sliderInput("k", "iteration", min = 0, max = 1, value = 0, step = 1),
       div(style = "display: flex; gap: 4px;",
@@ -258,7 +308,10 @@ server <- function(input, output, session) {
 
   ## a new objective moves the start to its default; clicking the contour
   ## plot moves it to the clicked point
-  observeEvent(input$fn, set_start(FNS[[input$fn]]$start), ignoreInit = TRUE)
+  observeEvent(input$fn, {
+    set_start(FNS[[input$fn]]$start)
+    updateNumericInput(session, "eta", value = ETA[[input$fn]])
+  }, ignoreInit = TRUE)
   observeEvent(input$click, {
     p <- c(input$click$x, input$click$y)
     if (all(is.finite(p))) set_start(p)
@@ -269,12 +322,24 @@ server <- function(input, output, session) {
     c(input$x1, input$x2)
   })
 
-  path <- reactive(run_alg(input$alg, FN(), start()))
+  ## settings of momentum and Adam (ignored by the others)
+  mom_par <- reactive({
+    eta <- if (is.finite(input$eta) && input$eta > 0) input$eta else ETA[[input$fn]]
+    alpha <- if (is.finite(input$alpha) && input$alpha > 0) input$alpha else 0.1
+    beta <- if (is.finite(input$beta)) min(max(input$beta, 0), 0.999) else 0.9
+    list(eta = eta, beta = beta, alpha = alpha)
+  })
+
+  path <- reactive(run_alg(input$alg, FN(), start(),
+                           eta = mom_par()$eta, beta = mom_par()$beta,
+                           alpha = mom_par()$alpha))
 
   ## a second algorithm from the same start, shown for comparison
   ref <- reactive({
     if (input$compare == "none" || input$compare == input$alg) return(NULL)
-    run_alg(input$compare, FN(), start())
+    run_alg(input$compare, FN(), start(),
+            eta = mom_par()$eta, beta = mom_par()$beta,
+            alpha = mom_par()$alpha)
   })
 
   ## current iteration, clamped to the length of the path
@@ -424,9 +489,13 @@ shinyApp(ui, server)
 
 ## About the app
 
-Lets you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.
+Lets you compare the paths that gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.
 
-The app above runs safeguarded Newton, gradient descent, conjugate gradient, and BFGS on six test functions, ranging from a well-conditioned quadratic to Rastrigin's many local minima. Its controls match those of the safeguarded Newton–Raphson app ([Safeguarded Newton-Raphson](app_nr-divergence.html)). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, $-\nabla f$. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search, are listed under the plot.
+The app above runs safeguarded Newton, gradient descent, conjugate gradient, BFGS, momentum and Adam on six test functions, ranging from a well-conditioned quadratic to Rastrigin's many local minima. Its controls match those of the safeguarded Newton–Raphson app ([Safeguarded Newton-Raphson](app_nr-divergence.html)). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, $-\nabla f$. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search ($\eta$ for momentum, $\alpha$ for Adam), are listed under the plot.
+
+The momentum (heavy-ball) method is the generic optimizer behind much of machine learning: each step is $v_{k+1} = \beta v_k - \eta \nabla f(x_k)$, $x_{k+1} = x_k + v_{k+1}$, with a fixed learning rate $\eta$ instead of a line search, so it needs many more iterations (up to 200) and diverges when $\eta$ is too large for the function's curvature. Its $\eta$ and $\beta$ can be set when it is chosen, and $\eta$ resets to a default suited to each function.
+
+Adam applies to any differentiable function in the same way, but rescales the step coordinate by coordinate. It keeps running averages of the gradient and of its square, $m_{k} = \beta_1 m_{k-1} + (1-\beta_1) g_k$ and $s_{k} = \beta_2 s_{k-1} + (1-\beta_2) g_k^2$, corrects both for starting at zero ($\hat m_k = m_k/(1-\beta_1^k)$, $\hat s_k = s_k/(1-\beta_2^k)$), and steps $x_{k+1} = x_k - \alpha\, \hat m_k / (\sqrt{\hat s_k} + \epsilon)$. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$, so one $\alpha$ (default 0.1) works on all six functions, where momentum needs its own $\eta$ for each; $\beta_1$ is the shared $\beta$ input and $\beta_2 = 0.999$.
 
 The app is built the same way as the Newton–Raphson divergence app earlier in this chapter ([Safeguarded Newton-Raphson](app_nr-divergence.html)).
 
@@ -486,6 +555,11 @@ FNS <- list(
   )
 )
 
+## default learning rates for the momentum method: a fixed step has to suit
+## the scale of each function (larger values diverge on (b), (d) and (e))
+ETA <- c(quad = 0.1, banana = 0.002, mix = 0.03, himmel = 0.01,
+         beale = 0.01, rastrigin = 0.003)
+
 ## ------------------------------------------------- numerical derivatives
 num_grad <- function(f, x) {
   h <- 1e-5 * (1 + abs(x))
@@ -534,20 +608,45 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 }
 
 ## ------------------------------------------------------------- algorithms
-run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
+run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6,
+                    eta = 0.01, beta = 0.9, alpha = 0.1, beta2 = 0.999) {
   f <- FN$f
+  ## no line search: a fixed step needs many more iterations
+  if (alg %in% c("mom", "adam")) maxit <- 200
   X <- matrix(NA_real_, maxit + 1, 2); G <- matrix(NA_real_, maxit + 1, 2)
   D <- matrix(NA_real_, maxit + 1, 2); Fv <- rep(NA_real_, maxit + 1)
   AL <- rep(NA_real_, maxit + 1)
   x <- x0; B <- diag(2)
-  g_prev <- NULL; d_prev <- NULL; s_prev <- NULL
+  g_prev <- NULL; d_prev <- NULL; s_prev <- NULL; v <- c(0, 0)
+  m <- c(0, 0); m2 <- c(0, 0)                  # Adam's averages of g and g^2
   n <- 0; note <- "maximum number of iterations reached"
 
   for (k in seq_len(maxit)) {
+    if (any(!is.finite(x)) || max(abs(x)) > 1e6) { note <- "diverged"; break }
     g <- num_grad(f, x); gn <- sqrt(sum(g^2))
     X[k, ] <- x; G[k, ] <- g; Fv[k] <- f(x); n <- k
     if (!is.finite(gn)) { note <- "diverged"; break }
     if (gn < tol) { note <- "converged (||grad|| < 1e-6)"; break }
+
+    if (alg == "mom") {
+      ## heavy ball: the step keeps a fraction beta of the previous step;
+      ## no line search, the learning rate eta is fixed
+      v <- beta * v - eta * g
+      D[k, ] <- v; AL[k] <- eta
+      x <- x + v
+      next
+    }
+    if (alg == "adam") {
+      ## Adam: momentum on g, divided coordinate-wise by the root of a running
+      ## average of g^2, so each coordinate moves about alpha per step
+      ## whatever the scale of f; both averages are bias-corrected
+      m  <- beta  * m  + (1 - beta)  * g
+      m2 <- beta2 * m2 + (1 - beta2) * g^2
+      v  <- -alpha * (m / (1 - beta^k)) / (sqrt(m2 / (1 - beta2^k)) + 1e-8)
+      D[k, ] <- v; AL[k] <- alpha
+      x <- x + v
+      next
+    }
 
     if (alg == "nr") {
       H <- num_hess(f, x); H <- (H + t(H)) / 2
@@ -595,7 +694,9 @@ run_alg <- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
 ALGS <- c("Safeguarded Newton (modified Hessian + line search)" = "nr",
           "Gradient descent + line search"    = "gd",
           "Conjugate gradient (PR+)"          = "cg",
-          "BFGS (quasi-Newton)"               = "bfgs")
+          "BFGS (quasi-Newton)"               = "bfgs",
+          "Momentum (heavy ball, fixed step)" = "mom",
+          "Adam (step scaled per coordinate)" = "adam")
 
 ## ---------------------------- widen the data box to the device aspect ratio
 expand_box <- function(xlim, ylim, pin) {
@@ -637,6 +738,24 @@ ui <- fluidPage(
                "starting value."),
       selectInput("compare", "overlay the path of",
                   c("none" = "none", ALGS)),
+      ## settings of momentum and Adam, each shown when its method is used;
+      ## beta is shared (Adam's beta_1 plays the role of the momentum beta)
+      conditionalPanel(
+        "['mom', 'adam'].includes(input.alg) || ['mom', 'adam'].includes(input.compare)",
+        div(style = "display: flex; gap: 10px;",
+            conditionalPanel(
+              "input.alg == 'mom' || input.compare == 'mom'", style = "flex: 1;",
+              numericInput("eta", HTML("momentum &eta;"),
+                           value = ETA[[1]], min = 0, step = 0.001,
+                           width = "100%")),
+            conditionalPanel(
+              "input.alg == 'adam' || input.compare == 'adam'", style = "flex: 1;",
+              numericInput("alpha", HTML("Adam &alpha;"),
+                           value = 0.1, min = 0, step = 0.01, width = "100%")),
+            div(style = "flex: 1;",
+                numericInput("beta", HTML("&beta; (Adam &beta;<sub>1</sub>)"),
+                             value = 0.9, min = 0, max = 0.999, step = 0.05,
+                             width = "100%")))),
       checkboxInput("autoplay", "autoplay when the start changes", TRUE),
       sliderInput("k", "iteration", min = 0, max = 1, value = 0, step = 1),
       div(style = "display: flex; gap: 4px;",
@@ -679,7 +798,10 @@ server <- function(input, output, session) {
 
   ## a new objective moves the start to its default; clicking the contour
   ## plot moves it to the clicked point
-  observeEvent(input$fn, set_start(FNS[[input$fn]]$start), ignoreInit = TRUE)
+  observeEvent(input$fn, {
+    set_start(FNS[[input$fn]]$start)
+    updateNumericInput(session, "eta", value = ETA[[input$fn]])
+  }, ignoreInit = TRUE)
   observeEvent(input$click, {
     p <- c(input$click$x, input$click$y)
     if (all(is.finite(p))) set_start(p)
@@ -690,12 +812,24 @@ server <- function(input, output, session) {
     c(input$x1, input$x2)
   })
 
-  path <- reactive(run_alg(input$alg, FN(), start()))
+  ## settings of momentum and Adam (ignored by the others)
+  mom_par <- reactive({
+    eta <- if (is.finite(input$eta) && input$eta > 0) input$eta else ETA[[input$fn]]
+    alpha <- if (is.finite(input$alpha) && input$alpha > 0) input$alpha else 0.1
+    beta <- if (is.finite(input$beta)) min(max(input$beta, 0), 0.999) else 0.9
+    list(eta = eta, beta = beta, alpha = alpha)
+  })
+
+  path <- reactive(run_alg(input$alg, FN(), start(),
+                           eta = mom_par()$eta, beta = mom_par()$beta,
+                           alpha = mom_par()$alpha))
 
   ## a second algorithm from the same start, shown for comparison
   ref <- reactive({
     if (input$compare == "none" || input$compare == input$alg) return(NULL)
-    run_alg(input$compare, FN(), start())
+    run_alg(input$compare, FN(), start(),
+            eta = mom_par()$eta, beta = mom_par()$beta,
+            alpha = mom_par()$alpha)
   })
 
   ## current iteration, clamped to the length of the path

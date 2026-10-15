@@ -285,7 +285,7 @@ window.Quarto = {
 #|   shinylive does not work in self-contained HTML documents.
 #|   Please set `embed-resources: false` in your metadata.
 #| standalone: true
-#| viewerHeight: 820
+#| viewerHeight: 870
 library(shiny)
 
 ## ---------------------------------------------------------------- objectives
@@ -339,6 +339,11 @@ FNS &lt;- list(
   )
 )
 
+## default learning rates for the momentum method: a fixed step has to suit
+## the scale of each function (larger values diverge on (b), (d) and (e))
+ETA &lt;- c(quad = 0.1, banana = 0.002, mix = 0.03, himmel = 0.01,
+         beale = 0.01, rastrigin = 0.003)
+
 ## ------------------------------------------------- numerical derivatives
 num_grad &lt;- function(f, x) {
   h &lt;- 1e-5 * (1 + abs(x))
@@ -387,20 +392,45 @@ line_search &lt;- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 }
 
 ## ------------------------------------------------------------- algorithms
-run_alg &lt;- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
+run_alg &lt;- function(alg, FN, x0, maxit = 60, tol = 1e-6,
+                    eta = 0.01, beta = 0.9, alpha = 0.1, beta2 = 0.999) {
   f &lt;- FN$f
+  ## no line search: a fixed step needs many more iterations
+  if (alg %in% c("mom", "adam")) maxit &lt;- 200
   X &lt;- matrix(NA_real_, maxit + 1, 2); G &lt;- matrix(NA_real_, maxit + 1, 2)
   D &lt;- matrix(NA_real_, maxit + 1, 2); Fv &lt;- rep(NA_real_, maxit + 1)
   AL &lt;- rep(NA_real_, maxit + 1)
   x &lt;- x0; B &lt;- diag(2)
-  g_prev &lt;- NULL; d_prev &lt;- NULL; s_prev &lt;- NULL
+  g_prev &lt;- NULL; d_prev &lt;- NULL; s_prev &lt;- NULL; v &lt;- c(0, 0)
+  m &lt;- c(0, 0); m2 &lt;- c(0, 0)                  # Adam's averages of g and g^2
   n &lt;- 0; note &lt;- "maximum number of iterations reached"
 
   for (k in seq_len(maxit)) {
+    if (any(!is.finite(x)) || max(abs(x)) &gt; 1e6) { note &lt;- "diverged"; break }
     g &lt;- num_grad(f, x); gn &lt;- sqrt(sum(g^2))
     X[k, ] &lt;- x; G[k, ] &lt;- g; Fv[k] &lt;- f(x); n &lt;- k
     if (!is.finite(gn)) { note &lt;- "diverged"; break }
     if (gn &lt; tol) { note &lt;- "converged (||grad|| &lt; 1e-6)"; break }
+
+    if (alg == "mom") {
+      ## heavy ball: the step keeps a fraction beta of the previous step;
+      ## no line search, the learning rate eta is fixed
+      v &lt;- beta * v - eta * g
+      D[k, ] &lt;- v; AL[k] &lt;- eta
+      x &lt;- x + v
+      next
+    }
+    if (alg == "adam") {
+      ## Adam: momentum on g, divided coordinate-wise by the root of a running
+      ## average of g^2, so each coordinate moves about alpha per step
+      ## whatever the scale of f; both averages are bias-corrected
+      m  &lt;- beta  * m  + (1 - beta)  * g
+      m2 &lt;- beta2 * m2 + (1 - beta2) * g^2
+      v  &lt;- -alpha * (m / (1 - beta^k)) / (sqrt(m2 / (1 - beta2^k)) + 1e-8)
+      D[k, ] &lt;- v; AL[k] &lt;- alpha
+      x &lt;- x + v
+      next
+    }
 
     if (alg == "nr") {
       H &lt;- num_hess(f, x); H &lt;- (H + t(H)) / 2
@@ -448,7 +478,9 @@ run_alg &lt;- function(alg, FN, x0, maxit = 60, tol = 1e-6) {
 ALGS &lt;- c("Safeguarded Newton (modified Hessian + line search)" = "nr",
           "Gradient descent + line search"    = "gd",
           "Conjugate gradient (PR+)"          = "cg",
-          "BFGS (quasi-Newton)"               = "bfgs")
+          "BFGS (quasi-Newton)"               = "bfgs",
+          "Momentum (heavy ball, fixed step)" = "mom",
+          "Adam (step scaled per coordinate)" = "adam")
 
 ## ---------------------------- widen the data box to the device aspect ratio
 expand_box &lt;- function(xlim, ylim, pin) {
@@ -490,6 +522,24 @@ ui &lt;- fluidPage(
                "starting value."),
       selectInput("compare", "overlay the path of",
                   c("none" = "none", ALGS)),
+      ## settings of momentum and Adam, each shown when its method is used;
+      ## beta is shared (Adam's beta_1 plays the role of the momentum beta)
+      conditionalPanel(
+        "['mom', 'adam'].includes(input.alg) || ['mom', 'adam'].includes(input.compare)",
+        div(style = "display: flex; gap: 10px;",
+            conditionalPanel(
+              "input.alg == 'mom' || input.compare == 'mom'", style = "flex: 1;",
+              numericInput("eta", HTML("momentum &amp;eta;"),
+                           value = ETA[[1]], min = 0, step = 0.001,
+                           width = "100%")),
+            conditionalPanel(
+              "input.alg == 'adam' || input.compare == 'adam'", style = "flex: 1;",
+              numericInput("alpha", HTML("Adam &amp;alpha;"),
+                           value = 0.1, min = 0, step = 0.01, width = "100%")),
+            div(style = "flex: 1;",
+                numericInput("beta", HTML("&amp;beta; (Adam &amp;beta;&lt;sub&gt;1&lt;/sub&gt;)"),
+                             value = 0.9, min = 0, max = 0.999, step = 0.05,
+                             width = "100%")))),
       checkboxInput("autoplay", "autoplay when the start changes", TRUE),
       sliderInput("k", "iteration", min = 0, max = 1, value = 0, step = 1),
       div(style = "display: flex; gap: 4px;",
@@ -532,7 +582,10 @@ server &lt;- function(input, output, session) {
 
   ## a new objective moves the start to its default; clicking the contour
   ## plot moves it to the clicked point
-  observeEvent(input$fn, set_start(FNS[[input$fn]]$start), ignoreInit = TRUE)
+  observeEvent(input$fn, {
+    set_start(FNS[[input$fn]]$start)
+    updateNumericInput(session, "eta", value = ETA[[input$fn]])
+  }, ignoreInit = TRUE)
   observeEvent(input$click, {
     p &lt;- c(input$click$x, input$click$y)
     if (all(is.finite(p))) set_start(p)
@@ -543,12 +596,24 @@ server &lt;- function(input, output, session) {
     c(input$x1, input$x2)
   })
 
-  path &lt;- reactive(run_alg(input$alg, FN(), start()))
+  ## settings of momentum and Adam (ignored by the others)
+  mom_par &lt;- reactive({
+    eta &lt;- if (is.finite(input$eta) &amp;&amp; input$eta &gt; 0) input$eta else ETA[[input$fn]]
+    alpha &lt;- if (is.finite(input$alpha) &amp;&amp; input$alpha &gt; 0) input$alpha else 0.1
+    beta &lt;- if (is.finite(input$beta)) min(max(input$beta, 0), 0.999) else 0.9
+    list(eta = eta, beta = beta, alpha = alpha)
+  })
+
+  path &lt;- reactive(run_alg(input$alg, FN(), start(),
+                           eta = mom_par()$eta, beta = mom_par()$beta,
+                           alpha = mom_par()$alpha))
 
   ## a second algorithm from the same start, shown for comparison
   ref &lt;- reactive({
     if (input$compare == "none" || input$compare == input$alg) return(NULL)
-    run_alg(input$compare, FN(), start())
+    run_alg(input$compare, FN(), start(),
+            eta = mom_par()$eta, beta = mom_par()$beta,
+            alpha = mom_par()$alpha)
   })
 
   ## current iteration, clamped to the length of the path
@@ -696,8 +761,10 @@ server &lt;- function(input, output, session) {
 shinyApp(ui, server)</code></pre>
 <section id="about-the-app" class="level2">
 <h2 class="anchored" data-anchor-id="about-the-app">About the app</h2>
-<p>Lets you compare the paths that gradient descent, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.</p>
-<p>The app above runs safeguarded Newton, gradient descent, conjugate gradient, and BFGS on six test functions, ranging from a well-conditioned quadratic to Rastrigin’s many local minima. Its controls match those of the safeguarded Newton–Raphson app (<a href="app_nr-divergence.html">Safeguarded Newton-Raphson</a>). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, <span class="math inline">\(-\nabla f\)</span>. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search, are listed under the plot.</p>
+<p>Lets you compare the paths that gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton take on the same objective, to see how curvature information affects speed and stability. Choose an objective and an algorithm, click a starting point, and step or play through the iterations, optionally with a second algorithm overlaid as a dashed grey path.</p>
+<p>The app above runs safeguarded Newton, gradient descent, conjugate gradient, BFGS, momentum and Adam on six test functions, ranging from a well-conditioned quadratic to Rastrigin’s many local minima. Its controls match those of the safeguarded Newton–Raphson app (<a href="app_nr-divergence.html">Safeguarded Newton-Raphson</a>). Click in the contour plot (or type values) to choose a starting point, then use the playback buttons to step through the iterations or play the path as an animation. The orange arrow at the current iterate shows the direction of steepest descent, <span class="math inline">\(-\nabla f\)</span>. A second algorithm can be overlaid from the same start as a dashed grey path, and the latest iterations, with the gradient norm and the step length chosen by the line search (<span class="math inline">\(\eta\)</span> for momentum, <span class="math inline">\(\alpha\)</span> for Adam), are listed under the plot.</p>
+<p>The momentum (heavy-ball) method is the generic optimizer behind much of machine learning: each step is <span class="math inline">\(v_{k+1} = \beta v_k - \eta \nabla f(x_k)\)</span>, <span class="math inline">\(x_{k+1} = x_k + v_{k+1}\)</span>, with a fixed learning rate <span class="math inline">\(\eta\)</span> instead of a line search, so it needs many more iterations (up to 200) and diverges when <span class="math inline">\(\eta\)</span> is too large for the function’s curvature. Its <span class="math inline">\(\eta\)</span> and <span class="math inline">\(\beta\)</span> can be set when it is chosen, and <span class="math inline">\(\eta\)</span> resets to a default suited to each function.</p>
+<p>Adam applies to any differentiable function in the same way, but rescales the step coordinate by coordinate. It keeps running averages of the gradient and of its square, <span class="math inline">\(m_{k} = \beta_1 m_{k-1} + (1-\beta_1) g_k\)</span> and <span class="math inline">\(s_{k} = \beta_2 s_{k-1} + (1-\beta_2) g_k^2\)</span>, corrects both for starting at zero (<span class="math inline">\(\hat m_k = m_k/(1-\beta_1^k)\)</span>, <span class="math inline">\(\hat s_k = s_k/(1-\beta_2^k)\)</span>), and steps <span class="math inline">\(x_{k+1} = x_k - \alpha\, \hat m_k / (\sqrt{\hat s_k} + \epsilon)\)</span>. Dividing by <span class="math inline">\(\sqrt{\hat s_k}\)</span> makes each coordinate move roughly <span class="math inline">\(\alpha\)</span> per step whatever the scale of <span class="math inline">\(f\)</span>, so one <span class="math inline">\(\alpha\)</span> (default 0.1) works on all six functions, where momentum needs its own <span class="math inline">\(\eta\)</span> for each; <span class="math inline">\(\beta_1\)</span> is the shared <span class="math inline">\(\beta\)</span> input and <span class="math inline">\(\beta_2 = 0.999\)</span>.</p>
 <p>The app is built the same way as the Newton–Raphson divergence app earlier in this chapter (<a href="app_nr-divergence.html">Safeguarded Newton-Raphson</a>).</p>
 <div class="callout callout-style-default callout-note callout-titled" title="R source for this app">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
@@ -764,361 +831,426 @@ shinyApp(ui, server)</code></pre>
 <span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>  )</span>
 <span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------- numerical derivatives</span></span>
-<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>num_grad <span class="ot">&lt;-</span> <span class="cf">function</span>(f, x) {</span>
-<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>  h <span class="ot">&lt;-</span> <span class="fl">1e-5</span> <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">abs</span>(x))</span>
-<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>  g <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>)</span>
-<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>) {</span>
-<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>    e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); e[i] <span class="ot">&lt;-</span> h[i]</span>
-<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>    g[i] <span class="ot">&lt;-</span> (<span class="fu">f</span>(x <span class="sc">+</span> e) <span class="sc">-</span> <span class="fu">f</span>(x <span class="sc">-</span> e)) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h[i])</span>
-<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>  g</span>
-<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>num_hess <span class="ot">&lt;-</span> <span class="cf">function</span>(f, x) {</span>
-<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>  h <span class="ot">&lt;-</span> <span class="fl">1e-4</span> <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">abs</span>(x))</span>
-<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>  H <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="dv">2</span>)</span>
-<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>) <span class="cf">for</span> (j <span class="cf">in</span> i<span class="sc">:</span><span class="dv">2</span>) {</span>
-<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>    ei <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); ei[i] <span class="ot">&lt;-</span> h[i]</span>
-<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>    ej <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); ej[j] <span class="ot">&lt;-</span> h[j]</span>
-<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>    H[i, j] <span class="ot">&lt;-</span> (<span class="fu">f</span>(x <span class="sc">+</span> ei <span class="sc">+</span> ej) <span class="sc">-</span> <span class="fu">f</span>(x <span class="sc">+</span> ei <span class="sc">-</span> ej) <span class="sc">-</span></span>
-<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>                <span class="fu">f</span>(x <span class="sc">-</span> ei <span class="sc">+</span> ej) <span class="sc">+</span> <span class="fu">f</span>(x <span class="sc">-</span> ei <span class="sc">-</span> ej)) <span class="sc">/</span> (<span class="dv">4</span> <span class="sc">*</span> h[i] <span class="sc">*</span> h[j])</span>
-<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>    H[j, i] <span class="ot">&lt;-</span> H[i, j]</span>
-<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>  H</span>
-<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a><span class="do">## --------------------------------------------------- Wolfe line search</span></span>
-<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>line_search <span class="ot">&lt;-</span> <span class="cf">function</span>(f, g, x, d, <span class="at">a0 =</span> <span class="dv">1</span>, <span class="at">c1 =</span> <span class="fl">1e-4</span>, <span class="at">c2 =</span> <span class="fl">0.9</span>) {</span>
-<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>  f0 <span class="ot">&lt;-</span> <span class="fu">f</span>(x); gd0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(g <span class="sc">*</span> d)</span>
-<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(gd0) <span class="sc">||</span> gd0 <span class="sc">&gt;=</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> <span class="dv">0</span>, <span class="at">ok =</span> <span class="cn">FALSE</span>))</span>
-<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>  lo <span class="ot">&lt;-</span> <span class="dv">0</span>; hi <span class="ot">&lt;-</span> <span class="cn">Inf</span>; a <span class="ot">&lt;-</span> a0</span>
-<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (it <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">60</span>) {</span>
-<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>    fa <span class="ot">&lt;-</span> <span class="fu">f</span>(x <span class="sc">+</span> a <span class="sc">*</span> d)</span>
-<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(fa) <span class="sc">||</span> fa <span class="sc">&gt;</span> f0 <span class="sc">+</span> c1 <span class="sc">*</span> a <span class="sc">*</span> gd0) {</span>
-<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>      hi <span class="ot">&lt;-</span> a; a <span class="ot">&lt;-</span> <span class="fl">0.5</span> <span class="sc">*</span> (lo <span class="sc">+</span> hi)</span>
-<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
-<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>      ga <span class="ot">&lt;-</span> <span class="fu">num_grad</span>(f, x <span class="sc">+</span> a <span class="sc">*</span> d)</span>
-<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(ga <span class="sc">*</span> d) <span class="sc">&lt;</span> c2 <span class="sc">*</span> gd0) {</span>
-<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>        lo <span class="ot">&lt;-</span> a</span>
-<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>        a <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(hi)) <span class="fl">0.5</span> <span class="sc">*</span> (lo <span class="sc">+</span> hi) <span class="cf">else</span> <span class="fu">min</span>(<span class="dv">2</span> <span class="sc">*</span> a, <span class="fl">1e4</span>)</span>
-<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
-<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> a, <span class="at">ok =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>      }</span>
-<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (a <span class="sc">&lt;</span> <span class="fl">1e-14</span>) <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> <span class="dv">0</span>, <span class="at">ok =</span> <span class="cn">FALSE</span>))</span>
-<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">alpha =</span> a, <span class="at">ok =</span> (a <span class="sc">&gt;</span> <span class="dv">0</span>))</span>
-<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------------------- algorithms</span></span>
-<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>run_alg <span class="ot">&lt;-</span> <span class="cf">function</span>(alg, FN, x0, <span class="at">maxit =</span> <span class="dv">60</span>, <span class="at">tol =</span> <span class="fl">1e-6</span>) {</span>
-<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>  f <span class="ot">&lt;-</span> FN<span class="sc">$</span>f</span>
-<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>  X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>); G <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>)</span>
-<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>  D <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>); Fv <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>)</span>
-<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>  AL <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>)</span>
-<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> x0; B <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>)</span>
-<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>  g_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; d_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; s_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span></span>
-<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="dv">0</span>; note <span class="ot">&lt;-</span> <span class="st">"maximum number of iterations reached"</span></span>
-<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(maxit)) {</span>
-<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>    g <span class="ot">&lt;-</span> <span class="fu">num_grad</span>(f, x); gn <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(g<span class="sc">^</span><span class="dv">2</span>))</span>
-<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>    X[k, ] <span class="ot">&lt;-</span> x; G[k, ] <span class="ot">&lt;-</span> g; Fv[k] <span class="ot">&lt;-</span> <span class="fu">f</span>(x); n <span class="ot">&lt;-</span> k</span>
-<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(gn)) { note <span class="ot">&lt;-</span> <span class="st">"diverged"</span>; <span class="cf">break</span> }</span>
-<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (gn <span class="sc">&lt;</span> tol) { note <span class="ot">&lt;-</span> <span class="st">"converged (||grad|| &lt; 1e-6)"</span>; <span class="cf">break</span> }</span>
-<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"nr"</span>) {</span>
-<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>      H <span class="ot">&lt;-</span> <span class="fu">num_hess</span>(f, x); H <span class="ot">&lt;-</span> (H <span class="sc">+</span> <span class="fu">t</span>(H)) <span class="sc">/</span> <span class="dv">2</span></span>
-<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>      ev <span class="ot">&lt;-</span> <span class="fu">eigen</span>(H, <span class="at">symmetric =</span> <span class="cn">TRUE</span>, <span class="at">only.values =</span> <span class="cn">TRUE</span>)<span class="sc">$</span>values</span>
-<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>      delta <span class="ot">&lt;-</span> <span class="fl">1e-3</span> <span class="sc">*</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">max</span>(<span class="fu">abs</span>(ev)))</span>
-<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>      tau <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">0</span>, delta <span class="sc">-</span> <span class="fu">min</span>(ev))</span>
-<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(<span class="fu">solve</span>(H <span class="sc">+</span> tau <span class="sc">*</span> <span class="fu">diag</span>(<span class="dv">2</span>), <span class="sc">-</span>g), <span class="at">error =</span> <span class="cf">function</span>(e) <span class="sc">-</span>g)</span>
-<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"gd"</span>) {</span>
-<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="sc">-</span>g</span>
-<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"cg"</span>) {</span>
-<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">is.null</span>(d_prev)) {</span>
-<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="sc">-</span>g</span>
-<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
-<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>        y <span class="ot">&lt;-</span> g <span class="sc">-</span> g_prev</span>
-<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>        beta <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">sum</span>(g <span class="sc">*</span> y) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">sum</span>(g_prev<span class="sc">^</span><span class="dv">2</span>), <span class="fl">1e-300</span>))   <span class="co"># PR+</span></span>
-<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="sc">-</span>g <span class="sc">+</span> beta <span class="sc">*</span> d_prev</span>
-<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>      }</span>
-<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(g <span class="sc">*</span> d) <span class="sc">&gt;</span> <span class="sc">-</span><span class="fl">1e-12</span>) d <span class="ot">&lt;-</span> <span class="sc">-</span>g                            <span class="co"># restart</span></span>
-<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {                                                      <span class="co"># BFGS</span></span>
-<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(s_prev)) {</span>
-<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>        y <span class="ot">&lt;-</span> g <span class="sc">-</span> g_prev; sy <span class="ot">&lt;-</span> <span class="fu">sum</span>(s_prev <span class="sc">*</span> y)</span>
-<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (sy <span class="sc">&gt;</span> <span class="fl">1e-10</span>) {</span>
-<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>          rho <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> sy</span>
-<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>          V <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>) <span class="sc">-</span> rho <span class="sc">*</span> <span class="fu">outer</span>(s_prev, y)</span>
-<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>          B <span class="ot">&lt;-</span> V <span class="sc">%*%</span> B <span class="sc">%*%</span> <span class="fu">t</span>(V) <span class="sc">+</span> rho <span class="sc">*</span> <span class="fu">outer</span>(s_prev, s_prev)</span>
-<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>      }</span>
-<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">as.vector</span>(B <span class="sc">%*%</span> g)</span>
-<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(g <span class="sc">*</span> d) <span class="sc">&gt;</span> <span class="sc">-</span><span class="fl">1e-12</span>) { B <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>); d <span class="ot">&lt;-</span> <span class="sc">-</span>g }</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a><span class="do">## default learning rates for the momentum method: a fixed step has to suit</span></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a><span class="do">## the scale of each function (larger values diverge on (b), (d) and (e))</span></span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>ETA <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">quad =</span> <span class="fl">0.1</span>, <span class="at">banana =</span> <span class="fl">0.002</span>, <span class="at">mix =</span> <span class="fl">0.03</span>, <span class="at">himmel =</span> <span class="fl">0.01</span>,</span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>         <span class="at">beale =</span> <span class="fl">0.01</span>, <span class="at">rastrigin =</span> <span class="fl">0.003</span>)</span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------- numerical derivatives</span></span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>num_grad <span class="ot">&lt;-</span> <span class="cf">function</span>(f, x) {</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>  h <span class="ot">&lt;-</span> <span class="fl">1e-5</span> <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">abs</span>(x))</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>  g <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>)</span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>) {</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>    e <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); e[i] <span class="ot">&lt;-</span> h[i]</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>    g[i] <span class="ot">&lt;-</span> (<span class="fu">f</span>(x <span class="sc">+</span> e) <span class="sc">-</span> <span class="fu">f</span>(x <span class="sc">-</span> e)) <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> h[i])</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>  g</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>num_hess <span class="ot">&lt;-</span> <span class="cf">function</span>(f, x) {</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>  h <span class="ot">&lt;-</span> <span class="fl">1e-4</span> <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">abs</span>(x))</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>  H <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">2</span>, <span class="dv">2</span>)</span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>) <span class="cf">for</span> (j <span class="cf">in</span> i<span class="sc">:</span><span class="dv">2</span>) {</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>    ei <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); ei[i] <span class="ot">&lt;-</span> h[i]</span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>    ej <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">2</span>); ej[j] <span class="ot">&lt;-</span> h[j]</span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>    H[i, j] <span class="ot">&lt;-</span> (<span class="fu">f</span>(x <span class="sc">+</span> ei <span class="sc">+</span> ej) <span class="sc">-</span> <span class="fu">f</span>(x <span class="sc">+</span> ei <span class="sc">-</span> ej) <span class="sc">-</span></span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>                <span class="fu">f</span>(x <span class="sc">-</span> ei <span class="sc">+</span> ej) <span class="sc">+</span> <span class="fu">f</span>(x <span class="sc">-</span> ei <span class="sc">-</span> ej)) <span class="sc">/</span> (<span class="dv">4</span> <span class="sc">*</span> h[i] <span class="sc">*</span> h[j])</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>    H[j, i] <span class="ot">&lt;-</span> H[i, j]</span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>  H</span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a><span class="do">## --------------------------------------------------- Wolfe line search</span></span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>line_search <span class="ot">&lt;-</span> <span class="cf">function</span>(f, g, x, d, <span class="at">a0 =</span> <span class="dv">1</span>, <span class="at">c1 =</span> <span class="fl">1e-4</span>, <span class="at">c2 =</span> <span class="fl">0.9</span>) {</span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>  f0 <span class="ot">&lt;-</span> <span class="fu">f</span>(x); gd0 <span class="ot">&lt;-</span> <span class="fu">sum</span>(g <span class="sc">*</span> d)</span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(gd0) <span class="sc">||</span> gd0 <span class="sc">&gt;=</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> <span class="dv">0</span>, <span class="at">ok =</span> <span class="cn">FALSE</span>))</span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>  lo <span class="ot">&lt;-</span> <span class="dv">0</span>; hi <span class="ot">&lt;-</span> <span class="cn">Inf</span>; a <span class="ot">&lt;-</span> a0</span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (it <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">60</span>) {</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>    fa <span class="ot">&lt;-</span> <span class="fu">f</span>(x <span class="sc">+</span> a <span class="sc">*</span> d)</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(fa) <span class="sc">||</span> fa <span class="sc">&gt;</span> f0 <span class="sc">+</span> c1 <span class="sc">*</span> a <span class="sc">*</span> gd0) {</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>      hi <span class="ot">&lt;-</span> a; a <span class="ot">&lt;-</span> <span class="fl">0.5</span> <span class="sc">*</span> (lo <span class="sc">+</span> hi)</span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a>      ga <span class="ot">&lt;-</span> <span class="fu">num_grad</span>(f, x <span class="sc">+</span> a <span class="sc">*</span> d)</span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(ga <span class="sc">*</span> d) <span class="sc">&lt;</span> c2 <span class="sc">*</span> gd0) {</span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        lo <span class="ot">&lt;-</span> a</span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        a <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(hi)) <span class="fl">0.5</span> <span class="sc">*</span> (lo <span class="sc">+</span> hi) <span class="cf">else</span> <span class="fu">min</span>(<span class="dv">2</span> <span class="sc">*</span> a, <span class="fl">1e4</span>)</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>        <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> a, <span class="at">ok =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (a <span class="sc">&lt;</span> <span class="fl">1e-14</span>) <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">alpha =</span> <span class="dv">0</span>, <span class="at">ok =</span> <span class="cn">FALSE</span>))</span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">alpha =</span> a, <span class="at">ok =</span> (a <span class="sc">&gt;</span> <span class="dv">0</span>))</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a><span class="do">## ------------------------------------------------------------- algorithms</span></span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>run_alg <span class="ot">&lt;-</span> <span class="cf">function</span>(alg, FN, x0, <span class="at">maxit =</span> <span class="dv">60</span>, <span class="at">tol =</span> <span class="fl">1e-6</span>,</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>                    <span class="at">eta =</span> <span class="fl">0.01</span>, <span class="at">beta =</span> <span class="fl">0.9</span>, <span class="at">alpha =</span> <span class="fl">0.1</span>, <span class="at">beta2 =</span> <span class="fl">0.999</span>) {</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>  f <span class="ot">&lt;-</span> FN<span class="sc">$</span>f</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>  <span class="do">## no line search: a fixed step needs many more iterations</span></span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (alg <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"mom"</span>, <span class="st">"adam"</span>)) maxit <span class="ot">&lt;-</span> <span class="dv">200</span></span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>  X <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>); G <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>)</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>  D <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>, <span class="dv">2</span>); Fv <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>  AL <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, maxit <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>  x <span class="ot">&lt;-</span> x0; B <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>)</span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>  g_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; d_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; s_prev <span class="ot">&lt;-</span> <span class="cn">NULL</span>; v <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>)</span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>); m2 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>)                  <span class="co"># Adam's averages of g and g^2</span></span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>  n <span class="ot">&lt;-</span> <span class="dv">0</span>; note <span class="ot">&lt;-</span> <span class="st">"maximum number of iterations reached"</span></span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (k <span class="cf">in</span> <span class="fu">seq_len</span>(maxit)) {</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">any</span>(<span class="sc">!</span><span class="fu">is.finite</span>(x)) <span class="sc">||</span> <span class="fu">max</span>(<span class="fu">abs</span>(x)) <span class="sc">&gt;</span> <span class="fl">1e6</span>) { note <span class="ot">&lt;-</span> <span class="st">"diverged"</span>; <span class="cf">break</span> }</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>    g <span class="ot">&lt;-</span> <span class="fu">num_grad</span>(f, x); gn <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(g<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>    X[k, ] <span class="ot">&lt;-</span> x; G[k, ] <span class="ot">&lt;-</span> g; Fv[k] <span class="ot">&lt;-</span> <span class="fu">f</span>(x); n <span class="ot">&lt;-</span> k</span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(gn)) { note <span class="ot">&lt;-</span> <span class="st">"diverged"</span>; <span class="cf">break</span> }</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (gn <span class="sc">&lt;</span> tol) { note <span class="ot">&lt;-</span> <span class="st">"converged (||grad|| &lt; 1e-6)"</span>; <span class="cf">break</span> }</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"mom"</span>) {</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>      <span class="do">## heavy ball: the step keeps a fraction beta of the previous step;</span></span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>      <span class="do">## no line search, the learning rate eta is fixed</span></span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>      v <span class="ot">&lt;-</span> beta <span class="sc">*</span> v <span class="sc">-</span> eta <span class="sc">*</span> g</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>      D[k, ] <span class="ot">&lt;-</span> v; AL[k] <span class="ot">&lt;-</span> eta</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>      x <span class="ot">&lt;-</span> x <span class="sc">+</span> v</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>      <span class="cf">next</span></span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"adam"</span>) {</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>      <span class="do">## Adam: momentum on g, divided coordinate-wise by the root of a running</span></span>
+<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>      <span class="do">## average of g^2, so each coordinate moves about alpha per step</span></span>
+<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>      <span class="do">## whatever the scale of f; both averages are bias-corrected</span></span>
+<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>      m  <span class="ot">&lt;-</span> beta  <span class="sc">*</span> m  <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">-</span> beta)  <span class="sc">*</span> g</span>
+<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>      m2 <span class="ot">&lt;-</span> beta2 <span class="sc">*</span> m2 <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">-</span> beta2) <span class="sc">*</span> g<span class="sc">^</span><span class="dv">2</span></span>
+<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>      v  <span class="ot">&lt;-</span> <span class="sc">-</span>alpha <span class="sc">*</span> (m <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> beta<span class="sc">^</span>k)) <span class="sc">/</span> (<span class="fu">sqrt</span>(m2 <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> beta2<span class="sc">^</span>k)) <span class="sc">+</span> <span class="fl">1e-8</span>)</span>
+<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>      D[k, ] <span class="ot">&lt;-</span> v; AL[k] <span class="ot">&lt;-</span> alpha</span>
+<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>      x <span class="ot">&lt;-</span> x <span class="sc">+</span> v</span>
+<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>      <span class="cf">next</span></span>
 <span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>    }</span>
 <span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>    ls <span class="ot">&lt;-</span> <span class="fu">line_search</span>(f, g, x, d)</span>
-<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>    D[k, ] <span class="ot">&lt;-</span> d; AL[k] <span class="ot">&lt;-</span> ls<span class="sc">$</span>alpha</span>
-<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ls<span class="sc">$</span>alpha <span class="sc">&lt;=</span> <span class="dv">0</span>) { note <span class="ot">&lt;-</span> <span class="st">"line search failed (flat or non-descent)"</span>; <span class="cf">break</span> }</span>
-<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>    s_prev <span class="ot">&lt;-</span> ls<span class="sc">$</span>alpha <span class="sc">*</span> d; g_prev <span class="ot">&lt;-</span> g; d_prev <span class="ot">&lt;-</span> d</span>
-<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> x <span class="sc">+</span> s_prev</span>
-<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">X =</span> X[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>], <span class="at">G =</span> G[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>],</span>
-<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>       <span class="at">D =</span> D[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>], <span class="at">F =</span> Fv[<span class="dv">1</span><span class="sc">:</span>n], <span class="at">A =</span> AL[<span class="dv">1</span><span class="sc">:</span>n],</span>
-<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>       <span class="at">n =</span> n, <span class="at">note =</span> note)</span>
-<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>ALGS <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Safeguarded Newton (modified Hessian + line search)"</span> <span class="ot">=</span> <span class="st">"nr"</span>,</span>
-<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Gradient descent + line search"</span>    <span class="ot">=</span> <span class="st">"gd"</span>,</span>
-<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Conjugate gradient (PR+)"</span>          <span class="ot">=</span> <span class="st">"cg"</span>,</span>
-<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>          <span class="st">"BFGS (quasi-Newton)"</span>               <span class="ot">=</span> <span class="st">"bfgs"</span>)</span>
-<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a><span class="do">## ---------------------------- widen the data box to the device aspect ratio</span></span>
-<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>expand_box <span class="ot">&lt;-</span> <span class="cf">function</span>(xlim, ylim, pin) {</span>
-<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(pin) <span class="sc">!=</span> <span class="dv">2</span> <span class="sc">||</span> <span class="fu">any</span>(<span class="sc">!</span><span class="fu">is.finite</span>(pin)) <span class="sc">||</span> <span class="fu">any</span>(pin <span class="sc">&lt;=</span> <span class="dv">0</span>))</span>
-<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">xlim =</span> xlim, <span class="at">ylim =</span> ylim))</span>
-<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a>  r <span class="ot">&lt;-</span> pin[<span class="dv">1</span>] <span class="sc">/</span> pin[<span class="dv">2</span>]</span>
-<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>  wd <span class="ot">&lt;-</span> <span class="fu">diff</span>(xlim); ht <span class="ot">&lt;-</span> <span class="fu">diff</span>(ylim)</span>
-<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (wd <span class="sc">/</span> ht <span class="sc">&lt;</span> r) {</span>
-<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>    w <span class="ot">&lt;-</span> ht <span class="sc">*</span> r; m <span class="ot">&lt;-</span> <span class="fu">mean</span>(xlim); xlim <span class="ot">&lt;-</span> m <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">0.5</span>) <span class="sc">*</span> w</span>
-<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
-<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a>    h <span class="ot">&lt;-</span> wd <span class="sc">/</span> r; m <span class="ot">&lt;-</span> <span class="fu">mean</span>(ylim); ylim <span class="ot">&lt;-</span> m <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
-<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">xlim =</span> xlim, <span class="at">ylim =</span> ylim)</span>
-<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a><span class="do">## --------------------------------------------------------------------- UI</span></span>
-<span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a><span class="do">## an icon-only playback button; the title shows as a tooltip</span></span>
-<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>ctrl_btn <span class="ot">&lt;-</span> <span class="cf">function</span>(id, icon_name, title, <span class="at">class =</span> <span class="st">"btn-default"</span>)</span>
-<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>  <span class="fu">actionButton</span>(id, <span class="cn">NULL</span>, <span class="at">icon =</span> <span class="fu">icon</span>(icon_name), <span class="at">title =</span> title, <span class="at">class =</span> class,</span>
-<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>               <span class="at">style =</span> <span class="st">"flex: 1; padding: 6px 0;"</span>)</span>
+<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"nr"</span>) {</span>
+<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>      H <span class="ot">&lt;-</span> <span class="fu">num_hess</span>(f, x); H <span class="ot">&lt;-</span> (H <span class="sc">+</span> <span class="fu">t</span>(H)) <span class="sc">/</span> <span class="dv">2</span></span>
+<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>      ev <span class="ot">&lt;-</span> <span class="fu">eigen</span>(H, <span class="at">symmetric =</span> <span class="cn">TRUE</span>, <span class="at">only.values =</span> <span class="cn">TRUE</span>)<span class="sc">$</span>values</span>
+<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>      delta <span class="ot">&lt;-</span> <span class="fl">1e-3</span> <span class="sc">*</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">max</span>(<span class="fu">abs</span>(ev)))</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>      tau <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">0</span>, delta <span class="sc">-</span> <span class="fu">min</span>(ev))</span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="fu">tryCatch</span>(<span class="fu">solve</span>(H <span class="sc">+</span> tau <span class="sc">*</span> <span class="fu">diag</span>(<span class="dv">2</span>), <span class="sc">-</span>g), <span class="at">error =</span> <span class="cf">function</span>(e) <span class="sc">-</span>g)</span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"gd"</span>) {</span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="sc">-</span>g</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (alg <span class="sc">==</span> <span class="st">"cg"</span>) {</span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">is.null</span>(d_prev)) {</span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="sc">-</span>g</span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>      } <span class="cf">else</span> {</span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>        y <span class="ot">&lt;-</span> g <span class="sc">-</span> g_prev</span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>        beta <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">sum</span>(g <span class="sc">*</span> y) <span class="sc">/</span> <span class="fu">max</span>(<span class="fu">sum</span>(g_prev<span class="sc">^</span><span class="dv">2</span>), <span class="fl">1e-300</span>))   <span class="co"># PR+</span></span>
+<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="sc">-</span>g <span class="sc">+</span> beta <span class="sc">*</span> d_prev</span>
+<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(g <span class="sc">*</span> d) <span class="sc">&gt;</span> <span class="sc">-</span><span class="fl">1e-12</span>) d <span class="ot">&lt;-</span> <span class="sc">-</span>g                            <span class="co"># restart</span></span>
+<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {                                                      <span class="co"># BFGS</span></span>
+<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(s_prev)) {</span>
+<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>        y <span class="ot">&lt;-</span> g <span class="sc">-</span> g_prev; sy <span class="ot">&lt;-</span> <span class="fu">sum</span>(s_prev <span class="sc">*</span> y)</span>
+<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (sy <span class="sc">&gt;</span> <span class="fl">1e-10</span>) {</span>
+<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>          rho <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> sy</span>
+<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a>          V <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>) <span class="sc">-</span> rho <span class="sc">*</span> <span class="fu">outer</span>(s_prev, y)</span>
+<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>          B <span class="ot">&lt;-</span> V <span class="sc">%*%</span> B <span class="sc">%*%</span> <span class="fu">t</span>(V) <span class="sc">+</span> rho <span class="sc">*</span> <span class="fu">outer</span>(s_prev, s_prev)</span>
+<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">as.vector</span>(B <span class="sc">%*%</span> g)</span>
+<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sum</span>(g <span class="sc">*</span> d) <span class="sc">&gt;</span> <span class="sc">-</span><span class="fl">1e-12</span>) { B <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">2</span>); d <span class="ot">&lt;-</span> <span class="sc">-</span>g }</span>
+<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>    ls <span class="ot">&lt;-</span> <span class="fu">line_search</span>(f, g, x, d)</span>
+<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>    D[k, ] <span class="ot">&lt;-</span> d; AL[k] <span class="ot">&lt;-</span> ls<span class="sc">$</span>alpha</span>
+<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ls<span class="sc">$</span>alpha <span class="sc">&lt;=</span> <span class="dv">0</span>) { note <span class="ot">&lt;-</span> <span class="st">"line search failed (flat or non-descent)"</span>; <span class="cf">break</span> }</span>
+<span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>    s_prev <span class="ot">&lt;-</span> ls<span class="sc">$</span>alpha <span class="sc">*</span> d; g_prev <span class="ot">&lt;-</span> g; d_prev <span class="ot">&lt;-</span> d</span>
+<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>    x <span class="ot">&lt;-</span> x <span class="sc">+</span> s_prev</span>
+<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>  }</span>
 <span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
-<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sidebarLayout</span>(</span>
-<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sidebarPanel</span>(</span>
-<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>      <span class="at">width =</span> <span class="dv">4</span>,</span>
-<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"fn"</span>, <span class="st">"objective function"</span>,</span>
-<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">setNames</span>(<span class="fu">names</span>(FNS), <span class="fu">sapply</span>(FNS, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"label"</span>))),</span>
-<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"alg"</span>, <span class="st">"algorithm"</span>, ALGS),</span>
-<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 10px;"</span>,</span>
-<span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>          <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
-<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"x1"</span>, <span class="fu">HTML</span>(<span class="st">"starting x&lt;sub&gt;1&lt;/sub&gt;"</span>),</span>
-<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> FNS[[<span class="dv">1</span>]]<span class="sc">$</span>start[<span class="dv">1</span>], <span class="at">step =</span> <span class="fl">0.5</span>,</span>
-<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>                           <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
-<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>          <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
-<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"x2"</span>, <span class="fu">HTML</span>(<span class="st">"starting x&lt;sub&gt;2&lt;/sub&gt;"</span>),</span>
-<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> FNS[[<span class="dv">1</span>]]<span class="sc">$</span>start[<span class="dv">2</span>], <span class="at">step =</span> <span class="fl">0.5</span>,</span>
-<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a>                           <span class="at">width =</span> <span class="st">"100%"</span>))),</span>
-<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>      <span class="fu">helpText</span>(<span class="st">"Or click inside the contour plot to choose a new "</span>,</span>
-<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>               <span class="st">"starting value."</span>),</span>
-<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"compare"</span>, <span class="st">"overlay the path of"</span>,</span>
-<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">c</span>(<span class="st">"none"</span> <span class="ot">=</span> <span class="st">"none"</span>, ALGS)),</span>
-<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>      <span class="fu">checkboxInput</span>(<span class="st">"autoplay"</span>, <span class="st">"autoplay when the start changes"</span>, <span class="cn">TRUE</span>),</span>
-<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"k"</span>, <span class="st">"iteration"</span>, <span class="at">min =</span> <span class="dv">0</span>, <span class="at">max =</span> <span class="dv">1</span>, <span class="at">value =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="dv">1</span>),</span>
-<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 4px;"</span>,</span>
-<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"first"</span>, <span class="st">"backward-fast"</span>, <span class="st">"Back to the start"</span>),</span>
-<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"back"</span>,  <span class="st">"backward-step"</span>, <span class="st">"One step back"</span>),</span>
-<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"play"</span>,  <span class="st">"play"</span>,          <span class="st">"Play"</span>, <span class="at">class =</span> <span class="st">"btn-primary"</span>),</span>
-<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"pause"</span>, <span class="st">"pause"</span>,         <span class="st">"Pause"</span>),</span>
-<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"step"</span>,  <span class="st">"forward-step"</span>,  <span class="st">"One step forward"</span>),</span>
-<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"toend"</span>, <span class="st">"forward-fast"</span>,  <span class="st">"To the end"</span>)),</span>
-<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hr</span>(),</span>
-<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>      <span class="fu">helpText</span>(<span class="st">"Try gradient descent on the Rosenbrock banana, overlaid "</span>,</span>
-<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a>               <span class="st">"with BFGS or safeguarded Newton: gradient descent zig-zags "</span>,</span>
-<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a>               <span class="st">"across the curved valley, while the curvature-aware methods "</span>,</span>
-<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>               <span class="st">"follow it. On Himmelblau and Rastrigin, click different "</span>,</span>
-<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>               <span class="st">"starting points to see which minimum each method finds."</span>)</span>
-<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mainPanel</span>(</span>
-<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a>      <span class="at">width =</span> <span class="dv">8</span>,</span>
-<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>      <span class="fu">plotOutput</span>(<span class="st">"contour"</span>, <span class="at">click =</span> <span class="st">"click"</span>, <span class="at">height =</span> <span class="st">"500px"</span>),</span>
-<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>      <span class="do">## details of the iterations, shown under the plot</span></span>
-<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hr</span>(),</span>
-<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"max-width: 560px;"</span>,</span>
-<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>          <span class="fu">tableOutput</span>(<span class="st">"tab"</span>),</span>
-<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>          <span class="fu">htmlOutput</span>(<span class="st">"note"</span>))</span>
-<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a><span class="do">## ----------------------------------------------------------------- server</span></span>
-<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
-<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>  FN <span class="ot">&lt;-</span> <span class="fu">reactive</span>(FNS[[input<span class="sc">$</span>fn]])</span>
-<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>  playing <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="cn">FALSE</span>)</span>
-<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>  play_ms <span class="ot">&lt;-</span> <span class="dv">900</span></span>
-<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>  set_start <span class="ot">&lt;-</span> <span class="cf">function</span>(p) {</span>
-<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateNumericInput</span>(session, <span class="st">"x1"</span>, <span class="at">value =</span> <span class="fu">round</span>(p[<span class="dv">1</span>], <span class="dv">2</span>))</span>
-<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateNumericInput</span>(session, <span class="st">"x2"</span>, <span class="at">value =</span> <span class="fu">round</span>(p[<span class="dv">2</span>], <span class="dv">2</span>))</span>
-<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a new objective moves the start to its default; clicking the contour</span></span>
-<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>  <span class="do">## plot moves it to the clicked point</span></span>
-<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>fn, <span class="fu">set_start</span>(FNS[[input<span class="sc">$</span>fn]]<span class="sc">$</span>start), <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>click, {</span>
-<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>    p <span class="ot">&lt;-</span> <span class="fu">c</span>(input<span class="sc">$</span>click<span class="sc">$</span>x, input<span class="sc">$</span>click<span class="sc">$</span>y)</span>
-<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">all</span>(<span class="fu">is.finite</span>(p))) <span class="fu">set_start</span>(p)</span>
-<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>  start <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
-<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>    <span class="fu">req</span>(<span class="fu">is.finite</span>(input<span class="sc">$</span>x1), <span class="fu">is.finite</span>(input<span class="sc">$</span>x2))</span>
-<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(input<span class="sc">$</span>x1, input<span class="sc">$</span>x2)</span>
-<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>  path <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">run_alg</span>(input<span class="sc">$</span>alg, <span class="fu">FN</span>(), <span class="fu">start</span>()))</span>
-<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a second algorithm from the same start, shown for comparison</span></span>
-<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>  ref <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
-<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (input<span class="sc">$</span>compare <span class="sc">==</span> <span class="st">"none"</span> <span class="sc">||</span> input<span class="sc">$</span>compare <span class="sc">==</span> input<span class="sc">$</span>alg) <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
-<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>    <span class="fu">run_alg</span>(input<span class="sc">$</span>compare, <span class="fu">FN</span>(), <span class="fu">start</span>())</span>
-<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>  <span class="do">## current iteration, clamped to the length of the path</span></span>
-<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>  k <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">min</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k), <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>))</span>
-<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a new path restarts the display at iteration 0</span></span>
-<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(<span class="fu">path</span>(), {</span>
-<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">max =</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>), <span class="at">value =</span> <span class="dv">0</span>)</span>
-<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>    <span class="fu">playing</span>(<span class="fu">isTRUE</span>(input<span class="sc">$</span>autoplay) <span class="sc">&amp;&amp;</span> <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
-<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a>  go_to <span class="ot">&lt;-</span> <span class="cf">function</span>(i) {</span>
-<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">value =</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">min</span>(i, <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>)))</span>
-<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-279"><a href="#cb2-279" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>play, {</span>
-<span id="cb2-280"><a href="#cb2-280" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">k</span>() <span class="sc">&gt;=</span> <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>) <span class="fu">go_to</span>(<span class="dv">0</span>)</span>
-<span id="cb2-281"><a href="#cb2-281" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">playing</span>(<span class="cn">TRUE</span>)</span>
-<span id="cb2-282"><a href="#cb2-282" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-283"><a href="#cb2-283" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>pause, <span class="fu">playing</span>(<span class="cn">FALSE</span>))</span>
-<span id="cb2-284"><a href="#cb2-284" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>step,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>) })</span>
-<span id="cb2-285"><a href="#cb2-285" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>back,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">k</span>() <span class="sc">-</span> <span class="dv">1</span>) })</span>
-<span id="cb2-286"><a href="#cb2-286" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>first, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="dv">0</span>) })</span>
-<span id="cb2-287"><a href="#cb2-287" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>toend, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>) })</span>
-<span id="cb2-288"><a href="#cb2-288" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-289"><a href="#cb2-289" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observe</span>({</span>
-<span id="cb2-290"><a href="#cb2-290" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">return</span>()</span>
-<span id="cb2-291"><a href="#cb2-291" aria-hidden="true" tabindex="-1"></a>    kk <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">k</span>())</span>
-<span id="cb2-292"><a href="#cb2-292" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (kk <span class="sc">&gt;=</span> <span class="fu">isolate</span>(<span class="fu">path</span>()<span class="sc">$</span>n) <span class="sc">-</span> <span class="dv">1</span>) { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">return</span>() }</span>
-<span id="cb2-293"><a href="#cb2-293" aria-hidden="true" tabindex="-1"></a>    <span class="fu">invalidateLater</span>(play_ms, session)</span>
-<span id="cb2-294"><a href="#cb2-294" aria-hidden="true" tabindex="-1"></a>    <span class="fu">isolate</span>(<span class="fu">go_to</span>(kk <span class="sc">+</span> <span class="dv">1</span>))</span>
-<span id="cb2-295"><a href="#cb2-295" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-296"><a href="#cb2-296" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-297"><a href="#cb2-297" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>contour <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-298"><a href="#cb2-298" aria-hidden="true" tabindex="-1"></a>    FNc <span class="ot">&lt;-</span> <span class="fu">FN</span>(); P <span class="ot">&lt;-</span> <span class="fu">path</span>(); RP <span class="ot">&lt;-</span> <span class="fu">ref</span>(); kk <span class="ot">&lt;-</span> <span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>L</span>
-<span id="cb2-299"><a href="#cb2-299" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-300"><a href="#cb2-300" aria-hidden="true" tabindex="-1"></a>    <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))                 <span class="co"># room for the legend below</span></span>
-<span id="cb2-301"><a href="#cb2-301" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot.new</span>()</span>
-<span id="cb2-302"><a href="#cb2-302" aria-hidden="true" tabindex="-1"></a>    bx <span class="ot">&lt;-</span> <span class="fu">expand_box</span>(FNc<span class="sc">$</span>xlim, FNc<span class="sc">$</span>ylim, <span class="fu">par</span>(<span class="st">"pin"</span>))</span>
-<span id="cb2-303"><a href="#cb2-303" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot.window</span>(<span class="at">xlim =</span> bx<span class="sc">$</span>xlim, <span class="at">ylim =</span> bx<span class="sc">$</span>ylim, <span class="at">xaxs =</span> <span class="st">"i"</span>, <span class="at">yaxs =</span> <span class="st">"i"</span>)</span>
-<span id="cb2-304"><a href="#cb2-304" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-305"><a href="#cb2-305" aria-hidden="true" tabindex="-1"></a>    xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(bx<span class="sc">$</span>xlim[<span class="dv">1</span>], bx<span class="sc">$</span>xlim[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">180</span>)</span>
-<span id="cb2-306"><a href="#cb2-306" aria-hidden="true" tabindex="-1"></a>    ys <span class="ot">&lt;-</span> <span class="fu">seq</span>(bx<span class="sc">$</span>ylim[<span class="dv">1</span>], bx<span class="sc">$</span>ylim[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">180</span>)</span>
-<span id="cb2-307"><a href="#cb2-307" aria-hidden="true" tabindex="-1"></a>    z  <span class="ot">&lt;-</span> <span class="fu">outer</span>(xs, ys, FNc<span class="sc">$</span>fv)</span>
-<span id="cb2-308"><a href="#cb2-308" aria-hidden="true" tabindex="-1"></a>    zf <span class="ot">&lt;-</span> z[<span class="fu">is.finite</span>(z)]</span>
-<span id="cb2-309"><a href="#cb2-309" aria-hidden="true" tabindex="-1"></a>    lv <span class="ot">&lt;-</span> <span class="fu">unique</span>(<span class="fu">quantile</span>(zf, <span class="at">probs =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="at">length.out =</span> <span class="dv">30</span>)<span class="sc">^</span><span class="fl">1.7</span>))</span>
-<span id="cb2-310"><a href="#cb2-310" aria-hidden="true" tabindex="-1"></a>    <span class="fu">contour</span>(xs, ys, z, <span class="at">levels =</span> lv, <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">col =</span> <span class="st">"grey70"</span>,</span>
-<span id="cb2-311"><a href="#cb2-311" aria-hidden="true" tabindex="-1"></a>            <span class="at">drawlabels =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb2-312"><a href="#cb2-312" aria-hidden="true" tabindex="-1"></a>    <span class="fu">axis</span>(<span class="dv">1</span>); <span class="fu">axis</span>(<span class="dv">2</span>); <span class="fu">box</span>()</span>
-<span id="cb2-313"><a href="#cb2-313" aria-hidden="true" tabindex="-1"></a>    <span class="fu">title</span>(<span class="at">main =</span> <span class="fu">paste0</span>(<span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>alg], <span class="st">" on "</span>,</span>
-<span id="cb2-314"><a href="#cb2-314" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">sub</span>(<span class="st">"^</span><span class="sc">\\</span><span class="st">([a-f]</span><span class="sc">\\</span><span class="st">) "</span>, <span class="st">""</span>, FNc<span class="sc">$</span>label)),</span>
-<span id="cb2-315"><a href="#cb2-315" aria-hidden="true" tabindex="-1"></a>          <span class="at">xlab =</span> <span class="fu">expression</span>(x[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(x[<span class="dv">2</span>]), <span class="at">cex.main =</span> <span class="dv">1</span>)</span>
-<span id="cb2-316"><a href="#cb2-316" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(FNc<span class="sc">$</span>xstar[, <span class="dv">1</span>], FNc<span class="sc">$</span>xstar[, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"darkgreen"</span>,</span>
-<span id="cb2-317"><a href="#cb2-317" aria-hidden="true" tabindex="-1"></a>           <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">cex =</span> <span class="fl">1.2</span>)</span>
+<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">X =</span> X[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>], <span class="at">G =</span> G[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>],</span>
+<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>       <span class="at">D =</span> D[<span class="dv">1</span><span class="sc">:</span>n, , <span class="at">drop =</span> <span class="cn">FALSE</span>], <span class="at">F =</span> Fv[<span class="dv">1</span><span class="sc">:</span>n], <span class="at">A =</span> AL[<span class="dv">1</span><span class="sc">:</span>n],</span>
+<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>       <span class="at">n =</span> n, <span class="at">note =</span> note)</span>
+<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>ALGS <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Safeguarded Newton (modified Hessian + line search)"</span> <span class="ot">=</span> <span class="st">"nr"</span>,</span>
+<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Gradient descent + line search"</span>    <span class="ot">=</span> <span class="st">"gd"</span>,</span>
+<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Conjugate gradient (PR+)"</span>          <span class="ot">=</span> <span class="st">"cg"</span>,</span>
+<span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>          <span class="st">"BFGS (quasi-Newton)"</span>               <span class="ot">=</span> <span class="st">"bfgs"</span>,</span>
+<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Momentum (heavy ball, fixed step)"</span> <span class="ot">=</span> <span class="st">"mom"</span>,</span>
+<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Adam (step scaled per coordinate)"</span> <span class="ot">=</span> <span class="st">"adam"</span>)</span>
+<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a><span class="do">## ---------------------------- widen the data box to the device aspect ratio</span></span>
+<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>expand_box <span class="ot">&lt;-</span> <span class="cf">function</span>(xlim, ylim, pin) {</span>
+<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(pin) <span class="sc">!=</span> <span class="dv">2</span> <span class="sc">||</span> <span class="fu">any</span>(<span class="sc">!</span><span class="fu">is.finite</span>(pin)) <span class="sc">||</span> <span class="fu">any</span>(pin <span class="sc">&lt;=</span> <span class="dv">0</span>))</span>
+<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="fu">list</span>(<span class="at">xlim =</span> xlim, <span class="at">ylim =</span> ylim))</span>
+<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>  r <span class="ot">&lt;-</span> pin[<span class="dv">1</span>] <span class="sc">/</span> pin[<span class="dv">2</span>]</span>
+<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>  wd <span class="ot">&lt;-</span> <span class="fu">diff</span>(xlim); ht <span class="ot">&lt;-</span> <span class="fu">diff</span>(ylim)</span>
+<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (wd <span class="sc">/</span> ht <span class="sc">&lt;</span> r) {</span>
+<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a>    w <span class="ot">&lt;-</span> ht <span class="sc">*</span> r; m <span class="ot">&lt;-</span> <span class="fu">mean</span>(xlim); xlim <span class="ot">&lt;-</span> m <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">0.5</span>) <span class="sc">*</span> w</span>
+<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>    h <span class="ot">&lt;-</span> wd <span class="sc">/</span> r; m <span class="ot">&lt;-</span> <span class="fu">mean</span>(ylim); ylim <span class="ot">&lt;-</span> m <span class="sc">+</span> <span class="fu">c</span>(<span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
+<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">xlim =</span> xlim, <span class="at">ylim =</span> ylim)</span>
+<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a><span class="do">## --------------------------------------------------------------------- UI</span></span>
+<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a><span class="do">## an icon-only playback button; the title shows as a tooltip</span></span>
+<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>ctrl_btn <span class="ot">&lt;-</span> <span class="cf">function</span>(id, icon_name, title, <span class="at">class =</span> <span class="st">"btn-default"</span>)</span>
+<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>  <span class="fu">actionButton</span>(id, <span class="cn">NULL</span>, <span class="at">icon =</span> <span class="fu">icon</span>(icon_name), <span class="at">title =</span> title, <span class="at">class =</span> class,</span>
+<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>               <span class="at">style =</span> <span class="st">"flex: 1; padding: 6px 0;"</span>)</span>
+<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
+<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sidebarLayout</span>(</span>
+<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sidebarPanel</span>(</span>
+<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>      <span class="at">width =</span> <span class="dv">4</span>,</span>
+<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"fn"</span>, <span class="st">"objective function"</span>,</span>
+<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">setNames</span>(<span class="fu">names</span>(FNS), <span class="fu">sapply</span>(FNS, <span class="st">`</span><span class="at">[[</span><span class="st">`</span>, <span class="st">"label"</span>))),</span>
+<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"alg"</span>, <span class="st">"algorithm"</span>, ALGS),</span>
+<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 10px;"</span>,</span>
+<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>          <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
+<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"x1"</span>, <span class="fu">HTML</span>(<span class="st">"starting x&lt;sub&gt;1&lt;/sub&gt;"</span>),</span>
+<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> FNS[[<span class="dv">1</span>]]<span class="sc">$</span>start[<span class="dv">1</span>], <span class="at">step =</span> <span class="fl">0.5</span>,</span>
+<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>                           <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
+<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>          <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
+<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"x2"</span>, <span class="fu">HTML</span>(<span class="st">"starting x&lt;sub&gt;2&lt;/sub&gt;"</span>),</span>
+<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> FNS[[<span class="dv">1</span>]]<span class="sc">$</span>start[<span class="dv">2</span>], <span class="at">step =</span> <span class="fl">0.5</span>,</span>
+<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a>                           <span class="at">width =</span> <span class="st">"100%"</span>))),</span>
+<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>      <span class="fu">helpText</span>(<span class="st">"Or click inside the contour plot to choose a new "</span>,</span>
+<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>               <span class="st">"starting value."</span>),</span>
+<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>      <span class="fu">selectInput</span>(<span class="st">"compare"</span>, <span class="st">"overlay the path of"</span>,</span>
+<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">c</span>(<span class="st">"none"</span> <span class="ot">=</span> <span class="st">"none"</span>, ALGS)),</span>
+<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>      <span class="do">## settings of momentum and Adam, each shown when its method is used;</span></span>
+<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>      <span class="do">## beta is shared (Adam's beta_1 plays the role of the momentum beta)</span></span>
+<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>      <span class="fu">conditionalPanel</span>(</span>
+<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>        <span class="st">"['mom', 'adam'].includes(input.alg) || ['mom', 'adam'].includes(input.compare)"</span>,</span>
+<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>        <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 10px;"</span>,</span>
+<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>            <span class="fu">conditionalPanel</span>(</span>
+<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>              <span class="st">"input.alg == 'mom' || input.compare == 'mom'"</span>, <span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
+<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"eta"</span>, <span class="fu">HTML</span>(<span class="st">"momentum &amp;eta;"</span>),</span>
+<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> ETA[[<span class="dv">1</span>]], <span class="at">min =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="fl">0.001</span>,</span>
+<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>                           <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
+<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>            <span class="fu">conditionalPanel</span>(</span>
+<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>              <span class="st">"input.alg == 'adam' || input.compare == 'adam'"</span>, <span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
+<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>              <span class="fu">numericInput</span>(<span class="st">"alpha"</span>, <span class="fu">HTML</span>(<span class="st">"Adam &amp;alpha;"</span>),</span>
+<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>                           <span class="at">value =</span> <span class="fl">0.1</span>, <span class="at">min =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="fl">0.01</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
+<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>            <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"flex: 1;"</span>,</span>
+<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>                <span class="fu">numericInput</span>(<span class="st">"beta"</span>, <span class="fu">HTML</span>(<span class="st">"&amp;beta; (Adam &amp;beta;&lt;sub&gt;1&lt;/sub&gt;)"</span>),</span>
+<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>                             <span class="at">value =</span> <span class="fl">0.9</span>, <span class="at">min =</span> <span class="dv">0</span>, <span class="at">max =</span> <span class="fl">0.999</span>, <span class="at">step =</span> <span class="fl">0.05</span>,</span>
+<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>                             <span class="at">width =</span> <span class="st">"100%"</span>)))),</span>
+<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>      <span class="fu">checkboxInput</span>(<span class="st">"autoplay"</span>, <span class="st">"autoplay when the start changes"</span>, <span class="cn">TRUE</span>),</span>
+<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sliderInput</span>(<span class="st">"k"</span>, <span class="st">"iteration"</span>, <span class="at">min =</span> <span class="dv">0</span>, <span class="at">max =</span> <span class="dv">1</span>, <span class="at">value =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="dv">1</span>),</span>
+<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"display: flex; gap: 4px;"</span>,</span>
+<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"first"</span>, <span class="st">"backward-fast"</span>, <span class="st">"Back to the start"</span>),</span>
+<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"back"</span>,  <span class="st">"backward-step"</span>, <span class="st">"One step back"</span>),</span>
+<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"play"</span>,  <span class="st">"play"</span>,          <span class="st">"Play"</span>, <span class="at">class =</span> <span class="st">"btn-primary"</span>),</span>
+<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"pause"</span>, <span class="st">"pause"</span>,         <span class="st">"Pause"</span>),</span>
+<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"step"</span>,  <span class="st">"forward-step"</span>,  <span class="st">"One step forward"</span>),</span>
+<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ctrl_btn</span>(<span class="st">"toend"</span>, <span class="st">"forward-fast"</span>,  <span class="st">"To the end"</span>)),</span>
+<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hr</span>(),</span>
+<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a>      <span class="fu">helpText</span>(<span class="st">"Try gradient descent on the Rosenbrock banana, overlaid "</span>,</span>
+<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>               <span class="st">"with BFGS or safeguarded Newton: gradient descent zig-zags "</span>,</span>
+<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>               <span class="st">"across the curved valley, while the curvature-aware methods "</span>,</span>
+<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>               <span class="st">"follow it. On Himmelblau and Rastrigin, click different "</span>,</span>
+<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a>               <span class="st">"starting points to see which minimum each method finds."</span>)</span>
+<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mainPanel</span>(</span>
+<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>      <span class="at">width =</span> <span class="dv">8</span>,</span>
+<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>      <span class="fu">plotOutput</span>(<span class="st">"contour"</span>, <span class="at">click =</span> <span class="st">"click"</span>, <span class="at">height =</span> <span class="st">"500px"</span>),</span>
+<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a>      <span class="do">## details of the iterations, shown under the plot</span></span>
+<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a>      <span class="fu">hr</span>(),</span>
+<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>      <span class="fu">div</span>(<span class="at">style =</span> <span class="st">"max-width: 560px;"</span>,</span>
+<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a>          <span class="fu">tableOutput</span>(<span class="st">"tab"</span>),</span>
+<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a>          <span class="fu">htmlOutput</span>(<span class="st">"note"</span>))</span>
+<span id="cb2-279"><a href="#cb2-279" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-280"><a href="#cb2-280" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb2-281"><a href="#cb2-281" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-282"><a href="#cb2-282" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-283"><a href="#cb2-283" aria-hidden="true" tabindex="-1"></a><span class="do">## ----------------------------------------------------------------- server</span></span>
+<span id="cb2-284"><a href="#cb2-284" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-285"><a href="#cb2-285" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-286"><a href="#cb2-286" aria-hidden="true" tabindex="-1"></a>  FN <span class="ot">&lt;-</span> <span class="fu">reactive</span>(FNS[[input<span class="sc">$</span>fn]])</span>
+<span id="cb2-287"><a href="#cb2-287" aria-hidden="true" tabindex="-1"></a>  playing <span class="ot">&lt;-</span> <span class="fu">reactiveVal</span>(<span class="cn">FALSE</span>)</span>
+<span id="cb2-288"><a href="#cb2-288" aria-hidden="true" tabindex="-1"></a>  play_ms <span class="ot">&lt;-</span> <span class="dv">900</span></span>
+<span id="cb2-289"><a href="#cb2-289" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-290"><a href="#cb2-290" aria-hidden="true" tabindex="-1"></a>  set_start <span class="ot">&lt;-</span> <span class="cf">function</span>(p) {</span>
+<span id="cb2-291"><a href="#cb2-291" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateNumericInput</span>(session, <span class="st">"x1"</span>, <span class="at">value =</span> <span class="fu">round</span>(p[<span class="dv">1</span>], <span class="dv">2</span>))</span>
+<span id="cb2-292"><a href="#cb2-292" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateNumericInput</span>(session, <span class="st">"x2"</span>, <span class="at">value =</span> <span class="fu">round</span>(p[<span class="dv">2</span>], <span class="dv">2</span>))</span>
+<span id="cb2-293"><a href="#cb2-293" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-294"><a href="#cb2-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-295"><a href="#cb2-295" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a new objective moves the start to its default; clicking the contour</span></span>
+<span id="cb2-296"><a href="#cb2-296" aria-hidden="true" tabindex="-1"></a>  <span class="do">## plot moves it to the clicked point</span></span>
+<span id="cb2-297"><a href="#cb2-297" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>fn, {</span>
+<span id="cb2-298"><a href="#cb2-298" aria-hidden="true" tabindex="-1"></a>    <span class="fu">set_start</span>(FNS[[input<span class="sc">$</span>fn]]<span class="sc">$</span>start)</span>
+<span id="cb2-299"><a href="#cb2-299" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateNumericInput</span>(session, <span class="st">"eta"</span>, <span class="at">value =</span> ETA[[input<span class="sc">$</span>fn]])</span>
+<span id="cb2-300"><a href="#cb2-300" aria-hidden="true" tabindex="-1"></a>  }, <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-301"><a href="#cb2-301" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>click, {</span>
+<span id="cb2-302"><a href="#cb2-302" aria-hidden="true" tabindex="-1"></a>    p <span class="ot">&lt;-</span> <span class="fu">c</span>(input<span class="sc">$</span>click<span class="sc">$</span>x, input<span class="sc">$</span>click<span class="sc">$</span>y)</span>
+<span id="cb2-303"><a href="#cb2-303" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">all</span>(<span class="fu">is.finite</span>(p))) <span class="fu">set_start</span>(p)</span>
+<span id="cb2-304"><a href="#cb2-304" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-305"><a href="#cb2-305" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-306"><a href="#cb2-306" aria-hidden="true" tabindex="-1"></a>  start <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-307"><a href="#cb2-307" aria-hidden="true" tabindex="-1"></a>    <span class="fu">req</span>(<span class="fu">is.finite</span>(input<span class="sc">$</span>x1), <span class="fu">is.finite</span>(input<span class="sc">$</span>x2))</span>
+<span id="cb2-308"><a href="#cb2-308" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(input<span class="sc">$</span>x1, input<span class="sc">$</span>x2)</span>
+<span id="cb2-309"><a href="#cb2-309" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-310"><a href="#cb2-310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-311"><a href="#cb2-311" aria-hidden="true" tabindex="-1"></a>  <span class="do">## settings of momentum and Adam (ignored by the others)</span></span>
+<span id="cb2-312"><a href="#cb2-312" aria-hidden="true" tabindex="-1"></a>  mom_par <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-313"><a href="#cb2-313" aria-hidden="true" tabindex="-1"></a>    eta <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(input<span class="sc">$</span>eta) <span class="sc">&amp;&amp;</span> input<span class="sc">$</span>eta <span class="sc">&gt;</span> <span class="dv">0</span>) input<span class="sc">$</span>eta <span class="cf">else</span> ETA[[input<span class="sc">$</span>fn]]</span>
+<span id="cb2-314"><a href="#cb2-314" aria-hidden="true" tabindex="-1"></a>    alpha <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(input<span class="sc">$</span>alpha) <span class="sc">&amp;&amp;</span> input<span class="sc">$</span>alpha <span class="sc">&gt;</span> <span class="dv">0</span>) input<span class="sc">$</span>alpha <span class="cf">else</span> <span class="fl">0.1</span></span>
+<span id="cb2-315"><a href="#cb2-315" aria-hidden="true" tabindex="-1"></a>    beta <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(input<span class="sc">$</span>beta)) <span class="fu">min</span>(<span class="fu">max</span>(input<span class="sc">$</span>beta, <span class="dv">0</span>), <span class="fl">0.999</span>) <span class="cf">else</span> <span class="fl">0.9</span></span>
+<span id="cb2-316"><a href="#cb2-316" aria-hidden="true" tabindex="-1"></a>    <span class="fu">list</span>(<span class="at">eta =</span> eta, <span class="at">beta =</span> beta, <span class="at">alpha =</span> alpha)</span>
+<span id="cb2-317"><a href="#cb2-317" aria-hidden="true" tabindex="-1"></a>  })</span>
 <span id="cb2-318"><a href="#cb2-318" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-319"><a href="#cb2-319" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the comparison path, drawn underneath</span></span>
-<span id="cb2-320"><a href="#cb2-320" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) {</span>
-<span id="cb2-321"><a href="#cb2-321" aria-hidden="true" tabindex="-1"></a>      Q <span class="ot">&lt;-</span> RP<span class="sc">$</span>X[<span class="fu">seq_len</span>(<span class="fu">min</span>(kk, RP<span class="sc">$</span>n)), , drop <span class="ot">=</span> <span class="cn">FALSE</span>]</span>
-<span id="cb2-322"><a href="#cb2-322" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">nrow</span>(Q) <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">lines</span>(Q[, <span class="dv">1</span>], Q[, <span class="dv">2</span>], <span class="at">col =</span> <span class="st">"grey45"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
-<span id="cb2-323"><a href="#cb2-323" aria-hidden="true" tabindex="-1"></a>      <span class="fu">points</span>(Q[, <span class="dv">1</span>], Q[, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"grey85"</span>, <span class="at">col =</span> <span class="st">"grey45"</span>,</span>
-<span id="cb2-324"><a href="#cb2-324" aria-hidden="true" tabindex="-1"></a>             <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
-<span id="cb2-325"><a href="#cb2-325" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-326"><a href="#cb2-326" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-327"><a href="#cb2-327" aria-hidden="true" tabindex="-1"></a>    X <span class="ot">&lt;-</span> P<span class="sc">$</span>X</span>
-<span id="cb2-328"><a href="#cb2-328" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (kk <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">lines</span>(X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">1</span>], X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">2</span>], <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb2-329"><a href="#cb2-329" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">1</span>], X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"steelblue"</span>, <span class="at">cex =</span> <span class="fl">1.1</span>)</span>
+<span id="cb2-319"><a href="#cb2-319" aria-hidden="true" tabindex="-1"></a>  path <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">run_alg</span>(input<span class="sc">$</span>alg, <span class="fu">FN</span>(), <span class="fu">start</span>(),</span>
+<span id="cb2-320"><a href="#cb2-320" aria-hidden="true" tabindex="-1"></a>                           <span class="at">eta =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>eta, <span class="at">beta =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>beta,</span>
+<span id="cb2-321"><a href="#cb2-321" aria-hidden="true" tabindex="-1"></a>                           <span class="at">alpha =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>alpha))</span>
+<span id="cb2-322"><a href="#cb2-322" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-323"><a href="#cb2-323" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a second algorithm from the same start, shown for comparison</span></span>
+<span id="cb2-324"><a href="#cb2-324" aria-hidden="true" tabindex="-1"></a>  ref <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-325"><a href="#cb2-325" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (input<span class="sc">$</span>compare <span class="sc">==</span> <span class="st">"none"</span> <span class="sc">||</span> input<span class="sc">$</span>compare <span class="sc">==</span> input<span class="sc">$</span>alg) <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
+<span id="cb2-326"><a href="#cb2-326" aria-hidden="true" tabindex="-1"></a>    <span class="fu">run_alg</span>(input<span class="sc">$</span>compare, <span class="fu">FN</span>(), <span class="fu">start</span>(),</span>
+<span id="cb2-327"><a href="#cb2-327" aria-hidden="true" tabindex="-1"></a>            <span class="at">eta =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>eta, <span class="at">beta =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>beta,</span>
+<span id="cb2-328"><a href="#cb2-328" aria-hidden="true" tabindex="-1"></a>            <span class="at">alpha =</span> <span class="fu">mom_par</span>()<span class="sc">$</span>alpha)</span>
+<span id="cb2-329"><a href="#cb2-329" aria-hidden="true" tabindex="-1"></a>  })</span>
 <span id="cb2-330"><a href="#cb2-330" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-331"><a href="#cb2-331" aria-hidden="true" tabindex="-1"></a>    cur <span class="ot">&lt;-</span> X[kk, ]</span>
-<span id="cb2-332"><a href="#cb2-332" aria-hidden="true" tabindex="-1"></a>    inside <span class="ot">&lt;-</span> cur[<span class="dv">1</span>] <span class="sc">&gt;=</span> bx<span class="sc">$</span>xlim[<span class="dv">1</span>] <span class="sc">&amp;&amp;</span> cur[<span class="dv">1</span>] <span class="sc">&lt;=</span> bx<span class="sc">$</span>xlim[<span class="dv">2</span>] <span class="sc">&amp;&amp;</span></span>
-<span id="cb2-333"><a href="#cb2-333" aria-hidden="true" tabindex="-1"></a>              cur[<span class="dv">2</span>] <span class="sc">&gt;=</span> bx<span class="sc">$</span>ylim[<span class="dv">1</span>] <span class="sc">&amp;&amp;</span> cur[<span class="dv">2</span>] <span class="sc">&lt;=</span> bx<span class="sc">$</span>ylim[<span class="dv">2</span>]</span>
-<span id="cb2-334"><a href="#cb2-334" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (inside) {</span>
-<span id="cb2-335"><a href="#cb2-335" aria-hidden="true" tabindex="-1"></a>      <span class="do">## Arrow along -grad f (steepest descent), of fixed length on screen.</span></span>
-<span id="cb2-336"><a href="#cb2-336" aria-hidden="true" tabindex="-1"></a>      <span class="do">## The gradient is a covector, so its on-screen components are obtained</span></span>
-<span id="cb2-337"><a href="#cb2-337" aria-hidden="true" tabindex="-1"></a>      <span class="do">## by multiplying by the units-per-inch factors; the box is widened to</span></span>
-<span id="cb2-338"><a href="#cb2-338" aria-hidden="true" tabindex="-1"></a>      <span class="do">## the device aspect ratio, so here the two factors agree anyway.</span></span>
-<span id="cb2-339"><a href="#cb2-339" aria-hidden="true" tabindex="-1"></a>      g <span class="ot">&lt;-</span> <span class="sc">-</span>P<span class="sc">$</span>G[kk, ]</span>
-<span id="cb2-340"><a href="#cb2-340" aria-hidden="true" tabindex="-1"></a>      upi <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">diff</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]) <span class="sc">/</span> <span class="fu">par</span>(<span class="st">"pin"</span>)[<span class="dv">1</span>],</span>
-<span id="cb2-341"><a href="#cb2-341" aria-hidden="true" tabindex="-1"></a>               <span class="fu">diff</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">3</span><span class="sc">:</span><span class="dv">4</span>]) <span class="sc">/</span> <span class="fu">par</span>(<span class="st">"pin"</span>)[<span class="dv">2</span>])</span>
-<span id="cb2-342"><a href="#cb2-342" aria-hidden="true" tabindex="-1"></a>      gs <span class="ot">&lt;-</span> g <span class="sc">*</span> upi</span>
-<span id="cb2-343"><a href="#cb2-343" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>(g<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&gt;</span> <span class="fl">1e-6</span> <span class="sc">&amp;&amp;</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(gs<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
-<span id="cb2-344"><a href="#cb2-344" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="fl">0.45</span> <span class="sc">*</span> gs <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(gs<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">*</span> upi              <span class="co"># 0.45 inch long</span></span>
-<span id="cb2-345"><a href="#cb2-345" aria-hidden="true" tabindex="-1"></a>        <span class="fu">arrows</span>(cur[<span class="dv">1</span>], cur[<span class="dv">2</span>], cur[<span class="dv">1</span>] <span class="sc">+</span> d[<span class="dv">1</span>], cur[<span class="dv">2</span>] <span class="sc">+</span> d[<span class="dv">2</span>],</span>
-<span id="cb2-346"><a href="#cb2-346" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="st">"#E8820C"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">length =</span> <span class="fl">0.09</span>)</span>
-<span id="cb2-347"><a href="#cb2-347" aria-hidden="true" tabindex="-1"></a>      }</span>
-<span id="cb2-348"><a href="#cb2-348" aria-hidden="true" tabindex="-1"></a>      <span class="fu">points</span>(cur[<span class="dv">1</span>], cur[<span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">1.8</span>)</span>
-<span id="cb2-349"><a href="#cb2-349" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
-<span id="cb2-350"><a href="#cb2-350" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"current iterate (%.3g, %.3g) is off the plotted region"</span>,</span>
-<span id="cb2-351"><a href="#cb2-351" aria-hidden="true" tabindex="-1"></a>                    cur[<span class="dv">1</span>], cur[<span class="dv">2</span>]), <span class="at">side =</span> <span class="dv">3</span>, <span class="at">line =</span> <span class="sc">-</span><span class="fl">1.5</span>,</span>
-<span id="cb2-352"><a href="#cb2-352" aria-hidden="true" tabindex="-1"></a>            <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
-<span id="cb2-353"><a href="#cb2-353" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-354"><a href="#cb2-354" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-355"><a href="#cb2-355" aria-hidden="true" tabindex="-1"></a>    leg <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">txt =</span> <span class="fu">c</span>(<span class="st">"current iterate"</span>, <span class="st">"minimum"</span>,</span>
-<span id="cb2-356"><a href="#cb2-356" aria-hidden="true" tabindex="-1"></a>                        <span class="st">"steepest descent (direction)"</span>),</span>
-<span id="cb2-357"><a href="#cb2-357" aria-hidden="true" tabindex="-1"></a>                <span class="at">pch =</span> <span class="fu">c</span>(<span class="dv">21</span>, <span class="dv">3</span>, <span class="cn">NA</span>), <span class="at">bg =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-358"><a href="#cb2-358" aria-hidden="true" tabindex="-1"></a>                <span class="at">lwd =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="dv">2</span>, <span class="dv">3</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="cn">NA</span>, <span class="dv">1</span>),</span>
-<span id="cb2-359"><a href="#cb2-359" aria-hidden="true" tabindex="-1"></a>                <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"black"</span>, <span class="st">"darkgreen"</span>, <span class="st">"#E8820C"</span>))</span>
-<span id="cb2-360"><a href="#cb2-360" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) {</span>
-<span id="cb2-361"><a href="#cb2-361" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>txt <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>txt, <span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>compare])</span>
-<span id="cb2-362"><a href="#cb2-362" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>pch <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>pch, <span class="cn">NA</span>); leg<span class="sc">$</span>bg <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>bg, <span class="cn">NA</span>)</span>
-<span id="cb2-363"><a href="#cb2-363" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>lwd <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>lwd, <span class="dv">2</span>);  leg<span class="sc">$</span>lty <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>lty, <span class="dv">2</span>)</span>
-<span id="cb2-364"><a href="#cb2-364" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>col <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>col, <span class="st">"grey45"</span>)</span>
-<span id="cb2-365"><a href="#cb2-365" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-366"><a href="#cb2-366" aria-hidden="true" tabindex="-1"></a>    <span class="do">## legend under the x axis label, so that it never covers the path</span></span>
-<span id="cb2-367"><a href="#cb2-367" aria-hidden="true" tabindex="-1"></a>    y0 <span class="ot">&lt;-</span> <span class="fu">grconvertY</span>(<span class="fu">grconvertY</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">3</span>], <span class="st">"user"</span>, <span class="st">"inches"</span>) <span class="sc">-</span></span>
-<span id="cb2-368"><a href="#cb2-368" aria-hidden="true" tabindex="-1"></a>                     <span class="fl">3.2</span> <span class="sc">*</span> <span class="fu">par</span>(<span class="st">"csi"</span>), <span class="st">"inches"</span>, <span class="st">"user"</span>)</span>
-<span id="cb2-369"><a href="#cb2-369" aria-hidden="true" tabindex="-1"></a>    <span class="fu">legend</span>(<span class="fu">mean</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]), y0, <span class="at">xjust =</span> <span class="fl">0.5</span>, <span class="at">yjust =</span> <span class="dv">1</span>, <span class="at">xpd =</span> <span class="cn">NA</span>,</span>
-<span id="cb2-370"><a href="#cb2-370" aria-hidden="true" tabindex="-1"></a>           <span class="at">ncol =</span> <span class="dv">2</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
-<span id="cb2-371"><a href="#cb2-371" aria-hidden="true" tabindex="-1"></a>           <span class="at">pch =</span> leg<span class="sc">$</span>pch, <span class="at">pt.bg =</span> leg<span class="sc">$</span>bg, <span class="at">lwd =</span> leg<span class="sc">$</span>lwd, <span class="at">lty =</span> leg<span class="sc">$</span>lty,</span>
-<span id="cb2-372"><a href="#cb2-372" aria-hidden="true" tabindex="-1"></a>           <span class="at">col =</span> leg<span class="sc">$</span>col, <span class="at">legend =</span> leg<span class="sc">$</span>txt)</span>
-<span id="cb2-373"><a href="#cb2-373" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-374"><a href="#cb2-374" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-375"><a href="#cb2-375" aria-hidden="true" tabindex="-1"></a>  <span class="do">## compact numbers: fixed with three decimals, switching to scientific</span></span>
-<span id="cb2-376"><a href="#cb2-376" aria-hidden="true" tabindex="-1"></a>  <span class="do">## for very large or very small values</span></span>
-<span id="cb2-377"><a href="#cb2-377" aria-hidden="true" tabindex="-1"></a>  f3 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(<span class="sc">!</span><span class="fu">is.finite</span>(x), <span class="st">""</span>,</span>
-<span id="cb2-378"><a href="#cb2-378" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ifelse</span>(<span class="fu">abs</span>(x) <span class="sc">&gt;=</span> <span class="fl">1e5</span> <span class="sc">|</span> (x <span class="sc">!=</span> <span class="dv">0</span> <span class="sc">&amp;</span> <span class="fu">abs</span>(x) <span class="sc">&lt;</span> <span class="fl">1e-3</span>),</span>
-<span id="cb2-379"><a href="#cb2-379" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">1</span>),</span>
-<span id="cb2-380"><a href="#cb2-380" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"f"</span>, <span class="at">digits =</span> <span class="dv">3</span>)))</span>
-<span id="cb2-381"><a href="#cb2-381" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-382"><a href="#cb2-382" aria-hidden="true" tabindex="-1"></a>  <span class="do">## why the run ended, shown as one line under the table</span></span>
-<span id="cb2-383"><a href="#cb2-383" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>note <span class="ot">&lt;-</span> <span class="fu">renderUI</span>({</span>
-<span id="cb2-384"><a href="#cb2-384" aria-hidden="true" tabindex="-1"></a>    P <span class="ot">&lt;-</span> <span class="fu">path</span>(); RP <span class="ot">&lt;-</span> <span class="fu">ref</span>()</span>
-<span id="cb2-385"><a href="#cb2-385" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span> <span class="sc">&lt;</span> P<span class="sc">$</span>n) <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
-<span id="cb2-386"><a href="#cb2-386" aria-hidden="true" tabindex="-1"></a>    <span class="fu">HTML</span>(<span class="fu">paste0</span>(<span class="st">"&lt;i&gt;"</span>, P<span class="sc">$</span>note,</span>
-<span id="cb2-387"><a href="#cb2-387" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) <span class="fu">paste0</span>(<span class="st">"; "</span>, <span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>compare],</span>
-<span id="cb2-388"><a href="#cb2-388" aria-hidden="true" tabindex="-1"></a>                                         <span class="st">": "</span>, RP<span class="sc">$</span>note, <span class="st">" after "</span>, RP<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>,</span>
-<span id="cb2-389"><a href="#cb2-389" aria-hidden="true" tabindex="-1"></a>                                         <span class="st">" iterations"</span>),</span>
-<span id="cb2-390"><a href="#cb2-390" aria-hidden="true" tabindex="-1"></a>                <span class="st">"&lt;/i&gt;"</span>))</span>
-<span id="cb2-391"><a href="#cb2-391" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb2-392"><a href="#cb2-392" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-393"><a href="#cb2-393" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>tab <span class="ot">&lt;-</span> <span class="fu">renderTable</span>({</span>
-<span id="cb2-394"><a href="#cb2-394" aria-hidden="true" tabindex="-1"></a>    P <span class="ot">&lt;-</span> <span class="fu">path</span>(); kk <span class="ot">&lt;-</span> <span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>L</span>
-<span id="cb2-395"><a href="#cb2-395" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the step length that led to each iterate (none for the start)</span></span>
-<span id="cb2-396"><a href="#cb2-396" aria-hidden="true" tabindex="-1"></a>    a_in <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="cn">NA</span>, P<span class="sc">$</span>A)[<span class="fu">seq_len</span>(P<span class="sc">$</span>n)]</span>
-<span id="cb2-397"><a href="#cb2-397" aria-hidden="true" tabindex="-1"></a>    i <span class="ot">&lt;-</span> <span class="fu">seq_len</span>(kk)</span>
-<span id="cb2-398"><a href="#cb2-398" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">iteration =</span> <span class="fu">as.character</span>(i <span class="sc">-</span> <span class="dv">1</span>),</span>
-<span id="cb2-399"><a href="#cb2-399" aria-hidden="true" tabindex="-1"></a>                    <span class="at">x1 =</span> <span class="fu">f3</span>(P<span class="sc">$</span>X[i, <span class="dv">1</span>]), <span class="at">x2 =</span> <span class="fu">f3</span>(P<span class="sc">$</span>X[i, <span class="dv">2</span>]),</span>
-<span id="cb2-400"><a href="#cb2-400" aria-hidden="true" tabindex="-1"></a>                    <span class="at">f =</span> <span class="fu">f3</span>(P<span class="sc">$</span>F[i]),</span>
-<span id="cb2-401"><a href="#cb2-401" aria-hidden="true" tabindex="-1"></a>                    <span class="st">`</span><span class="at">||grad||</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">f3</span>(<span class="fu">sqrt</span>(<span class="fu">rowSums</span>(P<span class="sc">$</span>G[i, , <span class="at">drop =</span> <span class="cn">FALSE</span>]<span class="sc">^</span><span class="dv">2</span>))),</span>
-<span id="cb2-402"><a href="#cb2-402" aria-hidden="true" tabindex="-1"></a>                    <span class="at">step =</span> <span class="fu">f3</span>(a_in[i]),</span>
-<span id="cb2-403"><a href="#cb2-403" aria-hidden="true" tabindex="-1"></a>                    <span class="at">check.names =</span> <span class="cn">FALSE</span>, <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb2-404"><a href="#cb2-404" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tail</span>(d, <span class="dv">5</span>)</span>
-<span id="cb2-405"><a href="#cb2-405" aria-hidden="true" tabindex="-1"></a>  }, <span class="at">rownames =</span> <span class="cn">FALSE</span>, <span class="at">align =</span> <span class="st">"r"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)</span>
-<span id="cb2-406"><a href="#cb2-406" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-407"><a href="#cb2-407" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-408"><a href="#cb2-408" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-331"><a href="#cb2-331" aria-hidden="true" tabindex="-1"></a>  <span class="do">## current iteration, clamped to the length of the path</span></span>
+<span id="cb2-332"><a href="#cb2-332" aria-hidden="true" tabindex="-1"></a>  k <span class="ot">&lt;-</span> <span class="fu">reactive</span>(<span class="fu">min</span>(<span class="fu">as.integer</span>(input<span class="sc">$</span>k), <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>))</span>
+<span id="cb2-333"><a href="#cb2-333" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-334"><a href="#cb2-334" aria-hidden="true" tabindex="-1"></a>  <span class="do">## a new path restarts the display at iteration 0</span></span>
+<span id="cb2-335"><a href="#cb2-335" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(<span class="fu">path</span>(), {</span>
+<span id="cb2-336"><a href="#cb2-336" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">max =</span> <span class="fu">max</span>(<span class="dv">1</span>, <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>), <span class="at">value =</span> <span class="dv">0</span>)</span>
+<span id="cb2-337"><a href="#cb2-337" aria-hidden="true" tabindex="-1"></a>    <span class="fu">playing</span>(<span class="fu">isTRUE</span>(input<span class="sc">$</span>autoplay) <span class="sc">&amp;&amp;</span> <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">&gt;</span> <span class="dv">1</span>)</span>
+<span id="cb2-338"><a href="#cb2-338" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-339"><a href="#cb2-339" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-340"><a href="#cb2-340" aria-hidden="true" tabindex="-1"></a>  go_to <span class="ot">&lt;-</span> <span class="cf">function</span>(i) {</span>
+<span id="cb2-341"><a href="#cb2-341" aria-hidden="true" tabindex="-1"></a>    <span class="fu">updateSliderInput</span>(session, <span class="st">"k"</span>, <span class="at">value =</span> <span class="fu">max</span>(<span class="dv">0</span>, <span class="fu">min</span>(i, <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>)))</span>
+<span id="cb2-342"><a href="#cb2-342" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb2-343"><a href="#cb2-343" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-344"><a href="#cb2-344" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>play, {</span>
+<span id="cb2-345"><a href="#cb2-345" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">k</span>() <span class="sc">&gt;=</span> <span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>) <span class="fu">go_to</span>(<span class="dv">0</span>)</span>
+<span id="cb2-346"><a href="#cb2-346" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">playing</span>(<span class="cn">TRUE</span>)</span>
+<span id="cb2-347"><a href="#cb2-347" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-348"><a href="#cb2-348" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>pause, <span class="fu">playing</span>(<span class="cn">FALSE</span>))</span>
+<span id="cb2-349"><a href="#cb2-349" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>step,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>) })</span>
+<span id="cb2-350"><a href="#cb2-350" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>back,  { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">k</span>() <span class="sc">-</span> <span class="dv">1</span>) })</span>
+<span id="cb2-351"><a href="#cb2-351" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>first, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="dv">0</span>) })</span>
+<span id="cb2-352"><a href="#cb2-352" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observeEvent</span>(input<span class="sc">$</span>toend, { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">go_to</span>(<span class="fu">path</span>()<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>) })</span>
+<span id="cb2-353"><a href="#cb2-353" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-354"><a href="#cb2-354" aria-hidden="true" tabindex="-1"></a>  <span class="fu">observe</span>({</span>
+<span id="cb2-355"><a href="#cb2-355" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">isTRUE</span>(<span class="fu">playing</span>())) <span class="fu">return</span>()</span>
+<span id="cb2-356"><a href="#cb2-356" aria-hidden="true" tabindex="-1"></a>    kk <span class="ot">&lt;-</span> <span class="fu">isolate</span>(<span class="fu">k</span>())</span>
+<span id="cb2-357"><a href="#cb2-357" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (kk <span class="sc">&gt;=</span> <span class="fu">isolate</span>(<span class="fu">path</span>()<span class="sc">$</span>n) <span class="sc">-</span> <span class="dv">1</span>) { <span class="fu">playing</span>(<span class="cn">FALSE</span>); <span class="fu">return</span>() }</span>
+<span id="cb2-358"><a href="#cb2-358" aria-hidden="true" tabindex="-1"></a>    <span class="fu">invalidateLater</span>(play_ms, session)</span>
+<span id="cb2-359"><a href="#cb2-359" aria-hidden="true" tabindex="-1"></a>    <span class="fu">isolate</span>(<span class="fu">go_to</span>(kk <span class="sc">+</span> <span class="dv">1</span>))</span>
+<span id="cb2-360"><a href="#cb2-360" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-361"><a href="#cb2-361" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-362"><a href="#cb2-362" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>contour <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-363"><a href="#cb2-363" aria-hidden="true" tabindex="-1"></a>    FNc <span class="ot">&lt;-</span> <span class="fu">FN</span>(); P <span class="ot">&lt;-</span> <span class="fu">path</span>(); RP <span class="ot">&lt;-</span> <span class="fu">ref</span>(); kk <span class="ot">&lt;-</span> <span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>L</span>
+<span id="cb2-364"><a href="#cb2-364" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-365"><a href="#cb2-365" aria-hidden="true" tabindex="-1"></a>    <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))                 <span class="co"># room for the legend below</span></span>
+<span id="cb2-366"><a href="#cb2-366" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot.new</span>()</span>
+<span id="cb2-367"><a href="#cb2-367" aria-hidden="true" tabindex="-1"></a>    bx <span class="ot">&lt;-</span> <span class="fu">expand_box</span>(FNc<span class="sc">$</span>xlim, FNc<span class="sc">$</span>ylim, <span class="fu">par</span>(<span class="st">"pin"</span>))</span>
+<span id="cb2-368"><a href="#cb2-368" aria-hidden="true" tabindex="-1"></a>    <span class="fu">plot.window</span>(<span class="at">xlim =</span> bx<span class="sc">$</span>xlim, <span class="at">ylim =</span> bx<span class="sc">$</span>ylim, <span class="at">xaxs =</span> <span class="st">"i"</span>, <span class="at">yaxs =</span> <span class="st">"i"</span>)</span>
+<span id="cb2-369"><a href="#cb2-369" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-370"><a href="#cb2-370" aria-hidden="true" tabindex="-1"></a>    xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(bx<span class="sc">$</span>xlim[<span class="dv">1</span>], bx<span class="sc">$</span>xlim[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">180</span>)</span>
+<span id="cb2-371"><a href="#cb2-371" aria-hidden="true" tabindex="-1"></a>    ys <span class="ot">&lt;-</span> <span class="fu">seq</span>(bx<span class="sc">$</span>ylim[<span class="dv">1</span>], bx<span class="sc">$</span>ylim[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">180</span>)</span>
+<span id="cb2-372"><a href="#cb2-372" aria-hidden="true" tabindex="-1"></a>    z  <span class="ot">&lt;-</span> <span class="fu">outer</span>(xs, ys, FNc<span class="sc">$</span>fv)</span>
+<span id="cb2-373"><a href="#cb2-373" aria-hidden="true" tabindex="-1"></a>    zf <span class="ot">&lt;-</span> z[<span class="fu">is.finite</span>(z)]</span>
+<span id="cb2-374"><a href="#cb2-374" aria-hidden="true" tabindex="-1"></a>    lv <span class="ot">&lt;-</span> <span class="fu">unique</span>(<span class="fu">quantile</span>(zf, <span class="at">probs =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="at">length.out =</span> <span class="dv">30</span>)<span class="sc">^</span><span class="fl">1.7</span>))</span>
+<span id="cb2-375"><a href="#cb2-375" aria-hidden="true" tabindex="-1"></a>    <span class="fu">contour</span>(xs, ys, z, <span class="at">levels =</span> lv, <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">col =</span> <span class="st">"grey70"</span>,</span>
+<span id="cb2-376"><a href="#cb2-376" aria-hidden="true" tabindex="-1"></a>            <span class="at">drawlabels =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-377"><a href="#cb2-377" aria-hidden="true" tabindex="-1"></a>    <span class="fu">axis</span>(<span class="dv">1</span>); <span class="fu">axis</span>(<span class="dv">2</span>); <span class="fu">box</span>()</span>
+<span id="cb2-378"><a href="#cb2-378" aria-hidden="true" tabindex="-1"></a>    <span class="fu">title</span>(<span class="at">main =</span> <span class="fu">paste0</span>(<span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>alg], <span class="st">" on "</span>,</span>
+<span id="cb2-379"><a href="#cb2-379" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">sub</span>(<span class="st">"^</span><span class="sc">\\</span><span class="st">([a-f]</span><span class="sc">\\</span><span class="st">) "</span>, <span class="st">""</span>, FNc<span class="sc">$</span>label)),</span>
+<span id="cb2-380"><a href="#cb2-380" aria-hidden="true" tabindex="-1"></a>          <span class="at">xlab =</span> <span class="fu">expression</span>(x[<span class="dv">1</span>]), <span class="at">ylab =</span> <span class="fu">expression</span>(x[<span class="dv">2</span>]), <span class="at">cex.main =</span> <span class="dv">1</span>)</span>
+<span id="cb2-381"><a href="#cb2-381" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(FNc<span class="sc">$</span>xstar[, <span class="dv">1</span>], FNc<span class="sc">$</span>xstar[, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"darkgreen"</span>,</span>
+<span id="cb2-382"><a href="#cb2-382" aria-hidden="true" tabindex="-1"></a>           <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">cex =</span> <span class="fl">1.2</span>)</span>
+<span id="cb2-383"><a href="#cb2-383" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-384"><a href="#cb2-384" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the comparison path, drawn underneath</span></span>
+<span id="cb2-385"><a href="#cb2-385" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) {</span>
+<span id="cb2-386"><a href="#cb2-386" aria-hidden="true" tabindex="-1"></a>      Q <span class="ot">&lt;-</span> RP<span class="sc">$</span>X[<span class="fu">seq_len</span>(<span class="fu">min</span>(kk, RP<span class="sc">$</span>n)), , drop <span class="ot">=</span> <span class="cn">FALSE</span>]</span>
+<span id="cb2-387"><a href="#cb2-387" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">nrow</span>(Q) <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">lines</span>(Q[, <span class="dv">1</span>], Q[, <span class="dv">2</span>], <span class="at">col =</span> <span class="st">"grey45"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb2-388"><a href="#cb2-388" aria-hidden="true" tabindex="-1"></a>      <span class="fu">points</span>(Q[, <span class="dv">1</span>], Q[, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"grey85"</span>, <span class="at">col =</span> <span class="st">"grey45"</span>,</span>
+<span id="cb2-389"><a href="#cb2-389" aria-hidden="true" tabindex="-1"></a>             <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
+<span id="cb2-390"><a href="#cb2-390" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-391"><a href="#cb2-391" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-392"><a href="#cb2-392" aria-hidden="true" tabindex="-1"></a>    X <span class="ot">&lt;-</span> P<span class="sc">$</span>X</span>
+<span id="cb2-393"><a href="#cb2-393" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (kk <span class="sc">&gt;</span> <span class="dv">1</span>) <span class="fu">lines</span>(X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">1</span>], X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">2</span>], <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb2-394"><a href="#cb2-394" aria-hidden="true" tabindex="-1"></a>    <span class="fu">points</span>(X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">1</span>], X[<span class="dv">1</span><span class="sc">:</span>kk, <span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"steelblue"</span>, <span class="at">cex =</span> <span class="fl">1.1</span>)</span>
+<span id="cb2-395"><a href="#cb2-395" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-396"><a href="#cb2-396" aria-hidden="true" tabindex="-1"></a>    cur <span class="ot">&lt;-</span> X[kk, ]</span>
+<span id="cb2-397"><a href="#cb2-397" aria-hidden="true" tabindex="-1"></a>    inside <span class="ot">&lt;-</span> cur[<span class="dv">1</span>] <span class="sc">&gt;=</span> bx<span class="sc">$</span>xlim[<span class="dv">1</span>] <span class="sc">&amp;&amp;</span> cur[<span class="dv">1</span>] <span class="sc">&lt;=</span> bx<span class="sc">$</span>xlim[<span class="dv">2</span>] <span class="sc">&amp;&amp;</span></span>
+<span id="cb2-398"><a href="#cb2-398" aria-hidden="true" tabindex="-1"></a>              cur[<span class="dv">2</span>] <span class="sc">&gt;=</span> bx<span class="sc">$</span>ylim[<span class="dv">1</span>] <span class="sc">&amp;&amp;</span> cur[<span class="dv">2</span>] <span class="sc">&lt;=</span> bx<span class="sc">$</span>ylim[<span class="dv">2</span>]</span>
+<span id="cb2-399"><a href="#cb2-399" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (inside) {</span>
+<span id="cb2-400"><a href="#cb2-400" aria-hidden="true" tabindex="-1"></a>      <span class="do">## Arrow along -grad f (steepest descent), of fixed length on screen.</span></span>
+<span id="cb2-401"><a href="#cb2-401" aria-hidden="true" tabindex="-1"></a>      <span class="do">## The gradient is a covector, so its on-screen components are obtained</span></span>
+<span id="cb2-402"><a href="#cb2-402" aria-hidden="true" tabindex="-1"></a>      <span class="do">## by multiplying by the units-per-inch factors; the box is widened to</span></span>
+<span id="cb2-403"><a href="#cb2-403" aria-hidden="true" tabindex="-1"></a>      <span class="do">## the device aspect ratio, so here the two factors agree anyway.</span></span>
+<span id="cb2-404"><a href="#cb2-404" aria-hidden="true" tabindex="-1"></a>      g <span class="ot">&lt;-</span> <span class="sc">-</span>P<span class="sc">$</span>G[kk, ]</span>
+<span id="cb2-405"><a href="#cb2-405" aria-hidden="true" tabindex="-1"></a>      upi <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">diff</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]) <span class="sc">/</span> <span class="fu">par</span>(<span class="st">"pin"</span>)[<span class="dv">1</span>],</span>
+<span id="cb2-406"><a href="#cb2-406" aria-hidden="true" tabindex="-1"></a>               <span class="fu">diff</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">3</span><span class="sc">:</span><span class="dv">4</span>]) <span class="sc">/</span> <span class="fu">par</span>(<span class="st">"pin"</span>)[<span class="dv">2</span>])</span>
+<span id="cb2-407"><a href="#cb2-407" aria-hidden="true" tabindex="-1"></a>      gs <span class="ot">&lt;-</span> g <span class="sc">*</span> upi</span>
+<span id="cb2-408"><a href="#cb2-408" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">sqrt</span>(<span class="fu">sum</span>(g<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&gt;</span> <span class="fl">1e-6</span> <span class="sc">&amp;&amp;</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(gs<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
+<span id="cb2-409"><a href="#cb2-409" aria-hidden="true" tabindex="-1"></a>        d <span class="ot">&lt;-</span> <span class="fl">0.45</span> <span class="sc">*</span> gs <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="fu">sum</span>(gs<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">*</span> upi              <span class="co"># 0.45 inch long</span></span>
+<span id="cb2-410"><a href="#cb2-410" aria-hidden="true" tabindex="-1"></a>        <span class="fu">arrows</span>(cur[<span class="dv">1</span>], cur[<span class="dv">2</span>], cur[<span class="dv">1</span>] <span class="sc">+</span> d[<span class="dv">1</span>], cur[<span class="dv">2</span>] <span class="sc">+</span> d[<span class="dv">2</span>],</span>
+<span id="cb2-411"><a href="#cb2-411" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="st">"#E8820C"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">length =</span> <span class="fl">0.09</span>)</span>
+<span id="cb2-412"><a href="#cb2-412" aria-hidden="true" tabindex="-1"></a>      }</span>
+<span id="cb2-413"><a href="#cb2-413" aria-hidden="true" tabindex="-1"></a>      <span class="fu">points</span>(cur[<span class="dv">1</span>], cur[<span class="dv">2</span>], <span class="at">pch =</span> <span class="dv">21</span>, <span class="at">bg =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">1.8</span>)</span>
+<span id="cb2-414"><a href="#cb2-414" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb2-415"><a href="#cb2-415" aria-hidden="true" tabindex="-1"></a>      <span class="fu">mtext</span>(<span class="fu">sprintf</span>(<span class="st">"current iterate (%.3g, %.3g) is off the plotted region"</span>,</span>
+<span id="cb2-416"><a href="#cb2-416" aria-hidden="true" tabindex="-1"></a>                    cur[<span class="dv">1</span>], cur[<span class="dv">2</span>]), <span class="at">side =</span> <span class="dv">3</span>, <span class="at">line =</span> <span class="sc">-</span><span class="fl">1.5</span>,</span>
+<span id="cb2-417"><a href="#cb2-417" aria-hidden="true" tabindex="-1"></a>            <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
+<span id="cb2-418"><a href="#cb2-418" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-419"><a href="#cb2-419" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-420"><a href="#cb2-420" aria-hidden="true" tabindex="-1"></a>    leg <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">txt =</span> <span class="fu">c</span>(<span class="st">"current iterate"</span>, <span class="st">"minimum"</span>,</span>
+<span id="cb2-421"><a href="#cb2-421" aria-hidden="true" tabindex="-1"></a>                        <span class="st">"steepest descent (direction)"</span>),</span>
+<span id="cb2-422"><a href="#cb2-422" aria-hidden="true" tabindex="-1"></a>                <span class="at">pch =</span> <span class="fu">c</span>(<span class="dv">21</span>, <span class="dv">3</span>, <span class="cn">NA</span>), <span class="at">bg =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
+<span id="cb2-423"><a href="#cb2-423" aria-hidden="true" tabindex="-1"></a>                <span class="at">lwd =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="dv">2</span>, <span class="dv">3</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="cn">NA</span>, <span class="dv">1</span>),</span>
+<span id="cb2-424"><a href="#cb2-424" aria-hidden="true" tabindex="-1"></a>                <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"black"</span>, <span class="st">"darkgreen"</span>, <span class="st">"#E8820C"</span>))</span>
+<span id="cb2-425"><a href="#cb2-425" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) {</span>
+<span id="cb2-426"><a href="#cb2-426" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>txt <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>txt, <span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>compare])</span>
+<span id="cb2-427"><a href="#cb2-427" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>pch <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>pch, <span class="cn">NA</span>); leg<span class="sc">$</span>bg <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>bg, <span class="cn">NA</span>)</span>
+<span id="cb2-428"><a href="#cb2-428" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>lwd <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>lwd, <span class="dv">2</span>);  leg<span class="sc">$</span>lty <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>lty, <span class="dv">2</span>)</span>
+<span id="cb2-429"><a href="#cb2-429" aria-hidden="true" tabindex="-1"></a>      leg<span class="sc">$</span>col <span class="ot">&lt;-</span> <span class="fu">c</span>(leg<span class="sc">$</span>col, <span class="st">"grey45"</span>)</span>
+<span id="cb2-430"><a href="#cb2-430" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-431"><a href="#cb2-431" aria-hidden="true" tabindex="-1"></a>    <span class="do">## legend under the x axis label, so that it never covers the path</span></span>
+<span id="cb2-432"><a href="#cb2-432" aria-hidden="true" tabindex="-1"></a>    y0 <span class="ot">&lt;-</span> <span class="fu">grconvertY</span>(<span class="fu">grconvertY</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">3</span>], <span class="st">"user"</span>, <span class="st">"inches"</span>) <span class="sc">-</span></span>
+<span id="cb2-433"><a href="#cb2-433" aria-hidden="true" tabindex="-1"></a>                     <span class="fl">3.2</span> <span class="sc">*</span> <span class="fu">par</span>(<span class="st">"csi"</span>), <span class="st">"inches"</span>, <span class="st">"user"</span>)</span>
+<span id="cb2-434"><a href="#cb2-434" aria-hidden="true" tabindex="-1"></a>    <span class="fu">legend</span>(<span class="fu">mean</span>(<span class="fu">par</span>(<span class="st">"usr"</span>)[<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>]), y0, <span class="at">xjust =</span> <span class="fl">0.5</span>, <span class="at">yjust =</span> <span class="dv">1</span>, <span class="at">xpd =</span> <span class="cn">NA</span>,</span>
+<span id="cb2-435"><a href="#cb2-435" aria-hidden="true" tabindex="-1"></a>           <span class="at">ncol =</span> <span class="dv">2</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-436"><a href="#cb2-436" aria-hidden="true" tabindex="-1"></a>           <span class="at">pch =</span> leg<span class="sc">$</span>pch, <span class="at">pt.bg =</span> leg<span class="sc">$</span>bg, <span class="at">lwd =</span> leg<span class="sc">$</span>lwd, <span class="at">lty =</span> leg<span class="sc">$</span>lty,</span>
+<span id="cb2-437"><a href="#cb2-437" aria-hidden="true" tabindex="-1"></a>           <span class="at">col =</span> leg<span class="sc">$</span>col, <span class="at">legend =</span> leg<span class="sc">$</span>txt)</span>
+<span id="cb2-438"><a href="#cb2-438" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-439"><a href="#cb2-439" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-440"><a href="#cb2-440" aria-hidden="true" tabindex="-1"></a>  <span class="do">## compact numbers: fixed with three decimals, switching to scientific</span></span>
+<span id="cb2-441"><a href="#cb2-441" aria-hidden="true" tabindex="-1"></a>  <span class="do">## for very large or very small values</span></span>
+<span id="cb2-442"><a href="#cb2-442" aria-hidden="true" tabindex="-1"></a>  f3 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(<span class="sc">!</span><span class="fu">is.finite</span>(x), <span class="st">""</span>,</span>
+<span id="cb2-443"><a href="#cb2-443" aria-hidden="true" tabindex="-1"></a>          <span class="fu">ifelse</span>(<span class="fu">abs</span>(x) <span class="sc">&gt;=</span> <span class="fl">1e5</span> <span class="sc">|</span> (x <span class="sc">!=</span> <span class="dv">0</span> <span class="sc">&amp;</span> <span class="fu">abs</span>(x) <span class="sc">&lt;</span> <span class="fl">1e-3</span>),</span>
+<span id="cb2-444"><a href="#cb2-444" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"e"</span>, <span class="at">digits =</span> <span class="dv">1</span>),</span>
+<span id="cb2-445"><a href="#cb2-445" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"f"</span>, <span class="at">digits =</span> <span class="dv">3</span>)))</span>
+<span id="cb2-446"><a href="#cb2-446" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-447"><a href="#cb2-447" aria-hidden="true" tabindex="-1"></a>  <span class="do">## why the run ended, shown as one line under the table</span></span>
+<span id="cb2-448"><a href="#cb2-448" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>note <span class="ot">&lt;-</span> <span class="fu">renderUI</span>({</span>
+<span id="cb2-449"><a href="#cb2-449" aria-hidden="true" tabindex="-1"></a>    P <span class="ot">&lt;-</span> <span class="fu">path</span>(); RP <span class="ot">&lt;-</span> <span class="fu">ref</span>()</span>
+<span id="cb2-450"><a href="#cb2-450" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span> <span class="sc">&lt;</span> P<span class="sc">$</span>n) <span class="fu">return</span>(<span class="cn">NULL</span>)</span>
+<span id="cb2-451"><a href="#cb2-451" aria-hidden="true" tabindex="-1"></a>    <span class="fu">HTML</span>(<span class="fu">paste0</span>(<span class="st">"&lt;i&gt;"</span>, P<span class="sc">$</span>note,</span>
+<span id="cb2-452"><a href="#cb2-452" aria-hidden="true" tabindex="-1"></a>                <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(RP)) <span class="fu">paste0</span>(<span class="st">"; "</span>, <span class="fu">names</span>(ALGS)[ALGS <span class="sc">==</span> input<span class="sc">$</span>compare],</span>
+<span id="cb2-453"><a href="#cb2-453" aria-hidden="true" tabindex="-1"></a>                                         <span class="st">": "</span>, RP<span class="sc">$</span>note, <span class="st">" after "</span>, RP<span class="sc">$</span>n <span class="sc">-</span> <span class="dv">1</span>,</span>
+<span id="cb2-454"><a href="#cb2-454" aria-hidden="true" tabindex="-1"></a>                                         <span class="st">" iterations"</span>),</span>
+<span id="cb2-455"><a href="#cb2-455" aria-hidden="true" tabindex="-1"></a>                <span class="st">"&lt;/i&gt;"</span>))</span>
+<span id="cb2-456"><a href="#cb2-456" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb2-457"><a href="#cb2-457" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-458"><a href="#cb2-458" aria-hidden="true" tabindex="-1"></a>  output<span class="sc">$</span>tab <span class="ot">&lt;-</span> <span class="fu">renderTable</span>({</span>
+<span id="cb2-459"><a href="#cb2-459" aria-hidden="true" tabindex="-1"></a>    P <span class="ot">&lt;-</span> <span class="fu">path</span>(); kk <span class="ot">&lt;-</span> <span class="fu">k</span>() <span class="sc">+</span> <span class="dv">1</span>L</span>
+<span id="cb2-460"><a href="#cb2-460" aria-hidden="true" tabindex="-1"></a>    <span class="do">## the step length that led to each iterate (none for the start)</span></span>
+<span id="cb2-461"><a href="#cb2-461" aria-hidden="true" tabindex="-1"></a>    a_in <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="cn">NA</span>, P<span class="sc">$</span>A)[<span class="fu">seq_len</span>(P<span class="sc">$</span>n)]</span>
+<span id="cb2-462"><a href="#cb2-462" aria-hidden="true" tabindex="-1"></a>    i <span class="ot">&lt;-</span> <span class="fu">seq_len</span>(kk)</span>
+<span id="cb2-463"><a href="#cb2-463" aria-hidden="true" tabindex="-1"></a>    d <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">iteration =</span> <span class="fu">as.character</span>(i <span class="sc">-</span> <span class="dv">1</span>),</span>
+<span id="cb2-464"><a href="#cb2-464" aria-hidden="true" tabindex="-1"></a>                    <span class="at">x1 =</span> <span class="fu">f3</span>(P<span class="sc">$</span>X[i, <span class="dv">1</span>]), <span class="at">x2 =</span> <span class="fu">f3</span>(P<span class="sc">$</span>X[i, <span class="dv">2</span>]),</span>
+<span id="cb2-465"><a href="#cb2-465" aria-hidden="true" tabindex="-1"></a>                    <span class="at">f =</span> <span class="fu">f3</span>(P<span class="sc">$</span>F[i]),</span>
+<span id="cb2-466"><a href="#cb2-466" aria-hidden="true" tabindex="-1"></a>                    <span class="st">`</span><span class="at">||grad||</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">f3</span>(<span class="fu">sqrt</span>(<span class="fu">rowSums</span>(P<span class="sc">$</span>G[i, , <span class="at">drop =</span> <span class="cn">FALSE</span>]<span class="sc">^</span><span class="dv">2</span>))),</span>
+<span id="cb2-467"><a href="#cb2-467" aria-hidden="true" tabindex="-1"></a>                    <span class="at">step =</span> <span class="fu">f3</span>(a_in[i]),</span>
+<span id="cb2-468"><a href="#cb2-468" aria-hidden="true" tabindex="-1"></a>                    <span class="at">check.names =</span> <span class="cn">FALSE</span>, <span class="at">stringsAsFactors =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-469"><a href="#cb2-469" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tail</span>(d, <span class="dv">5</span>)</span>
+<span id="cb2-470"><a href="#cb2-470" aria-hidden="true" tabindex="-1"></a>  }, <span class="at">rownames =</span> <span class="cn">FALSE</span>, <span class="at">align =</span> <span class="st">"r"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)</span>
+<span id="cb2-471"><a href="#cb2-471" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-472"><a href="#cb2-472" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-473"><a href="#cb2-473" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 </div>
