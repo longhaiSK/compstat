@@ -312,6 +312,10 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
 row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
+## learning rates on a roughly logarithmic grid (rates need to range over orders of magnitude)
+LRGRID <- c(1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1)
+LRCHOICES <- setNames(as.character(LRGRID), format(LRGRID, scientific = FALSE, drop0trailing = TRUE))
+
 ## one optimizer: its menu, then the parameters that belong to the chosen method
 opt_row <- function(s, selected, col, none = FALSE) {
   a <- paste0("input.alg", s)
@@ -326,8 +330,8 @@ opt_row <- function(s, selected, col, none = FALSE) {
     column(8,
       conditionalPanel(has_lr,
         div(class = "steprule",
-          div(sliderInput(paste0("lr", s), "Learning rate (first step if line search)",
-                          min = 0.005, max = 1, value = 0.3, step = 0.005, width = "100%")),
+          div(selectInput(paste0("lr", s), "Learning rate (first step if line search)",
+                          choices = LRCHOICES, selected = "0.3", width = "100%")),
           conditionalPanel(paste0(a, " == 'mom'"),
             div(sliderInput(paste0("mom", s), "Momentum", min = 0, max = 0.99,
                             value = 0.9, step = 0.01, width = "100%"))),
@@ -470,11 +474,18 @@ server <- function(input, output, session) {
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
+  ## a sensible learning rate for the method and the scale of x: the curvature in a slope
+  ## weight grows like s^2, and Adam's step is measured in the weight, which shrinks like 1 / s
   for (s in c("A", "B")) local({
     s <- s
-    observeEvent(input[[paste0("alg", s)]], {
-      lr0 <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[input[[paste0("alg", s)]]]
-      if (!is.na(lr0)) updateSliderInput(session, paste0("lr", s), value = unname(lr0))
+    observeEvent(list(input[[paste0("alg", s)]], input$xscale), {
+      a <- input[[paste0("alg", s)]]
+      base <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[a]
+      if (!is.null(a) && !is.na(base)) {
+        v <- unname(base) / xsc()^(if (a == "adam") 1 else 2)
+        r <- LRGRID[which.min(abs(log(LRGRID) - log(v)))]
+        updateSelectInput(session, paste0("lr", s), selected = as.character(r))
+      }
     })
   })
   observeEvent(input$setzero, theta0(rep(0, NP)))
@@ -498,6 +509,11 @@ server <- function(input, output, session) {
   xsc <- reactive(if (is.null(input$xscale)) 1 else as.numeric(input$xscale))
   TT <- reactive({ th <- TRUE_THETA; th[1:J] <- th[1:J] / xsc(); th })
   observeEvent(input$settrue, theta0(TT()))
+  ## a new scale of x keeps the starting curve: the slope weights change with it
+  xprev <- reactiveVal(1)
+  observeEvent(input$xscale, {
+    th <- theta0(); th[1:J] <- th[1:J] * xprev() / xsc(); xprev(xsc()); theta0(th)
+  }, ignoreInit = TRUE)
   DAT <- reactive({
     D <- make_data(input$n, as.numeric(input$sigma), dseed())
     D$x <- D$x * xsc()
@@ -510,7 +526,7 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
-            lr  = if (fixed) input[[paste0("lr", s)]] else NA,
+            lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
   })
@@ -688,7 +704,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 *Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
 
-**Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to the most sensitive weight, while Adam, which rescales each weight separately, is much less affected. Try 10 or 100 with momentum against Adam, and with **True Value** as the start. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
+**Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$); raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
@@ -1004,6 +1020,10 @@ ctrl_btn <- function(id, icon_name, title, class = "btn-default")
 row_label <- function(txt)
   column(1, div(style = "padding-top: 28px;", tags$b(txt)))
 
+## learning rates on a roughly logarithmic grid (rates need to range over orders of magnitude)
+LRGRID <- c(1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3, 0.01, 0.03, 0.1, 0.3, 1)
+LRCHOICES <- setNames(as.character(LRGRID), format(LRGRID, scientific = FALSE, drop0trailing = TRUE))
+
 ## one optimizer: its menu, then the parameters that belong to the chosen method
 opt_row <- function(s, selected, col, none = FALSE) {
   a <- paste0("input.alg", s)
@@ -1018,8 +1038,8 @@ opt_row <- function(s, selected, col, none = FALSE) {
     column(8,
       conditionalPanel(has_lr,
         div(class = "steprule",
-          div(sliderInput(paste0("lr", s), "Learning rate (first step if line search)",
-                          min = 0.005, max = 1, value = 0.3, step = 0.005, width = "100%")),
+          div(selectInput(paste0("lr", s), "Learning rate (first step if line search)",
+                          choices = LRCHOICES, selected = "0.3", width = "100%")),
           conditionalPanel(paste0(a, " == 'mom'"),
             div(sliderInput(paste0("mom", s), "Momentum", min = 0, max = 0.99,
                             value = 0.9, step = 0.01, width = "100%"))),
@@ -1162,11 +1182,18 @@ server <- function(input, output, session) {
 
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
+  ## a sensible learning rate for the method and the scale of x: the curvature in a slope
+  ## weight grows like s^2, and Adam's step is measured in the weight, which shrinks like 1 / s
   for (s in c("A", "B")) local({
     s <- s
-    observeEvent(input[[paste0("alg", s)]], {
-      lr0 <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[input[[paste0("alg", s)]]]
-      if (!is.na(lr0)) updateSliderInput(session, paste0("lr", s), value = unname(lr0))
+    observeEvent(list(input[[paste0("alg", s)]], input$xscale), {
+      a <- input[[paste0("alg", s)]]
+      base <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[a]
+      if (!is.null(a) && !is.na(base)) {
+        v <- unname(base) / xsc()^(if (a == "adam") 1 else 2)
+        r <- LRGRID[which.min(abs(log(LRGRID) - log(v)))]
+        updateSelectInput(session, paste0("lr", s), selected = as.character(r))
+      }
     })
   })
   observeEvent(input$setzero, theta0(rep(0, NP)))
@@ -1190,6 +1217,11 @@ server <- function(input, output, session) {
   xsc <- reactive(if (is.null(input$xscale)) 1 else as.numeric(input$xscale))
   TT <- reactive({ th <- TRUE_THETA; th[1:J] <- th[1:J] / xsc(); th })
   observeEvent(input$settrue, theta0(TT()))
+  ## a new scale of x keeps the starting curve: the slope weights change with it
+  xprev <- reactiveVal(1)
+  observeEvent(input$xscale, {
+    th <- theta0(); th[1:J] <- th[1:J] * xprev() / xsc(); xprev(xsc()); theta0(th)
+  }, ignoreInit = TRUE)
   DAT <- reactive({
     D <- make_data(input$n, as.numeric(input$sigma), dseed())
     D$x <- D$x * xsc()
@@ -1202,7 +1234,7 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
-            lr  = if (fixed) input[[paste0("lr", s)]] else NA,
+            lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
   })
