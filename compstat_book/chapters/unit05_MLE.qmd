@@ -1336,9 +1336,107 @@ the curvature information needed for inference has already been computed. Method
 that never form a Hessian require a separate numerical differentiation step, which
 is what `hessian = TRUE` requests from `nlm` and `optim`.
 
-### Example: Multivariate Newton-Raphson for Logistic Regression
 
-#### The model and its derivatives
+### Enhancements to Multivariate Newton-Raphson Methods {#sec-divergence}
+
+Newton–Raphson can diverge even on a well-behaved problem. Far from
+$\hat\theta$ the quadratic approximation is unreliable, and $J_k = J(\theta^{(k)})$
+may be nearly singular or not positive definite, so the raw step
+$\delta^{(k)} = -J_k^{-1}g_k$, with $g_k = g(\theta^{(k)})$, can be enormous or
+fail to point downhill at all. The
+standard enhancements all keep the Newton idea and add a guard.
+
+* **Step halving (line search).** Move $\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}$,
+starting at $s = 1$ and halving until $\mathcal{L}$ decreases by enough —
+the **Armijo condition**
+$\mathcal{L}(\theta^{(k)} + s\,\delta^{(k)}) \le \mathcal{L}(\theta^{(k)}) + c_1 s\,g_k^\top\delta^{(k)}$
+with a tiny $c_1$ (say $10^{-4}$). Near the minimum $s = 1$ passes on the first
+try, so fast local convergence is untouched.
+
+  The condition asks for more than a lower value of $\mathcal{L}$. Written as
+  $$
+  \underbrace{\mathcal{L}(\theta^{(k)} + s\,\delta^{(k)}) - \mathcal{L}(\theta^{(k)})}_{\text{actual decrease}}
+  \;\le\; c_1 \cdot \underbrace{s\,g_k^\top\delta^{(k)}}_{\text{decrease predicted by the tangent plane}},
+  $$
+  it says that the decrease must be at least a fixed fraction of what the slope
+  promises for a step of that length. (When $J_k$ is positive definite,
+  $g_k^\top\delta^{(k)} = -g_k^\top J_k^{-1} g_k < 0$, so the right-hand side is a
+  genuine decrease.) Asking only for *some* decrease is not enough, because the
+  gains can shrink so fast that the iterates stall at a point that is not a
+  minimum. For $\mathcal{L}(\theta) = \theta^2$, the sequence
+  $\theta^{(k)} = (-1)^k(1 + 2^{-k})$ lowers $\mathcal{L}$ at every step and moves
+  downhill each time, yet it bounces towards $\pm 1$, where the gradient is
+  $\pm 2$, never $0$. With $\delta = -g = -2\theta$ the Armijo condition reduces to
+  $s \le 1 - c_1$, and the overshooting steps need $s \to 1$, so they are
+  rejected. Armijo only forbids steps that are too long for the gain they
+  deliver. Starting at $s = 1$ and halving only when the test fails is what
+  keeps the accepted steps from being needlessly short.
+
+* **Ridging (Levenberg–Marquardt).** Replace $J_k$ by $J_k + \tau\mathbb{I}$, with
+$\tau \ge 0$ just large enough to make it positive definite. This repairs
+indefiniteness and shortens the step; as $\tau$ grows the direction rotates from
+Newton toward plain gradient descent, and $\tau = 0$ wherever $J_k$ is already
+well behaved. This is roughly what `nlm` does internally.
+
+  A simple rule takes $\tau = \max\{0,\ \epsilon - \lambda_{\min}(J_k)\}$,
+  which lifts the smallest eigenvalue of $J_k$ to a small positive $\epsilon$.
+  A modified Cholesky factorisation achieves the same without an
+  eigendecomposition. Since $\delta^{(k)}(\tau) = -(J_k + \tau\mathbb{I})^{-1}g_k$
+  has length decreasing in $\tau$, ridging also acts as a step-length control,
+  and with a positive definite matrix the direction satisfies
+  $g_k^\top\delta^{(k)} < 0$, so a line search along it is guaranteed to find a
+  decrease. A related guard for GLMs is **Fisher scoring**: the expected
+  information $I(\theta) = X^\top W X$ is positive semi-definite at every
+  $\theta$, and positive definite whenever $X$ has full column rank and all
+  weights are positive, so the ridge is rarely needed at all.
+
+* **Trust regions.** Minimise the quadratic approximation only within
+$\lVert\theta - \theta^{(k)}\rVert \le \Delta_k$, growing or shrinking $\Delta_k$
+according to how well the quadratic predicted the realised change. This is
+`nlminb` and the `PORT` routines.
+
+  The quality of the prediction is measured by the ratio
+  $$
+  \rho_k = \frac{\mathcal{L}(\theta^{(k)} + \delta) - \mathcal{L}(\theta^{(k)})}
+                {g_k^\top\delta + \tfrac12\,\delta^\top J_k\,\delta},
+  $$
+  actual decrease over the decrease predicted by the quadratic model. A typical rule
+  rejects the step if $\rho_k$ is small or negative and shrinks $\Delta_k$
+  (say by a factor of four); it accepts the step and keeps $\Delta_k$ when
+  $\rho_k$ is moderate; and it doubles $\Delta_k$ when $\rho_k \ge 3/4$ and the
+  step reached the boundary. The constrained subproblem has the solution
+  $\delta = -(J_k + \tau\mathbb{I})^{-1}g_k$ for some $\tau \ge 0$, so a trust
+  region is ridging with $\tau$ chosen by the step length rather than the other
+  way round. Unlike a line search, it first fixes how far to go and then
+  chooses the direction. That makes it robust when $J_k$ is indefinite:
+  at a saddle point, where the Newton step points the wrong way, it still
+  moves downhill.
+
+* **Better parameterisation and starting values.** Often the cheapest fix.
+Centring and scaling the covariates improves the conditioning of $J$.
+Parameters with natural bounds are better optimised on an unconstrained scale
+— $\log\sigma$ rather than $\sigma$, $\operatorname{logit} p$ rather than $p$ —
+which removes steps that leave the parameter space and usually makes $\ell$
+closer to quadratic. Good starting values come from a simpler fit: method of
+moments estimates, a least-squares fit, or the null model with an intercept
+only. `glm` sidesteps the choice altogether: it starts from fitted means rather
+than coefficients, taking $\mu_i^{(0)} = (y_i + 0.5)/2$ for binary data, which
+are always inside $(0, 1)$, and it therefore never begins in the flat region
+where the weights $p_i(1-p_i)$ vanish.
+
+Combining the first two gives **safeguarded Newton**: at each iteration form a
+positive definite $\tilde J_k$, solve $\tilde J_k\,\delta^{(k)} = -g_k$, then
+backtrack on $s$. Both guards switch themselves off near a well-behaved
+maximum, so the method keeps Newton's fast local convergence while still making
+progress from remote starting values.
+
+#### Shinylive App for Safeguarded Newton-Raphson {#sec-nr-divergence-app}
+
+There is a [shinylive app](../../shinylive_apps/app_nr-divergence.html) to show how the full Newton-Raphson step diverges on a logistic-regression likelihood started far from the maximum, and how backtracking on the step length rescues the same starting value.
+
+## Example of Fitting Logistic Regression with Safeguarded Multivariate Newton-Raphson 
+
+### The model and its derivatives
 
 With a single covariate $x_i$ and binary response $y_i$, let
 $u_i = \beta_0 + \beta_1 x_i$ and $p_i = e^{u_i}/(1 + e^{u_i})$. The
@@ -1393,7 +1491,7 @@ nor a tree: a unit typically feeds *several* others, so most nodes have more tha
 one consumer, and the sum in the node rule is what gathers those contributions.
 @sec-backprop-dag writes the two rules out for a network of arbitrary depth.
 
-#### The gradient by the chain rule
+### The gradient by the chain rule
 
 The gradient above can be written down directly, but it is worth deriving it the
 way an automatic-differentiation system would, because the same mechanics carry
@@ -1626,7 +1724,7 @@ round(mle_logistic_nr(c(0, 3), 8, data$y, data$x), 6)
 The doubling of correct digits predicted by the quadratic-convergence result is
 visible in the final rows.
 
-#### Comparison with `nlm` and `glm`
+### Comparison with `nlm` and `glm`
 
 ```{r}
 #| label: logistic-nlm
@@ -1649,102 +1747,6 @@ $u_i + (y_i - p_i)/\{p_i(1-p_i)\}$ on $X$ with weights $p_i(1-p_i)$, giving
 algorithm but a different arrangement of the same one, and it explains why
 `glm` reports "Fisher Scoring iterations" in its output.
 
-### Enhancements to Multivariate Newton-Raphson Methods {#sec-divergence}
-
-Newton–Raphson can diverge even on a well-behaved problem. Far from
-$\hat\theta$ the quadratic approximation is unreliable, and $J_k = J(\theta^{(k)})$
-may be nearly singular or not positive definite, so the raw step
-$\delta^{(k)} = -J_k^{-1}g_k$, with $g_k = g(\theta^{(k)})$, can be enormous or
-fail to point downhill at all. The
-standard enhancements all keep the Newton idea and add a guard.
-
-* **Step halving (line search).** Move $\theta^{(k+1)} = \theta^{(k)} + s\,\delta^{(k)}$,
-starting at $s = 1$ and halving until $\mathcal{L}$ decreases by enough —
-the **Armijo condition**
-$\mathcal{L}(\theta^{(k)} + s\,\delta^{(k)}) \le \mathcal{L}(\theta^{(k)}) + c_1 s\,g_k^\top\delta^{(k)}$
-with a tiny $c_1$ (say $10^{-4}$). Near the minimum $s = 1$ passes on the first
-try, so fast local convergence is untouched.
-
-  The condition asks for more than a lower value of $\mathcal{L}$. Written as
-  $$
-  \underbrace{\mathcal{L}(\theta^{(k)} + s\,\delta^{(k)}) - \mathcal{L}(\theta^{(k)})}_{\text{actual decrease}}
-  \;\le\; c_1 \cdot \underbrace{s\,g_k^\top\delta^{(k)}}_{\text{decrease predicted by the tangent plane}},
-  $$
-  it says that the decrease must be at least a fixed fraction of what the slope
-  promises for a step of that length. (When $J_k$ is positive definite,
-  $g_k^\top\delta^{(k)} = -g_k^\top J_k^{-1} g_k < 0$, so the right-hand side is a
-  genuine decrease.) Asking only for *some* decrease is not enough, because the
-  gains can shrink so fast that the iterates stall at a point that is not a
-  minimum. For $\mathcal{L}(\theta) = \theta^2$, the sequence
-  $\theta^{(k)} = (-1)^k(1 + 2^{-k})$ lowers $\mathcal{L}$ at every step and moves
-  downhill each time, yet it bounces towards $\pm 1$, where the gradient is
-  $\pm 2$, never $0$. With $\delta = -g = -2\theta$ the Armijo condition reduces to
-  $s \le 1 - c_1$, and the overshooting steps need $s \to 1$, so they are
-  rejected. Armijo only forbids steps that are too long for the gain they
-  deliver. Starting at $s = 1$ and halving only when the test fails is what
-  keeps the accepted steps from being needlessly short.
-
-* **Ridging (Levenberg–Marquardt).** Replace $J_k$ by $J_k + \tau\mathbb{I}$, with
-$\tau \ge 0$ just large enough to make it positive definite. This repairs
-indefiniteness and shortens the step; as $\tau$ grows the direction rotates from
-Newton toward plain gradient descent, and $\tau = 0$ wherever $J_k$ is already
-well behaved. This is roughly what `nlm` does internally.
-
-  A simple rule takes $\tau = \max\{0,\ \epsilon - \lambda_{\min}(J_k)\}$,
-  which lifts the smallest eigenvalue of $J_k$ to a small positive $\epsilon$.
-  A modified Cholesky factorisation achieves the same without an
-  eigendecomposition. Since $\delta^{(k)}(\tau) = -(J_k + \tau\mathbb{I})^{-1}g_k$
-  has length decreasing in $\tau$, ridging also acts as a step-length control,
-  and with a positive definite matrix the direction satisfies
-  $g_k^\top\delta^{(k)} < 0$, so a line search along it is guaranteed to find a
-  decrease. A related guard for GLMs is **Fisher scoring**: the expected
-  information $I(\theta) = X^\top W X$ is positive semi-definite at every
-  $\theta$, and positive definite whenever $X$ has full column rank and all
-  weights are positive, so the ridge is rarely needed at all.
-
-* **Trust regions.** Minimise the quadratic approximation only within
-$\lVert\theta - \theta^{(k)}\rVert \le \Delta_k$, growing or shrinking $\Delta_k$
-according to how well the quadratic predicted the realised change. This is
-`nlminb` and the `PORT` routines.
-
-  The quality of the prediction is measured by the ratio
-  $$
-  \rho_k = \frac{\mathcal{L}(\theta^{(k)} + \delta) - \mathcal{L}(\theta^{(k)})}
-                {g_k^\top\delta + \tfrac12\,\delta^\top J_k\,\delta},
-  $$
-  actual decrease over the decrease predicted by the quadratic model. A typical rule
-  rejects the step if $\rho_k$ is small or negative and shrinks $\Delta_k$
-  (say by a factor of four); it accepts the step and keeps $\Delta_k$ when
-  $\rho_k$ is moderate; and it doubles $\Delta_k$ when $\rho_k \ge 3/4$ and the
-  step reached the boundary. The constrained subproblem has the solution
-  $\delta = -(J_k + \tau\mathbb{I})^{-1}g_k$ for some $\tau \ge 0$, so a trust
-  region is ridging with $\tau$ chosen by the step length rather than the other
-  way round. Unlike a line search, it first fixes how far to go and then
-  chooses the direction. That makes it robust when $J_k$ is indefinite:
-  at a saddle point, where the Newton step points the wrong way, it still
-  moves downhill.
-
-* **Better parameterisation and starting values.** Often the cheapest fix.
-Centring and scaling the covariates improves the conditioning of $J$.
-Parameters with natural bounds are better optimised on an unconstrained scale
-— $\log\sigma$ rather than $\sigma$, $\operatorname{logit} p$ rather than $p$ —
-which removes steps that leave the parameter space and usually makes $\ell$
-closer to quadratic. Good starting values come from a simpler fit: method of
-moments estimates, a least-squares fit, or the null model with an intercept
-only. `glm` sidesteps the choice altogether: it starts from fitted means rather
-than coefficients, taking $\mu_i^{(0)} = (y_i + 0.5)/2$ for binary data, which
-are always inside $(0, 1)$, and it therefore never begins in the flat region
-where the weights $p_i(1-p_i)$ vanish.
-
-Combining the first two gives **safeguarded Newton**: at each iteration form a
-positive definite $\tilde J_k$, solve $\tilde J_k\,\delta^{(k)} = -g_k$, then
-backtrack on $s$. Both guards switch themselves off near a well-behaved
-maximum, so the method keeps Newton's fast local convergence while still making
-progress from remote starting values.
-
-#### Shinylive App for Safeguarded Newton-Raphson {#sec-nr-divergence-app}
-
-There is a [shinylive app](../../shinylive_apps/app_nr-divergence.html) to show how the full Newton-Raphson step diverges on a logistic-regression likelihood started far from the maximum, and how backtracking on the step length rescues the same starting value.
 
 ## Backprogation Algorithm for Neural Networks
 
