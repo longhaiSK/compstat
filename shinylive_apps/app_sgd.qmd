@@ -399,6 +399,8 @@ ui <- fluidPage(
                             value = 150, step = 50, width = "100%")),
       column(1, selectInput("sigma", "Noise SD", choices = c(0.1, 0.2, 0.3, 0.5, 1),
                             selected = 0.3, width = "100%")),
+      column(2, selectInput("xscale", "Scale of x", choices = c("0.1" = 0.1, "1" = 1, "10" = 10, "100" = 100),
+                            selected = 1, width = "100%")),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newdata", "Regenerate data",
                                  class = "btn-warning", style = "width:100%;")))
@@ -475,7 +477,6 @@ server <- function(input, output, session) {
       if (!is.na(lr0)) updateSliderInput(session, paste0("lr", s), value = unname(lr0))
     })
   })
-  observeEvent(input$settrue, theta0(TRUE_THETA))
   observeEvent(input$setzero, theta0(rep(0, NP)))
   observeEvent(input$newstart, {
     rseed(rseed() + 1); theta0(rand_start(rseed()))
@@ -492,7 +493,16 @@ server <- function(input, output, session) {
     }
   })
 
-  DAT <- reactive(make_data(input$n, as.numeric(input$sigma), dseed()))
+  ## the predictor on a different scale: x -> s x, with the slope weights of the generating
+  ## network divided by s, so the true curve is the same function of x / s
+  xsc <- reactive(if (is.null(input$xscale)) 1 else as.numeric(input$xscale))
+  TT <- reactive({ th <- TRUE_THETA; th[1:J] <- th[1:J] / xsc(); th })
+  observeEvent(input$settrue, theta0(TT()))
+  DAT <- reactive({
+    D <- make_data(input$n, as.numeric(input$sigma), dseed())
+    D$x <- D$x * xsc()
+    D
+  })
   ## one run for each optimizer, from the same start on the same data
   mkrun <- function(s) reactive({
     D <- DAT(); a <- input[[paste0("alg", s)]]
@@ -545,13 +555,13 @@ server <- function(input, output, session) {
 
   output$fit <- renderPlot({
     RA <- runA(); RB <- runB(); R <- RA; D <- DAT(); kk <- kraw()
-    xg <- seq(-3, 3, length.out = 300)
+    xg <- seq(-3, 3, length.out = 300) * xsc()
     par(mar = c(4, 4.2, 2.5, 1))
     plot(D$x, D$y, pch = 19, cex = 0.7, col = adjustcolor("#E8820C", 0.5),
-         ylim = range(D$y, mu_fun(TRUE_THETA, xg)),
+         ylim = range(D$y, mu_fun(TT(), xg)),
          xlab = "x", ylab = expression(mu(x) ~ "and data y"),
          main = "fitted mean and the generated data")
-    lines(xg, mu_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
+    lines(xg, mu_fun(TT(), xg), col = "red", lty = 2, lwd = 2)
     lines(xg, mu_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
     lines(xg, mu_fun(RA$P[min(kk, RA$n - 1L) + 1L, ], xg), col = "#2E8B57", lwd = 3)
     if (!is.null(RB))
@@ -570,10 +580,10 @@ server <- function(input, output, session) {
 
   ## the scaled units, which add up to the fit on the same scale as the data
   output$parts <- renderPlot({
-    C <- cur(); xg <- seq(-3, 3, length.out = 300)
+    C <- cur(); xg <- seq(-3, 3, length.out = 300) * xsc()
     VH <- unit_terms(C$th, xg)
     fit <- mu_fun(C$th, xg)
-    mu_true <- mu_fun(TRUE_THETA, xg)
+    mu_true <- mu_fun(TT(), xg)
     par(mar = c(4, 4.2, 2.5, 1))
     matplot(xg, VH, type = "l", lty = 3, lwd = 2.5, col = PCOL,
             ylim = pmax(-8, pmin(8, range(VH, fit, mu_true))),
@@ -677,6 +687,8 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 *What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, the only full-matrix preconditioner here (compare Newton's method, $P_k = H^{-1}$). The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
 *Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
+
+**Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to the most sensitive weight, while Adam, which rescales each weight separately, is much less affected. Try 10 or 100 with momentum against Adam, and with **True Value** as the start. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
@@ -1079,6 +1091,8 @@ ui <- fluidPage(
                             value = 150, step = 50, width = "100%")),
       column(1, selectInput("sigma", "Noise SD", choices = c(0.1, 0.2, 0.3, 0.5, 1),
                             selected = 0.3, width = "100%")),
+      column(2, selectInput("xscale", "Scale of x", choices = c("0.1" = 0.1, "1" = 1, "10" = 10, "100" = 100),
+                            selected = 1, width = "100%")),
       column(2, div(style = "padding-top: 25px;",
                     actionButton("newdata", "Regenerate data",
                                  class = "btn-warning", style = "width:100%;")))
@@ -1155,7 +1169,6 @@ server <- function(input, output, session) {
       if (!is.na(lr0)) updateSliderInput(session, paste0("lr", s), value = unname(lr0))
     })
   })
-  observeEvent(input$settrue, theta0(TRUE_THETA))
   observeEvent(input$setzero, theta0(rep(0, NP)))
   observeEvent(input$newstart, {
     rseed(rseed() + 1); theta0(rand_start(rseed()))
@@ -1172,7 +1185,16 @@ server <- function(input, output, session) {
     }
   })
 
-  DAT <- reactive(make_data(input$n, as.numeric(input$sigma), dseed()))
+  ## the predictor on a different scale: x -> s x, with the slope weights of the generating
+  ## network divided by s, so the true curve is the same function of x / s
+  xsc <- reactive(if (is.null(input$xscale)) 1 else as.numeric(input$xscale))
+  TT <- reactive({ th <- TRUE_THETA; th[1:J] <- th[1:J] / xsc(); th })
+  observeEvent(input$settrue, theta0(TT()))
+  DAT <- reactive({
+    D <- make_data(input$n, as.numeric(input$sigma), dseed())
+    D$x <- D$x * xsc()
+    D
+  })
   ## one run for each optimizer, from the same start on the same data
   mkrun <- function(s) reactive({
     D <- DAT(); a <- input[[paste0("alg", s)]]
@@ -1225,13 +1247,13 @@ server <- function(input, output, session) {
 
   output$fit <- renderPlot({
     RA <- runA(); RB <- runB(); R <- RA; D <- DAT(); kk <- kraw()
-    xg <- seq(-3, 3, length.out = 300)
+    xg <- seq(-3, 3, length.out = 300) * xsc()
     par(mar = c(4, 4.2, 2.5, 1))
     plot(D$x, D$y, pch = 19, cex = 0.7, col = adjustcolor("#E8820C", 0.5),
-         ylim = range(D$y, mu_fun(TRUE_THETA, xg)),
+         ylim = range(D$y, mu_fun(TT(), xg)),
          xlab = "x", ylab = expression(mu(x) ~ "and data y"),
          main = "fitted mean and the generated data")
-    lines(xg, mu_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
+    lines(xg, mu_fun(TT(), xg), col = "red", lty = 2, lwd = 2)
     lines(xg, mu_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
     lines(xg, mu_fun(RA$P[min(kk, RA$n - 1L) + 1L, ], xg), col = "#2E8B57", lwd = 3)
     if (!is.null(RB))
@@ -1250,10 +1272,10 @@ server <- function(input, output, session) {
 
   ## the scaled units, which add up to the fit on the same scale as the data
   output$parts <- renderPlot({
-    C <- cur(); xg <- seq(-3, 3, length.out = 300)
+    C <- cur(); xg <- seq(-3, 3, length.out = 300) * xsc()
     VH <- unit_terms(C$th, xg)
     fit <- mu_fun(C$th, xg)
-    mu_true <- mu_fun(TRUE_THETA, xg)
+    mu_true <- mu_fun(TT(), xg)
     par(mar = c(4, 4.2, 2.5, 1))
     matplot(xg, VH, type = "l", lty = 3, lwd = 2.5, col = PCOL,
             ylim = pmax(-8, pmin(8, range(VH, fit, mu_true))),
