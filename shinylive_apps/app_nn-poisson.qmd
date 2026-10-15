@@ -90,7 +90,7 @@ MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
-                    tol = 1e-3, patience = 20, rtol = 1e-4) {
+                    tol = 1e-6, patience = Inf, rtol = 1e-5) {
   p <- length(th0)
   f <- function(th) nll(th, x, y)
   g <- function(th) nll_grad(th, x, y)
@@ -427,7 +427,7 @@ ui <- fluidPage(
     ## how long to run them, the colour scale, the play buttons, the iteration shown
     fluidRow(
       row_label("Run"),
-      column(2, selectInput("maxit", "Max iterations",
+      column(1, selectInput("maxit", "Max iterations",
                             choices = c(10, 20, 50, 100, 200, 500, 1000),
                             selected = 100, width = "100%")),
       column(1, selectInput("ctr", "Contrast",
@@ -436,7 +436,10 @@ ui <- fluidPage(
       column(1, selectInput("gtol", "Stop: ||g|| <",
                             choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
                                         "1e-4" = 1e-4, "1e-6" = 1e-6),
-                            selected = 0.001, width = "100%")),
+                            selected = 1e-6, width = "100%")),
+      column(1, selectInput("stall", "Stop if flat for",
+                            choices = c("never" = Inf, "100 its" = 100, "50 its" = 50, "20 its" = 20),
+                            selected = Inf, width = "100%")),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
@@ -504,7 +507,9 @@ server <- function(input, output, session) {
   })
   observeEvent(input$setzero, theta0(rep(0, NP)))
   observeEvent(input$newstart, {
-    rseed(rseed() + 1); theta0(rand_start(rseed()))
+    rseed(rseed() + 1)
+    th <- rand_start(rseed()); th[1:J] <- th[1:J] / xsc()   # random weights for x / s
+    theta0(th)
   })
   ## an arrow click moves the nearest arrow's weight by one step
   observeEvent(input$netv_click, {
@@ -540,7 +545,8 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
-            tol = if (is.null(input$gtol)) 1e-3 else as.numeric(input$gtol),
+            tol = if (is.null(input$gtol)) 1e-6 else as.numeric(input$gtol),
+            patience = if (is.null(input$stall)) Inf else as.numeric(input$stall),
             lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
@@ -693,7 +699,7 @@ shinyApp(ui, server)
 
 Fits a Poisson neural network like the one in the book's backpropagation section, with one covariate and four `tanh` hidden units, to counts generated from known weights, and lets you watch seven optimizers work on it: gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient and BFGS, which use the full data, and SGD with a line search, SGD with momentum and SGD with Adam, which step through mini-batches. The four units are enough for a mean with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$.
 
-**The weights.** The network panels belong to one optimizer, chosen by **Network of** above them. The upper network shows the thirteen weights at the current iteration. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data, **Random** draws a new set, and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
+**The weights.** The network panels belong to one optimizer, chosen by **Network of** above them. The upper network shows the thirteen weights at the current iteration. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data, **Random** draws a new set (for the scaled predictor, drawn for $x$ divided by the scale), and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
 
 **The methods.** Write $g_k = \nabla L(\theta_k)$ for the gradient of the average loss $L$ over all $n$ observations at the current weights, $\ell_i$ for the loss of observation $i$, and $g_k^{(B_k)} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)$ for the gradient of the mini-batch $B_k$ of $m$ observations used at update $k$ (the superscript names the batch, the subscript the iteration). The first four optimizers in the menu use the full data; the last three step through mini-batches. All of them can be written as one update
 
@@ -715,7 +721,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 *What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, the only full-matrix preconditioner here (compare Newton's method, $P_k = H^{-1}$). The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
-*When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; the full-data loss has not improved by 0.01% in 20 consecutive iterations (a patience rule, the only kind that can stop a noisy method, for which the gradient norm never gets small; it also ends a line-search method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 20000 mini-batch updates, which it reports.
+*When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; if **Stop if flat for** is set, the full-data loss has not improved by 0.001% in that many consecutive iterations (a patience rule, off by default, the only kind that can stop a noisy method, whose gradient norm never gets small; it also ends a method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 20000 mini-batch updates, which it reports.
 
 *Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
 
@@ -813,7 +819,7 @@ MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
-                    tol = 1e-3, patience = 20, rtol = 1e-4) {
+                    tol = 1e-6, patience = Inf, rtol = 1e-5) {
   p <- length(th0)
   f <- function(th) nll(th, x, y)
   g <- function(th) nll_grad(th, x, y)
@@ -1150,7 +1156,7 @@ ui <- fluidPage(
     ## how long to run them, the colour scale, the play buttons, the iteration shown
     fluidRow(
       row_label("Run"),
-      column(2, selectInput("maxit", "Max iterations",
+      column(1, selectInput("maxit", "Max iterations",
                             choices = c(10, 20, 50, 100, 200, 500, 1000),
                             selected = 100, width = "100%")),
       column(1, selectInput("ctr", "Contrast",
@@ -1159,7 +1165,10 @@ ui <- fluidPage(
       column(1, selectInput("gtol", "Stop: ||g|| <",
                             choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
                                         "1e-4" = 1e-4, "1e-6" = 1e-6),
-                            selected = 0.001, width = "100%")),
+                            selected = 1e-6, width = "100%")),
+      column(1, selectInput("stall", "Stop if flat for",
+                            choices = c("never" = Inf, "100 its" = 100, "50 its" = 50, "20 its" = 20),
+                            selected = Inf, width = "100%")),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
@@ -1227,7 +1236,9 @@ server <- function(input, output, session) {
   })
   observeEvent(input$setzero, theta0(rep(0, NP)))
   observeEvent(input$newstart, {
-    rseed(rseed() + 1); theta0(rand_start(rseed()))
+    rseed(rseed() + 1)
+    th <- rand_start(rseed()); th[1:J] <- th[1:J] / xsc()   # random weights for x / s
+    theta0(th)
   })
   ## an arrow click moves the nearest arrow's weight by one step
   observeEvent(input$netv_click, {
@@ -1263,7 +1274,8 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
-            tol = if (is.null(input$gtol)) 1e-3 else as.numeric(input$gtol),
+            tol = if (is.null(input$gtol)) 1e-6 else as.numeric(input$gtol),
+            patience = if (is.null(input$stall)) Inf else as.numeric(input$stall),
             lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
