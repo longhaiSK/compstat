@@ -102,7 +102,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
   if (alg %in% MINIBATCH) {                  # keep the number of mini-batch steps in check
-    cap <- max(1, floor(20000 / ceiling(n_obs / m)))
+    cap <- max(1, floor(100000 / ceiling(n_obs / m)))
     if (maxit > cap) { maxit <- cap; capped <- TRUE }
   }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
@@ -113,7 +113,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     gk <- g(th); fk <- f(th)
     P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
     if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
-    if (sqrt(sum(gk^2)) < tol) {
+    if (tol > 0 && sqrt(sum(gk^2)) < tol) {
       note <- paste0("converged: gradient norm < ", format(tol)); break
     }
     ## no stopping rule can be exact for a noisy method, so every method also stops when the
@@ -188,13 +188,17 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
 
     a0 <- if (alg == "bfgs" && k > 1) 1 else min(1, 1 / sqrt(sum(d^2)))
     ls <- line_search(f, g, th, d, a0)
+    if (!ls$ok && alg != "gd") {             # restart from steepest descent before giving up
+      d <- -gk; B <- diag(p); d_prev <- s_prev <- g_prev <- NULL
+      ls <- line_search(f, g, th, d, min(1, 1 / sqrt(sum(d^2))))
+    }
     if (!ls$ok) { note <- "line search failed"; break }
     AL[k + 1] <- ls$alpha
     s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
     th <- th + s_prev
   }
   if (capped && grepl("^maximum", note))
-    note <- paste0("stopped after ", maxit, " epochs (20000 mini-batch steps)")
+    note <- paste0("stopped after ", maxit, " epochs (100000 mini-batch steps)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
        A = AL[i], n = n, note = note)
@@ -428,14 +432,15 @@ ui <- fluidPage(
     fluidRow(
       row_label("Run"),
       column(1, selectInput("maxit", "Max iterations",
-                            choices = c(10, 20, 50, 100, 200, 500, 1000),
+                            choices = c(10, 20, 50, 100, 200, 500, 1000, 2000, 5000),
                             selected = 100, width = "100%")),
       column(1, selectInput("ctr", "Contrast",
                             choices = c(1, 2, 4, 8, 16, 32), selected = 8,
                             width = "100%")),
       column(1, selectInput("gtol", "Stop: ||g|| <",
                             choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
-                                        "1e-4" = 1e-4, "1e-6" = 1e-6),
+                                        "1e-4" = 1e-4, "1e-6" = 1e-6, "1e-8" = 1e-8,
+                                        "never" = 0),
                             selected = 1e-6, width = "100%")),
       column(1, selectInput("stall", "Stop if flat for",
                             choices = c("never" = Inf, "100 its" = 100, "50 its" = 50, "20 its" = 20),
@@ -723,9 +728,9 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 *What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, the only full-matrix preconditioner here (compare Newton's method, $P_k = H^{-1}$). The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
-*When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; if **Stop if flat for** is set, the full-data loss has not improved by 0.001% in that many consecutive iterations (a patience rule, off by default, the only kind that can stop a noisy method, whose gradient norm never gets small; it also ends a method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 20000 mini-batch updates, which it reports.
+*When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; if **Stop if flat for** is set, the full-data loss has not improved by 0.001% in that many consecutive iterations (a patience rule, off by default, the only kind that can stop a noisy method, whose gradient norm never gets small; it also ends a method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 100000 mini-batch updates, which it reports. A conjugate-gradient or BFGS run whose line search fails first restarts from steepest descent, and ends only if that fails too.
 
-*Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
+*Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 100000 updates in all, which the info line reports.
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$); raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
@@ -833,7 +838,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
   if (alg %in% MINIBATCH) {                  # keep the number of mini-batch steps in check
-    cap <- max(1, floor(20000 / ceiling(n_obs / m)))
+    cap <- max(1, floor(100000 / ceiling(n_obs / m)))
     if (maxit > cap) { maxit <- cap; capped <- TRUE }
   }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
@@ -844,7 +849,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     gk <- g(th); fk <- f(th)
     P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
     if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
-    if (sqrt(sum(gk^2)) < tol) {
+    if (tol > 0 && sqrt(sum(gk^2)) < tol) {
       note <- paste0("converged: gradient norm < ", format(tol)); break
     }
     ## no stopping rule can be exact for a noisy method, so every method also stops when the
@@ -919,13 +924,17 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
 
     a0 <- if (alg == "bfgs" && k > 1) 1 else min(1, 1 / sqrt(sum(d^2)))
     ls <- line_search(f, g, th, d, a0)
+    if (!ls$ok && alg != "gd") {             # restart from steepest descent before giving up
+      d <- -gk; B <- diag(p); d_prev <- s_prev <- g_prev <- NULL
+      ls <- line_search(f, g, th, d, min(1, 1 / sqrt(sum(d^2))))
+    }
     if (!ls$ok) { note <- "line search failed"; break }
     AL[k + 1] <- ls$alpha
     s_prev <- ls$alpha * d; g_prev <- gk; d_prev <- d
     th <- th + s_prev
   }
   if (capped && grepl("^maximum", note))
-    note <- paste0("stopped after ", maxit, " epochs (20000 mini-batch steps)")
+    note <- paste0("stopped after ", maxit, " epochs (100000 mini-batch steps)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], G = G[i, , drop = FALSE], F = Fv[i],
        A = AL[i], n = n, note = note)
@@ -1159,14 +1168,15 @@ ui <- fluidPage(
     fluidRow(
       row_label("Run"),
       column(1, selectInput("maxit", "Max iterations",
-                            choices = c(10, 20, 50, 100, 200, 500, 1000),
+                            choices = c(10, 20, 50, 100, 200, 500, 1000, 2000, 5000),
                             selected = 100, width = "100%")),
       column(1, selectInput("ctr", "Contrast",
                             choices = c(1, 2, 4, 8, 16, 32), selected = 8,
                             width = "100%")),
       column(1, selectInput("gtol", "Stop: ||g|| <",
                             choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
-                                        "1e-4" = 1e-4, "1e-6" = 1e-6),
+                                        "1e-4" = 1e-4, "1e-6" = 1e-6, "1e-8" = 1e-8,
+                                        "never" = 0),
                             selected = 1e-6, width = "100%")),
       column(1, selectInput("stall", "Stop if flat for",
                             choices = c("never" = Inf, "100 its" = 100, "50 its" = 50, "20 its" = 20),
