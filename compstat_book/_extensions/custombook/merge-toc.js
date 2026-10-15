@@ -412,6 +412,22 @@ document.addEventListener("DOMContentLoaded", function() {
       const holder = document.createElement('div');
       holder.id = 'tb-search';
       holder.appendChild(search);
+      // only a magnifier button is shown; it opens the search box, which closes again on
+      // Escape or a click elsewhere
+      const sbtn = iconButton('tb-search-btn', '<span class="tb-glyph"><i class="bi bi-search"></i></span>', 'Search the book');
+      holder.insertBefore(sbtn, search);
+      const closeSearch = () => holder.classList.remove('open');
+      sbtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const open = !holder.classList.contains('open');
+        document.body.classList.remove('chapters-open', 'settings-open');
+        holder.classList.toggle('open', open);
+        if (open) setTimeout(() => { const i = search.querySelector('input'); if (i) i.focus(); }, 30);
+      });
+      document.addEventListener('click', e => {
+        if (!e.target.closest('#tb-search, .aa-Panel')) closeSearch();
+      });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSearch(); });
       const ghEl = document.getElementById('tb-github');
       bar.insertBefore(holder, ghEl || null);
     }
