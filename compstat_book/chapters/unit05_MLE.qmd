@@ -2579,18 +2579,18 @@ For a concave log-likelihood such as the logistic regression fitted above by New
 
 #### Momentum
 
-The mini-batch gradient is noisy, and the iterates also zig-zag across valleys. **Momentum** (the heavy-ball method) modifies the gradient by *averaging* it over past iterations, which damps both the noise and the zig-zag: it keeps an exponentially weighted sum $m_k$ of past gradients and steps along it,
+At iteration $k$ let $B_k$ be the mini-batch and $g^{(B_k)} = g^{(B_k)}(\theta_k)$ its gradient at the current iterate, the average of the case gradients $g^{(i)}$, $i \in B_k$ (superscript: which batch; subscript: which iteration). This gradient is noisy, and the iterates also zig-zag across valleys. **Momentum** (the heavy-ball method) modifies the gradient by *averaging* it over past iterations, which damps both the noise and the zig-zag: it keeps an exponentially weighted sum $m_k$ of past gradients and steps along it,
 $$
-m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k,
+m_k = \beta\, m_{k-1} + g^{(B_k)}, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k,
 $$
-where $g_k = g(\theta_k)$ and $\beta \in [0, 1)$, commonly $0.9$, sets the memory. The across-valley components change sign from step to step and cancel in the average, while the along-valley components keep their sign and add up, so the step lengthens along the valley floor. With $\beta = 0$ it reduces to gradient descent, and the effective step along a persistent direction is $\alpha/(1-\beta)$, which is why $\alpha$ is usually reduced when $\beta$ is raised. Only the gradient is modified; the preconditioner is still the identity and no curvature information is used. Here $g_k = g^{(B_k)}(\theta_k)$ is the mini-batch gradient. On a deterministic full-data problem momentum has little to offer: conjugate gradient is the optimal form of the same idea for a quadratic and needs no $\beta$, and BFGS or Newton–Raphson do better still. It is a modifier designed for SGD.
+where $\beta \in [0, 1)$, commonly $0.9$, sets the memory. The across-valley components change sign from step to step and cancel in the average, while the along-valley components keep their sign and add up, so the step lengthens along the valley floor. With $\beta = 0$ it reduces to gradient descent, and the effective step along a persistent direction is $\alpha/(1-\beta)$, which is why $\alpha$ is usually reduced when $\beta$ is raised. Only the gradient is modified; the preconditioner is still the identity and no curvature information is used. On a deterministic full-data problem momentum has little to offer: conjugate gradient is the optimal form of the same idea for a quadratic and needs no $\beta$, and BFGS or Newton–Raphson do better still. It is a modifier designed for SGD.
 
 #### Adam
 
 Momentum fixes the direction but not the scale: one step size $\alpha$ serves every coordinate, although the coordinates of a network can have gradients of very different sizes. **Adam** (adaptive moment estimation; Kingma and Ba, 2014, "A Method for Stochastic Optimization") adds a step size for each coordinate, estimated from the gradients themselves. Besides the averaged gradient it keeps an exponential average of the elementwise squared gradient,
 $$
-m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
-s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
+m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g^{(B_k)}, \qquad
+s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g^{(B_k)} \odot g^{(B_k)},
 $$
 started at $m_0 = s_0 = 0$. Both averages are corrected for that start, $\hat m_k = m_k/(1-\beta_1^k)$ and $\hat s_k = s_k/(1-\beta_2^k)$, and the update is
 $$
@@ -2598,7 +2598,7 @@ $$
 $$
 with the usual defaults $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\varepsilon = 10^{-8}$.
 
-The update needs only the gradient $g_k = g^{(B_k)}(\theta_k)$ of the mini-batch: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. Adam is momentum with a step size for each coordinate: with $s_k$ held constant it is exactly momentum, so it contains the averaged gradient and adds the rescaling. It is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up below. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
+The update needs only the batch gradient $g^{(B_k)}$: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. Adam is momentum with a step size for each coordinate: with $s_k$ held constant it is exactly momentum, so it contains the averaged gradient and adds the rescaling. It is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up below. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
 
 #### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
 
@@ -2627,12 +2627,12 @@ a curvature scale for each coordinate $\theta_r$, computed from gradients that a
 
 #### Using Only the Diagonal of the Empirical Fisher
 
-The adaptive methods estimate $\operatorname{diag}\hat F$ from the mini-batch gradients $g_k = g^{(B_k)}(\theta_k)$, **averaged over iterations** (squares taken elementwise), and divide the gradient by its **square root**:
+The adaptive methods estimate $\operatorname{diag}\hat F$ from the mini-batch gradients $g^{(B_k)}$, **averaged over iterations** (squares taken elementwise), and divide the gradient by its **square root**:
 
 | Method | Estimate $s_k$ of $\operatorname{diag}\hat F$ (up to scale) | Step |
 |:--|:--|:--|
-| AdaGrad (Duchi, Hazan and Singer, 2011) | cumulative sum $\sum_{j \le k} g_j^2$ | $\alpha\, g_k / \sqrt{s_k}$ |
-| RMSProp (Hinton, 2012) | exponential average $\beta_2 s_{k-1} + (1-\beta_2)\, g_k^2$ | $\alpha\, g_k / \sqrt{s_k}$ |
+| AdaGrad (Duchi, Hazan and Singer, 2011) | cumulative sum $\sum_{j \le k} g^{(B_j)}^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
+| RMSProp (Hinton, 2012) | exponential average $\beta_2 s_{k-1} + (1-\beta_2)\, g^{(B_k)}^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
 | Adam (Kingma and Ba, 2014) | as RMSProp, bias-corrected | $\alpha\, \hat m_k / \sqrt{\hat s_k}$, with momentum |
 
 : Adaptive step-size methods as diagonal approximations of the empirical Fisher information. {#tbl-adaptive-diag}
@@ -2643,7 +2643,7 @@ AdaGrad's cumulative sum grows without bound, so its steps keep shrinking; RMSPr
 $$
 E\big[g^{(B)} \odot g^{(B)}\big] = \bar g^2 + \frac1m\Big(\frac1n\operatorname{diag}\hat F - \bar g^2\Big).
 $$
-Near the optimum $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. Adam run as SGD is then a **diagonal empirical-Fisher preconditioner**, $\theta_{k+1} \approx \theta_k - \alpha\sqrt{nm}\,(\operatorname{diag}\hat F)^{-1/2}\,\hat m_k$. With full-batch gradients there is no such interpretation: $g_k^2 = \bar g^2$ is the squared mean gradient, not the mean squared one, and it tends to zero at the optimum. This is another reason why Adam is not recommended outside SGD.
+Near the optimum $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. Adam run as SGD is then a **diagonal empirical-Fisher preconditioner**, $\theta_{k+1} \approx \theta_k - \alpha\sqrt{nm}\,(\operatorname{diag}\hat F)^{-1/2}\,\hat m_k$. With full-batch gradients there is no such interpretation: $g^{(B_k)}^2 = \bar g^2$ is the squared mean gradient, not the mean squared one, and it tends to zero at the optimum. This is another reason why Adam is not recommended outside SGD.
 
 **Why the square root.** BHHH multiplies by $\hat F^{-1}$; the adaptive methods by $(\operatorname{diag}\hat F)^{-1/2}$. With noisy gradients the full inverse would amplify the noise in flat coordinates, whereas the square root makes each coordinate move about $\alpha$ per step, measured in units of its own gradient noise. Between the full matrix and its diagonal, **K-FAC** (Martens and Grosse, 2015) approximates the Fisher information by one Kronecker-factored block per layer of a network.
 
