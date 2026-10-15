@@ -346,7 +346,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 
     // chapters menu: the book's chapters, collected from the sidebar before it is trimmed
-    const menuBtn = iconButton('tb-chapters', '<span class="tb-glyph">&#9776;</span>', 'Choose a chapter');
+    const menuBtn = iconButton('tb-chapters', '<i class="bi bi-list"></i>', 'Choose a chapter');
     const drawer = document.createElement('nav');
     drawer.id = 'chapter-drawer';
     const list = document.createElement('ul');
