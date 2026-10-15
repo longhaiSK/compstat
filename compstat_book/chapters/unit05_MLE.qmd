@@ -2400,7 +2400,7 @@ Methods are most usefully organised by what they require of the objective.
 | Order | Requires | Methods | Typical use |
 |---:|:---|:---|:---|
 | 0 | Function values only | Nelder–Mead, simulated annealing, genetic algorithms | Non-smooth, discontinuous, or awkward-to-differentiate objectives; small $p$ |
-| 1 | Gradient | Steepest descent, momentum, Adam, conjugate gradient, quasi-Newton (BFGS, L-BFGS), BHHH, stochastic gradient descent | The workhorse class; large $p$; gradients cheap by automatic differentiation |
+| 1 | Gradient | Steepest descent, conjugate gradient, quasi-Newton (BFGS, L-BFGS), BHHH, stochastic gradient descent (with momentum, Adam) | The workhorse class; large $p$; gradients cheap by automatic differentiation |
 | 2 | Gradient and Hessian | Newton–Raphson, Fisher scoring, IRLS, trust-region Newton | Statistical models of modest dimension where the Hessian is also wanted for inference |
 
 : Organizes the optimization methods of this chapter by how much derivative information each one requires. Optimization methods classified by the derivative information required {#tbl-orders}
@@ -2631,15 +2631,15 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
 
 Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
 
-### Momentum
+#### Momentum
 
-Steepest descent zig-zags because each gradient is dominated by the steep direction across the valley, and the component along the valley floor is small. **Momentum** (the heavy-ball method) modifies the gradient by *averaging* it over past iterations: it keeps an exponentially weighted sum $m_k$ of past gradients and steps along it,
+The mini-batch gradient is noisy, and the iterates also zig-zag across valleys. **Momentum** (the heavy-ball method) modifies the gradient by *averaging* it over past iterations, which damps both the noise and the zig-zag: it keeps an exponentially weighted sum $m_k$ of past gradients and steps along it,
 $$
 m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k,
 $$
-where $g_k = g(\theta_k)$ and $\beta \in [0, 1)$, commonly $0.9$, sets the memory. The across-valley components change sign from step to step and cancel in the average, while the along-valley components keep their sign and add up, so the step lengthens along the valley floor. With $\beta = 0$ it reduces to gradient descent, and the effective step along a persistent direction is $\alpha/(1-\beta)$, which is why $\alpha$ is usually reduced when $\beta$ is raised. Only the gradient is modified; the preconditioner is still the identity and no curvature information is used. Nothing requires mini-batches: $g_k$ can be the full-data gradient, as in the apps below, or a noisy mini-batch gradient, whose noise the averaging also damps.
+where $g_k = g(\theta_k)$ and $\beta \in [0, 1)$, commonly $0.9$, sets the memory. The across-valley components change sign from step to step and cancel in the average, while the along-valley components keep their sign and add up, so the step lengthens along the valley floor. With $\beta = 0$ it reduces to gradient descent, and the effective step along a persistent direction is $\alpha/(1-\beta)$, which is why $\alpha$ is usually reduced when $\beta$ is raised. Only the gradient is modified; the preconditioner is still the identity and no curvature information is used. Here $g_k = g^{(B_k)}(\theta_k)$ is the mini-batch gradient. On a deterministic full-data problem momentum has little to offer: conjugate gradient is the optimal form of the same idea for a quadratic and needs no $\beta$, and BFGS or Newton–Raphson do better still. It is a modifier designed for SGD.
 
-### Adam
+#### Adam
 
 Momentum fixes the direction but not the scale: one step size $\alpha$ serves every coordinate, although the coordinates of a network can have gradients of very different sizes. **Adam** (adaptive moment estimation; Kingma and Ba, 2014, "A Method for Stochastic Optimization") adds a step size for each coordinate, estimated from the gradients themselves. Besides the averaged gradient it keeps an exponential average of the elementwise squared gradient,
 $$
@@ -2652,44 +2652,9 @@ $$
 $$
 with the usual defaults $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\varepsilon = 10^{-8}$.
 
-The update needs only $g_k$: $s_k$ is a running average of the squared gradient **over iterations**, so Adam applies to any differentiable $f$, whether or not it is a sum over cases. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. Like momentum it can use the full-data or a mini-batch gradient, and it is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up after the next figure.
+The update needs only the gradient $g_k = g^{(B_k)}(\theta_k)$ of the mini-batch: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. It is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up below. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
 
-### Fixed Step, Momentum and Adam on a Quadratic
-
-The three fixed-step methods behave quite differently on the elongated quadratic used for gradient descent and conjugate gradient above:
-
-```{r}
-#| label: fig-fixed-mom-adam
-#| fig-width: 9
-#| fig-height: 3.6
-#| fig-cap: "Compares fixed-step gradient descent, momentum and Adam on the same elongated quadratic, to show what averaging the gradient and rescaling each coordinate do.
-#|   Fixed-step gradient descent (step 0.5), momentum (step 0.2, beta = 0.7) and Adam (alpha = 0.1) from the same start, with the number of iterations each needs to reach |g| < 1e-4."
-fixed_step <- function(rule, x0 = c(2, -1.8), maxit = 300, tol = 1e-4) {
-  x <- x0; path <- x0; m <- v <- 0
-  for (k in 1:maxit) {
-    g <- gq(x); if (sqrt(sum(g^2)) < tol) break
-    if (rule == "gd") d <- 0.5 * g
-    if (rule == "mom") { m <- 0.7 * m + g; d <- 0.2 * m }
-    if (rule == "adam") { m <- 0.9 * m + 0.1 * g; v <- 0.999 * v + 0.001 * g^2
-      d <- 0.1 * (m / (1 - 0.9^k)) / (sqrt(v / (1 - 0.999^k)) + 1e-8) }
-    x <- x - d; path <- rbind(path, x)
-  }
-  path
-}
-tt <- c(gd = "fixed step 0.5", mom = "momentum, 0.2 and beta = 0.7", adam = "Adam, alpha = 0.1")
-cols <- c(gd = 2, mom = 4, adam = "darkgreen")
-par(mfrow = c(1, 3), pty = "s", mar = c(2.5, 2.5, 3, 0.5))
-for (r in names(tt)) {
-  P <- fixed_step(r)
-  contour(s, s, -z, nlevels = 15, drawlabels = FALSE, col = "grey60",
-          main = sprintf("%s\n%d iterations to |g| < 1e-4", tt[r], nrow(P) - 1), cex.main = 1.2)
-  lines(P, type = "b", col = cols[r], pch = 19, cex = 0.5)
-}
-```
-
-Momentum cuts the number of iterations by building up speed along the valley floor. Adam is slower here than plain gradient descent: its rescaling acts on each coordinate separately, and it cannot help when the valley runs **diagonally**, across both coordinates at once. Repairing that needs the off-diagonal curvature, which only Newton, Fisher scoring, BFGS and, implicitly, conjugate gradient use. With exact gradients on a smooth problem like this one, conjugate gradient and BFGS are the better tools; momentum and Adam earn their place when the gradients are noisy.
-
-### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
+#### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
 
 For a loss that is a sum over cases, $\mathcal{L} = \sum_i \mathcal{L}_i$, the per-case gradients $g^{(i)} = \nabla\mathcal{L}_i$ define the **empirical Fisher information**
 $$
@@ -2714,7 +2679,7 @@ $$
 $$
 a curvature scale for each coordinate $\theta_r$, computed from gradients that are already available, in $O(p)$ storage.
 
-### Using Only the Diagonal of the Empirical Fisher
+#### Using Only the Diagonal of the Empirical Fisher
 
 The adaptive methods estimate $\operatorname{diag}\hat F$ from the mini-batch gradients $g_k = g^{(B_k)}(\theta_k)$, **averaged over iterations** (squares taken elementwise), and divide the gradient by its **square root**:
 
@@ -2732,11 +2697,11 @@ AdaGrad's cumulative sum grows without bound, so its steps keep shrinking; RMSPr
 $$
 E\big[g^{(B)} \odot g^{(B)}\big] = \bar g^2 + \frac1m\Big(\frac1n\operatorname{diag}\hat F - \bar g^2\Big).
 $$
-Near the optimum $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. Adam run as SGD is then a **diagonal empirical-Fisher preconditioner**, $\theta_{k+1} \approx \theta_k - \alpha\sqrt{nm}\,(\operatorname{diag}\hat F)^{-1/2}\,\hat m_k$. With full-batch gradients, or for a loss that is not a sum over cases, there is no such interpretation: $g_k^2 = \bar g^2$ is the squared mean gradient, not the mean squared one, and it tends to zero at the optimum. The per-coordinate step still works, but $\hat s_k$ is then only a scale estimate.
+Near the optimum $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. Adam run as SGD is then a **diagonal empirical-Fisher preconditioner**, $\theta_{k+1} \approx \theta_k - \alpha\sqrt{nm}\,(\operatorname{diag}\hat F)^{-1/2}\,\hat m_k$. With full-batch gradients there is no such interpretation: $g_k^2 = \bar g^2$ is the squared mean gradient, not the mean squared one, and it tends to zero at the optimum. This is another reason why Adam is not recommended outside SGD.
 
 **Why the square root.** BHHH multiplies by $\hat F^{-1}$; the adaptive methods by $(\operatorname{diag}\hat F)^{-1/2}$. With noisy gradients the full inverse would amplify the noise in flat coordinates, whereas the square root makes each coordinate move about $\alpha$ per step, measured in units of its own gradient noise. Between the full matrix and its diagonal, **K-FAC** (Martens and Grosse, 2015) approximates the Fisher information by one Kronecker-factored block per layer of a network.
 
-### Momentum and Adam with Mini-Batches
+#### Momentum and Adam with Mini-Batches
 
 Returning to the logistic regression, momentum and Adam only change the last lines of the mini-batch SGD update, so one function with a switch for the rule covers SGD, momentum and Adam on the same mini-batches:
 
@@ -2777,7 +2742,7 @@ rbind(sgd      = sgd_family(data$x, data$y, c(0, 0), "sgd", gamma = 0.1),
 
 ### Shinylive App for Comparing the Optimizers {#sec-gradient-methods-app}
 
-There is a [shinylive app](../../shinylive_apps/app_gradient-methods.html) to compare the paths that gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton take on the same objective, on six test functions from a quadratic to the Rosenbrock banana and Rastrigin's many local minima. The app uses exact gradients, so it shows the deterministic side of the story: curvature information (BFGS, Newton) and line searches (CG, BFGS) pay off there, while momentum needs a learning rate suited to each function and diverges when it is too large, and Adam's single default $\alpha = 0.1$ works on all six but is slow along curved valleys.
+There is a [shinylive app](../../shinylive_apps/app_gradient-methods.html) to compare the paths that gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton take on the same objective, on six test functions from a quadratic to the Rosenbrock banana and Rastrigin's many local minima. The app uses exact gradients, a deterministic setting in which momentum and Adam are not at their best, which is the point of the comparison: curvature information (BFGS, Newton) and line searches (CG, BFGS) pay off there, while momentum needs a learning rate suited to each function and diverges when it is too large, and Adam's single default $\alpha = 0.1$ works on all six but is slow along curved valleys.
 
 ### Optimization in Practice for Deep Learning
 
@@ -2837,7 +2802,7 @@ where $g_k = \nabla f(\theta_k)$ is the gradient of the objective $f = \mathcal{
 
 : Writes every gradient-based method of this chapter as $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$, showing the gradient each one uses, how it modifies it, and how the step size is chosen. The common form of the gradient-based methods. {#tbl-common-form}
 
-Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Momentum and conjugate gradient change *which direction* is used, by averaging the gradient over the past, which damps the zig-zag across a valley. Adam changes the *scale* of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves $P_k$ alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.
+Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Conjugate gradient changes *which direction* is used, by combining the gradient with the past direction, which damps the zig-zag across a valley. Momentum does so for SGD by averaging the gradient over the past, and Adam also changes the *scale* of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves $P_k$ alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.
 
 ### Comparison
 
