@@ -982,15 +982,17 @@ what `nlm()` runs, which globalizes with a trust region.
 
 # Gradient-based Methods
 
-## What If the Hessian Is Unavailable or Too Big?
+## What If the Hessian Is Unavailable or Too Big? {.smaller}
 
 | method | uses | per-iteration cost | typical use |
 |:--|:--|:--|:--|
 | Nelder–Mead | $\mathcal{L}$ only | $O(p)$ evaluations | small $p$, non-smooth or noisy $\mathcal{L}$ |
-| gradient descent + line search | $g$ | $O(p)$ + line search | large $p$ |
+| gradient descent | $g$ | $O(p)$ + line search | large $p$ |
+| momentum, Adam | $g$, averaged | $O(p)$, fixed step | large $p$, noisy $g$ |
 | conjugate gradient | $g$ | $O(p)$ + line search | large $p$, quadratic-like $\mathcal{L}$ |
-| quasi-Newton (BFGS, L-BFGS) | $g$, builds $\approx$ Hessian | $O(p^2)$ / $O(mp)$ | default general-purpose |
+| BFGS, L-BFGS | $g$, builds $\approx$ Hessian | $O(p^2)$ / $O(mp)$ | default general-purpose |
 | Newton / Fisher scoring | $g$, $H$ | $O(p^3)$ | moderate $p$, gives SEs |
+| SGD | $g_i$ on a mini-batch | $O(mp)$ | large $n$ and $p$ |
 
 All are available through `optim(par, fn, gr, method = ...)` in R. Convention below: **minimize** $\mathcal{L}(\theta) = -\ell(\theta)$, with $g = \nabla\mathcal{L}$.
 
@@ -1031,6 +1033,66 @@ lines(gd$path, type = "b", col = 2, pch = 19, cex = 0.6)
 ```
 
 The number of iterations grows with the **condition number** of the Hessian (ratio of largest to smallest eigenvalue).
+
+## Momentum (Heavy Ball)
+
+Gradient descent zig-zags because $g_k$ is dominated by the steep direction **across** the valley. Momentum **averages** the gradients over past iterations and steps along the average:
+$$
+m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
+$$
+
+- Across-valley components change sign from step to step and **cancel** in the average; along-valley components keep their sign and **add up**, so the step lengthens along the valley floor.
+
+- $\beta = 0$ is gradient descent with a fixed step; along a persistent direction the effective step is $\alpha/(1-\beta)$, so $\alpha$ is lowered when $\beta$ is raised.
+- Only the gradient is modified: no curvature, no line search. $g_k$ can be the full gradient or a noisy mini-batch gradient, whose noise the averaging also damps.
+
+## Adam: a Step Size for Each Coordinate {.smaller}
+
+Momentum fixes the direction, not the scale: one $\alpha$ serves every coordinate. **Adam** (adaptive moment estimation) also averages the **squared** gradient, elementwise,
+$$
+m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
+s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
+$$
+corrects both for starting at zero, $\hat m_k = m_k/(1-\beta_1^k)$, $\hat s_k = s_k/(1-\beta_2^k)$, and updates
+$$
+\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999,\ \varepsilon = 10^{-8} .
+$$
+
+- Each coordinate moves roughly $\alpha$ per step **whatever the scale** of $\mathcal{L}$: large-gradient coordinates take smaller steps, flat ones larger steps.
+
+- $s_k$ estimates the diagonal of the empirical Fisher information $\frac1n\sum_i g_ig_i'$, so Adam is a cheap, **diagonal** stand-in for the preconditioner $I(\theta)^{-1}$ of Fisher scoring.
+- Diagonal means it ignores the correlation between coordinates: no fast local convergence like scoring or BFGS. It is the default optimizer for neural networks.
+
+## Fixed Step, Momentum and Adam on the Quadratic
+
+```{r}
+#| echo: false
+#| fig-width: 9
+#| fig-height: 3.6
+fixed_step <- function(rule, x0 = c(2, -1.8), maxit = 300, tol = 1e-4) {
+  x <- x0; path <- x0; m <- s <- 0
+  for (k in 1:maxit) {
+    g <- gq(x); if (sqrt(sum(g^2)) < tol) break
+    if (rule == "gd") d <- 0.5 * g
+    if (rule == "mom") { m <- 0.7 * m + g; d <- 0.2 * m }
+    if (rule == "adam") { m <- 0.9 * m + 0.1 * g; s <- 0.999 * s + 0.001 * g^2
+      d <- 0.1 * (m / (1 - 0.9^k)) / (sqrt(s / (1 - 0.999^k)) + 1e-8) }
+    x <- x - d; path <- rbind(path, x)
+  }
+  path
+}
+tt <- c(gd = "fixed step 0.5", mom = "momentum, 0.2 and beta = 0.7", adam = "Adam, alpha = 0.1")
+cols <- c(gd = 2, mom = 4, adam = "darkgreen")
+par(mfrow = c(1, 3), pty = "s", mar = c(2.5, 2.5, 3, 0.5))
+for (r in names(tt)) {
+  P <- fixed_step(r)
+  contour(seq(-2, 2, l = 80), seq(-2, 2, l = 80), z, nlevels = 15, drawlabels = FALSE, col = "grey60",
+          main = sprintf("%s\n%d iterations to |g| < 1e-4", tt[r], nrow(P) - 1), cex.main = 1.5, cex.axis = 1.2)
+  lines(P, type = "b", col = cols[r], pch = 19, cex = 0.5)
+}
+```
+
+- Momentum cuts the iterations by building speed along the valley. Adam's per-coordinate scaling cannot help when the valley runs **diagonally**, which needs the off-diagonal curvature that only Newton, scoring or BFGS use.
 
 ## Conjugate Gradient
 
@@ -1084,9 +1146,15 @@ sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hes
 
 `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for gradient-only methods.
 
-# Stochastic Gradient Descent
+## App: Comparing the Optimizers
 
-## Motivation: Large $n$
+The [gradient-methods app](../shinylive_apps/app_gradient-methods.html){target="_blank"} runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin's many local minima.
+
+- Click a starting point, then step or play through the iterations; overlay a second method as a dashed path.
+
+- Try momentum on the banana and raise its rate $\eta$ until it diverges; compare Adam's $\alpha = 0.1$, which works on all six functions, with momentum, which needs a rate for each.
+
+## Stochastic Gradient Descent: Motivation
 
 For iid data the negative log-likelihood and its gradient are **sums over observations**:
 $$
@@ -1132,7 +1200,7 @@ $$
 - $\gamma$ too large: divergence or persistent noise. $\gamma$ too small: painfully slow.
 
 - Convergence is only **sublinear**, far slower than Newton *per iteration* — but each iteration costs $O(p)$ instead of $O(np)$, and early progress is fast.
-- Common refinements: **momentum** (average past gradients), **Adam** (per-coordinate adaptive rates), **averaging** the iterates $\overline\theta_T = \frac1T\sum_t\theta_t$ (Polyak–Ruppert), which restores the $\sqrt n$-efficiency of the MLE.
+- Common refinements: **momentum** and **Adam** from above, which apply unchanged to mini-batch gradients, and **averaging** the iterates $\overline\theta_T = \frac1T\sum_t\theta_t$ (Polyak–Ruppert), which restores the $\sqrt n$-efficiency of the MLE.
 
 
 ## A Smaller Logistic Regression, for SGD {.smaller}
@@ -1214,9 +1282,54 @@ legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
        lty = c(1, 2, 3), pch = c(NA, 19, NA), bty = "n", cex = 0.85)
 ```
 
-- Newton–Raphson needed `r fit$iter` full-data passes; SGD made `r nrow(sg$path) - 1` cheap updates over 5 epochs and lands near the MLE with residual noise.
+- Newton–Raphson converges in a handful of full-data passes; SGD made `r nrow(sg$path) - 1` cheap updates over 30 epochs and lands near the MLE with residual noise.
 
-- Per data pass, Newton–Raphson is far more efficient here ($n = 500$, $p = 3$); SGD earns its keep when one full gradient — or the $O(p^3)$ Hessian solve — is prohibitively expensive.
+- Per data pass, Newton–Raphson is far more efficient here ($n = 200$, $p = 2$); SGD earns its keep when one full gradient — or the $O(p^3)$ Hessian solve — is prohibitively expensive.
+
+## Momentum and Adam with Mini-Batches {.smaller}
+
+Momentum and Adam change only the last lines of the update, so one function covers all three rules on the same mini-batches:
+
+```{r}
+#| code-fold: show
+sgd_family <- function(z, r, b0, method = c("sgd", "momentum", "adam"),
+                       gamma = 0.1, beta = 0.9, beta2 = 0.999, epochs = 30, batch = 10) {
+  method <- match.arg(method)
+  n <- length(z); b <- b0; t <- 0; m <- s <- rep(0, length(b0))
+  for (e in 1:epochs) {
+    idx <- sample(n)
+    for (st in seq(1, n, by = batch)) {
+      i <- idx[st:min(st + batch - 1, n)]; t <- t + 1
+      p <- plogis(b[1] + b[2] * z[i])
+      g <- c(sum(p - r[i]), sum(z[i] * (p - r[i]))) / length(i)     # mini-batch gradient of L
+      if (method == "sgd") {
+        b <- b - gamma * g
+      } else if (method == "momentum") {
+        m <- beta * m + g; b <- b - gamma * m
+      } else {
+        m <- beta * m + (1 - beta) * g; s <- beta2 * s + (1 - beta2) * g^2
+        b <- b - gamma * (m / (1 - beta^t)) / (sqrt(s / (1 - beta2^t)) + 1e-8)
+      }
+    }
+  }
+  b
+}
+set.seed(3)
+rbind(sgd      = sgd_family(z2, r2, c(0, 0), "sgd", gamma = 0.1),
+      momentum = sgd_family(z2, r2, c(0, 0), "momentum", gamma = 0.02),
+      adam     = sgd_family(z2, r2, c(0, 0), "adam", gamma = 0.05),
+      nlm      = logit_nlm$estimate)
+```
+
+## Optimization in Practice: Deep Learning {.smaller}
+
+With $p$ from millions to billions and $n$ too large for full passes, the methods of this section are used in a particular way:
+
+- **Only mini-batch gradients**, from backpropagation. Newton, scoring and BFGS need full passes or $O(p^2)$ storage; their place is taken by Adam's diagonal preconditioner (in research, structured curvature such as K-FAC and Shampoo).
+
+- **Adam-type methods are the default**: AdamW (weight decay applied directly to the weights) for transformers and language models; SGD with momentum and a tuned schedule remains common for image models.
+- **The learning-rate schedule matters as much as the optimizer**: a short warmup, then cosine or linear decay, in the spirit of Robbins–Monro; plus gradient clipping and large batches.
+- **The minimum is not the goal**: the loss is non-convex with many equivalent minima, and an exactly minimized loss can overfit, so training stops early and is judged on held-out data.
 
 # Nelder–Mead (Simplex Method)
 
@@ -1280,6 +1393,7 @@ text(xc[1], xc[2], TeX("$x_c$ contract"), pos = 2, col = "orange3")
 | Fisher scoring / IRLS | $g$, $I(\theta)$ | positive-definite steps; GLMs | needs expectations |
 | Nelder–Mead | $\mathcal{L}$ | derivative-free | slow, small $p$ |
 | gradient descent / CG / BFGS | $g$ | scales to large $p$ | line search; ill-conditioning |
+| momentum / Adam | $g$ or $g_i$ | no line search | step size to tune |
 | SGD | $g_i$ | scales to large $n$ and $p$ | noisy, tuning of $\gamma_t$ |
 
 $\mathcal{L}$ is approximately quadratic near the MLE (asymptotic normality); every method above exploits that, and its curvature $J(\hat\theta)$ at the optimum delivers the standard errors.

@@ -10,7 +10,7 @@
   <meta name="generator" content="quarto-1.9.37">
 
   <meta name="author" content="Longhai Li">
-  <meta name="dcterms.date" content="2026-10-08">
+  <meta name="dcterms.date" content="2026-10-15">
   <title>optimization-slides</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -227,7 +227,7 @@ Longhai Li
 </div>
 </div>
 
-  <p class="date">2026-10-08</p>
+  <p class="date">2026-10-15</p>
 </section>
 <section>
 <section id="review-likelihood-theory-and-mle" class="title-slide slide level1 center" data-number="1">
@@ -1213,7 +1213,7 @@ g(\theta_k + \alpha d_k)^\top d_k \ \ge\ c_2\, g_k^\top d_k,
 <h1><span class="header-section-number">4</span> Gradient-based Methods</h1>
 
 </section>
-<section id="what-if-the-hessian-is-unavailable-or-too-big" class="slide level2">
+<section id="what-if-the-hessian-is-unavailable-or-too-big" class="slide level2 smaller">
 <h2>What If the Hessian Is Unavailable or Too Big?</h2>
 <table class="caption-top">
 <colgroup>
@@ -1238,28 +1238,40 @@ g(\theta_k + \alpha d_k)^\top d_k \ \ge\ c_2\, g_k^\top d_k,
 <td style="text-align: left;">small <span class="math inline">p</span>, non-smooth or noisy <span class="math inline">\mathcal{L}</span></td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">gradient descent + line search</td>
+<td style="text-align: left;">gradient descent</td>
 <td style="text-align: left;"><span class="math inline">g</span></td>
 <td style="text-align: left;"><span class="math inline">O(p)</span> + line search</td>
 <td style="text-align: left;">large <span class="math inline">p</span></td>
 </tr>
 <tr class="odd">
+<td style="text-align: left;">momentum, Adam</td>
+<td style="text-align: left;"><span class="math inline">g</span>, averaged</td>
+<td style="text-align: left;"><span class="math inline">O(p)</span>, fixed step</td>
+<td style="text-align: left;">large <span class="math inline">p</span>, noisy <span class="math inline">g</span></td>
+</tr>
+<tr class="even">
 <td style="text-align: left;">conjugate gradient</td>
 <td style="text-align: left;"><span class="math inline">g</span></td>
 <td style="text-align: left;"><span class="math inline">O(p)</span> + line search</td>
 <td style="text-align: left;">large <span class="math inline">p</span>, quadratic-like <span class="math inline">\mathcal{L}</span></td>
 </tr>
-<tr class="even">
-<td style="text-align: left;">quasi-Newton (BFGS, L-BFGS)</td>
+<tr class="odd">
+<td style="text-align: left;">BFGS, L-BFGS</td>
 <td style="text-align: left;"><span class="math inline">g</span>, builds <span class="math inline">\approx</span> Hessian</td>
 <td style="text-align: left;"><span class="math inline">O(p^2)</span> / <span class="math inline">O(mp)</span></td>
 <td style="text-align: left;">default general-purpose</td>
 </tr>
-<tr class="odd">
+<tr class="even">
 <td style="text-align: left;">Newton / Fisher scoring</td>
 <td style="text-align: left;"><span class="math inline">g</span>, <span class="math inline">H</span></td>
 <td style="text-align: left;"><span class="math inline">O(p^3)</span></td>
 <td style="text-align: left;">moderate <span class="math inline">p</span>, gives SEs</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">SGD</td>
+<td style="text-align: left;"><span class="math inline">g_i</span> on a mini-batch</td>
+<td style="text-align: left;"><span class="math inline">O(mp)</span></td>
+<td style="text-align: left;">large <span class="math inline">n</span> and <span class="math inline">p</span></td>
 </tr>
 </tbody>
 </table>
@@ -1294,6 +1306,38 @@ g(\theta_k + \alpha d_k)^\top d_k \ \ge\ c_2\, g_k^\top d_k,
 <p>With exact line search, consecutive directions are <strong>orthogonal</strong> (<span class="math inline">g(\theta_{k+1})'d_k = 0</span>), so on elongated contours the path zig-zags across the valley:</p>
 
 <img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-8-1.png" width="672" class="r-stretch"><p>The number of iterations grows with the <strong>condition number</strong> of the Hessian (ratio of largest to smallest eigenvalue).</p>
+</section>
+<section id="momentum-heavy-ball" class="slide level2">
+<h2>Momentum (Heavy Ball)</h2>
+<p>Gradient descent zig-zags because <span class="math inline">g_k</span> is dominated by the steep direction <strong>across</strong> the valley. Momentum <strong>averages</strong> the gradients over past iterations and steps along the average: <span class="math display">
+m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
+</span></p>
+<ul>
+<li><p>Across-valley components change sign from step to step and <strong>cancel</strong> in the average; along-valley components keep their sign and <strong>add up</strong>, so the step lengthens along the valley floor.</p></li>
+<li><p><span class="math inline">\beta = 0</span> is gradient descent with a fixed step; along a persistent direction the effective step is <span class="math inline">\alpha/(1-\beta)</span>, so <span class="math inline">\alpha</span> is lowered when <span class="math inline">\beta</span> is raised.</p></li>
+<li><p>Only the gradient is modified: no curvature, no line search. <span class="math inline">g_k</span> can be the full gradient or a noisy mini-batch gradient, whose noise the averaging also damps.</p></li>
+</ul>
+</section>
+<section id="adam-a-step-size-for-each-coordinate" class="slide level2 smaller">
+<h2>Adam: a Step Size for Each Coordinate</h2>
+<p>Momentum fixes the direction, not the scale: one <span class="math inline">\alpha</span> serves every coordinate. <strong>Adam</strong> (adaptive moment estimation) also averages the <strong>squared</strong> gradient, elementwise, <span class="math display">
+m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
+s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
+</span> corrects both for starting at zero, <span class="math inline">\hat m_k = m_k/(1-\beta_1^k)</span>, <span class="math inline">\hat s_k = s_k/(1-\beta_2^k)</span>, and updates <span class="math display">
+\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999,\ \varepsilon = 10^{-8} .
+</span></p>
+<ul>
+<li><p>Each coordinate moves roughly <span class="math inline">\alpha</span> per step <strong>whatever the scale</strong> of <span class="math inline">\mathcal{L}</span>: large-gradient coordinates take smaller steps, flat ones larger steps.</p></li>
+<li><p><span class="math inline">s_k</span> estimates the diagonal of the empirical Fisher information <span class="math inline">\frac1n\sum_i g_ig_i'</span>, so Adam is a cheap, <strong>diagonal</strong> stand-in for the preconditioner <span class="math inline">I(\theta)^{-1}</span> of Fisher scoring.</p></li>
+<li><p>Diagonal means it ignores the correlation between coordinates: no fast local convergence like scoring or BFGS. It is the default optimizer for neural networks.</p></li>
+</ul>
+</section>
+<section id="fixed-step-momentum-and-adam-on-the-quadratic" class="slide level2">
+<h2>Fixed Step, Momentum and Adam on the Quadratic</h2>
+
+<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-9-1.png" width="864" class="r-stretch"><ul>
+<li>Momentum cuts the iterations by building speed along the valley. Adam’s per-coordinate scaling cannot help when the valley runs <strong>diagonally</strong>, which needs the off-diagonal curvature that only Newton, scoring or BFGS use.</li>
+</ul>
 </section>
 <section id="conjugate-gradient" class="slide level2">
 <h2>Conjugate Gradient</h2>
@@ -1331,7 +1375,7 @@ d_0 = -g_0, \qquad d_{k+1} = -g_{k+1} + \beta_k d_k, \qquad
 </details>
 
 </div>
-<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-9-1.png" width="672" class="r-stretch"></section>
+<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-10-1.png" width="672" class="r-stretch"></section>
 <section id="quasi-newton-bfgs" class="slide level2">
 <h2>Quasi-Newton: BFGS</h2>
 <p>Between gradient methods and Newton: build an approximation <span class="math inline">B_k \approx \nabla^2\mathcal{L}</span> from successive gradient differences <span class="math inline">s_k = \theta_{k+1} - \theta_k</span>, <span class="math inline">y_k = g_{k+1} - g_k</span>, via a rank-two update that keeps <span class="math inline">B_k</span> positive definite. Steps are <span class="math inline">d_k = -B_k^{-1}g_k</span> with a line search.</p>
@@ -1359,14 +1403,17 @@ BFGS -0.5956291 0.8618954 -1.840956               35               13</code></pr
 </div>
 </div>
 <p><code>optim(..., hessian = TRUE)</code> returns a finite-difference Hessian at the solution, so standard errors are available even for gradient-only methods.</p>
-</section></section>
-<section>
-<section id="stochastic-gradient-descent" class="title-slide slide level1 center" data-number="5">
-<h1><span class="header-section-number">5</span> Stochastic Gradient Descent</h1>
-
 </section>
-<section id="motivation-large-n" class="slide level2">
-<h2>Motivation: Large <span class="math inline">n</span></h2>
+<section id="app-comparing-the-optimizers" class="slide level2">
+<h2>App: Comparing the Optimizers</h2>
+<p>The <a href="../shinylive_apps/app_gradient-methods.html" target="_blank">gradient-methods app</a> runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin’s many local minima.</p>
+<ul>
+<li><p>Click a starting point, then step or play through the iterations; overlay a second method as a dashed path.</p></li>
+<li><p>Try momentum on the banana and raise its rate <span class="math inline">\eta</span> until it diverges; compare Adam’s <span class="math inline">\alpha = 0.1</span>, which works on all six functions, with momentum, which needs a rate for each.</p></li>
+</ul>
+</section>
+<section id="stochastic-gradient-descent-motivation" class="slide level2">
+<h2>Stochastic Gradient Descent: Motivation</h2>
 <p>For iid data the negative log-likelihood and its gradient are <strong>sums over observations</strong>: <span class="math display">
 \mathcal{L}(\theta) = \sum_{i=1}^n \mathcal{L}_i(\theta), \qquad g(\theta) = \sum_{i=1}^n g_i(\theta), \qquad g_i = \nabla\mathcal{L}_i .
 </span></p>
@@ -1398,7 +1445,7 @@ E_i\big[g_i(\theta)\big] = \frac{1}{n}\,g(\theta).
 <ul>
 <li><p><span class="math inline">\gamma</span> too large: divergence or persistent noise. <span class="math inline">\gamma</span> too small: painfully slow.</p></li>
 <li><p>Convergence is only <strong>sublinear</strong>, far slower than Newton <em>per iteration</em> — but each iteration costs <span class="math inline">O(p)</span> instead of <span class="math inline">O(np)</span>, and early progress is fast.</p></li>
-<li><p>Common refinements: <strong>momentum</strong> (average past gradients), <strong>Adam</strong> (per-coordinate adaptive rates), <strong>averaging</strong> the iterates <span class="math inline">\overline\theta_T = \frac1T\sum_t\theta_t</span> (Polyak–Ruppert), which restores the <span class="math inline">\sqrt n</span>-efficiency of the MLE.</p></li>
+<li><p>Common refinements: <strong>momentum</strong> and <strong>Adam</strong> from above, which apply unchanged to mini-batch gradients, and <strong>averaging</strong> the iterates <span class="math inline">\overline\theta_T = \frac1T\sum_t\theta_t</span> (Polyak–Ruppert), which restores the <span class="math inline">\sqrt n</span>-efficiency of the MLE.</p></li>
 </ul>
 </section>
 <section id="a-smaller-logistic-regression-for-sgd" class="slide level2 smaller">
@@ -1476,14 +1523,67 @@ truth  0.0000000 1.500000</code></pre>
 <section id="sgd-trajectory-vs.-newtonraphson" class="slide level2">
 <h2>SGD Trajectory vs.&nbsp;Newton–Raphson</h2>
 
-<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-13-1.png" width="672" class="r-stretch"><ul>
-<li><p>Newton–Raphson needed 7 full-data passes; SGD made 600 cheap updates over 5 epochs and lands near the MLE with residual noise.</p></li>
-<li><p>Per data pass, Newton–Raphson is far more efficient here (<span class="math inline">n = 500</span>, <span class="math inline">p = 3</span>); SGD earns its keep when one full gradient — or the <span class="math inline">O(p^3)</span> Hessian solve — is prohibitively expensive.</p></li>
+<img data-src="Lec_05_MLE_files/figure-revealjs/unnamed-chunk-14-1.png" width="672" class="r-stretch"><ul>
+<li><p>Newton–Raphson converges in a handful of full-data passes; SGD made 600 cheap updates over 30 epochs and lands near the MLE with residual noise.</p></li>
+<li><p>Per data pass, Newton–Raphson is far more efficient here (<span class="math inline">n = 200</span>, <span class="math inline">p = 2</span>); SGD earns its keep when one full gradient — or the <span class="math inline">O(p^3)</span> Hessian solve — is prohibitively expensive.</p></li>
+</ul>
+</section>
+<section id="momentum-and-adam-with-mini-batches" class="slide level2 smaller">
+<h2>Momentum and Adam with Mini-Batches</h2>
+<p>Momentum and Adam change only the last lines of the update, so one function covers all three rules on the same mini-batches:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href=""></a>sgd_family <span class="ot">&lt;-</span> <span class="cf">function</span>(z, r, b0, <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"sgd"</span>, <span class="st">"momentum"</span>, <span class="st">"adam"</span>),</span>
+<span id="cb57-2"><a href=""></a>                       <span class="at">gamma =</span> <span class="fl">0.1</span>, <span class="at">beta =</span> <span class="fl">0.9</span>, <span class="at">beta2 =</span> <span class="fl">0.999</span>, <span class="at">epochs =</span> <span class="dv">30</span>, <span class="at">batch =</span> <span class="dv">10</span>) {</span>
+<span id="cb57-3"><a href=""></a>  method <span class="ot">&lt;-</span> <span class="fu">match.arg</span>(method)</span>
+<span id="cb57-4"><a href=""></a>  n <span class="ot">&lt;-</span> <span class="fu">length</span>(z); b <span class="ot">&lt;-</span> b0; t <span class="ot">&lt;-</span> <span class="dv">0</span>; m <span class="ot">&lt;-</span> s <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">length</span>(b0))</span>
+<span id="cb57-5"><a href=""></a>  <span class="cf">for</span> (e <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>epochs) {</span>
+<span id="cb57-6"><a href=""></a>    idx <span class="ot">&lt;-</span> <span class="fu">sample</span>(n)</span>
+<span id="cb57-7"><a href=""></a>    <span class="cf">for</span> (st <span class="cf">in</span> <span class="fu">seq</span>(<span class="dv">1</span>, n, <span class="at">by =</span> batch)) {</span>
+<span id="cb57-8"><a href=""></a>      i <span class="ot">&lt;-</span> idx[st<span class="sc">:</span><span class="fu">min</span>(st <span class="sc">+</span> batch <span class="sc">-</span> <span class="dv">1</span>, n)]; t <span class="ot">&lt;-</span> t <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb57-9"><a href=""></a>      p <span class="ot">&lt;-</span> <span class="fu">plogis</span>(b[<span class="dv">1</span>] <span class="sc">+</span> b[<span class="dv">2</span>] <span class="sc">*</span> z[i])</span>
+<span id="cb57-10"><a href=""></a>      g <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sum</span>(p <span class="sc">-</span> r[i]), <span class="fu">sum</span>(z[i] <span class="sc">*</span> (p <span class="sc">-</span> r[i]))) <span class="sc">/</span> <span class="fu">length</span>(i)     <span class="co"># mini-batch gradient of L</span></span>
+<span id="cb57-11"><a href=""></a>      <span class="cf">if</span> (method <span class="sc">==</span> <span class="st">"sgd"</span>) {</span>
+<span id="cb57-12"><a href=""></a>        b <span class="ot">&lt;-</span> b <span class="sc">-</span> gamma <span class="sc">*</span> g</span>
+<span id="cb57-13"><a href=""></a>      } <span class="cf">else</span> <span class="cf">if</span> (method <span class="sc">==</span> <span class="st">"momentum"</span>) {</span>
+<span id="cb57-14"><a href=""></a>        m <span class="ot">&lt;-</span> beta <span class="sc">*</span> m <span class="sc">+</span> g; b <span class="ot">&lt;-</span> b <span class="sc">-</span> gamma <span class="sc">*</span> m</span>
+<span id="cb57-15"><a href=""></a>      } <span class="cf">else</span> {</span>
+<span id="cb57-16"><a href=""></a>        m <span class="ot">&lt;-</span> beta <span class="sc">*</span> m <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">-</span> beta) <span class="sc">*</span> g; s <span class="ot">&lt;-</span> beta2 <span class="sc">*</span> s <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">-</span> beta2) <span class="sc">*</span> g<span class="sc">^</span><span class="dv">2</span></span>
+<span id="cb57-17"><a href=""></a>        b <span class="ot">&lt;-</span> b <span class="sc">-</span> gamma <span class="sc">*</span> (m <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> beta<span class="sc">^</span>t)) <span class="sc">/</span> (<span class="fu">sqrt</span>(s <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> beta2<span class="sc">^</span>t)) <span class="sc">+</span> <span class="fl">1e-8</span>)</span>
+<span id="cb57-18"><a href=""></a>      }</span>
+<span id="cb57-19"><a href=""></a>    }</span>
+<span id="cb57-20"><a href=""></a>  }</span>
+<span id="cb57-21"><a href=""></a>  b</span>
+<span id="cb57-22"><a href=""></a>}</span>
+<span id="cb57-23"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">3</span>)</span>
+<span id="cb57-24"><a href=""></a><span class="fu">rbind</span>(<span class="at">sgd      =</span> <span class="fu">sgd_family</span>(z2, r2, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="st">"sgd"</span>, <span class="at">gamma =</span> <span class="fl">0.1</span>),</span>
+<span id="cb57-25"><a href=""></a>      <span class="at">momentum =</span> <span class="fu">sgd_family</span>(z2, r2, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="st">"momentum"</span>, <span class="at">gamma =</span> <span class="fl">0.02</span>),</span>
+<span id="cb57-26"><a href=""></a>      <span class="at">adam     =</span> <span class="fu">sgd_family</span>(z2, r2, <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>), <span class="st">"adam"</span>, <span class="at">gamma =</span> <span class="fl">0.05</span>),</span>
+<span id="cb57-27"><a href=""></a>      <span class="at">nlm      =</span> logit_nlm<span class="sc">$</span>estimate)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>               [,1]     [,2]
+sgd      -0.2767125 1.496405
+momentum -0.2607684 1.531970
+adam     -0.2609139 1.502514
+nlm      -0.2725325 1.503424</code></pre>
+</div>
+</div>
+</section>
+<section id="optimization-in-practice-deep-learning" class="slide level2 smaller">
+<h2>Optimization in Practice: Deep Learning</h2>
+<p>With <span class="math inline">p</span> from millions to billions and <span class="math inline">n</span> too large for full passes, the methods of this section are used in a particular way:</p>
+<ul>
+<li><p><strong>Only mini-batch gradients</strong>, from backpropagation. Newton, scoring and BFGS need full passes or <span class="math inline">O(p^2)</span> storage; their place is taken by Adam’s diagonal preconditioner (in research, structured curvature such as K-FAC and Shampoo).</p></li>
+<li><p><strong>Adam-type methods are the default</strong>: AdamW (weight decay applied directly to the weights) for transformers and language models; SGD with momentum and a tuned schedule remains common for image models.</p></li>
+<li><p><strong>The learning-rate schedule matters as much as the optimizer</strong>: a short warmup, then cosine or linear decay, in the spirit of Robbins–Monro; plus gradient clipping and large batches.</p></li>
+<li><p><strong>The minimum is not the goal</strong>: the loss is non-convex with many equivalent minima, and an exactly minimized loss can overfit, so training stops early and is judged on held-out data.</p></li>
 </ul>
 </section></section>
 <section>
-<section id="neldermead-simplex-method" class="title-slide slide level1 center" data-number="6">
-<h1><span class="header-section-number">6</span> Nelder–Mead (Simplex Method)</h1>
+<section id="neldermead-simplex-method" class="title-slide slide level1 center" data-number="5">
+<h1><span class="header-section-number">5</span> Nelder–Mead (Simplex Method)</h1>
 
 </section>
 <section id="overview" class="slide level2">
@@ -1497,8 +1597,8 @@ truth  0.0000000 1.500000</code></pre>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb57-1"><a href=""></a>rosen <span class="ot">&lt;-</span> <span class="cf">function</span>(v) (<span class="dv">1</span> <span class="sc">-</span> v[<span class="dv">1</span>])<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">100</span> <span class="sc">*</span> (v[<span class="dv">2</span>] <span class="sc">-</span> v[<span class="dv">1</span>]<span class="sc">^</span><span class="dv">2</span>)<span class="sc">^</span><span class="dv">2</span>       <span class="co"># Rosenbrock "banana", min at (1, 1)</span></span>
-<span id="cb57-2"><a href=""></a>nm <span class="ot">&lt;-</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="fl">1.2</span>, <span class="dv">1</span>), rosen, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>); <span class="fu">c</span>(nm<span class="sc">$</span>par, <span class="at">evals =</span> nm<span class="sc">$</span>counts[<span class="st">"function"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb59"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb59-1"><a href=""></a>rosen <span class="ot">&lt;-</span> <span class="cf">function</span>(v) (<span class="dv">1</span> <span class="sc">-</span> v[<span class="dv">1</span>])<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="dv">100</span> <span class="sc">*</span> (v[<span class="dv">2</span>] <span class="sc">-</span> v[<span class="dv">1</span>]<span class="sc">^</span><span class="dv">2</span>)<span class="sc">^</span><span class="dv">2</span>       <span class="co"># Rosenbrock "banana", min at (1, 1)</span></span>
+<span id="cb59-2"><a href=""></a>nm <span class="ot">&lt;-</span> <span class="fu">optim</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="fl">1.2</span>, <span class="dv">1</span>), rosen, <span class="at">method =</span> <span class="st">"Nelder-Mead"</span>); <span class="fu">c</span>(nm<span class="sc">$</span>par, <span class="at">evals =</span> nm<span class="sc">$</span>counts[<span class="st">"function"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>                              evals.function 
@@ -1566,6 +1666,12 @@ x_c = c + \rho(v_{d+1} - c),
 <td style="text-align: left;">line search; ill-conditioning</td>
 </tr>
 <tr class="even">
+<td style="text-align: left;">momentum / Adam</td>
+<td style="text-align: left;"><span class="math inline">g</span> or <span class="math inline">g_i</span></td>
+<td style="text-align: left;">no line search</td>
+<td style="text-align: left;">step size to tune</td>
+</tr>
+<tr class="odd">
 <td style="text-align: left;">SGD</td>
 <td style="text-align: left;"><span class="math inline">g_i</span></td>
 <td style="text-align: left;">scales to large <span class="math inline">n</span> and <span class="math inline">p</span></td>
