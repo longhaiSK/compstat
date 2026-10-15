@@ -2600,7 +2600,21 @@ with the usual defaults $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\varepsilon = 10
 
 The update needs only the batch gradient $g^{(B_k)}$: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. Adam is momentum with a step size for each coordinate: with $s_k$ held constant it is exactly momentum, so it contains the averaged gradient and adds the rescaling. It is the default optimizer for neural networks. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
 
-#### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
+#### Comments on the Use of Squared Gradients for Rescaling in Adam {#sec-empirical-fisher}
+
+AdaGrad, RMSProp and Adam divide the gradient, coordinate by coordinate, by the square root of a running average of its own squared values:
+
+| Method | Running average $s_k$ of $\big(g^{(B_j)}\big)^2$ (elementwise) | Step |
+|:--|:--|:--|
+| AdaGrad (Duchi, Hazan and Singer, 2011) | cumulative sum $\sum_{j \le k} \big(g^{(B_j)}\big)^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
+| RMSProp (Hinton, 2012) | exponential average $\beta_2 s_{k-1} + (1-\beta_2)\, \big(g^{(B_k)}\big)^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
+| Adam (Kingma and Ba, 2014) | as RMSProp, bias-corrected | $\alpha\, \hat m_k / \sqrt{\hat s_k}$, with momentum |
+
+: Adaptive step-size methods built from the history of the batch gradients. {#tbl-adaptive-diag}
+
+AdaGrad's cumulative sum grows without bound, so its steps keep shrinking; RMSProp and Adam forget old gradients and do not. Why this rescaling helps has been explained from several perspectives. They are described below, with their limits, and none of them accounts for all of the behaviour seen in practice.
+
+**Perspective 1: the empirical Fisher information.** Adam's authors remark that $\hat s_k$ approximates the diagonal of the Fisher information (Kingma and Ba, 2015, citing Pascanu and Bengio, 2013), which suggests reading the method as a diagonal version of natural gradient. To see what this does and does not mean, recall the empirical Fisher information of this chapter.
 
 For a loss that is a sum over cases, $\mathcal{L} = \sum_i \mathcal{L}_i$, the per-case gradients $g^{(i)} = \nabla\mathcal{L}_i$ define the **empirical Fisher information**
 $$
@@ -2625,33 +2639,29 @@ $$
 $$
 a curvature scale for each coordinate $\theta_r$, computed from gradients that are already available, in $O(p)$ storage.
 
-#### Adaptive Step Sizes: AdaGrad, RMSProp and Adam
-
-These methods divide the gradient, coordinate by coordinate, by the **square root** of a running average of its own squared values:
-
-| Method | Running average $s_k$ of $\big(g^{(B_j)}\big)^2$ (elementwise) | Step |
-|:--|:--|:--|
-| AdaGrad (Duchi, Hazan and Singer, 2011) | cumulative sum $\sum_{j \le k} \big(g^{(B_j)}\big)^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
-| RMSProp (Hinton, 2012) | exponential average $\beta_2 s_{k-1} + (1-\beta_2)\, \big(g^{(B_k)}\big)^2$ | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
-| Adam (Kingma and Ba, 2014) | as RMSProp, bias-corrected | $\alpha\, \hat m_k / \sqrt{\hat s_k}$, with momentum |
-
-: Adaptive step-size methods built from the history of the batch gradients. {#tbl-adaptive-diag}
-
-AdaGrad's cumulative sum grows without bound, so its steps keep shrinking; RMSProp and Adam forget old gradients and do not.
-
-**What the rescaling does.** It is a *diagonal preconditioner built from the gradient history*: each coordinate moves about $\alpha$ per step in units of its own recent gradient size, so coordinates with large gradients are slowed and coordinates with small gradients are sped up. It repairs differences of scale between coordinates, not valleys that run diagonally across them.
-
-**It is not an empirical-Fisher method.** The resemblance to $\operatorname{diag}\hat F$ of @sec-empirical-fisher is superficial, for three reasons.
+Adam's $\hat s_k$ looks like $\operatorname{diag}\hat F$, but the resemblance is loose:
 
 - $s_k$ squares the *batch average* $g^{(B_k)}$; it does not sum the squares of the case gradients. For a batch of $m$ cases drawn at a fixed $\theta$, with $\bar g = \frac1n\sum_i g^{(i)}$,
 $$
 E\big[g^{(B)} \odot g^{(B)}\big] = \bar g^2 + \frac1m\Big(\frac1n\operatorname{diag}\hat F - \bar g^2\Big),
 $$
 so it contains the squared mean gradient, which is the signal and not the noise. Only near the optimum, where $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, is $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. With full-batch gradients $s_k$ is just the squared mean gradient, which tends to zero at the optimum.
-- Even where $\hat s_k$ does estimate $\operatorname{diag}\hat F$, $\hat F$ stands for curvature only when the model is correctly specified (the information equality, $\hat F \approx I_n \approx J$). The empirical Fisher is a poor substitute for curvature otherwise, and far from the optimum (Kunstner, Hennig and Balles, 2019).
-- A Newton or scoring step multiplies by the *inverse* $\hat F^{-1}$, a power $-1$, whereas these methods use the power $-\tfrac12$. With $\hat s \propto g^2$ a power of $-1$ would give the step $\alpha/g$, which explodes where the gradient is small. The square root does not come from Fisher information.
+- Even where $\hat s_k$ does estimate $\operatorname{diag}\hat F$, $\hat F$ stands for curvature only when the model is correctly specified ($\hat F \approx I_n \approx J$). Otherwise, and far from the optimum, it is a poor substitute for curvature (Kunstner, Hennig and Balles, 2019).
+- A Newton or scoring step multiplies by the *inverse* $\hat F^{-1}$, a power $-1$, whereas these methods use the power $-\tfrac12$. With $\hat s \propto g^2$ a power of $-1$ would give the step $\alpha/g$, which explodes where the gradient is small. Kingma and Ba note this themselves, calling the square root "more conservative" than natural gradient.
 
-**Where the square root does come from.** From three other arguments. (i) AdaGrad is derived from a regret bound in online convex optimization, where the per-coordinate step $1/\sqrt{\sum_j g_j^2}$ is the best fixed scaling in hindsight. (ii) Dividing a gradient by its magnitude gives the *sign* of the gradient: with $\beta_1 = \beta_2 = 0$ Adam is sign descent, $\theta_{k+1} = \theta_k - \alpha\operatorname{sign}(g)$, which is steepest descent in the max-norm, and the running average makes it a sign descent weighted by how consistent the gradient is. (iii) The step is invariant to the scale of each gradient coordinate, so rescaling a parameter or the loss does not change the iteration. Methods that really do approximate the Fisher information of a network include **K-FAC** (Martens and Grosse, 2015), one Kronecker-factored block per layer, and **natural gradient** (Amari, 1998).
+Methods that really do approximate the Fisher information of a network include **K-FAC** (Martens and Grosse, 2015), one Kronecker-factored block per layer, and **natural gradient** (Amari, 1998).
+
+**Perspective 2: a signal-to-noise ratio.** Kingma and Ba's own explanation is that $\hat m_k/\sqrt{\hat s_k}$ is a signal-to-noise ratio. When the gradient direction is uncertain, $\hat m_k$ is small relative to $\sqrt{\hat s_k}$ and the step shrinks, which they call "a form of automatic annealing" near an optimum. The step is also bounded by about $\alpha$ and is invariant to the scale of the gradient: multiplying $g$ by a constant $c$ cancels in $\hat m_k/\sqrt{\hat s_k}$, so rescaling the parameters or the loss does not change the iteration. This explains the robustness to scale that makes Adam easy to use. It does not by itself show an improvement in the rate of convergence.
+
+**Perspective 3: online learning.** AdaGrad was derived from a regret bound in online convex optimization (Duchi, Hazan and Singer, 2011): the per-coordinate step $1/\sqrt{\sum_j g_j^2}$ is the best fixed scaling in hindsight, and it gives rates that adapt to sparse gradients. The bound is for AdaGrad, not for RMSProp or Adam, which forget old gradients. The convergence proof in the original Adam paper was later shown to be wrong, with simple convex problems on which Adam does not converge, and the variant AMSGrad was proposed (Reddi, Kale and Kumar, 2018).
+
+**Perspective 4: sign descent.** Dividing a gradient by its magnitude leaves its sign. With $\beta_1 = \beta_2 = 0$, Adam is sign descent, $\theta_{k+1} = \theta_k - \alpha\operatorname{sign}(g)$, which is steepest descent in the max-norm (Bernstein et al., 2018). Balles and Hennig (2018) split Adam's update into a sign and a magnitude, with the magnitude being a variance-based damping of the sign. On transformers, sign descent without the averaging recovers much of Adam's advantage over SGD (Kunstner et al., 2023).
+
+**Perspective 5: heterogeneous noise and curvature.** Two explanations for why adaptive methods beat SGD on attention models are heavy-tailed gradient noise, where the per-coordinate normalization acts like clipping (Zhang et al., 2020), and a Hessian whose blocks differ strongly from one parameter block to another, which a single learning rate cannot suit (Zhang et al., 2024). Kunstner et al. (2023) find that noise is not the main factor behind the gap between Adam and SGD on transformers, so these accounts compete.
+
+**Practical benefits.** Whatever the explanation, the benefits are not in doubt. Adam needs little tuning, since its default $\alpha$, $\beta_1$, $\beta_2$ work across a wide range of problems, it is insensitive to the scale of the parameters and the loss, it copes with coordinates whose gradients differ by orders of magnitude, and it costs only $O(p)$ extra storage. It, or its variant AdamW, is the default for training transformers and many other deep networks.
+
+**An open question.** There is still no theory that explains why this rescaling helps so much for deep networks, and the Fisher interpretation in particular is not supported. What can be said with some confidence is what the rescaling does (it equalizes the movement of coordinates and is invariant to scale) and that it is effective empirically. Which of the properties above is responsible for its advantage over SGD, and in which problems, remains to be explored.
 
 ### Shinylive App for Comparing the Optimizers {#sec-gradient-methods-app}
 
