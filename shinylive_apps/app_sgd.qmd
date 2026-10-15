@@ -88,7 +88,7 @@ MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
-                    tol = 1e-6) {
+                    tol = 1e-3, patience = 20, rtol = 1e-4) {
   p <- length(th0)
   f <- function(th) loss_fun(th, x, y)
   g <- function(th) loss_grad(th, x, y)
@@ -97,6 +97,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   th <- th0; B <- diag(p)
   g_prev <- d_prev <- s_prev <- NULL
   n <- 0; note <- "maximum number of iterations reached"
+  best_f <- Inf; best_k <- 1                  # the best loss so far, and when it was reached
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
@@ -112,7 +113,16 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     gk <- g(th); fk <- f(th)
     P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
     if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
-    if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
+    if (sqrt(sum(gk^2)) < tol) {
+      note <- paste0("converged: gradient norm < ", format(tol)); break
+    }
+    ## no stopping rule can be exact for a noisy method, so every method also stops when the
+    ## full-data loss has not improved by a fraction rtol for `patience` iterations
+    if (k == 1 || fk < best_f - rtol * abs(best_f)) { best_f <- fk; best_k <- k }
+    if (k - best_k >= patience) {
+      note <- paste0("stopped: the loss has not improved by ", 100 * rtol, "% in ",
+                     patience, " iterations"); break
+    }
     if (k > maxit) break
 
     if (alg == "gdfix") {                    # full-batch gradient, fixed learning rate
@@ -423,6 +433,10 @@ ui <- fluidPage(
       column(1, selectInput("ctr", "Contrast",
                             choices = c(1, 2, 4, 8, 16, 32), selected = 8,
                             width = "100%")),
+      column(1, selectInput("gtol", "Stop: ||g|| <",
+                            choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
+                                        "1e-4" = 1e-4, "1e-6" = 1e-6),
+                            selected = 0.001, width = "100%")),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
@@ -431,7 +445,7 @@ ui <- fluidPage(
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
              checkboxInput("autoplay", "Autoplay on change", FALSE)),
-      column(4, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
+      column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
   ),  fluidRow(
@@ -526,6 +540,7 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
+            tol = if (is.null(input$gtol)) 1e-3 else as.numeric(input$gtol),
             lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
@@ -702,6 +717,8 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 *What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, the only full-matrix preconditioner here (compare Newton's method, $P_k = H^{-1}$). The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
+*When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; the full-data loss has not improved by 0.01% in 20 consecutive iterations (a patience rule, the only kind that can stop a noisy method, for which the gradient norm never gets small; it also ends a line-search method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 20000 mini-batch updates, which it reports.
+
 *Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$); raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
@@ -796,7 +813,7 @@ MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
-                    tol = 1e-6) {
+                    tol = 1e-3, patience = 20, rtol = 1e-4) {
   p <- length(th0)
   f <- function(th) loss_fun(th, x, y)
   g <- function(th) loss_grad(th, x, y)
@@ -805,6 +822,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   th <- th0; B <- diag(p)
   g_prev <- d_prev <- s_prev <- NULL
   n <- 0; note <- "maximum number of iterations reached"
+  best_f <- Inf; best_k <- 1                  # the best loss so far, and when it was reached
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
@@ -820,7 +838,16 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     gk <- g(th); fk <- f(th)
     P[k, ] <- th; G[k, ] <- gk; Fv[k] <- fk; n <- k
     if (!is.finite(fk) || !all(is.finite(gk))) { note <- "diverged"; break }
-    if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
+    if (sqrt(sum(gk^2)) < tol) {
+      note <- paste0("converged: gradient norm < ", format(tol)); break
+    }
+    ## no stopping rule can be exact for a noisy method, so every method also stops when the
+    ## full-data loss has not improved by a fraction rtol for `patience` iterations
+    if (k == 1 || fk < best_f - rtol * abs(best_f)) { best_f <- fk; best_k <- k }
+    if (k - best_k >= patience) {
+      note <- paste0("stopped: the loss has not improved by ", 100 * rtol, "% in ",
+                     patience, " iterations"); break
+    }
     if (k > maxit) break
 
     if (alg == "gdfix") {                    # full-batch gradient, fixed learning rate
@@ -1131,6 +1158,10 @@ ui <- fluidPage(
       column(1, selectInput("ctr", "Contrast",
                             choices = c(1, 2, 4, 8, 16, 32), selected = 8,
                             width = "100%")),
+      column(1, selectInput("gtol", "Stop: ||g|| <",
+                            choices = c("0.1" = 0.1, "0.01" = 0.01, "1e-3" = 0.001,
+                                        "1e-4" = 1e-4, "1e-6" = 1e-6),
+                            selected = 0.001, width = "100%")),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
                     ctrl_btn("first", "backward-fast", "Back to the start"),
                     ctrl_btn("back",  "backward-step", "One iteration back"),
@@ -1139,7 +1170,7 @@ ui <- fluidPage(
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
              checkboxInput("autoplay", "Autoplay on change", FALSE)),
-      column(4, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
+      column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
   ),  fluidRow(
@@ -1234,6 +1265,7 @@ server <- function(input, output, session) {
     fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
     req(!fixed || !is.null(input[[paste0("lr", s)]]))
     run_alg(a, theta0(), D$x, D$y, as.numeric(input$maxit),
+            tol = if (is.null(input$gtol)) 1e-3 else as.numeric(input$gtol),
             lr  = if (fixed) as.numeric(input[[paste0("lr", s)]]) else NA,
             mom = if (a == "mom") input[[paste0("mom", s)]] else NA,
             m   = if (a %in% MINIBATCH) as.numeric(input[[paste0("batch", s)]]) else NA)
