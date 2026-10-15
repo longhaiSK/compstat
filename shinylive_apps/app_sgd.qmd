@@ -83,6 +83,8 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 }
 
 ## ------------------------------------------------------------- algorithms
+## the methods that step through mini-batches: one iteration is one epoch
+MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
@@ -98,12 +100,13 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
-  if (alg == "sgd") {                        # keep the number of mini-batch steps in check
+  if (alg %in% MINIBATCH) {                  # keep the number of mini-batch steps in check
     cap <- max(1, floor(20000 / ceiling(n_obs / m)))
     if (maxit > cap) { maxit <- cap; capped <- TRUE }
   }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
-  if (alg == "sgd") set.seed(11)
+  tt <- 0                                    # mini-batch updates so far (Adam)
+  if (alg %in% MINIBATCH) set.seed(11)
 
   for (k in 1:(maxit + 1)) {
     gk <- g(th); fk <- f(th)
@@ -112,26 +115,39 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
     if (k > maxit) break
 
-    if (alg %in% c("gdfix", "mom", "adam", "sgd")) {  # fixed rate, no line search
-      if (alg == "sgd") {                    # one iteration is one epoch: a shuffled
-        perm <- sample.int(n_obs)            # pass of mini-batch steps over all the
-        for (s0 in seq(1, n_obs, by = m)) {  # data, so it is paired with a full-batch step
-          idx <- perm[s0:min(s0 + m - 1, n_obs)]
-          th <- th - lr * loss_grad(th, x[idx], y[idx])
-        }
-        AL[k + 1] <- lr
-        next
-      } else gs <- gk
-      if (alg == "mom") {                    # heavy ball: keep a fraction of the last step
-        vel <- mom * vel - lr * gs
-        dth <- vel
-      } else if (alg == "adam") {            # per-weight step from running moments
-        m1 <- 0.9 * m1 + 0.1 * gs
-        m2 <- 0.999 * m2 + 0.001 * gs^2
-        dth <- -lr * (m1 / (1 - 0.9^k)) / (sqrt(m2 / (1 - 0.999^k)) + 1e-8)
-      } else dth <- -lr * gs                 # gradient descent / SGD
+    if (alg == "gdfix") {                    # full-batch gradient, fixed learning rate
       AL[k + 1] <- lr
-      th <- th + dth
+      th <- th - lr * gk
+      next
+    }
+
+    if (alg %in% MINIBATCH) {                # one iteration is one epoch: a shuffled pass
+      perm <- sample.int(n_obs)              # of mini-batch steps over all the data, so
+      al <- numeric(0)                       # it costs about one full-batch gradient
+      for (s0 in seq(1, n_obs, by = m)) {
+        idx <- perm[s0:min(s0 + m - 1, n_obs)]
+        xb <- x[idx]; yb <- y[idx]
+        gb <- loss_grad(th, xb, yb)               # the gradient of mini-batch B_k
+        if (alg == "sgdls") {                # backtracking line search on the batch loss
+          fb <- loss_fun(th, xb, yb); a <- lr; gg <- sum(gb^2)
+          for (j in 1:30) {
+            fa <- loss_fun(th - a * gb, xb, yb)
+            if (is.finite(fa) && fa <= fb - 1e-4 * a * gg) break
+            a <- a / 2
+          }
+          al <- c(al, a)
+          th <- th - a * gb
+        } else if (alg == "mom") {           # heavy ball on the batch gradient
+          vel <- mom * vel - lr * gb
+          th <- th + vel
+        } else {                             # Adam on the batch gradient
+          tt <- tt + 1
+          m1 <- 0.9 * m1 + 0.1 * gb
+          m2 <- 0.999 * m2 + 0.001 * gb^2
+          th <- th - lr * (m1 / (1 - 0.9^tt)) / (sqrt(m2 / (1 - 0.999^tt)) + 1e-8)
+        }
+      }
+      AL[k + 1] <- if (alg == "sgdls") mean(al) else lr
       next
     }
 
@@ -174,13 +190,13 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
        A = AL[i], n = n, note = note)
 }
 
-ALGS <- c("Gradient descent, fixed learning rate" = "gdfix",
-          "SGD (mini-batch)"                    = "sgd",
-          "Gradient descent + momentum"         = "mom",
-          "Adam"                                = "adam",
-          "Gradient descent + line search"      = "gd",
-          "Conjugate gradient (Polak-Ribiere+)" = "cg",
-          "BFGS (quasi-Newton)"                 = "bfgs")
+ALGS <- c("Gradient descent, fixed learning rate"     = "gdfix",
+          "Gradient descent + line search"            = "gd",
+          "Conjugate gradient (Polak-Ribiere+)"       = "cg",
+          "BFGS (quasi-Newton)"                       = "bfgs",
+          "SGD + line search (on each mini-batch)"    = "sgdls",
+          "SGD + momentum"                            = "mom",
+          "SGD + Adam"                                = "adam")
 
 ## --------------------------------------------------------- network layout
 ## Weights sit on the edges; each intercept is a node of its own, a box with
@@ -368,18 +384,19 @@ ui <- fluidPage(
     fluidRow(
       row_label("Run"),
       column(5,
-        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
+        conditionalPanel("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
           div(class = "steprule",
-            div(sliderInput("lr", "Learning rate", min = 0.005, max = 1,
+            div(sliderInput("lr", "Learning rate (first step if line search)", min = 0.005, max = 1,
                             value = 0.3, step = 0.005, width = "100%")),
             conditionalPanel("input.alg == 'mom'",
               div(sliderInput("mom", "Momentum", min = 0, max = 0.99,
                               value = 0.9, step = 0.01, width = "100%"))),
-            conditionalPanel("input.alg == 'sgd'",
+            conditionalPanel("['sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
               div(selectInput("batch", "Mini-batch size",
-                              choices = c(5, 10, 20, 50, 100), selected = 20,
-                              width = "100%"))))),
-        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) < 0",
+                              choices = c("5" = 5, "10" = 10, "20" = 20, "50" = 50,
+                                          "100" = 100, "all n (full batch)" = 1e6),
+                              selected = 20, width = "100%"))))),
+        conditionalPanel("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(input.alg) < 0",
           div(style = "padding-top: 28px;",
               helpText("The step length comes from a Wolfe line search.")))),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
@@ -389,7 +406,9 @@ ui <- fluidPage(
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
-             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+             checkboxInput("autoplay", "Autoplay on change", FALSE),
+             conditionalPanel("['sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
+               checkboxInput("cmp", "Compare with GD + line search", TRUE))),
       column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
@@ -430,7 +449,7 @@ server <- function(input, output, session) {
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
   observeEvent(input$alg, {
-    lr0 <- c(gdfix = 0.3, sgd = 0.3, mom = 0.1, adam = 0.1)[input$alg]
+    lr0 <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[input$alg]
     if (!is.na(lr0)) updateSliderInput(session, "lr", value = unname(lr0))
   })
   observeEvent(input$settrue, theta0(TRUE_THETA))
@@ -453,11 +472,18 @@ server <- function(input, output, session) {
   DAT <- reactive(make_data(input$n, as.numeric(input$sigma), dseed()))
   run <- reactive({
     D <- DAT()
-    fixed <- input$alg %in% c("gdfix", "sgd", "mom", "adam")
+    fixed <- input$alg %in% c("gdfix", "sgdls", "mom", "adam")
     run_alg(input$alg, theta0(), D$x, D$y, as.numeric(input$maxit),
             lr  = if (fixed) input$lr else NA,
             mom = if (input$alg == "mom") input$mom else NA,
-            m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
+            m   = if (input$alg %in% MINIBATCH) as.numeric(input$batch) else NA)
+  })
+
+  ## gradient descent with a line search on the same start, for the mini-batch methods
+  ref <- reactive({
+    if (!(input$alg %in% MINIBATCH) || !isTRUE(input$cmp)) return(NULL)
+    D <- DAT()
+    run_alg("gd", theta0(), D$x, D$y, as.numeric(input$maxit))
   })
 
   ## the browser owns the iteration (slider, play timer, buttons); a new run restarts it
@@ -493,7 +519,7 @@ server <- function(input, output, session) {
   PCOL <- c("#F28E00", "#1F5FBF", "black", "#00B5CC")
 
   output$fit <- renderPlot({
-    C <- cur(); R <- C$R; D <- DAT()
+    C <- cur(); R <- C$R; D <- DAT(); RF <- ref()
     xg <- seq(-3, 3, length.out = 300)
     par(mar = c(4, 4.2, 2.5, 1))
     plot(D$x, D$y, pch = 19, cex = 0.7, col = adjustcolor("#E8820C", 0.5),
@@ -503,11 +529,16 @@ server <- function(input, output, session) {
     lines(xg, mu_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
     lines(xg, mu_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
     lines(xg, mu_fun(C$th, xg), col = "#2E8B57", lwd = 3)
+    if (!is.null(RF))                          # GD + line search after the same number of epochs
+      lines(xg, mu_fun(RF$P[min(C$k, RF$n), ], xg), col = "#1F5FBF", lwd = 2.5)
     leg <- data.frame(
       lab = c("true mean", "starting weights", "current fit", "data"),
       lwd = c(2, 2, 3, NA), lty = c(2, 1, 1, NA), pch = c(NA, NA, NA, 19),
       col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
       stringsAsFactors = FALSE)
+    if (!is.null(RF))
+      leg <- rbind(leg, data.frame(lab = "GD + line search, same epoch", lwd = 2.5, lty = 1,
+                                   pch = NA, col = "#1F5FBF", stringsAsFactors = FALSE))
     legend("topright", bty = "n", cex = 0.78, lwd = leg$lwd, lty = leg$lty,
            pch = leg$pch, col = leg$col, legend = leg$lab)
   })
@@ -533,16 +564,26 @@ server <- function(input, output, session) {
   })
 
   output$conv <- renderPlot({
-    C <- cur(); R <- C$R
+    C <- cur(); R <- C$R; RF <- ref()
     it <- 0:(R$n - 1)
     gn <- sqrt(rowSums(R$G^2))
     par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+    xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
     plot(it, R$F, type = "b", pch = 20, xlab = "iteration", ylab = "loss",
+         xlim = xl, ylim = range(c(R$F, RF$F), finite = TRUE),
          main = "loss (half the mean squared error)")
     abline(h = 0.5 * DAT()$sigma^2, lty = 2, col = "grey50")     # the noise floor
+    if (!is.null(RF)) {
+      lines(0:(RF$n - 1), RF$F, type = "b", pch = 20, col = "#1F5FBF")
+      legend("topright", bty = "n", cex = 0.8, lty = 1, pch = 20,
+             col = c("black", "#1F5FBF"), legend = c(names(ALGS)[ALGS == input$alg], "GD + line search"))
+    }
     points(it[C$k], R$F[C$k], pch = 19, col = "red", cex = 1.6)
+    gnr <- if (is.null(RF)) NULL else log10(sqrt(rowSums(RF$G^2)))
     plot(it, log10(gn), type = "b", pch = 20, xlab = "iteration",
+         xlim = xl, ylim = range(c(log10(gn), gnr), finite = TRUE),
          ylab = expression(log[10] ~ "||gradient||"), main = "gradient norm")
+    if (!is.null(RF)) lines(0:(RF$n - 1), gnr, type = "b", pch = 20, col = "#1F5FBF")
     points(it[C$k], log10(gn[C$k]), pch = 19, col = "red", cex = 1.6)
   })
 
@@ -550,12 +591,12 @@ server <- function(input, output, session) {
     C <- cur(); R <- C$R
     a <- R$A[C$k]
     HTML(paste0(
-      "<b>", if (input$alg == "sgd") "epoch" else "iteration", "</b> ", C$k - 1L, " of ", R$n - 1L,
+      "<b>", if (input$alg %in% MINIBATCH) "epoch" else "iteration", "</b> ", C$k - 1L, " of ", R$n - 1L,
       " &nbsp; <b>loss</b> ", formatC(R$F[C$k], digits = 5, format = "f"),
       " &nbsp; <b>noise floor</b> ", formatC(0.5 * DAT()$sigma^2, digits = 4, format = "f"),
       " &nbsp; <b>||gradient||</b> ", formatC(sqrt(sum(C$g^2)), digits = 3, format = "g"),
       if (is.finite(a)) paste0(" &nbsp; <b>",
-                               if (input$alg %in% c("gdfix", "sgd", "mom", "adam"))
+                               if (input$alg %in% c("gdfix", "mom", "adam"))
                                  "learning rate" else "step length", "</b> ",
                                formatC(a, digits = 3, format = "g")) else "",
       "<br><i>", R$note, "</i>"))
@@ -567,35 +608,35 @@ shinyApp(ui, server)
 
 ## About the app
 
-Fits a Gaussian neural network (a regression with normal noise and an identity link), with one covariate and four `tanh` hidden units, to data generated from known weights plus normal noise whose standard deviation you choose, and lets you watch seven optimizers work on it: gradient descent with a fixed learning rate, SGD, momentum, Adam, gradient descent with a line search, conjugate gradient, and BFGS. The four units are enough for a mean $\mu(x)$ with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$.
+Fits a Gaussian neural network (a regression with normal noise and an identity link), with one covariate and four `tanh` hidden units, to data generated from known weights plus normal noise whose standard deviation you choose, and lets you watch seven optimizers work on it: gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient and BFGS, which use the full data, and SGD with a line search, SGD with momentum and SGD with Adam, which step through mini-batches. The four units are enough for a mean $\mu(x)$ with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$.
 
 **The weights.** The upper network shows the thirteen weights at the current iteration. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data, **Random** draws a new set, and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
 
-**The methods.** Write $g_k = \nabla L(\theta_k)$ for the gradient of the average loss $L$ over all $n$ observations at the current weights, and $\ell_i$ for the loss of observation $i$. Every optimizer in the menu, in the order of the menu, can be written as one update
+**The methods.** Write $g_k = \nabla L(\theta_k)$ for the gradient of the average loss $L$ over all $n$ observations at the current weights, $\ell_i$ for the loss of observation $i$, and $g_k^{(B_k)} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)$ for the gradient of the mini-batch $B_k$ of $m$ observations used at update $k$ (the superscript names the batch, the subscript the iteration). The first four optimizers in the menu use the full data; the last three step through mini-batches. All of them can be written as one update
 
 $$\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,$$
 
-where $m_k$ is the gradient actually used (the gradient itself, a sampled version of it, or a smoothed version of it), $P_k$ is a *preconditioner* that rescales or rotates the step, and $\alpha_k$ is the step size.
+where $m_k$ is the gradient actually used (the full gradient, a mini-batch gradient, or an average of past ones), $P_k$ is a *preconditioner* that rescales or rotates the step, and $\alpha_k$ is the step size.
 
 | Optimizer | Gradient used, $m_k$ | Preconditioner, $P_k$ | Step size, $\alpha_k$ |
 |:------------|:------------------------|:-------------------|:-----------------|
-| **Fixed-rate GD** | $g_k$ | $I$ | $\alpha$, set by hand |
-| **SGD** | $g_k^{B} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)$ for a random mini-batch $B_k$ of size $m$, so that $E\,g_k^{B} = g_k$ | $I$ | $\alpha$, set by hand |
-| **Momentum** | $v_k = \mu\, v_{k-1} + g_k$, an exponentially weighted sum of past gradients | $I$ | $\alpha$, set by hand |
-| **Adam** | $\hat m_k = \dfrac{(1-\beta_1)\sum_{j \le k} \beta_1^{k-j} g_j}{1-\beta_1^{k}}$, a bias-corrected average of past gradients | $\mathrm{diag}\big(1/(\sqrt{\hat v_k} + \epsilon)\big)$, with $\hat v_k = \dfrac{(1-\beta_2)\sum_{j \le k} \beta_2^{k-j} g_j \odot g_j}{1-\beta_2^{k}}$ | $\alpha$, set by hand |
+| **GD, fixed rate** | $g_k$ | $I$ | $\alpha$, set by hand |
 | **GD + line search** | $g_k$ | $I$ | $\alpha_k$ from a Wolfe line search |
 | **Conjugate gradient (PR+)** | $d_k = -g_k + \beta_k d_{k-1}$, with $\beta_k = \max\!\Big(0, \dfrac{g_k^\top (g_k - g_{k-1})}{g_{k-1}^\top g_{k-1}}\Big)$ | implicit: the new gradient is combined with the previous direction | $\alpha_k$ from a Wolfe line search |
 | **BFGS** | $g_k$ | $B_k \approx H^{-1}$, a full matrix, updated by $B_{k+1} = (I - \rho\, s y^\top) B_k (I - \rho\, y s^\top) + \rho\, s s^\top$ with $s = \theta_{k+1} - \theta_k$, $y = g_{k+1} - g_k$, $\rho = 1/(s^\top y)$ | $\alpha_k$ from a Wolfe line search |
+| **SGD + line search** | $g_k^{(B_k)}$, with $E\,g_k^{(B_k)} = g_k$ | $I$ | $\alpha_k$ by backtracking on the loss of the mini-batch $B_k$: start at the learning rate and halve until $L^{(B_k)}(\theta_k - \alpha g_k^{(B_k)}) \le L^{(B_k)}(\theta_k) - c_1 \alpha \|g_k^{(B_k)}\|^2$ |
+| **SGD + momentum** | $v_k = \mu\, v_{k-1} + g_k^{(B_k)}$, an exponentially weighted sum of past mini-batch gradients | $I$ | $\alpha$, set by hand |
+| **SGD + Adam** | $\hat m_k = \dfrac{(1-\beta_1)\sum_{j \le k} \beta_1^{k-j} g_j^{(B_j)}}{1-\beta_1^{k}}$, a bias-corrected average of past mini-batch gradients | $\mathrm{diag}\big(1/(\sqrt{\hat v_k} + \epsilon)\big)$, with $\hat v_k = \dfrac{(1-\beta_2)\sum_{j \le k} \beta_2^{k-j} g_j^{(B_j)} \odot g_j^{(B_j)}}{1-\beta_2^{k}}$ | $\alpha$, set by hand |
 
-In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam. Momentum is coded as $v \leftarrow \mu v - \alpha g$, $\theta \leftarrow \theta + v$, the same update written with the sign and $\alpha$ absorbed into $v$. A Wolfe line search takes the step $\alpha$ along $d_k = -P_k m_k$ that satisfies both $L(\theta_k + \alpha d_k) \le L(\theta_k) + c_1 \alpha\, g_k^\top d_k$ (sufficient decrease) and $\nabla L(\theta_k + \alpha d_k)^\top d_k \ge c_2\, g_k^\top d_k$ (curvature), with $c_1 = 10^{-4}$ and $c_2 = 0.9$.
+In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam, and $k$ counts mini-batch updates. Momentum is coded as $v \leftarrow \mu v - \alpha g^{(B)}$, $\theta \leftarrow \theta + v$, the same update written with the sign and $\alpha$ absorbed into $v$. A Wolfe line search takes the step $\alpha$ along $d_k = -P_k m_k$ that satisfies both $L(\theta_k + \alpha d_k) \le L(\theta_k) + c_1 \alpha\, g_k^\top d_k$ (sufficient decrease) and $\nabla L(\theta_k + \alpha d_k)^\top d_k \ge c_2\, g_k^\top d_k$ (curvature), with $c_1 = 10^{-4}$ and $c_2 = 0.9$.
 
-*What each one changes.* Fixed-rate GD, SGD and momentum do not change the direction's shape at all: $P_k = I$. SGD changes *which gradient* is used (a noisy but cheap one) and momentum changes it by averaging over the past, which damps the zig-zag across a valley and speeds up progress along it. Neither uses curvature or Fisher information. Adam is the first to precondition: dividing by $\sqrt{\hat v_k}$ shrinks the step of weights with consistently large gradients and enlarges that of weights with small ones. For this model $\ell_i = \tfrac12 (y_i - \mu_i)^2$ and $\nabla \ell_i = (\mu_i - y_i)\nabla \mu_i$, so the *empirical Fisher information* is $\hat F = \frac{1}{n}\sum_i (\mu_i - y_i)^2 \nabla\mu_i \nabla\mu_i^\top$. The true Fisher information, for this loss scale, is the Gauss–Newton matrix $G = \frac{1}{n}\sum_i \nabla\mu_i \nabla\mu_i^\top$ (divided by $\sigma^2$ if the loss is the full negative log-likelihood), and at the true weights $\hat F$ averages $\sigma^2 G$: the empirical Fisher carries the size of the residuals, the true one does not. The running average of $g \odot g$ in Adam is, per observation, the diagonal of $\hat F$, so Adam acts as a diagonal preconditioner built from $\hat F^{1/2}$, a cheap stand-in for curvature. It is the square root, not the inverse, so it is not a natural-gradient step (which would use $F^{-1}$); and because the app feeds Adam the full-data gradient, $\hat v_k$ here averages $g_k^2$ over iterations rather than over observations, so the reading as $\hat F$ is an approximation. The line-search methods keep the gradient but choose the step by the Wolfe conditions, so there is no learning rate to tune. Conjugate gradient builds its direction from the previous one, which on a quadratic makes successive directions conjugate with respect to the Hessian. BFGS learns an approximation of the inverse Hessian from the gradient differences alone, the only method here with a full-matrix preconditioner; compare Newton's method, $P_k = H^{-1}$, and Gauss–Newton, $P_k = G^{-1}$ (Fisher scoring for this model).
+*What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, the only full-matrix preconditioner here (compare Newton's method, $P_k = H^{-1}$). The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
-*Epochs and mini-batches.* For SGD one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch steps over all the data. An SGD iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. With the batch size equal to $n$ SGD reduces to the fixed-rate method; the smaller the batch, the more updates each epoch makes, at the price of noisier steps. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer SGD's advantage over the full-batch methods becomes. To keep the browser responsive an SGD run stops after 20000 mini-batch steps in all, which the info line reports. For these thirteen parameters BFGS is hard to beat; momentum, Adam and SGD are what larger networks use, where a Hessian approximation is too expensive.
+*Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead, as the blue curve of **GD + line search** in the plots shows (it can be switched off with the checkbox under the playback buttons). With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. For these thirteen parameters and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 20000 updates in all, which the info line reports.
 
 **The gradient.** The lower network has the same layout, with each edge and intercept box coloured by the corresponding component of the gradient of the loss, computed by backpropagation. Its colour scale is set by the largest component at the current iteration, so you can see which weights the method is still pushing on as the run converges.
 
-**The fit.** The right panel shows the generated data, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). With an identity link the units add directly on the scale of the data, $\mu(x) = v_0 + \sum_j v_j h_j(x)$, so the second plot shows the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) and the fit they add up to together with $v_0$ (green) against the true mean (dashed red). The box above the plots hides this second plot. Beneath the fit are the loss (half the mean squared error) and the gradient norm per iteration; the dashed horizontal line on the loss plot is the *noise floor* $\sigma^2/2$, the smallest average loss a correct model can reach, so you can tell a good fit from one that is merely still improving. The top row of controls sets up the data (sample size, noise level and a new dataset), the optimizer, the maximum number of iterations and the colour contrast; the second row holds the step rule of the chosen method, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
+**The fit.** The right panel shows the generated data, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). For the three mini-batch methods the blue curve is gradient descent with a line search from the same start after the same number of epochs, and the loss and gradient-norm plots show its path too, so the benefit of the mini-batch updates can be read off directly. With an identity link the units add directly on the scale of the data, $\mu(x) = v_0 + \sum_j v_j h_j(x)$, so the second plot shows the four scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4) and the fit they add up to together with $v_0$ (green) against the true mean (dashed red). The box above the plots hides this second plot. Beneath the fit are the loss (half the mean squared error) and the gradient norm per iteration; the dashed horizontal line on the loss plot is the *noise floor* $\sigma^2/2$, the smallest average loss a correct model can reach, so you can tell a good fit from one that is merely still improving. The top row of controls sets up the data (sample size, noise level and a new dataset), the optimizer, the maximum number of iterations and the colour contrast; the second row holds the step rule of the chosen method, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
 
 A Poisson version of this app, for count data with a log link, is [Fitting a Poisson Neural Network by Gradient Methods](app_nn-poisson.html).
 
@@ -678,6 +719,8 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 }
 
 ## ------------------------------------------------------------- algorithms
+## the methods that step through mini-batches: one iteration is one epoch
+MINIBATCH <- c("sgdls", "mom", "adam")
 ## Row k of P, G, F is the state after k - 1 steps; A[k] is the step length
 ## that led to it.
 run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
@@ -693,12 +736,13 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   ## state for the fixed-rate rules
   n_obs <- length(x); m <- max(1, min(m, n_obs))
   capped <- FALSE
-  if (alg == "sgd") {                        # keep the number of mini-batch steps in check
+  if (alg %in% MINIBATCH) {                  # keep the number of mini-batch steps in check
     cap <- max(1, floor(20000 / ceiling(n_obs / m)))
     if (maxit > cap) { maxit <- cap; capped <- TRUE }
   }
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
-  if (alg == "sgd") set.seed(11)
+  tt <- 0                                    # mini-batch updates so far (Adam)
+  if (alg %in% MINIBATCH) set.seed(11)
 
   for (k in 1:(maxit + 1)) {
     gk <- g(th); fk <- f(th)
@@ -707,26 +751,39 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
     if (sqrt(sum(gk^2)) < tol) { note <- "converged: gradient norm < 1e-6"; break }
     if (k > maxit) break
 
-    if (alg %in% c("gdfix", "mom", "adam", "sgd")) {  # fixed rate, no line search
-      if (alg == "sgd") {                    # one iteration is one epoch: a shuffled
-        perm <- sample.int(n_obs)            # pass of mini-batch steps over all the
-        for (s0 in seq(1, n_obs, by = m)) {  # data, so it is paired with a full-batch step
-          idx <- perm[s0:min(s0 + m - 1, n_obs)]
-          th <- th - lr * loss_grad(th, x[idx], y[idx])
-        }
-        AL[k + 1] <- lr
-        next
-      } else gs <- gk
-      if (alg == "mom") {                    # heavy ball: keep a fraction of the last step
-        vel <- mom * vel - lr * gs
-        dth <- vel
-      } else if (alg == "adam") {            # per-weight step from running moments
-        m1 <- 0.9 * m1 + 0.1 * gs
-        m2 <- 0.999 * m2 + 0.001 * gs^2
-        dth <- -lr * (m1 / (1 - 0.9^k)) / (sqrt(m2 / (1 - 0.999^k)) + 1e-8)
-      } else dth <- -lr * gs                 # gradient descent / SGD
+    if (alg == "gdfix") {                    # full-batch gradient, fixed learning rate
       AL[k + 1] <- lr
-      th <- th + dth
+      th <- th - lr * gk
+      next
+    }
+
+    if (alg %in% MINIBATCH) {                # one iteration is one epoch: a shuffled pass
+      perm <- sample.int(n_obs)              # of mini-batch steps over all the data, so
+      al <- numeric(0)                       # it costs about one full-batch gradient
+      for (s0 in seq(1, n_obs, by = m)) {
+        idx <- perm[s0:min(s0 + m - 1, n_obs)]
+        xb <- x[idx]; yb <- y[idx]
+        gb <- loss_grad(th, xb, yb)               # the gradient of mini-batch B_k
+        if (alg == "sgdls") {                # backtracking line search on the batch loss
+          fb <- loss_fun(th, xb, yb); a <- lr; gg <- sum(gb^2)
+          for (j in 1:30) {
+            fa <- loss_fun(th - a * gb, xb, yb)
+            if (is.finite(fa) && fa <= fb - 1e-4 * a * gg) break
+            a <- a / 2
+          }
+          al <- c(al, a)
+          th <- th - a * gb
+        } else if (alg == "mom") {           # heavy ball on the batch gradient
+          vel <- mom * vel - lr * gb
+          th <- th + vel
+        } else {                             # Adam on the batch gradient
+          tt <- tt + 1
+          m1 <- 0.9 * m1 + 0.1 * gb
+          m2 <- 0.999 * m2 + 0.001 * gb^2
+          th <- th - lr * (m1 / (1 - 0.9^tt)) / (sqrt(m2 / (1 - 0.999^tt)) + 1e-8)
+        }
+      }
+      AL[k + 1] <- if (alg == "sgdls") mean(al) else lr
       next
     }
 
@@ -769,13 +826,13 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
        A = AL[i], n = n, note = note)
 }
 
-ALGS <- c("Gradient descent, fixed learning rate" = "gdfix",
-          "SGD (mini-batch)"                    = "sgd",
-          "Gradient descent + momentum"         = "mom",
-          "Adam"                                = "adam",
-          "Gradient descent + line search"      = "gd",
-          "Conjugate gradient (Polak-Ribiere+)" = "cg",
-          "BFGS (quasi-Newton)"                 = "bfgs")
+ALGS <- c("Gradient descent, fixed learning rate"     = "gdfix",
+          "Gradient descent + line search"            = "gd",
+          "Conjugate gradient (Polak-Ribiere+)"       = "cg",
+          "BFGS (quasi-Newton)"                       = "bfgs",
+          "SGD + line search (on each mini-batch)"    = "sgdls",
+          "SGD + momentum"                            = "mom",
+          "SGD + Adam"                                = "adam")
 
 ## --------------------------------------------------------- network layout
 ## Weights sit on the edges; each intercept is a node of its own, a box with
@@ -963,18 +1020,19 @@ ui <- fluidPage(
     fluidRow(
       row_label("Run"),
       column(5,
-        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) >= 0",
+        conditionalPanel("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
           div(class = "steprule",
-            div(sliderInput("lr", "Learning rate", min = 0.005, max = 1,
+            div(sliderInput("lr", "Learning rate (first step if line search)", min = 0.005, max = 1,
                             value = 0.3, step = 0.005, width = "100%")),
             conditionalPanel("input.alg == 'mom'",
               div(sliderInput("mom", "Momentum", min = 0, max = 0.99,
                               value = 0.9, step = 0.01, width = "100%"))),
-            conditionalPanel("input.alg == 'sgd'",
+            conditionalPanel("['sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
               div(selectInput("batch", "Mini-batch size",
-                              choices = c(5, 10, 20, 50, 100), selected = 20,
-                              width = "100%"))))),
-        conditionalPanel("['gdfix', 'sgd', 'mom', 'adam'].indexOf(input.alg) < 0",
+                              choices = c("5" = 5, "10" = 10, "20" = 20, "50" = 50,
+                                          "100" = 100, "all n (full batch)" = 1e6),
+                              selected = 20, width = "100%"))))),
+        conditionalPanel("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(input.alg) < 0",
           div(style = "padding-top: 28px;",
               helpText("The step length comes from a Wolfe line search.")))),
       column(3, div(style = "display: flex; gap: 4px; padding-top: 22px;",
@@ -984,7 +1042,9 @@ ui <- fluidPage(
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
-             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+             checkboxInput("autoplay", "Autoplay on change", FALSE),
+             conditionalPanel("['sgdls', 'mom', 'adam'].indexOf(input.alg) >= 0",
+               checkboxInput("cmp", "Compare with GD + line search", TRUE))),
       column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
@@ -1025,7 +1085,7 @@ server <- function(input, output, session) {
   observeEvent(input$newdata, dseed(dseed() + 1))
   ## a sensible starting learning rate for each fixed-rate method
   observeEvent(input$alg, {
-    lr0 <- c(gdfix = 0.3, sgd = 0.3, mom = 0.1, adam = 0.1)[input$alg]
+    lr0 <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[input$alg]
     if (!is.na(lr0)) updateSliderInput(session, "lr", value = unname(lr0))
   })
   observeEvent(input$settrue, theta0(TRUE_THETA))
@@ -1048,11 +1108,18 @@ server <- function(input, output, session) {
   DAT <- reactive(make_data(input$n, as.numeric(input$sigma), dseed()))
   run <- reactive({
     D <- DAT()
-    fixed <- input$alg %in% c("gdfix", "sgd", "mom", "adam")
+    fixed <- input$alg %in% c("gdfix", "sgdls", "mom", "adam")
     run_alg(input$alg, theta0(), D$x, D$y, as.numeric(input$maxit),
             lr  = if (fixed) input$lr else NA,
             mom = if (input$alg == "mom") input$mom else NA,
-            m   = if (input$alg == "sgd") as.numeric(input$batch) else NA)
+            m   = if (input$alg %in% MINIBATCH) as.numeric(input$batch) else NA)
+  })
+
+  ## gradient descent with a line search on the same start, for the mini-batch methods
+  ref <- reactive({
+    if (!(input$alg %in% MINIBATCH) || !isTRUE(input$cmp)) return(NULL)
+    D <- DAT()
+    run_alg("gd", theta0(), D$x, D$y, as.numeric(input$maxit))
   })
 
   ## the browser owns the iteration (slider, play timer, buttons); a new run restarts it
@@ -1088,7 +1155,7 @@ server <- function(input, output, session) {
   PCOL <- c("#F28E00", "#1F5FBF", "black", "#00B5CC")
 
   output$fit <- renderPlot({
-    C <- cur(); R <- C$R; D <- DAT()
+    C <- cur(); R <- C$R; D <- DAT(); RF <- ref()
     xg <- seq(-3, 3, length.out = 300)
     par(mar = c(4, 4.2, 2.5, 1))
     plot(D$x, D$y, pch = 19, cex = 0.7, col = adjustcolor("#E8820C", 0.5),
@@ -1098,11 +1165,16 @@ server <- function(input, output, session) {
     lines(xg, mu_fun(TRUE_THETA, xg), col = "red", lty = 2, lwd = 2)
     lines(xg, mu_fun(R$P[1, ], xg), col = "grey60", lwd = 2)
     lines(xg, mu_fun(C$th, xg), col = "#2E8B57", lwd = 3)
+    if (!is.null(RF))                          # GD + line search after the same number of epochs
+      lines(xg, mu_fun(RF$P[min(C$k, RF$n), ], xg), col = "#1F5FBF", lwd = 2.5)
     leg <- data.frame(
       lab = c("true mean", "starting weights", "current fit", "data"),
       lwd = c(2, 2, 3, NA), lty = c(2, 1, 1, NA), pch = c(NA, NA, NA, 19),
       col = c("red", "grey60", "#2E8B57", adjustcolor("#E8820C", 0.7)),
       stringsAsFactors = FALSE)
+    if (!is.null(RF))
+      leg <- rbind(leg, data.frame(lab = "GD + line search, same epoch", lwd = 2.5, lty = 1,
+                                   pch = NA, col = "#1F5FBF", stringsAsFactors = FALSE))
     legend("topright", bty = "n", cex = 0.78, lwd = leg$lwd, lty = leg$lty,
            pch = leg$pch, col = leg$col, legend = leg$lab)
   })
@@ -1128,16 +1200,26 @@ server <- function(input, output, session) {
   })
 
   output$conv <- renderPlot({
-    C <- cur(); R <- C$R
+    C <- cur(); R <- C$R; RF <- ref()
     it <- 0:(R$n - 1)
     gn <- sqrt(rowSums(R$G^2))
     par(mfrow = c(1, 2), mar = c(4, 4.2, 2.5, 1))
+    xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
     plot(it, R$F, type = "b", pch = 20, xlab = "iteration", ylab = "loss",
+         xlim = xl, ylim = range(c(R$F, RF$F), finite = TRUE),
          main = "loss (half the mean squared error)")
     abline(h = 0.5 * DAT()$sigma^2, lty = 2, col = "grey50")     # the noise floor
+    if (!is.null(RF)) {
+      lines(0:(RF$n - 1), RF$F, type = "b", pch = 20, col = "#1F5FBF")
+      legend("topright", bty = "n", cex = 0.8, lty = 1, pch = 20,
+             col = c("black", "#1F5FBF"), legend = c(names(ALGS)[ALGS == input$alg], "GD + line search"))
+    }
     points(it[C$k], R$F[C$k], pch = 19, col = "red", cex = 1.6)
+    gnr <- if (is.null(RF)) NULL else log10(sqrt(rowSums(RF$G^2)))
     plot(it, log10(gn), type = "b", pch = 20, xlab = "iteration",
+         xlim = xl, ylim = range(c(log10(gn), gnr), finite = TRUE),
          ylab = expression(log[10] ~ "||gradient||"), main = "gradient norm")
+    if (!is.null(RF)) lines(0:(RF$n - 1), gnr, type = "b", pch = 20, col = "#1F5FBF")
     points(it[C$k], log10(gn[C$k]), pch = 19, col = "red", cex = 1.6)
   })
 
@@ -1145,12 +1227,12 @@ server <- function(input, output, session) {
     C <- cur(); R <- C$R
     a <- R$A[C$k]
     HTML(paste0(
-      "<b>", if (input$alg == "sgd") "epoch" else "iteration", "</b> ", C$k - 1L, " of ", R$n - 1L,
+      "<b>", if (input$alg %in% MINIBATCH) "epoch" else "iteration", "</b> ", C$k - 1L, " of ", R$n - 1L,
       " &nbsp; <b>loss</b> ", formatC(R$F[C$k], digits = 5, format = "f"),
       " &nbsp; <b>noise floor</b> ", formatC(0.5 * DAT()$sigma^2, digits = 4, format = "f"),
       " &nbsp; <b>||gradient||</b> ", formatC(sqrt(sum(C$g^2)), digits = 3, format = "g"),
       if (is.finite(a)) paste0(" &nbsp; <b>",
-                               if (input$alg %in% c("gdfix", "sgd", "mom", "adam"))
+                               if (input$alg %in% c("gdfix", "mom", "adam"))
                                  "learning rate" else "step length", "</b> ",
                                formatC(a, digits = 3, format = "g")) else "",
       "<br><i>", R$note, "</i>"))
