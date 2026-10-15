@@ -2557,6 +2557,26 @@ the first condition allowing the iterate to travel arbitrarily far from its star
 
 A learning rate that is too large causes divergence or persistent noise; one that is too small is painfully slow. Convergence is only **sublinear** — far slower than Newton's quadratic rate *per iteration* — but each SGD iteration costs $O(p)$ or $O(mp)$ rather than $O(np)$ for a full gradient or $O(np^2)$ for a Hessian, and early progress is often fast even when final convergence is not. Common refinements are the **momentum** and **Adam** modifications of the gradient described next, which were developed for, or are now mostly used with, mini-batch gradients, and **Polyak–Ruppert averaging** of the iterates, $\overline\theta_T = \tfrac1T\sum_{t\le T}\theta_t$, which restores the $\sqrt n$-efficiency of the MLE that the noisy path alone does not have.
 
+#### Why SGD?
+
+Two different arguments are made for SGD, and they are not equally firm.
+
+**Cost per unit of progress.** This is the established reason, and it holds for any loss that is a sum over many cases, convex or not. Large data sets are redundant: a mini-batch of a few hundred cases usually points in nearly the same direction as all $n$, so SGD takes many useful steps in the time a full-gradient method takes one. Since the MLE itself is accurate only to $O(n^{-1/2})$, there is little value in optimizing far below that statistical error, and for large $n$ SGD reaches that accuracy with less computation than methods that need the full gradient (Bottou and Bousquet, 2008, "The Tradeoffs of Large Scale Learning").
+
+**The noise itself.** The mini-batch gradient is the average gradient plus noise whose covariance, for $m$ cases drawn with replacement, is
+$$
+\operatorname{Var}\big(g^{(B)}\big) = \frac1m\Big(\frac1n\sum_{i=1}^n g^{(i)}g^{(i)\prime} - \bar g\,\bar g'\Big), \qquad \bar g = \frac1n\, g(\theta).
+$$
+Near a minimum $\bar g \approx 0$, and the covariance is $\frac{1}{nm}$ times the empirical Fisher information of @sec-empirical-fisher, which under a correctly specified model approximates the Hessian. The noise is therefore largest along the directions of highest curvature, and its overall size is set by the ratio $\gamma/m$ of learning rate to batch size. For non-convex losses this noise has been argued to help in three ways:
+
+- it moves the iterate away from saddle points, where exact gradient descent can stall (Ge, Huang, Jin and Yuan, 2015; Jin et al., 2017);
+- SGD behaves roughly like gradient descent on a smoothed version of the loss, in which small, sharp local minima disappear (Kleinberg, Li and Yuan, 2018);
+- for neural networks, small-batch training tends to end in wide, flat minima, which generalize better than the sharp minima reached with large batches (Keskar et al., 2017).
+
+The first is proved, under conditions on the saddle points. The other two are supported by analyses under simplifying assumptions and by experiments, but they remain debated: large-batch training with a rescaled learning rate (Goyal et al., 2017), or full-batch gradient descent with explicit regularization (Geiping et al., 2022), can match small-batch SGD, and how flat a minimum is depends on how the network is parameterized (Dinh et al., 2017). The safest summary is that in neural networks SGD's noise often acts as an implicit regularizer, by a mechanism that is not yet settled.
+
+For a concave log-likelihood such as the logistic regression below, there is a single optimum, the MLE, and only the first argument applies. The noise then adds variance around the MLE rather than helping to find it, which is why the iterates are averaged.
+
 #### Example: Mini-Batch SGD for the Logistic Regression
 
 Mini-batch SGD needs only the per-observation gradient already coded for Newton–Raphson, applied to a small random subset at each update:
@@ -2669,7 +2689,7 @@ for (r in names(tt)) {
 
 Momentum cuts the number of iterations by building up speed along the valley floor. Adam is slower here than plain gradient descent: its rescaling acts on each coordinate separately, and it cannot help when the valley runs **diagonally**, across both coordinates at once. Repairing that needs the off-diagonal curvature, which only Newton, Fisher scoring, BFGS and, implicitly, conjugate gradient use. With exact gradients on a smooth problem like this one, conjugate gradient and BFGS are the better tools; momentum and Adam earn their place when the gradients are noisy.
 
-### Empirical Fisher and Its Diagonal Values
+### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
 
 For a loss that is a sum over cases, $\mathcal{L} = \sum_i \mathcal{L}_i$, the per-case gradients $g^{(i)} = \nabla\mathcal{L}_i$ define the **empirical Fisher information**
 $$
