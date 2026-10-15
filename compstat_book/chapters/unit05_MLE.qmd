@@ -2575,61 +2575,7 @@ Near a minimum $\bar g \approx 0$, and the covariance is $\frac{1}{nm}$ times th
 
 The first is proved, under conditions on the saddle points. The other two are supported by analyses under simplifying assumptions and by experiments, but they remain debated: large-batch training with a rescaled learning rate (Goyal et al., 2017), or full-batch gradient descent with explicit regularization (Geiping et al., 2022), can match small-batch SGD, and how flat a minimum is depends on how the network is parameterized (Dinh et al., 2017). The safest summary is that in neural networks SGD's noise often acts as an implicit regularizer, by a mechanism that is not yet settled.
 
-For a concave log-likelihood such as the logistic regression below, there is a single optimum, the MLE, and only the first argument applies. The noise then adds variance around the MLE rather than helping to find it, which is why the iterates are averaged.
-
-#### Example: Mini-Batch SGD for the Logistic Regression
-
-Mini-batch SGD needs only the per-observation gradient already coded for Newton–Raphson, applied to a small random subset at each update:
-
-```{r}
-#| label: sgd-logistic
-sgd_logistic <- function(x, y, b0, gamma0 = 0.5, t0 = 100, epochs = 30, batch = 10) {
-  n <- length(x); b <- b0; t <- 0; path <- b0
-  for (e in 1:epochs) {
-    idx <- sample(n)
-    for (s in seq(1, n, by = batch)) {
-      i <- idx[s:min(s + batch - 1, n)]
-      t <- t + 1
-      u <- b[1] + b[2] * x[i]
-      p <- plogis(u)
-      grad <- c(sum(y[i] - p), sum(x[i] * (y[i] - p))) / length(i)
-      b <- b + gamma0 / (1 + t / t0) * grad
-      path <- rbind(path, b)
-    }
-  }
-  list(est = b, path = path)
-}
-
-set.seed(2)
-beta_true <- c(0, 1.5)                    # the parameters used to simulate data$x, data$y above
-sg <- sgd_logistic(data$x, data$y, c(0, 0))
-rbind(sgd = sg$est, nlm = logit_nlm$estimate, truth = beta_true)
-```
-
-#### SGD Trajectory vs. Newton–Raphson
-
-```{r}
-#| label: fig-sgd-vs-newton
-#| fig-cap: "Compares stochastic gradient descent, which is cheap per step but noisy, with Newton-Raphson, which is expensive per step but takes large steps, on the same logistic regression problem.
-#|   SGD (fine, noisy trajectory) versus Newton-Raphson (large steps, one per full pass through the data) converging to the same logistic-regression MLE."
-nr_path <- mle_logistic_nr(c(0, 0), 8, data$y, data$x)     # beta0, beta1, neg_loglike per Newton iteration
-m <- 10; per_epoch <- length(data$x) / m
-xs <- 0:(nrow(sg$path) - 1)
-xn <- (0:(nrow(nr_path) - 1)) * per_epoch
-
-matplot(xs, sg$path, type = "l", lty = 1, col = c(2, 4),
-        ylim = range(sg$path, nr_path[, 1:2]),
-        xlab = "mini-batch updates (one epoch = one full pass through the data)",
-        ylab = "coefficient",
-        main = expression(paste("SGD vs. Newton-Raphson: ", beta[0], " (red), ", beta[1], " (blue)")))
-matlines(xn, nr_path[, 1:2], type = "b", lty = 2, pch = 19, col = c(2, 4), lwd = 2)
-abline(h = logit_nlm$estimate, col = c(2, 4), lty = 3)
-abline(v = seq(0, max(xs), per_epoch), col = "grey85")
-legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
-       lty = c(1, 2, 3), pch = c(NA, 19, NA), bty = "n", cex = 0.85)
-```
-
-Newton needs only a handful of full-data passes to converge on this small problem ($n = 200$, $p = 2$); SGD makes many cheap updates and lands near the MLE with residual noise from its stochastic gradient. Per data pass, Newton is far more efficient here — its advantage narrows, and eventually reverses, only once a full gradient, or the $O(p^3)$ Hessian solve, becomes too expensive to compute at every iteration, which is exactly the regime where SGD earns its keep.
+For a concave log-likelihood such as the logistic regression fitted above by Newton–Raphson, there is a single optimum, the MLE, and only the first argument applies. The noise then adds variance around the MLE rather than helping to find it, and Newton–Raphson or BFGS remain the better choices at such sizes. SGD earns its place on neural networks, where the loss is non-convex and $n$ and $p$ are large.
 
 #### Momentum
 
@@ -2652,7 +2598,7 @@ $$
 $$
 with the usual defaults $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\varepsilon = 10^{-8}$.
 
-The update needs only the gradient $g_k = g^{(B_k)}(\theta_k)$ of the mini-batch: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. It is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up below. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
+The update needs only the gradient $g_k = g^{(B_k)}(\theta_k)$ of the mini-batch: $s_k$ is a running average of the squared gradient **over iterations**. Unrolling the recursion shows why the zero start does no harm: $\hat s_k = \sum_{j\le k}\beta_2^{k-j} g_j^2 \big/ \sum_{j\le k}\beta_2^{k-j}$ is a proper weighted average of the squared gradients seen so far, with no trace of $s_0$; in particular the first step is $\alpha\, g_1/(|g_1| + \varepsilon) \approx \alpha\,\operatorname{sign}(g_1)$ in each coordinate. Dividing by $\sqrt{\hat s_k}$ makes each coordinate move roughly $\alpha$ per step whatever the scale of $f$: coordinates with large gradients take smaller steps and flat ones larger steps, and the iteration becomes far less sensitive to how the parameters are scaled. Adam is momentum with a step size for each coordinate: with $s_k$ held constant it is exactly momentum, so it contains the averaged gradient and adds the rescaling. It is the default optimizer for neural networks. How $\hat s_k$ relates to the Fisher information is taken up below. As with momentum, its value lies in SGD: on a deterministic full-batch problem it rescales coordinates but uses no curvature, and gradient descent with a line search, conjugate gradient, BFGS or Newton–Raphson are better choices.
 
 #### Empirical Fisher and Its Diagonal Values {#sec-empirical-fisher}
 
@@ -2700,45 +2646,6 @@ $$
 Near the optimum $\bar g \approx 0$, and if $\theta$ changes little over the averaging window of about $1/(1-\beta_2) = 1000$ iterations, $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$. Adam run as SGD is then a **diagonal empirical-Fisher preconditioner**, $\theta_{k+1} \approx \theta_k - \alpha\sqrt{nm}\,(\operatorname{diag}\hat F)^{-1/2}\,\hat m_k$. With full-batch gradients there is no such interpretation: $g_k^2 = \bar g^2$ is the squared mean gradient, not the mean squared one, and it tends to zero at the optimum. This is another reason why Adam is not recommended outside SGD.
 
 **Why the square root.** BHHH multiplies by $\hat F^{-1}$; the adaptive methods by $(\operatorname{diag}\hat F)^{-1/2}$. With noisy gradients the full inverse would amplify the noise in flat coordinates, whereas the square root makes each coordinate move about $\alpha$ per step, measured in units of its own gradient noise. Between the full matrix and its diagonal, **K-FAC** (Martens and Grosse, 2015) approximates the Fisher information by one Kronecker-factored block per layer of a network.
-
-#### Momentum and Adam with Mini-Batches
-
-Returning to the logistic regression, momentum and Adam only change the last lines of the mini-batch SGD update, so one function with a switch for the rule covers SGD, momentum and Adam on the same mini-batches:
-
-```{r}
-#| label: sgd-mom-adam-logistic
-sgd_family <- function(x, y, b0, method = c("sgd", "momentum", "adam"),
-                       gamma = 0.1, beta = 0.9, beta2 = 0.999,
-                       epochs = 30, batch = 10) {
-  method <- match.arg(method)
-  n <- length(x); b <- b0; t <- 0; m <- s <- rep(0, length(b0))
-  for (e in 1:epochs) {
-    idx <- sample(n)
-    for (st in seq(1, n, by = batch)) {
-      i <- idx[st:min(st + batch - 1, n)]; t <- t + 1
-      p <- plogis(b[1] + b[2] * x[i])
-      g <- -c(sum(y[i] - p), sum(x[i] * (y[i] - p))) / length(i)   # gradient of the mean nll
-      if (method == "sgd") {
-        b <- b - gamma * g
-      } else if (method == "momentum") {
-        m <- beta * m + g
-        b <- b - gamma * m
-      } else {
-        m <- beta * m + (1 - beta) * g
-        s <- beta2 * s + (1 - beta2) * g^2
-        b <- b - gamma * (m / (1 - beta^t)) / (sqrt(s / (1 - beta2^t)) + 1e-8)
-      }
-    }
-  }
-  b
-}
-
-set.seed(3)
-rbind(sgd      = sgd_family(data$x, data$y, c(0, 0), "sgd", gamma = 0.1),
-      momentum = sgd_family(data$x, data$y, c(0, 0), "momentum", gamma = 0.02),
-      adam     = sgd_family(data$x, data$y, c(0, 0), "adam", gamma = 0.05),
-      nlm      = logit_nlm$estimate)
-```
 
 ### Shinylive App for Comparing the Optimizers {#sec-gradient-methods-app}
 
