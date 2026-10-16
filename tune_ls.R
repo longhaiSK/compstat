@@ -9,7 +9,8 @@ te <- make_data(2000, 0.3, 999)
 one <- function(J, seed, n=200, ep=100) {
   D <- make_data(n, 0.3, seed); th0 <- rand_start(seed, J)
   tl <- function(a, lr) { r <- run_alg(a, th0, D$x, D$y, ep, lr=lr, mom=0.9, m=20)
-    c(train=tail(r$L,1), test=loss_fun(r$P[nrow(r$P),], te$x, te$y)) }
+    tt <- apply(tail(r$P, 10), 1, function(th) loss_fun(th, te$x, te$y))
+    c(train=tail(r$L,1), test=mean(tt), last=tail(tt,1), sd=sd(tt)) }   # mean over the last 10 epochs
   res <- list()
   for (a in c("adam","mom","sgdls")) {
     M <- t(sapply(LR, function(l) tl(a, l))); rownames(M) <- LR
@@ -21,7 +22,10 @@ one <- function(J, seed, n=200, ep=100) {
   }
   res
 }
-for (J in c(4, 20)) for (seed in 1:3) {
+args <- commandArgs(TRUE)      # optional: Rscript tune_ls.R "4,20" "1,2,3"  (units, seeds)
+Js <- if (length(args) >= 1) as.numeric(strsplit(args[1], ",")[[1]]) else c(4, 20)
+seeds <- if (length(args) >= 2) as.numeric(strsplit(args[2], ",")[[1]]) else 1:3
+for (J in Js) for (seed in seeds) {
   r <- one(J, seed); cat("J",J,"seed",seed,"\n")
-  for (a in names(r)) cat(sprintf("  %-7s best test %.4f  (best lr %s; worst over grid %.3f)\n", a, r[[a]]["best"], r[[a]]["best_lr"], r[[a]]["worst"]))
+  for (a in names(r)) cat(sprintf("  %-7s best test (mean of last 10 epochs) %.4f  (best lr %s; worst over grid %.3f)\n", a, r[[a]]["best"], r[[a]]["best_lr"], r[[a]]["worst"]))
 }
