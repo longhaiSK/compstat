@@ -1636,7 +1636,7 @@ network the same $\delta$ would be passed further left and multiplied by the
 next layer's local derivative; here there is only one layer, so the recursion
 stops immediately and $g(\beta) = \sum_i \delta_i\,(1, x_i)^{\top}$.
 
-#### Implementation
+### Implementation in R
 
 **Gradient of Logistic Regression Model**
 
@@ -1748,7 +1748,7 @@ algorithm but a different arrangement of the same one, and it explains why
 `glm` reports "Fisher Scoring iterations" in its output.
 
 
-## Backprogation Algorithm for Neural Networks
+## Backpropagation Algorithm for Neural Networks
 
 ### Example of Poisson Neural Network
 Logistic regression was a one-unit network, and its Hessian was small enough to
@@ -2667,18 +2667,8 @@ Methods that really do approximate the Fisher information of a network include *
 
 There is a [shinylive app](../../shinylive_apps/app_gradient-methods.html) to compare the paths that gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton take on the same objective, on six test functions from a quadratic to the Rosenbrock banana and Rastrigin's many local minima. The app uses exact gradients, a deterministic setting in which momentum and Adam are not at their best, which is the point of the comparison: curvature information (BFGS, Newton) and line searches (CG, BFGS) pay off there, while momentum needs a learning rate suited to each function and diverges when it is too large, and Adam's single default $\alpha = 0.1$ works on all six but is slow along curved valleys.
 
-### Optimization in Practice for Deep Learning
 
-Fitting a deep network is the setting for which the methods of this section are used at the largest scale, with $p$ from millions to hundreds of billions and $n$ so large that a full pass through the data is rarely made. The practice differs from the small examples of this chapter in four ways.
-
-- **Only mini-batch gradients.** The gradient comes from backpropagation (@sec-backprop-dag) on a mini-batch, and it is the only derivative information used. Full-batch methods, and second-order methods such as Newton–Raphson or BFGS, need a full pass or $O(p^2)$ storage, which is out of reach. Their place is taken by the diagonal rescaling of the Adam family (@tbl-adaptive-diag), and in research by cheaper approximations of curvature such as Shampoo and K-FAC.
-- **Adam-type methods as the default.** AdamW, which is Adam with the weight decay applied directly to the weights rather than through the gradient, is the usual choice for transformers and language models, mainly because it needs little tuning and is robust to badly scaled weights. SGD with momentum, usually with a carefully tuned schedule and weight decay, remains common for image classification, where it is often reported to generalize slightly better; this is a rule of thumb that depends on the model and the data, not a theorem.
-- **The learning-rate schedule matters as much as the optimizer.** A typical recipe is a short warmup followed by a cosine or linear decay of $\alpha_k$, in the spirit of the Robbins–Monro condition above. Gradient clipping, large batches with a rescaled learning rate, and mixed-precision arithmetic are further standard ingredients.
-- **The loss is not the only goal.** The objective is highly non-convex, with many equivalent minima, and a loss driven to its exact minimum can overfit. Practitioners stop early, regularize, and judge the fit on held-out data, so convergence to a stationary point is rarely checked in the sense used earlier in this chapter.
-
-The two apps in the next section are deliberately tiny, with one input and four hidden units, so that the effect of each optimizer on the weights, the gradient and the fitted curve can be seen. The same update rules, with the same formulas, are what runs inside the deep learning libraries.
-
-## Examples of Fitting Neural Networks {#sec-nn-examples}
+## Examples of Fitting Neural Networks (Shinylive App Illustration)  {#sec-nn-examples}
 
 Both examples below use one input $x$ and four `tanh` hidden units, so that $\theta$ has $13$ weights and the fit can be drawn as a curve. They differ only in the likelihood, hence in the output link and in the starting value $\delta_{\eta_i}$ of backpropagation (@sec-backprop-dag); every other step of the gradient computation is the same. Each app fits the same data with seven optimizers: fixed-rate gradient descent, mini-batch SGD, momentum, Adam, gradient descent with a Wolfe line search, conjugate gradient and BFGS. One SGD iteration is an epoch, so that its progress can be compared with the full-batch methods.
 
@@ -2694,82 +2684,7 @@ The factor $\tfrac12$ changes neither the minimizer nor the shape of the loss. I
 
 With a log link, $\lambda_i = e^{\eta_i}$, and counts $y_i \mid x_i \sim \mathrm{Poisson}(\lambda_i)$, the loss is $\mathcal{L} = \frac1n\sum_i(\lambda_i - y_i\eta_i)$ and $\delta_{\eta_i} = \lambda_i - y_i$; this is the model whose gradient is worked out in full in the backpropagation section above. The log link makes the hidden units add on the log scale, so $\lambda(x)$ is a *product* of their contributions $e^{v_j h_j(x)}$, and the loss is much more sensitive to a weight that is too large than in the Gaussian case, so a fixed learning rate is harder to choose. The [Poisson app](../../shinylive_apps/app_nn-poisson.html) offers the same controls as the Gaussian one, with the sample size going up to $2000$ so that mini-batch SGD can be compared with the full-batch methods when $n$ is large.
 
-
-## Summary of Optimization Methods
-
-The chapter has covered a lot of ground, from bisection on a scalar gradient $g$ to stochastic gradient descent on millions of parameters. This section collects the gradient-based methods, Newton–Raphson included, into one reference: first as a single update rule in which they differ only in the gradient they use and in how it is modified, then by what each needs and costs, then by which R function to reach for and how to choose among them. Derivative-free methods such as Nelder–Mead are left out.
-
-### One Form for All the Methods
-
-Every method of this chapter that uses the gradient can be written as the same update,
-$$
-\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,
-$$
-where $g_k = \nabla f(\theta_k)$ is the gradient of the objective $f = \mathcal{L}$ at the current iterate, and the three remaining ingredients are what distinguishes the methods:
-
-- $m_k$ is the **gradient used**: the gradient itself, a sampled version of it (mini-batches), or a smoothed version of it (a running average of past gradients);
-- $P_k$ is the **modifier** or *preconditioner*, a matrix that rescales or rotates the step, built from curvature, from Fisher information, or from the history of gradients, with $P_k = I$ when there is none;
-- $\alpha_k$ is the **step size**: set by hand, found by a line search, or fixed at $1$.
-
-| Method | Gradient used, $m_k$ | Modifier, $P_k$ | Step size, $\alpha_k$ |
-|:---|:---|:---|:---|
-| Steepest descent, fixed rate | $g_k$ | $I$ | $\alpha$, set by hand |
-| Steepest descent, line search | $g_k$ | $I$ | $\alpha_k$ from a Wolfe line search |
-| Momentum | $v_k = \beta v_{k-1} + g_k$, a weighted sum of past gradients | $I$ | $\alpha$, set by hand |
-| Adam | $\hat m_k$, a bias-corrected exponential average of past gradients | $\mathrm{diag}\big(1/(\sqrt{\hat s_k} + \varepsilon)\big)$, with $\hat s_k$ the running average of $g^{(B_j)} \odot g^{(B_j)}$ | $\alpha$, set by hand |
-| Conjugate gradient | $d_k = -g_k + \beta_k d_{k-1}$, the gradient combined with the previous direction | implicit: successive directions conjugate with respect to the Hessian | $\alpha_k$ from a line search |
-| BFGS, L-BFGS | $g_k$ | $B_k \approx J(\theta_k)^{-1}$, built from $s_k = \theta_{k+1}-\theta_k$ and $y_k = g_{k+1}-g_k$; L-BFGS keeps only the last $m$ pairs | $\alpha_k$ from a Wolfe line search |
-| Newton–Raphson | $g_k$ | $J(\theta_k)^{-1}$, the inverse observed information | $1$, or step-halving as a safeguard |
-| Fisher scoring, IRLS | $g_k$ | $I(\theta_k)^{-1}$, the inverse expected information | $1$ |
-| Stochastic gradient descent | $g_k^{B} = \frac1m\sum_{i\in B_k}\nabla\mathcal{L}_i(\theta_k)$ on a random mini-batch, with $E\,g_k^B = g_k$ | $I$ | $\alpha_k$ decreasing, set by hand |
-
-: Writes every gradient-based method of this chapter as $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$, showing the gradient each one uses, how it modifies it, and how the step size is chosen. The common form of the gradient-based methods. {#tbl-common-form}
-
-Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Conjugate gradient changes *which direction* is used, by combining the gradient with the past direction, which damps the zig-zag across a valley. Momentum does so for SGD by averaging the gradient over the past, and Adam also changes the *scale* of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves $P_k$ alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.
-
-### Comparison
-
-| Method | Derivatives | Storage | Cost per iteration | Local rate | Robust start | Hessian for SEs |
-|:---|:---|:---|:---|:---|:---|:---|
-| Steepest descent | gradient | $O(p)$ | 1 gradient + line search | linear (slow) | good | no |
-| Momentum | gradient | $O(p)$ | 1 gradient + $O(p)$ | linear (faster along valleys) | good | no |
-| Adam | gradient | $O(p)$ | 1 gradient + $O(p)$ | sublinear, noisy near the optimum | good | no |
-| Conjugate gradient | gradient | $O(p)$ | 1 gradient + line search | linear (fast) | moderate | no |
-| BFGS | gradient | $O(p^2)$ | 1 gradient + $O(p^2)$ | superlinear | moderate | approximate |
-| L-BFGS | gradient | $O(mp)$ | 1 gradient + $O(mp)$ | superlinear | moderate | no |
-| Newton–Raphson | gradient, Hessian | $O(p^2)$ | 1 Hessian + $O(p^3)$ | quadratic | poor | exact |
-| Fisher scoring / IRLS | gradient, expected information | $O(p^2)$ | 1 weighted LS fit | near-quadratic | fair | exact |
-| Stochastic gradient | minibatch gradient | $O(p)$ | $O(\text{batch})$ | sublinear | good | no |
-
-: Summarizes the trade-offs among the gradient-based methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of gradient-based optimization methods. $p$ is the number of parameters and $m$ the L-BFGS memory length (typically 5–20). {#tbl-comparison}
-
-### Software Packages for Optimization
-
-The methods of this chapter are rarely coded by hand. The packages below are the commonly used ones, grouped by the job they do: general-purpose numerical optimizers, statistical model fitting, and automatic differentiation with mini-batch optimizers for neural networks.
-
-| Language | Package, function | Methods available | Notes |
-|:---|:---|:---|:---|
-| R | `optim` (stats) | BFGS, CG, L-BFGS-B | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
-| R | `nlm` (stats) | Newton-type with ridging | Uses the analytic gradient and Hessian if attached as attributes, otherwise numerical; returns `$hessian` |
-| R | `nlminb` (stats) | Trust-region (PORT) | Reliable on badly scaled problems; supports box constraints |
-| R | `optimize`, `uniroot` (stats) | Golden section, Brent | One dimension only |
-| R | `glm` (stats) | IRLS (Fisher scoring) | The specialised case for generalized linear models; use `start` when separation is suspected |
-| R | `nloptr` | Large NLopt collection | Gradient-based and global methods, with constraints |
-| R | `torch` | SGD, momentum, Adam, L-BFGS | Automatic differentiation and mini-batch training of neural networks |
-| Python | `scipy.optimize` | `minimize` with BFGS, L-BFGS-B, CG, Newton-CG, trust-region methods; `root`; `minimize_scalar` | The standard general-purpose library; the counterpart of `optim` and `nlm` |
-| Python | `statsmodels` | IRLS for GLMs, Newton–Raphson and BFGS for discrete-choice and other likelihood models | Returns standard errors from the Hessian |
-| Python | `scikit-learn` | `LogisticRegression` solvers `lbfgs`, `newton-cg`, `sag`, `saga`; `SGDClassifier`, `SGDRegressor` | Fitting of standard models; the optimizer is chosen by an argument |
-| Python | PyTorch (`torch.optim`) | SGD (with momentum), Adam, AdamW, RMSprop, L-BFGS | Gradients by `autograd`; the training loop is written explicitly |
-| Python | TensorFlow / Keras (`tf.keras.optimizers`) | SGD (with momentum), Adam, AdamW, RMSprop, Adagrad | Gradients by `tf.GradientTape`; `model.fit` runs the mini-batch loop; BFGS and L-BFGS in TensorFlow Probability (`tfp.optimizer`) |
-| Python | JAX with Optax | SGD, momentum, Adam, AdamW; `jax.scipy.optimize.minimize` for BFGS | `jax.grad` differentiates ordinary numerical functions; the optimizers are composable |
-
-: Lists the commonly used software for the optimization methods of this chapter, in R and in Python, with the methods each offers. Software packages for optimization {#tbl-software}
-
-For small and moderate likelihood problems the first rows are all that is needed: supply the negative log-likelihood and, if possible, its gradient, and let BFGS or a Newton-type method do the rest. Fitting a neural network is different. The gradient is obtained by automatic differentiation, which carries out the backpropagation of @sec-backprop-dag for any model written with the library's operations, and the update is applied to mini-batches by one of the optimizers of this chapter. **TensorFlow** and **PyTorch** are the two dominant libraries for this, and the Keras interface of TensorFlow makes the choice of optimizer a single argument. The Poisson network of this chapter, with the loss $\lambda_i - y_i\eta_i$ and four hidden units, is fitted by Adam as follows.
-
-
-
-### Example of Fitting NN with Tensorflow
+## Examples of Fitting NN with Tensorflow
 
 The Gaussian network with a linear output (identity link) written in Keras, now for a mean function of **two predictors with four modes**: $\mu(x_1, x_2)$ is a sum of four Gaussian bumps of different heights centred at $(\pm 1.5, \pm 1.5)$,
 $$
@@ -2893,3 +2808,90 @@ lambda_hat = np.exp(model.predict(x_te, verbose=0))            # predictions are
 ```
 
 Keras also ships such losses, for example `tf.keras.losses.Poisson`, but that one expects the *mean* $\lambda$ as its second argument and uses $\lambda - y\log\lambda$, so it would need an `exp` activation on the last layer. Writing the loss on the $\eta$ scale as above is numerically safer and matches the loss $\lambda_i - y_i\eta_i$ of the chapter. The code above is shown, not run.
+
+
+## Remarks on Implementation of Optimization Algorithms
+
+The chapter has covered a lot of ground, from bisection on a scalar gradient $g$ to stochastic gradient descent on millions of parameters. This section collects the gradient-based methods, Newton–Raphson included, into one reference: first as a single update rule in which they differ only in the gradient they use and in how it is modified, then by what each needs and costs, then by which R function to reach for and how to choose among them. Derivative-free methods such as Nelder–Mead are left out.
+
+### One Form for All the Methods
+
+Every method of this chapter that uses the gradient can be written as the same update,
+$$
+\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,
+$$
+where $g_k = \nabla f(\theta_k)$ is the gradient of the objective $f = \mathcal{L}$ at the current iterate, and the three remaining ingredients are what distinguishes the methods:
+
+- $m_k$ is the **gradient used**: the gradient itself, a sampled version of it (mini-batches), or a smoothed version of it (a running average of past gradients);
+- $P_k$ is the **modifier** or *preconditioner*, a matrix that rescales or rotates the step, built from curvature, from Fisher information, or from the history of gradients, with $P_k = I$ when there is none;
+- $\alpha_k$ is the **step size**: set by hand, found by a line search, or fixed at $1$.
+
+| Method | Gradient used, $m_k$ | Modifier, $P_k$ | Step size, $\alpha_k$ |
+|:---|:---|:---|:---|
+| Steepest descent, fixed rate | $g_k$ | $I$ | $\alpha$, set by hand |
+| Steepest descent, line search | $g_k$ | $I$ | $\alpha_k$ from a Wolfe line search |
+| Momentum | $v_k = \beta v_{k-1} + g_k$, a weighted sum of past gradients | $I$ | $\alpha$, set by hand |
+| Adam | $\hat m_k$, a bias-corrected exponential average of past gradients | $\mathrm{diag}\big(1/(\sqrt{\hat s_k} + \varepsilon)\big)$, with $\hat s_k$ the running average of $g^{(B_j)} \odot g^{(B_j)}$ | $\alpha$, set by hand |
+| Conjugate gradient | $d_k = -g_k + \beta_k d_{k-1}$, the gradient combined with the previous direction | implicit: successive directions conjugate with respect to the Hessian | $\alpha_k$ from a line search |
+| BFGS, L-BFGS | $g_k$ | $B_k \approx J(\theta_k)^{-1}$, built from $s_k = \theta_{k+1}-\theta_k$ and $y_k = g_{k+1}-g_k$; L-BFGS keeps only the last $m$ pairs | $\alpha_k$ from a Wolfe line search |
+| Newton–Raphson | $g_k$ | $J(\theta_k)^{-1}$, the inverse observed information | $1$, or step-halving as a safeguard |
+| Fisher scoring, IRLS | $g_k$ | $I(\theta_k)^{-1}$, the inverse expected information | $1$ |
+| Stochastic gradient descent | $g_k^{B} = \frac1m\sum_{i\in B_k}\nabla\mathcal{L}_i(\theta_k)$ on a random mini-batch, with $E\,g_k^B = g_k$ | $I$ | $\alpha_k$ decreasing, set by hand |
+
+: Writes every gradient-based method of this chapter as $\theta_{k+1} = \theta_k - \alpha_k P_k m_k$, showing the gradient each one uses, how it modifies it, and how the step size is chosen. The common form of the gradient-based methods. {#tbl-common-form}
+
+Read down the table and the progression of the chapter appears. Steepest descent uses the gradient as it is. Conjugate gradient changes *which direction* is used, by combining the gradient with the past direction, which damps the zig-zag across a valley. Momentum does so for SGD by averaging the gradient over the past, and Adam also changes the *scale* of each coordinate with a diagonal estimate built from the gradients alone. BFGS learns a full inverse-Hessian approximation from gradient differences, and Newton–Raphson and Fisher scoring compute that matrix from second derivatives, which is why they alone take unit steps and converge quadratically near the solution. Stochastic gradient descent leaves $P_k$ alone and changes the gradient instead, to a cheap and noisy one, and momentum and Adam can be applied to it unchanged. The same table is the one used in the descriptions of the two neural-network apps.
+
+### Comparison
+
+| Method | Derivatives | Storage | Cost per iteration | Local rate | Robust start | Hessian for SEs |
+|:---|:---|:---|:---|:---|:---|:---|
+| Steepest descent | gradient | $O(p)$ | 1 gradient + line search | linear (slow) | good | no |
+| Momentum | gradient | $O(p)$ | 1 gradient + $O(p)$ | linear (faster along valleys) | good | no |
+| Adam | gradient | $O(p)$ | 1 gradient + $O(p)$ | sublinear, noisy near the optimum | good | no |
+| Conjugate gradient | gradient | $O(p)$ | 1 gradient + line search | linear (fast) | moderate | no |
+| BFGS | gradient | $O(p^2)$ | 1 gradient + $O(p^2)$ | superlinear | moderate | approximate |
+| L-BFGS | gradient | $O(mp)$ | 1 gradient + $O(mp)$ | superlinear | moderate | no |
+| Newton–Raphson | gradient, Hessian | $O(p^2)$ | 1 Hessian + $O(p^3)$ | quadratic | poor | exact |
+| Fisher scoring / IRLS | gradient, expected information | $O(p^2)$ | 1 weighted LS fit | near-quadratic | fair | exact |
+| Stochastic gradient | minibatch gradient | $O(p)$ | $O(\text{batch})$ | sublinear | good | no |
+
+: Summarizes the trade-offs among the gradient-based methods of this chapter: what each needs, what it costs, and how fast and robust it is. Comparison of gradient-based optimization methods. $p$ is the number of parameters and $m$ the L-BFGS memory length (typically 5–20). {#tbl-comparison}
+
+### Software Packages for Optimization
+
+The methods of this chapter are rarely coded by hand. The packages below are the commonly used ones, grouped by the job they do: general-purpose numerical optimizers, statistical model fitting, and automatic differentiation with mini-batch optimizers for neural networks.
+
+| Language | Package, function | Methods available | Notes |
+|:---|:---|:---|:---|
+| R | `optim` (stats) | BFGS, CG, L-BFGS-B | General workhorse; supply `gr` or the gradient is differenced; `hessian = TRUE` for inference; L-BFGS-B allows box constraints |
+| R | `nlm` (stats) | Newton-type with ridging | Uses the analytic gradient and Hessian if attached as attributes, otherwise numerical; returns `$hessian` |
+| R | `nlminb` (stats) | Trust-region (PORT) | Reliable on badly scaled problems; supports box constraints |
+| R | `optimize`, `uniroot` (stats) | Golden section, Brent | One dimension only |
+| R | `glm` (stats) | IRLS (Fisher scoring) | The specialised case for generalized linear models; use `start` when separation is suspected |
+| R | `nloptr` | Large NLopt collection | Gradient-based and global methods, with constraints |
+| R | `torch` | SGD, momentum, Adam, L-BFGS | Automatic differentiation and mini-batch training of neural networks |
+| Python | `scipy.optimize` | `minimize` with BFGS, L-BFGS-B, CG, Newton-CG, trust-region methods; `root`; `minimize_scalar` | The standard general-purpose library; the counterpart of `optim` and `nlm` |
+| Python | `statsmodels` | IRLS for GLMs, Newton–Raphson and BFGS for discrete-choice and other likelihood models | Returns standard errors from the Hessian |
+| Python | `scikit-learn` | `LogisticRegression` solvers `lbfgs`, `newton-cg`, `sag`, `saga`; `SGDClassifier`, `SGDRegressor` | Fitting of standard models; the optimizer is chosen by an argument |
+| Python | PyTorch (`torch.optim`) | SGD (with momentum), Adam, AdamW, RMSprop, L-BFGS | Gradients by `autograd`; the training loop is written explicitly |
+| Python | TensorFlow / Keras (`tf.keras.optimizers`) | SGD (with momentum), Adam, AdamW, RMSprop, Adagrad | Gradients by `tf.GradientTape`; `model.fit` runs the mini-batch loop; BFGS and L-BFGS in TensorFlow Probability (`tfp.optimizer`) |
+| Python | JAX with Optax | SGD, momentum, Adam, AdamW; `jax.scipy.optimize.minimize` for BFGS | `jax.grad` differentiates ordinary numerical functions; the optimizers are composable |
+
+: Lists the commonly used software for the optimization methods of this chapter, in R and in Python, with the methods each offers. Software packages for optimization {#tbl-software}
+
+For small and moderate likelihood problems the first rows are all that is needed: supply the negative log-likelihood and, if possible, its gradient, and let BFGS or a Newton-type method do the rest. Fitting a neural network is different. The gradient is obtained by automatic differentiation, which carries out the backpropagation of @sec-backprop-dag for any model written with the library's operations, and the update is applied to mini-batches by one of the optimizers of this chapter. **TensorFlow** and **PyTorch** are the two dominant libraries for this, and the Keras interface of TensorFlow makes the choice of optimizer a single argument. The Poisson network of this chapter, with the loss $\lambda_i - y_i\eta_i$ and four hidden units, is fitted by Adam as follows.
+
+
+### Optimization in Practice for Deep Learning
+
+Fitting a deep network is the setting for which the methods of this section are used at the largest scale, with $p$ from millions to hundreds of billions and $n$ so large that a full pass through the data is rarely made. The practice differs from the small examples of this chapter in four ways.
+
+- **Only mini-batch gradients.** The gradient comes from backpropagation (@sec-backprop-dag) on a mini-batch, and it is the only derivative information used. Full-batch methods, and second-order methods such as Newton–Raphson or BFGS, need a full pass or $O(p^2)$ storage, which is out of reach. Their place is taken by the diagonal rescaling of the Adam family (@tbl-adaptive-diag), and in research by cheaper approximations of curvature such as Shampoo and K-FAC.
+- **Adam-type methods as the default.** AdamW, which is Adam with the weight decay applied directly to the weights rather than through the gradient, is the usual choice for transformers and language models, mainly because it needs little tuning and is robust to badly scaled weights. SGD with momentum, usually with a carefully tuned schedule and weight decay, remains common for image classification, where it is often reported to generalize slightly better; this is a rule of thumb that depends on the model and the data, not a theorem.
+- **The learning-rate schedule matters as much as the optimizer.** A typical recipe is a short warmup followed by a cosine or linear decay of $\alpha_k$, in the spirit of the Robbins–Monro condition above. Gradient clipping, large batches with a rescaled learning rate, and mixed-precision arithmetic are further standard ingredients.
+- **The loss is not the only goal.** The objective is highly non-convex, with many equivalent minima, and a loss driven to its exact minimum can overfit. Practitioners stop early, regularize, and judge the fit on held-out data, so convergence to a stationary point is rarely checked in the sense used earlier in this chapter.
+
+The two apps in the next section are deliberately tiny, with one input and four hidden units, so that the effect of each optimizer on the weights, the gradient and the fitted curve can be seen. The same update rules, with the same formulas, are what runs inside the deep learning libraries.
+
+
