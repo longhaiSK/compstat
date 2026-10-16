@@ -988,11 +988,10 @@ what `nlm()` runs, which globalizes with a trust region.
 |:--|:--|:--|:--|
 | Nelder–Mead | $\mathcal{L}$ only | $O(p)$ evaluations | small $p$, non-smooth or noisy $\mathcal{L}$ |
 | gradient descent | $g$ | $O(p)$ + line search | large $p$ |
-| momentum, Adam | $g$, averaged | $O(p)$, fixed step | large $p$, noisy $g$ |
 | conjugate gradient | $g$ | $O(p)$ + line search | large $p$, quadratic-like $\mathcal{L}$ |
 | BFGS, L-BFGS | $g$, builds $\approx$ Hessian | $O(p^2)$ / $O(mp)$ | default general-purpose |
 | Newton / Fisher scoring | $g$, $H$ | $O(p^3)$ | moderate $p$, gives SEs |
-| SGD | $g^{(B)}$ on a mini-batch $B$ | $O(mp)$ | large $n$ and $p$ |
+| SGD, with momentum or Adam | $g^{(B)}$ on a mini-batch $B$ | $O(mp)$, learning rate | large $n$ and $p$ |
 
 All are available through `optim(par, fn, gr, method = ...)` in R. Convention below: **minimize** $\mathcal{L}(\theta) = -\ell(\theta)$, with $g = \nabla\mathcal{L}$.
 
@@ -1088,73 +1087,6 @@ sqrt(diag(solve(fits$BFGS$hessian)))     # SEs from the numerically computed Hes
 
 `optim(..., hessian = TRUE)` returns a finite-difference Hessian at the solution, so standard errors are available even for gradient-only methods.
 
-## Momentum (Heavy Ball)
-
-Gradient descent zig-zags because $g_k$ is dominated by the steep direction **across** the valley. Momentum **averages** the gradients over past iterations and steps along the average:
-$$
-m_k = \beta\, m_{k-1} + g_k, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
-$$
-
-- Across-valley components change sign from step to step and **cancel** in the average; along-valley components keep their sign and **add up**, so the step lengthens along the valley floor.
-
-- $\beta = 0$ is gradient descent with a fixed step; along a persistent direction the effective step is $\alpha/(1-\beta)$, so $\alpha$ is lowered when $\beta$ is raised.
-- Only the gradient is modified: no curvature, no line search. $g_k$ can be the full gradient $g(\theta_k)$ or a noisy mini-batch gradient $g^{(B_k)}(\theta_k)$, whose noise the averaging also damps.
-
-## Adam: a Step Size for Each Coordinate {.smaller}
-
-Momentum uses one $\alpha$ for every coordinate. **Adam** also averages the **squared** gradient, elementwise:
-$$
-m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g_k, \qquad
-s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g_k \odot g_k,
-$$
-$$
-\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad
-\hat m_k = \frac{m_k}{1-\beta_1^k},\ \hat s_k = \frac{s_k}{1-\beta_2^k}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999 .
-$$
-
-- The update needs only $g_k$: $s_k$ is a running average of the squared gradient **over iterations**, from $s_0 = m_0 = 0$ (the bias correction removes the start). Adam applies to any differentiable $\mathcal{L}$; each coordinate moves about $\alpha$ per step **whatever the scale** of $\mathcal{L}$.
-
-## Fixed Step, Momentum and Adam on the Quadratic
-
-```{r}
-#| label: fixed-mom-adam
-#| echo: false
-#| fig-width: 9
-#| fig-height: 3.6
-fixed_step <- function(rule, x0 = c(2, -1.8), maxit = 300, tol = 1e-4) {
-  x <- x0; path <- x0; m <- s <- 0
-  for (k in 1:maxit) {
-    g <- gq(x); if (sqrt(sum(g^2)) < tol) break
-    if (rule == "gd") d <- 0.5 * g
-    if (rule == "mom") { m <- 0.7 * m + g; d <- 0.2 * m }
-    if (rule == "adam") { m <- 0.9 * m + 0.1 * g; s <- 0.999 * s + 0.001 * g^2
-      d <- 0.1 * (m / (1 - 0.9^k)) / (sqrt(s / (1 - 0.999^k)) + 1e-8) }
-    x <- x - d; path <- rbind(path, x)
-  }
-  path
-}
-tt <- c(gd = "fixed step 0.5", mom = "momentum, 0.2 and beta = 0.7", adam = "Adam, alpha = 0.1")
-cols <- c(gd = 2, mom = 4, adam = "darkgreen")
-par(mfrow = c(1, 3), pty = "s", mar = c(2.5, 2.5, 3, 0.5))
-for (r in names(tt)) {
-  P <- fixed_step(r)
-  contour(seq(-2, 2, l = 80), seq(-2, 2, l = 80), z, nlevels = 15, drawlabels = FALSE, col = "grey60",
-          main = sprintf("%s\n%d iterations to |g| < 1e-4", tt[r], nrow(P) - 1), cex.main = 1.5, cex.axis = 1.2)
-  lines(P, type = "b", col = cols[r], pch = 19, cex = 0.5)
-}
-```
-
-- Momentum cuts the iterations by building speed along the valley. Adam's per-coordinate scaling cannot help when the valley runs **diagonally**, which needs the off-diagonal curvature that only Newton, scoring or BFGS use.
-
-## App: Comparing the Optimizers
-
-The [gradient-methods app](../shinylive_apps/app_gradient-methods.html){target="_blank"} runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin's many local minima.
-
-- Click a starting point, then step or play through the iterations; overlay a second method as a dashed path.
-
-- Try momentum on the banana and raise its rate $\eta$ until it diverges; compare Adam's $\alpha = 0.1$, which works on all six functions, with momentum, which needs a rate for each.
-
-
 ## Stochastic Gradient Descent: Motivation {.smaller}
 
 For iid data the negative log-likelihood and its gradient are **sums over observations**:
@@ -1204,173 +1136,97 @@ $$
 - Convergence is only **sublinear**, far slower than Newton *per iteration* — but each iteration costs $O(p)$ instead of $O(np)$, and early progress is fast.
 - Common refinements: **momentum** and **Adam** (next), which modify the mini-batch gradient, and **averaging** the iterates $\overline\theta_T = \frac1T\sum_t\theta_t$ (Polyak–Ruppert), which restores the $\sqrt n$-efficiency of the MLE.
 
-## Why SGD? {.smaller}
+## Why SGD? (1) Cost per Unit of Progress {.smaller}
 
-**1. Cost per unit of progress** (established; any large-$n$ sum, convex or not). A mini-batch points nearly the same way as all $n$ cases at a fraction of the cost, and the MLE is only accurate to $O(n^{-1/2})$ anyway (Bottou and Bousquet, 2008). For a concave log-likelihood this is the only reason; averaging the iterates removes the noise.
+The **established** reason, for any loss that is a sum over many cases, convex or not.
 
-**2. The noise itself** (non-convex losses; partly debated). Near a minimum,
+- Large data sets are **redundant**: a mini-batch of a few hundred cases points in nearly the same direction as all $n$. One pass through the data gives SGD $n/m$ useful steps where a full-gradient method takes one.
+- The MLE itself is accurate only to $O(n^{-1/2})$, so optimizing far below that statistical error is wasted work. For large $n$, SGD reaches that accuracy with less computation than any method that needs the full gradient (Bottou and Bousquet, 2008).
+- The price: noisy steps, slow final convergence, and a learning rate to tune.
+
+For a **concave log-likelihood** of moderate size (a GLM such as the logistic regression fitted by Newton–Raphson above), this is the only reason, and it is not enough: there is a single optimum, the noise only adds variance around it, and **Newton–Raphson or BFGS remain the better choices**. SGD earns its place when $n$ and $p$ are large, above all for neural networks.
+
+## Why SGD? (2) The Noise Itself {.smaller}
+
+The mini-batch gradient is the average gradient plus noise. For $m$ cases drawn with replacement, with $\bar g = g(\theta)/n$,
 $$
-\operatorname{Var}\big(g^{(B)}\big) \approx \frac{1}{nm}\sum_{i=1}^n g^{(i)}g^{(i)\prime} = \frac{1}{nm}\hat F ,
+\operatorname{Var}\big(g^{(B)}\big) = \frac1m\Big(\frac1n\sum_{i=1}^n g^{(i)}g^{(i)\prime} - \bar g\,\bar g'\Big) \approx \frac{1}{nm}\,\hat F \quad\text{near a minimum},
 $$
-the empirical Fisher, so the noise is largest along high-curvature directions, with size set by $\gamma/m$.
+with $\hat F$ the empirical Fisher (below): largest along high-curvature directions, of size set by $\gamma/m$. For **non-convex** losses it has been argued to help:
 
-- Escapes saddle points where exact GD stalls: **proved**, under conditions (Jin et al., 2017).
-- Acts like GD on a smoothed loss without small sharp minima: **supported, under assumptions** (Kleinberg et al., 2018).
-- Small batches find flatter minima that generalize better (Keskar et al., 2017): **debated**; large batches with rescaled $\gamma$, or explicit regularization, can match SGD.
+- it moves the iterate away from **saddle points**, where exact gradient descent can stall: **proved**, under conditions (Ge et al., 2015; Jin et al., 2017);
+- SGD behaves like gradient descent on a **smoothed** loss, without small sharp minima: **supported, under assumptions** (Kleinberg et al., 2018);
+- small batches end in **flatter minima** that generalize better (Keskar et al., 2017): **debated**; large batches with a rescaled $\gamma$, or explicit regularization, can match SGD.
 
-## A Smaller Logistic Regression, for SGD {.smaller}
+Safest summary: in neural networks SGD's noise often acts as an **implicit regularizer**, by a mechanism not yet settled.
 
-Let's apply SGD to logistic regrression.
+## Momentum (Heavy Ball) for Mini-Batches
 
-```{r}
-log1pexp <- function(u) pmax(u, 0) + log1p(exp(-abs(u)))
-nll_g_info <- function(b, r, z) {
-  u <- b[1] + b[2] * z; p <- plogis(u); w <- p * (1 - p)
-  list(nll  = -sum(u * r - log1pexp(u)),                   # L(beta)
-       g    = c(sum(p - r), sum(z * (p - r))),             # g(beta) = grad L
-       info = matrix(c(sum(w), sum(z * w), sum(z * w), sum(z * z * w)), 2, 2))
-}
-nll_logistic <- function(b, z, r) { u <- b[1] + b[2] * z; -sum(u * r - log1pexp(u)) }
-mle_logistic_nr <- function(b0, no_iter, r, z) {
-  out <- matrix(NA_real_, no_iter + 1, 3, dimnames = list(NULL, c("beta0", "beta1", "nll")))
-  b <- b0
-  for (i in seq_len(no_iter + 1)) {
-    q <- nll_g_info(b, r, z); out[i, ] <- c(b, q$nll)
-    if (i > no_iter) break
-    step <- tryCatch(solve(q$info, q$g), error = function(e) rep(NA_real_, 2))
-    if (any(!is.finite(step))) break
-    b <- b - step
-  }
-  out
-}
-
-set.seed(1)
-n2 <- 200; z2 <- sort(runif(n2, -2, 2)); r2 <- rbinom(n2, 1, plogis(1.5 * z2))
-logit_nlm <- nlm(nll_logistic, c(0, 0), z = z2, r = r2, hessian = TRUE)
-logit_nlm$estimate
-```
-
-## Example: SGD for Logistic Regression in R
-
-```{r}
-sgd_logistic <- function(z, r, b0, gamma0 = 0.5, t0 = 100, epochs = 30, batch = 10) {
-  n <- length(z); b <- b0; t <- 0; path <- b0
-  for (e in 1:epochs) {
-    idx <- sample(n)
-    for (s in seq(1, n, by = batch)) {
-      i <- idx[s:min(s + batch - 1, n)]
-      t <- t + 1
-      u <- b[1] + b[2] * z[i]
-      p <- plogis(u)
-      gb <- c(sum(p - r[i]), sum(z[i] * (p - r[i]))) / length(i)   # batch gradient of L
-      b <- b - gamma0 / (1 + t / t0) * gb
-      path <- rbind(path, b)
-    }
-  }
-  list(est = b, path = path)
-}
-
-set.seed(2)
-beta_true2 <- c(0, 1.5)
-sg <- sgd_logistic(z2, r2, c(0, 0))
-rbind(sgd = sg$est, nlm = logit_nlm$estimate, truth = beta_true2)
-```
-
-## SGD Trajectory vs. Newton–Raphson
-
-```{r}
-#| label: sgd-vs-newton
-#| echo: false
-nr_path <- mle_logistic_nr(c(0, 0), 8, r2, z2)     # beta0, beta1, nll per Newton iteration
-m <- 10; per_epoch <- length(z2) / m
-xs <- 0:(nrow(sg$path) - 1)
-xn <- (0:(nrow(nr_path) - 1)) * per_epoch
-
-matplot(xs, sg$path, type = "l", lty = 1, col = c(2, 4),
-        ylim = range(sg$path, nr_path[, 1:2]),
-        xlab = "mini-batch updates (one epoch = one full pass through the data)",
-        ylab = "coefficient",
-        main = expression(paste("SGD vs. Newton-Raphson: ", beta[0], " (red), ", beta[1], " (blue)")))
-matlines(xn, nr_path[, 1:2], type = "b", lty = 2, pch = 19, col = c(2, 4), lwd = 2)
-abline(h = logit_nlm$estimate, col = c(2, 4), lty = 3)
-abline(v = seq(0, max(xs), per_epoch), col = "grey85")
-legend("right", c("SGD (mini-batch)", "Newton (per full pass)", "MLE"),
-       lty = c(1, 2, 3), pch = c(NA, 19, NA), bty = "n", cex = 0.85)
-```
-
-- Newton–Raphson converges in a handful of full-data passes; SGD made `r nrow(sg$path) - 1` cheap updates over 30 epochs and lands near the MLE with residual noise.
-
-- Per data pass, Newton–Raphson is far more efficient here ($n = 200$, $p = 2$); SGD earns its keep when one full gradient — or the $O(p^3)$ Hessian solve — is prohibitively expensive.
-
-## Empirical Fisher and Its Diagonal Values {.smaller}
-
-For a loss that is a sum over cases, $\mathcal{L} = \sum_i \mathcal{L}_i$, the per-case gradients $g^{(i)} = \nabla\mathcal{L}_i$ give the **empirical Fisher information** $\hat F(\theta) = \sum_{i=1}^n g^{(i)} {g^{(i)}}'$.
-
-- **Connection to Fisher information.** Each case's score has mean zero, so the Fisher information of the $n$ observations is $I_n(\theta) = n I(\theta) = \sum_i E\big[g^{(i)}{g^{(i)}}'\big] = E[J(\theta)]$ (information equality). $\hat F$ replaces the expectation by the observed scores: an estimate of $I_n(\theta)$ from **first derivatives only**, positive semidefinite.
-- **BHHH** (Berndt, Hall, Hall and Hausman, 1974) steps $\theta_{k+1} = \theta_k - \alpha_k \hat F^{-1} g_k$, beside Newton ($J$) and scoring ($I_n$); $\hat F^{-1}$ at the optimum is the **OPG variance estimate**.
-- But $\hat F$ is $p \times p$: $O(p^2)$ storage and an $O(p^3)$ solve, impossible for $p$ in the millions.
-
-Its **diagonal** is only $p$ numbers, the sum over cases of the squared gradients:
+At iteration $k$, $g^{(B_k)} = g^{(B_k)}(\theta_k)$ is the gradient of mini-batch $B_k$: noisy, and it zig-zags across valleys. **Momentum** averages it over past iterations:
 $$
-\big[\operatorname{diag}\hat F\big]_r = \sum_{i=1}^n \Big(\frac{\partial \mathcal{L}_i}{\partial \theta_r}\Big)^2, \qquad \text{i.e. } \operatorname{diag}\hat F = \sum_{i=1}^n g^{(i)} \odot g^{(i)},
+m_k = \beta\, m_{k-1} + g^{(B_k)}, \qquad \theta_{k+1} = \theta_k - \alpha\, m_k, \qquad \beta \in [0, 1),\ \text{often } 0.9 .
 $$
-a curvature scale for each coordinate $\theta_r$, from the gradients already computed, in $O(p)$ storage.
 
-## Using Only the Diagonal of the Empirical Fisher {.smaller}
+- Across-valley components and noise change sign from step to step and **cancel** in the average; along-valley components keep their sign and **add up**.
+- $\beta = 0$ is plain SGD; along a persistent direction the effective step is $\alpha/(1-\beta)$, so $\alpha$ is lowered when $\beta$ is raised.
+- Only the gradient is modified: no curvature, no line search. On a deterministic full-data problem momentum has little to offer (conjugate gradient is the optimal form of the same idea for a quadratic). It is a **modifier designed for SGD**.
 
-The adaptive methods estimate $\operatorname{diag}\hat F$ from the mini-batch gradients $g_k = g^{(B_k)}(\theta_k)$, **averaged over iterations** (squares taken elementwise), and divide by its **square root**:
+## Adam: a Step Size for Each Coordinate {.smaller}
 
-| method | estimate $s_k$ of $\operatorname{diag}\hat F$ (up to scale) | step |
+Momentum uses one $\alpha$ for every coordinate. **Adam** (Kingma and Ba, 2014) also averages the **squared** batch gradient, elementwise:
+$$
+m_k = \beta_1 m_{k-1} + (1-\beta_1)\, g^{(B_k)}, \qquad
+s_k = \beta_2 s_{k-1} + (1-\beta_2)\, g^{(B_k)} \odot g^{(B_k)},
+$$
+$$
+\theta_{k+1} = \theta_k - \alpha\, \frac{\hat m_k}{\sqrt{\hat s_k} + \varepsilon}, \qquad
+\hat m_k = \frac{m_k}{1-\beta_1^k},\ \hat s_k = \frac{s_k}{1-\beta_2^k}, \qquad \beta_1 = 0.9,\ \beta_2 = 0.999 .
+$$
+
+- It needs only $g^{(B_k)}$: $s_k$ is a running average **over iterations**, from $m_0 = s_0 = 0$; the bias correction removes the start, and the first step is $\approx \alpha\,\operatorname{sign}(g)$ in each coordinate.
+- Each coordinate moves about $\alpha$ per step **whatever the scale** of $\mathcal{L}$: steep coordinates take smaller steps, flat ones larger. With $s_k$ held constant, Adam is momentum.
+- The default optimizer for neural networks. On a deterministic full-batch problem it uses no curvature, and line search, CG, BFGS or Newton are better.
+
+## Squared Gradients and the Empirical Fisher {.smaller}
+
+Adam's authors read $\hat s_k$ as approximating the diagonal of the Fisher information. For $\mathcal{L} = \sum_i \mathcal{L}_i$, the **empirical Fisher information** is $\hat F(\theta) = \sum_{i=1}^n g^{(i)} {g^{(i)}}'$.
+
+- It estimates $I_n(\theta) = n I(\theta) = \sum_i E\big[g^{(i)}{g^{(i)}}'\big] = E[J(\theta)]$ from **first derivatives only**. **BHHH** steps $\theta_{k+1} = \theta_k - \alpha_k \hat F^{-1} g_k$; $\hat F^{-1}$ at the optimum is the **OPG variance estimate**.
+- $\hat F$ is $p \times p$; its **diagonal** is $p$ numbers, $\operatorname{diag}\hat F = \sum_i g^{(i)} \odot g^{(i)}$.
+
+But the resemblance of $\hat s_k$ to $\operatorname{diag}\hat F$ is **loose**:
+
+- $s_k$ squares the batch **average**, it does not sum squared case gradients: $E\big[g^{(B)} \odot g^{(B)}\big] = \bar g^2 + \frac1m\big(\frac1n\operatorname{diag}\hat F - \bar g^2\big)$, which contains the signal $\bar g^2$; only near the optimum is $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$, and with full batches $s_k \to 0$.
+- $\hat F$ stands for curvature only for a correctly specified model near the MLE (Kunstner et al., 2019).
+- Newton and scoring use the power $-1$; Adam uses $-\tfrac12$. With $\hat s \propto g^2$, power $-1$ would give the step $\alpha/g$, which explodes where $g$ is small.
+
+## Why Squared Gradients? Other Perspectives {.smaller}
+
+| method | running average $s_k$ of $\big(g^{(B_j)}\big)^2$ | step |
 |:--|:--|:--|
-| AdaGrad (2011) | $\sum_{j \le k} g_j^2$ | $\alpha\, g_k / \sqrt{s_k}$ |
-| RMSProp (2012) | $\beta_2 s_{k-1} + (1-\beta_2) g_k^2$ | $\alpha\, g_k / \sqrt{s_k}$ |
-| Adam (2014) | as RMSProp, bias-corrected | $\alpha\, \hat m_k / \sqrt{\hat s_k}$ (momentum) |
+| AdaGrad (2011) | cumulative sum (steps keep shrinking) | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
+| RMSProp (2012) | exponential average | $\alpha\, g^{(B_k)} / \sqrt{s_k}$ |
+| Adam (2014) | as RMSProp, bias-corrected | $\alpha\, \hat m_k / \sqrt{\hat s_k}$ |
 
-- With batches of $m$ cases, near the optimum: $\hat s_k \approx \frac{1}{nm}\operatorname{diag}\hat F$, so Adam in SGD is a **diagonal empirical-Fisher preconditioner**.
-- Power $-1/2$, not $-1$ as in BHHH: $\hat F^{-1}$ would amplify the gradient noise in flat coordinates; $\hat F^{-1/2}$ moves each coordinate about $\alpha$ per step.
-- Between full and diagonal: **K-FAC** keeps a Kronecker-factored block per layer.
+- **Signal-to-noise ratio:** $\hat m_k/\sqrt{\hat s_k}$ shrinks when the gradient's sign is uncertain; the step is bounded by about $\alpha$ and scale-invariant.
+- **Online learning:** AdaGrad's scaling comes from a regret bound; Adam's original proof was wrong (AMSGrad, 2018).
+- **Sign descent:** with $\beta_1 = \beta_2 = 0$, Adam is $\theta_{k+1} = \theta_k - \alpha\operatorname{sign}(g)$.
+- **Heterogeneous noise and curvature** across parameter blocks, which one learning rate cannot suit.
 
-## Momentum and Adam with Mini-Batches {.smaller}
+The benefits are clear (little tuning, scale invariance, $O(p)$ storage); **why** it helps so much for deep networks is open.
 
-Momentum and Adam change only the last lines of the update, so one function covers all three rules on the same mini-batches:
+## App: Comparing the Optimizers
 
-```{r}
-#| code-fold: show
-sgd_family <- function(z, r, b0, method = c("sgd", "momentum", "adam"),
-                       gamma = 0.1, beta = 0.9, beta2 = 0.999, epochs = 30, batch = 10) {
-  method <- match.arg(method)
-  n <- length(z); b <- b0; t <- 0; m <- s <- rep(0, length(b0))
-  for (e in 1:epochs) {
-    idx <- sample(n)
-    for (st in seq(1, n, by = batch)) {
-      i <- idx[st:min(st + batch - 1, n)]; t <- t + 1
-      p <- plogis(b[1] + b[2] * z[i])
-      g <- c(sum(p - r[i]), sum(z[i] * (p - r[i]))) / length(i)     # mini-batch gradient of L
-      if (method == "sgd") {
-        b <- b - gamma * g
-      } else if (method == "momentum") {
-        m <- beta * m + g; b <- b - gamma * m
-      } else {
-        m <- beta * m + (1 - beta) * g; s <- beta2 * s + (1 - beta2) * g^2
-        b <- b - gamma * (m / (1 - beta^t)) / (sqrt(s / (1 - beta2^t)) + 1e-8)
-      }
-    }
-  }
-  b
-}
-set.seed(3)
-rbind(sgd      = sgd_family(z2, r2, c(0, 0), "sgd", gamma = 0.1),
-      momentum = sgd_family(z2, r2, c(0, 0), "momentum", gamma = 0.02),
-      adam     = sgd_family(z2, r2, c(0, 0), "adam", gamma = 0.05),
-      nlm      = logit_nlm$estimate)
-```
+The [gradient-methods app](../shinylive_apps/app_gradient-methods.html){target="_blank"} runs gradient descent, momentum, Adam, conjugate gradient, BFGS and safeguarded Newton on six test functions, from a quadratic to the Rosenbrock banana and Rastrigin's many local minima.
 
+- The gradients are **exact**, the setting in which momentum and Adam are not at their best: curvature (BFGS, Newton) and line searches (CG, BFGS) pay off.
+- Try momentum on the banana and raise its rate until it diverges; Adam's single default $\alpha = 0.1$ works on all six functions, but is slow along curved valleys.
 
 ## Optimization in Practice: Deep Learning {.smaller}
 
 With $p$ from millions to billions and $n$ too large for full passes, the methods of this section are used in a particular way:
 
-- **Only mini-batch gradients**, from backpropagation. Newton, scoring and BFGS need full passes or $O(p^2)$ storage; their place is taken by Adam's diagonal preconditioner (in research, structured curvature such as K-FAC and Shampoo).
+- **Only mini-batch gradients**, from backpropagation. Newton, scoring and BFGS need full passes or $O(p^2)$ storage; their place is taken by the per-coordinate rescaling of the Adam family (in research, structured curvature such as K-FAC and Shampoo).
 
 - **Adam-type methods are the default**: AdamW (weight decay applied directly to the weights) for transformers and language models; SGD with momentum and a tuned schedule remains common for image models.
 - **The learning-rate schedule matters as much as the optimizer**: a short warmup, then cosine or linear decay, in the spirit of Robbins–Monro; plus gradient clipping and large batches.
@@ -1438,7 +1294,6 @@ text(xc[1], xc[2], TeX("$x_c$ contract"), pos = 2, col = "orange3")
 | Fisher scoring / IRLS | $g$, $I(\theta)$ | positive-definite steps; GLMs | needs expectations |
 | Nelder–Mead | $\mathcal{L}$ | derivative-free | slow, small $p$ |
 | gradient descent / CG / BFGS | $g$ | scales to large $p$ | line search; ill-conditioning |
-| momentum / Adam | $g$ or $g_i$ | no line search | step size to tune |
-| SGD | $g_i$ | scales to large $n$ and $p$ | noisy, tuning of $\gamma_t$ |
+| SGD (+ momentum, Adam) | $g^{(B)}$ | scales to large $n$ and $p$ | noisy; learning rate |
 
 $\mathcal{L}$ is approximately quadratic near the MLE (asymptotic normality); every method above exploits that, and its curvature $J(\hat\theta)$ at the optimum delivers the standard errors.
