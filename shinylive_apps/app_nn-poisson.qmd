@@ -38,10 +38,11 @@ lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
 ## the scaled units v_j h_j(x), one column per hidden unit
 unit_terms <- function(th, x) { J <- nunits(th); sweep(fwd(th, x)$H, 2, th[2 * J + 1:J], "*") }
 
-## average Poisson negative log-likelihood (the log y! term dropped)
+## average Poisson negative log-likelihood, with the log y! term: it does not depend on
+## the weights, but without it the training and test losses would differ by a constant
 nll <- function(th, x, y) {
   e <- fwd(th, x)$eta
-  v <- mean(exp(e) - y * e)
+  v <- mean(exp(e) - y * e + lfactorial(y))
   if (is.finite(v)) v else Inf
 }
 
@@ -780,7 +781,7 @@ server <- function(input, output, session) {
     ## the loss on the scale chosen below: as is, its log10, or the log10 of its excess
     ## over the smallest value any curve reaches (so differences near the floor show)
     sc <- if (is.null(input$lscale)) "log" else input$lscale
-    best <- min(c(R$F, RF$F, TA, TB), na.rm = TRUE)
+    best <- min(c(R$L, RF$L, TA, TB), na.rm = TRUE)
     ls_fun <- function(v) switch(sc, lin = v, log = if (best > 0) log10(v) else log10(pmax(v - best, 1e-12)),
                                  exc = log10(pmax(v - best, 1e-12)))
     ls_lab <- switch(sc, lin = "loss",
@@ -788,20 +789,20 @@ server <- function(input, output, session) {
                      exc = expression(log[10] ~ "(loss - smallest reached)"))
     xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
     par(mar = c(4, 4.2, 2.5, 1))
-    plot(0:(R$n - 1), ls_fun(R$F), type = "n", xlab = "iteration", ylab = ls_lab,
-         xlim = xl, ylim = range(ls_fun(c(R$F, RF$F, TA, TB)), finite = TRUE),
-         main = if (lam() > 0) "training objective: loss + L1 penalty (solid); test loss (dashed)"
-                else "average negative log-likelihood: training (solid) and test (dashed)")
-    lines(0:(R$n - 1), ls_fun(R$F), col = "#2E8B57", lwd = 2)
+    plot(0:(R$n - 1), ls_fun(R$L), type = "n", xlab = "iteration", ylab = ls_lab,
+         xlim = xl, ylim = range(ls_fun(c(R$L, RF$L, TA, TB)), finite = TRUE),
+         main = paste0("average negative log-likelihood", if (lam() > 0) " (without the penalty)",
+                       ": training (solid) and test (dashed)"))
+    lines(0:(R$n - 1), ls_fun(R$L), col = "#2E8B57", lwd = 2)
     lines(0:(R$n - 1), ls_fun(TA), col = "#2E8B57", lwd = 2, lty = 2)
     ka <- min(kk, R$n - 1L)
-    points(ka, ls_fun(R$F[ka + 1L]), pch = 19, col = "#2E8B57", cex = 1.5)
+    points(ka, ls_fun(R$L[ka + 1L]), pch = 19, col = "#2E8B57", cex = 1.5)
     points(ka, ls_fun(TA[ka + 1L]), pch = 1, col = "#2E8B57", cex = 1.5, lwd = 2)
     if (!is.null(RF)) {
-      lines(0:(RF$n - 1), ls_fun(RF$F), col = "#1F5FBF", lwd = 2)
+      lines(0:(RF$n - 1), ls_fun(RF$L), col = "#1F5FBF", lwd = 2)
       lines(0:(RF$n - 1), ls_fun(TB), col = "#1F5FBF", lwd = 2, lty = 2)
       kb <- min(kk, RF$n - 1L)
-      points(kb, ls_fun(RF$F[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.5)
+      points(kb, ls_fun(RF$L[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.5)
       points(kb, ls_fun(TB[kb + 1L]), pch = 1, col = "#1F5FBF", cex = 1.5, lwd = 2)
     }
     legend("topright", bty = "n", cex = 0.85, lwd = 2, lty = c(1, 2, if (!is.null(RF)) c(1, 2)),
@@ -817,8 +818,8 @@ server <- function(input, output, session) {
       paste0("<b style='color:", col, "'>", tag, ": ", alg_name(a), "</b> &nbsp; <b>",
              if (a %in% MINIBATCH) "epoch" else "iteration", "</b> ", k - 1L, " of ", R$n - 1L,
              " &nbsp; <b>loss</b> ", formatC(R$L[k], digits = 5, format = "f"),
-             if (lam() > 0) paste0(" (+ penalty ", formatC(R$F[k] - R$L[k], digits = 5, format = "f"), ")")
-             else "",
+             if (lam() > 0) paste0(" &nbsp; <b>L1 penalty</b> ",
+                                   formatC(R$F[k] - R$L[k], digits = 5, format = "f")) else "",
              " &nbsp; <b>test loss</b> ", formatC(te[k], digits = 5, format = "f"),
              " (lowest ", formatC(min(te), digits = 5, format = "f"), " at ",
              which.min(te) - 1L, ")",
@@ -842,11 +843,12 @@ shinyApp(ui, server)
 
 
 
+
 ## About the app
 
 Fits a Poisson neural network like the one in the book's backpropagation section, with one covariate and $J$ `tanh` hidden units (four by default, and up to 2000), to counts generated from known weights, and lets you watch eight optimizers work on it: gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient, BFGS and L-BFGS, which use the full data, and SGD with a line search, SGD with momentum and SGD with Adam, which step through mini-batches. The four units are enough for a mean with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$. The data always come from this four-unit network, whatever the number of units fitted.
 
-**Many hidden units and the L1 penalty.** **Hidden units** sets the number $J$ of units in the fitted network, from 4 to 2000, so the number of weights $p = 3J + 1$ goes from 13 to 6001. The data still come from the four-unit network, so a large network is heavily overparameterized (with the default $n = 150$, $p > n$ from $J = 50$). This shows how the methods scale. A gradient costs $O(nJ)$ for every method, but BFGS stores and updates a $p \times p$ matrix, $O(p^2)$ memory and work per iteration, and is not run for $p > 2000$ (the info line says so); L-BFGS and CG keep only a few vectors of length $p$ and run for any $J$. A fixed learning rate has to shrink as $J$ grows: the output adds up $J$ units, so its curvature in the output weights grows like $J$, and an Adam step of about $\alpha$ in every weight can move the output by about $J\alpha$. When $J$ changes, the app therefore sets the learning rates of fixed-rate GD, momentum and Adam to their defaults multiplied by $4/J$, and starts from new random weights; raise a rate to see the run diverge. **L1 penalty λ** adds $\lambda\sum|w|$, over the weights $w_{j1}$ and $v_j$ but not the intercepts, to the average loss, and every optimizer then minimizes this *objective*. Its gradient is taken as $\lambda\,\mathrm{sign}(w)$, a subgradient, so the objective is no longer smooth: the weights shrink toward zero and many end near it, but a gradient method does not set them exactly to zero (that needs a proximal step, which soft-thresholds the weights), and the line-search methods, which assume a smooth objective, can stall. The loss plot then shows the training objective (loss plus penalty) as the solid line and the test loss, without the penalty, as the dashed line; compare the test loss of a large network with and without the penalty. To keep the browser responsive, a run stores at most 4 million numbers of its path, so a large network may stop earlier (the info line reports it), and the test loss is computed at up to 100 iterations and interpolated between them. In the browser, R runs as WebAssembly and is many times slower than on a desktop: with the default settings, the two runs take about half a minute for 256 units and about two minutes for 1000; lower **Max iterations** for a quicker look.
+**Many hidden units and the L1 penalty.** **Hidden units** sets the number $J$ of units in the fitted network, from 4 to 2000, so the number of weights $p = 3J + 1$ goes from 13 to 6001. The data still come from the four-unit network, so a large network is heavily overparameterized (with the default $n = 150$, $p > n$ from $J = 50$). This shows how the methods scale. A gradient costs $O(nJ)$ for every method, but BFGS stores and updates a $p \times p$ matrix, $O(p^2)$ memory and work per iteration, and is not run for $p > 2000$, that is for $J \ge 667$: the network then keeps its starting weights, and the info line says why. This limit is set for the browser, not by R. Each update creates several $p \times p$ temporary matrices, more than a gigabyte at $J = 2000$, which a webR session cannot reliably get, and webR runs the update about 30 times slower than R on a desktop, where BFGS fits even $J = 2000$ ($p = 6001$, a 275 MB matrix) in about 30 seconds for 100 iterations; L-BFGS and CG keep only a few vectors of length $p$ and run for any $J$. A fixed learning rate has to shrink as $J$ grows: the output adds up $J$ units, so its curvature in the output weights grows like $J$, and an Adam step of about $\alpha$ in every weight can move the output by about $J\alpha$. When $J$ changes, the app therefore sets the learning rates of fixed-rate GD, momentum and Adam to their defaults multiplied by $4/J$, and starts from new random weights; raise a rate to see the run diverge. **L1 penalty λ** adds $\lambda\sum|w|$, over the weights $w_{j1}$ and $v_j$ but not the intercepts, to the average loss, and every optimizer then minimizes this *objective*. Its gradient is taken as $\lambda\,\mathrm{sign}(w)$, a subgradient, so the objective is no longer smooth: the weights shrink toward zero and many end near it, but a gradient method does not set them exactly to zero (that needs a proximal step, which soft-thresholds the weights), and the line-search methods, which assume a smooth objective, can stall. The training loss in the loss plot and the info line is the loss without the penalty, so it compares directly with the test loss; the info line gives the penalty separately. Compare the test loss of a large network with and without the penalty. To keep the browser responsive, a run stores at most 4 million numbers of its path, so a large network may stop earlier (the info line reports it), and the test loss is computed at up to 100 iterations and interpolated between them. In the browser, R runs as WebAssembly and is many times slower than on a desktop: with the default settings, the two runs take about half a minute for 256 units and about two minutes for 1000; lower **Max iterations** for a quicker look.
 
 **The weights.** The network panels belong to one optimizer, chosen by **Network of** above them. The network shows the weights of hidden units 1 to 4 and the output intercept at the current iteration (all thirteen weights when $J = 4$). With more units, the vertical dots below unit 4 stand for units 5 to $J$, which are fitted in the same way but not drawn; their weights still count in the colour scale. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data (with more than four units, units 5 to $J$ get output weight 0 and random input weights, so the starting curve is the true one), **Random** draws a new set (for the scaled predictor, drawn for $x$ divided by the scale; the output weights have standard deviation $2/\sqrt{J}$, so the starting curve has about the same size for any $J$), and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
 
@@ -879,7 +881,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$), and multiplied by $4/J$ for the number of units; raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
-**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed); The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
+**The fit.** The right panel shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed). The loss is the full average negative log-likelihood, $\frac1n\sum_i \big(\lambda_i - y_i \log\lambda_i + \log y_i!\big)$: the $\log y_i!$ term does not depend on the weights and does not change the fit, but without it the training and test losses would sit on different baselines, because the two samples have different counts. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
 
 A Gaussian version of this app, for regression with normal noise, is [Fitting a Gaussian Neural Network by Gradient Methods](app_sgd.html).
 
@@ -917,10 +919,11 @@ lambda_fun <- function(th, x) exp(fwd(th, x)$eta)
 ## the scaled units v_j h_j(x), one column per hidden unit
 unit_terms <- function(th, x) { J <- nunits(th); sweep(fwd(th, x)$H, 2, th[2 * J + 1:J], "*") }
 
-## average Poisson negative log-likelihood (the log y! term dropped)
+## average Poisson negative log-likelihood, with the log y! term: it does not depend on
+## the weights, but without it the training and test losses would differ by a constant
 nll <- function(th, x, y) {
   e <- fwd(th, x)$eta
-  v <- mean(exp(e) - y * e)
+  v <- mean(exp(e) - y * e + lfactorial(y))
   if (is.finite(v)) v else Inf
 }
 
@@ -1659,7 +1662,7 @@ server <- function(input, output, session) {
     ## the loss on the scale chosen below: as is, its log10, or the log10 of its excess
     ## over the smallest value any curve reaches (so differences near the floor show)
     sc <- if (is.null(input$lscale)) "log" else input$lscale
-    best <- min(c(R$F, RF$F, TA, TB), na.rm = TRUE)
+    best <- min(c(R$L, RF$L, TA, TB), na.rm = TRUE)
     ls_fun <- function(v) switch(sc, lin = v, log = if (best > 0) log10(v) else log10(pmax(v - best, 1e-12)),
                                  exc = log10(pmax(v - best, 1e-12)))
     ls_lab <- switch(sc, lin = "loss",
@@ -1667,20 +1670,20 @@ server <- function(input, output, session) {
                      exc = expression(log[10] ~ "(loss - smallest reached)"))
     xl <- c(0, max(R$n, if (is.null(RF)) 0 else RF$n) - 1)
     par(mar = c(4, 4.2, 2.5, 1))
-    plot(0:(R$n - 1), ls_fun(R$F), type = "n", xlab = "iteration", ylab = ls_lab,
-         xlim = xl, ylim = range(ls_fun(c(R$F, RF$F, TA, TB)), finite = TRUE),
-         main = if (lam() > 0) "training objective: loss + L1 penalty (solid); test loss (dashed)"
-                else "average negative log-likelihood: training (solid) and test (dashed)")
-    lines(0:(R$n - 1), ls_fun(R$F), col = "#2E8B57", lwd = 2)
+    plot(0:(R$n - 1), ls_fun(R$L), type = "n", xlab = "iteration", ylab = ls_lab,
+         xlim = xl, ylim = range(ls_fun(c(R$L, RF$L, TA, TB)), finite = TRUE),
+         main = paste0("average negative log-likelihood", if (lam() > 0) " (without the penalty)",
+                       ": training (solid) and test (dashed)"))
+    lines(0:(R$n - 1), ls_fun(R$L), col = "#2E8B57", lwd = 2)
     lines(0:(R$n - 1), ls_fun(TA), col = "#2E8B57", lwd = 2, lty = 2)
     ka <- min(kk, R$n - 1L)
-    points(ka, ls_fun(R$F[ka + 1L]), pch = 19, col = "#2E8B57", cex = 1.5)
+    points(ka, ls_fun(R$L[ka + 1L]), pch = 19, col = "#2E8B57", cex = 1.5)
     points(ka, ls_fun(TA[ka + 1L]), pch = 1, col = "#2E8B57", cex = 1.5, lwd = 2)
     if (!is.null(RF)) {
-      lines(0:(RF$n - 1), ls_fun(RF$F), col = "#1F5FBF", lwd = 2)
+      lines(0:(RF$n - 1), ls_fun(RF$L), col = "#1F5FBF", lwd = 2)
       lines(0:(RF$n - 1), ls_fun(TB), col = "#1F5FBF", lwd = 2, lty = 2)
       kb <- min(kk, RF$n - 1L)
-      points(kb, ls_fun(RF$F[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.5)
+      points(kb, ls_fun(RF$L[kb + 1L]), pch = 19, col = "#1F5FBF", cex = 1.5)
       points(kb, ls_fun(TB[kb + 1L]), pch = 1, col = "#1F5FBF", cex = 1.5, lwd = 2)
     }
     legend("topright", bty = "n", cex = 0.85, lwd = 2, lty = c(1, 2, if (!is.null(RF)) c(1, 2)),
@@ -1696,8 +1699,8 @@ server <- function(input, output, session) {
       paste0("<b style='color:", col, "'>", tag, ": ", alg_name(a), "</b> &nbsp; <b>",
              if (a %in% MINIBATCH) "epoch" else "iteration", "</b> ", k - 1L, " of ", R$n - 1L,
              " &nbsp; <b>loss</b> ", formatC(R$L[k], digits = 5, format = "f"),
-             if (lam() > 0) paste0(" (+ penalty ", formatC(R$F[k] - R$L[k], digits = 5, format = "f"), ")")
-             else "",
+             if (lam() > 0) paste0(" &nbsp; <b>L1 penalty</b> ",
+                                   formatC(R$F[k] - R$L[k], digits = 5, format = "f")) else "",
              " &nbsp; <b>test loss</b> ", formatC(te[k], digits = 5, format = "f"),
              " (lowest ", formatC(min(te), digits = 5, format = "f"), " at ",
              which.min(te) - 1L, ")",
