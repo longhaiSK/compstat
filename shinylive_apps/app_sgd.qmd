@@ -97,7 +97,7 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 
 ## ------------------------------------------------------------- algorithms
 ## the methods that step through mini-batches: one iteration is one epoch
-MINIBATCH <- c("sgdls", "mom", "adam")
+MINIBATCH <- c("sgdls", "sgdls2", "mom", "adam")
 ## Row k of P (the weights), and element k of F (the objective), L (the loss
 ## without the penalty) and GN (the gradient norm), is the state after k - 1 steps;
 ## A[k] is the step length that led to it. The objective is the loss plus the L1
@@ -132,6 +132,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   Sh <- Yh <- list()                          # the stored pairs of L-BFGS
   best_f <- Inf; best_k <- 1                  # the best loss so far, and when it was reached
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
+  a_prev <- lr / 2; nrej <- 0; nsteps <- 0     # the independent-batch line search
   tt <- 0                                    # mini-batch updates so far (Adam)
   if (alg %in% MINIBATCH) set.seed(11)
 
@@ -173,6 +174,18 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
           }
           al <- c(al, a)
           th <- th - a * gb
+        } else if (alg == "sgdls2") {          # the same search, judged on an independent batch C:
+          ic <- sample.int(n_obs, length(idx))  # the step is checked on cases it was not fitted to,
+          xc <- x[ic]; yc <- y[ic]              # with the same cases at both points (a paired estimate)
+          fc <- loss_fun(th, xc, yc) + sum(pm * abs(th)); gg <- sum(gb^2)
+          a <- min(2 * a_prev, 1e3); ok <- FALSE  # start from twice the last accepted step
+          for (j in 1:30) {
+            fa <- loss_fun(th - a * gb, xc, yc) + sum(pm * abs(th - a * gb))
+            if (is.finite(fa) && fa <= fc - 1e-4 * a * gg) { ok <- TRUE; break }
+            a <- a / 2
+          }
+          nsteps <- nsteps + 1
+          if (ok) { th <- th - a * gb; a_prev <- a; al <- c(al, a) } else nrej <- nrej + 1
         } else if (alg == "mom") {           # heavy ball on the batch gradient
           vel <- mom * vel - lr * gb
           th <- th + vel
@@ -183,7 +196,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
           th <- th - lr * (m1 / (1 - 0.9^tt)) / (sqrt(m2 / (1 - 0.999^tt)) + 1e-8)
         }
       }
-      AL[k + 1] <- if (alg == "sgdls") mean(al) else lr
+      AL[k + 1] <- if (alg %in% c("sgdls", "sgdls2")) (if (length(al)) mean(al) else 0) else lr
       next
     }
 
@@ -250,6 +263,9 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   if (stored && grepl("^maximum", note))
     note <- paste0("stopped after ", maxit, " iterations, to keep the stored path of the ",
                    p, " weights within 4 million numbers")
+  if (alg == "sgdls2" && nsteps > 0)
+    note <- paste0(note, "; ", round(100 * nrej / nsteps), "% of the mini-batch steps were not ",
+                   "taken (no sufficient decrease on the check batch)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], F = Fv[i], L = Lv[i], GN = GN[i],
        A = AL[i], n = n, note = note)
@@ -261,6 +277,7 @@ ALGS <- c("Gradient descent, fixed learning rate"     = "gdfix",
           "BFGS (quasi-Newton)"                       = "bfgs",
           "L-BFGS (limited memory)"                   = "lbfgs",
           "SGD + line search (on each mini-batch)"    = "sgdls",
+          "SGD + line search (on an independent batch)" = "sgdls2",
           "SGD + momentum"                            = "mom",
           "SGD + Adam"                                = "adam")
 
@@ -404,8 +421,8 @@ LRCHOICES <- setNames(as.character(LRGRID), format(LRGRID, scientific = FALSE, d
 ## one optimizer: its menu, then the parameters that belong to the chosen method
 opt_row <- function(s, selected, col, none = FALSE) {
   a <- paste0("input.alg", s)
-  has_lr <- paste0("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(", a, ") >= 0")
-  has_b  <- paste0("['sgdls', 'mom', 'adam'].indexOf(", a, ") >= 0")
+  has_lr <- paste0("['gdfix', 'sgdls', 'sgdls2', 'mom', 'adam'].indexOf(", a, ") >= 0")
+  has_b  <- paste0("['sgdls', 'sgdls2', 'mom', 'adam'].indexOf(", a, ") >= 0")
   fluidRow(
     column(1, div(style = paste0("padding-top: 28px; font-size: 20px; color: ", col, ";"),
                   tags$b(s))),
@@ -600,10 +617,10 @@ server <- function(input, output, session) {
     s <- s
     observeEvent(list(input[[paste0("alg", s)]], input$xscale, Jr()), {
       a <- input[[paste0("alg", s)]]
-      base <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[a]
+      base <- c(gdfix = 0.3, sgdls = 0.3, sgdls2 = 0.3, mom = 0.03, adam = 0.1)[a]
       if (!is.null(a) && !is.na(base)) {
         v <- unname(base) / xsc()^(if (a == "adam") 1 else 2) *
-          (if (a == "sgdls") 1 else 4 / Jr())
+          (if (a %in% c("sgdls", "sgdls2")) 1 else 4 / Jr())
         r <- LRGRID[which.min(abs(log(LRGRID) - log(v)))]
         updateSelectInput(session, paste0("lr", s), selected = as.character(r))
       }
@@ -678,7 +695,7 @@ server <- function(input, output, session) {
     }), 400)
     reactive({
       S <- pars(); if (is.null(S)) return(NULL); a <- S$a
-      fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
+      fixed <- a %in% c("gdfix", "sgdls", "sgdls2", "mom", "adam")
       req(!fixed || !is.null(S$lr))
       run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
               lr  = if (fixed) as.numeric(S$lr) else NA,
@@ -845,15 +862,16 @@ shinyApp(ui, server)
 
 
 
+
 ## About the app
 
-Fits a Gaussian neural network (a regression with normal noise and an identity link), with one covariate and $J$ `tanh` hidden units (four by default, and up to 2000), to data generated from known weights plus normal noise whose standard deviation you choose, and lets you watch eight optimizers work on it: gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient, BFGS and L-BFGS, which use the full data, and SGD with a line search, SGD with momentum and SGD with Adam, which step through mini-batches. The four units are enough for a mean $\mu(x)$ with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$. The data always come from this four-unit network, whatever the number of units fitted.
+Fits a Gaussian neural network (a regression with normal noise and an identity link), with one covariate and $J$ `tanh` hidden units (four by default, and up to 2000), to data generated from known weights plus normal noise whose standard deviation you choose, and lets you watch nine optimizers work on it: gradient descent with a fixed learning rate, gradient descent with a line search, conjugate gradient, BFGS and L-BFGS, which use the full data, and SGD with a line search on each mini-batch, SGD with a line search judged on an independent batch, SGD with momentum and SGD with Adam, which step through mini-batches. The four units are enough for a mean $\mu(x)$ with two modes: the true weights switch units 1 and 2 on and off around $x \in (-2.2, -0.8)$, and units 3 and 4 around $(0.8, 2.2)$. The data always come from this four-unit network, whatever the number of units fitted.
 
 **Many hidden units and the L1 penalty.** **Hidden units** sets the number $J$ of units in the fitted network, from 4 to 2000, so the number of weights $p = 3J + 1$ goes from 13 to 6001. The data still come from the four-unit network, so a large network is heavily overparameterized (with the default $n = 150$, $p > n$ from $J = 50$). This shows how the methods scale. A gradient costs $O(nJ)$ for every method, but BFGS stores and updates a $p \times p$ matrix, $O(p^2)$ memory and work per iteration, and is not run for $p > 2000$, that is for $J \ge 667$: the network then keeps its starting weights, and the info line says why. This limit is set for the browser, not by R. Each update creates several $p \times p$ temporary matrices, more than a gigabyte at $J = 2000$, which a webR session cannot reliably get, and webR runs the update about 30 times slower than R on a desktop, where BFGS fits even $J = 2000$ ($p = 6001$, a 275 MB matrix) in about 30 seconds for 100 iterations; L-BFGS and CG keep only a few vectors of length $p$ and run for any $J$. A fixed learning rate has to shrink as $J$ grows: the output adds up $J$ units, so its curvature in the output weights grows like $J$, and an Adam step of about $\alpha$ in every weight can move the output by about $J\alpha$. When $J$ changes, the app therefore sets the learning rates of fixed-rate GD, momentum and Adam to their defaults multiplied by $4/J$, and starts from new random weights; raise a rate to see the run diverge. **L1 penalty λ** adds $\lambda\sum|w|$, over the weights $w_{j1}$ and $v_j$ but not the intercepts, to the average loss, and every optimizer then minimizes this *objective*. Its gradient is taken as $\lambda\,\mathrm{sign}(w)$, a subgradient, so the objective is no longer smooth: the weights shrink toward zero and many end near it, but a gradient method does not set them exactly to zero (that needs a proximal step, which soft-thresholds the weights), and the line-search methods, which assume a smooth objective, can stall. The training loss in the loss plot and the info line is the loss without the penalty, so it compares directly with the test loss; the info line gives the penalty separately. Compare the test loss of a large network with and without the penalty. To keep the browser responsive, a run stores at most 4 million numbers of its path, so a large network may stop earlier (the info line reports it), and the test loss is computed at up to 100 iterations and interpolated between them. In the browser, R runs as WebAssembly and is many times slower than on a desktop: with the default settings, the two runs take about half a minute for 256 units and about two minutes for 1000; lower **Max iterations** for a quicker look.
 
 **The weights.** The network panels belong to one optimizer, chosen by **Network of** above them. The network shows the weights of hidden units 1 to 4 and the output intercept at the current iteration (all thirteen weights when $J = 4$). With more units, the vertical dots below unit 4 stand for units 5 to $J$, which are fitted in the same way but not drawn; their weights still count in the colour scale. The eight weights on edges (`w11, …, w41` from $x$ to the hidden units and `v1, …, v4` from the hidden units to the output) are written on their edges, and each intercept (`w10, …, w40` and `v0`) is a node of its own, a box hung on the neuron it shifts. Colour shows the value (blue negative, red positive; on an edge it also sets the width). The arrows beside a value change that weight (up and down on an edge, right to increase and left to decrease on an intercept box), and the starting point of the run changes with it. **True Value** loads the weights that generated the data (with more than four units, units 5 to $J$ get output weight 0 and random input weights, so the starting curve is the true one), **Random** draws a new set (for the scaled predictor, drawn for $x$ divided by the scale; the output weights have standard deviation $2/\sqrt{J}$, so the starting curve has about the same size for any $J$), and **Zero** sets every weight to 0 (a saddle point of the loss: with all hidden weights at zero, only $v_0$ has a nonzero gradient). **Adjust Size** sets how much one click on an arrow changes a weight.
 
-**The methods.** Write $g_k = \nabla L(\theta_k)$ for the gradient of the average loss $L$ over all $n$ observations at the current weights, $\ell_i$ for the loss of observation $i$, and $g_k^{(B_k)} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)$ for the gradient of the mini-batch $B_k$ of $m$ observations used at update $k$ (the superscript names the batch, the subscript the iteration). The first five optimizers in the menu use the full data; the last three step through mini-batches. All of them can be written as one update
+**The methods.** Write $g_k = \nabla L(\theta_k)$ for the gradient of the average loss $L$ over all $n$ observations at the current weights, $\ell_i$ for the loss of observation $i$, and $g_k^{(B_k)} = \frac{1}{m}\sum_{i \in B_k} \nabla \ell_i(\theta_k)$ for the gradient of the mini-batch $B_k$ of $m$ observations used at update $k$ (the superscript names the batch, the subscript the iteration). The first five optimizers in the menu use the full data; the last four step through mini-batches. All of them can be written as one update
 
 $$\theta_{k+1} = \theta_k - \alpha_k\, P_k\, m_k ,$$
 
@@ -867,18 +885,19 @@ where $m_k$ is the gradient actually used (the full gradient, a mini-batch gradi
 | **BFGS** | $g_k$ | $B_k \approx H^{-1}$, a full matrix, updated by $B_{k+1} = (I - \rho\, s y^\top) B_k (I - \rho\, y s^\top) + \rho\, s s^\top$ with $s = \theta_{k+1} - \theta_k$, $y = g_{k+1} - g_k$, $\rho = 1/(s^\top y)$; not run for $p > 2000$ | $\alpha_k$ from a Wolfe line search |
 | **L-BFGS** | $g_k$ | $H_k$, never formed: the product $H_k g_k$ is computed from the last $\ell$ pairs $(s_i, y_i)$ by a two-loop recursion, starting from a scalar multiple $\gamma_k I$ with $\gamma_k = s^\top y / y^\top y$ (memory $\ell$ is the *Memory* selector) | $\alpha_k$ from a Wolfe line search |
 | **SGD + line search** | $g_k^{(B_k)}$, with $E\,g_k^{(B_k)} = g_k$ | $I$ | $\alpha_k$ by backtracking on the loss of the mini-batch $B_k$: start at the learning rate and halve until $L^{(B_k)}(\theta_k - \alpha g_k^{(B_k)}) \le L^{(B_k)}(\theta_k) - c_1 \alpha \|g_k^{(B_k)}\|^2$ |
+| **SGD + line search, independent batch** | $g_k^{(B_k)}$ | $I$ | $\alpha_k$ by backtracking on the loss of a second random mini-batch $C_k$ of $m$ cases, the same cases at both points: start at twice the last accepted step and halve until $L^{(C_k)}(\theta_k - \alpha g_k^{(B_k)}) \le L^{(C_k)}(\theta_k) - c_1 \alpha \|g_k^{(B_k)}\|^2$; no step if none is found |
 | **SGD + momentum** | $v_k = \mu\, v_{k-1} + g_k^{(B_k)}$, an exponentially weighted sum of past mini-batch gradients | $I$ | $\alpha$, set by hand |
 | **SGD + Adam** | $\hat m_k = \dfrac{(1-\beta_1)\sum_{j \le k} \beta_1^{k-j} g_j^{(B_j)}}{1-\beta_1^{k}}$, a bias-corrected average of past mini-batch gradients | $\mathrm{diag}\big(1/(\sqrt{\hat v_k} + \epsilon)\big)$, with $\hat v_k = \dfrac{(1-\beta_2)\sum_{j \le k} \beta_2^{k-j} g_j^{(B_j)} \odot g_j^{(B_j)}}{1-\beta_2^{k}}$ | $\alpha$, set by hand |
 
 In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam, and $k$ counts mini-batch updates. Momentum is coded as $v \leftarrow \mu v - \alpha g^{(B)}$, $\theta \leftarrow \theta + v$, the same update written with the sign and $\alpha$ absorbed into $v$. A Wolfe line search takes the step $\alpha$ along $d_k = -P_k m_k$ that satisfies both $L(\theta_k + \alpha d_k) \le L(\theta_k) + c_1 \alpha\, g_k^\top d_k$ (sufficient decrease) and $\nabla L(\theta_k + \alpha d_k)^\top d_k \ge c_2\, g_k^\top d_k$ (curvature), with $c_1 = 10^{-4}$ and $c_2 = 0.9$.
 
-*What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, a full-matrix preconditioner (compare Newton's method, $P_k = H^{-1}$); L-BFGS keeps only the last few difference pairs, which costs $O(\ell p)$ instead of $O(p^2)$ storage and is the practical form for large $p$. The three SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
+*What each one changes.* Fixed-rate GD and the line-search methods use the exact gradient. A line search removes the learning rate to tune; conjugate gradient and BFGS also change the direction, CG by combining the gradient with the previous direction and BFGS by learning an approximation of the inverse Hessian from gradient differences, a full-matrix preconditioner (compare Newton's method, $P_k = H^{-1}$); L-BFGS keeps only the last few difference pairs, which costs $O(\ell p)$ instead of $O(p^2)$ storage and is the practical form for large $p$. The four SGD methods replace the gradient by a cheap and noisy mini-batch gradient. SGD with a line search chooses each step by backtracking on the loss of the batch itself, so the step is adapted to the batch and not to the whole loss. The direction was fitted to that batch, so the batch overstates how much the step helps, much as a model's training loss overstates its fit. The independent-batch version judges the step on a second random batch $C_k$ instead, using the same cases at the current and the trial weights, so the change in loss is estimated precisely (a paired comparison, as in a panel survey); a step that does not reduce the loss of $C_k$ enough is not taken. Each search starts from twice the last accepted step, so the learning rate sets only the first step. The check costs loss evaluations on $C_k$ but no gradients, and about a third of the steps are typically rejected, which the info line reports. Both are steepest-descent methods, so neither removes the zig-zag across a narrow valley: with four units both do poorly, while with many units the independent check is clearly better and hardly depends on the learning rate. Momentum averages the mini-batch gradients, which damps their noise and the zig-zag across a valley. Adam also divides each coordinate by the square root of a running average of its squared gradients, a per-coordinate step size; why this helps so much is not fully understood (see the book's discussion).
 
 *When a run stops.* A run ends at the first of: the full-data gradient norm falls below the tolerance in **Stop: ||g|| <**; if **Stop if flat for** is set, the full-data loss has not improved by 0.001% in that many consecutive iterations (a patience rule, off by default, the only kind that can stop a noisy method, whose gradient norm never gets small; it also ends a method that has stalled on a plateau, so read the message in the info line); or the maximum number of iterations. The info line says which one applied. A mini-batch run is also capped at 100000 mini-batch updates, which it reports. A conjugate-gradient or BFGS run whose line search fails first restarts from steepest descent, and ends only if that fails too.
 
 *Test loss.* A method is judged by how well the fit predicts new observations, not by the training loss, which a flexible network can drive below the noise floor by fitting the noise. The test loss is computed on 1000 observations drawn once from the same generating process (with the same scale of $x$), at every iteration, so you can see where it is lowest (given in the info line) and how it rises after that if the training loss keeps falling, the signature of overfitting and the reason for early stopping.
 
-*Epochs and mini-batches.* For the three SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the three methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. With four units (thirteen parameters) and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 100000 updates in all, which the info line reports.
+*Epochs and mini-batches.* For the four SGD methods one iteration is one *epoch*: a shuffled pass of $\lceil n/m \rceil$ mini-batch updates over all the data. An iteration therefore costs about as many gradient evaluations as one full-batch step of the other methods, and the iteration axes are directly comparable. This is the point of the comparison. After the same number of passes through the data, the mini-batch methods have made $n/m$ updates per pass where gradient descent has made one, so on a large sample they are well ahead of a full-batch method such as **GD + line search** in the plots. With the batch size equal to $n$ the four methods use the full gradient. The loss and gradient norm shown are always those of the full data. The sample size goes up to 2000: the larger $n$ is, the more mini-batch updates an epoch holds ($n/m$), and the clearer the advantage over the full-batch methods becomes. With four units (thirteen parameters) and a small sample, BFGS is hard to beat; SGD, momentum and Adam are what larger networks use, where a Hessian approximation is too expensive and a pass through all the data is rarely made. To keep the browser responsive a mini-batch run stops after 100000 updates in all, which the info line reports.
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$), and multiplied by $4/J$ for the number of units; raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
@@ -979,7 +998,7 @@ line_search <- function(f, g, x, d, a0 = 1, c1 = 1e-4, c2 = 0.9) {
 
 ## ------------------------------------------------------------- algorithms
 ## the methods that step through mini-batches: one iteration is one epoch
-MINIBATCH <- c("sgdls", "mom", "adam")
+MINIBATCH <- c("sgdls", "sgdls2", "mom", "adam")
 ## Row k of P (the weights), and element k of F (the objective), L (the loss
 ## without the penalty) and GN (the gradient norm), is the state after k - 1 steps;
 ## A[k] is the step length that led to it. The objective is the loss plus the L1
@@ -1014,6 +1033,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   Sh <- Yh <- list()                          # the stored pairs of L-BFGS
   best_f <- Inf; best_k <- 1                  # the best loss so far, and when it was reached
   vel <- m1 <- m2 <- numeric(p)              # momentum velocity; Adam moments
+  a_prev <- lr / 2; nrej <- 0; nsteps <- 0     # the independent-batch line search
   tt <- 0                                    # mini-batch updates so far (Adam)
   if (alg %in% MINIBATCH) set.seed(11)
 
@@ -1055,6 +1075,18 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
           }
           al <- c(al, a)
           th <- th - a * gb
+        } else if (alg == "sgdls2") {          # the same search, judged on an independent batch C:
+          ic <- sample.int(n_obs, length(idx))  # the step is checked on cases it was not fitted to,
+          xc <- x[ic]; yc <- y[ic]              # with the same cases at both points (a paired estimate)
+          fc <- loss_fun(th, xc, yc) + sum(pm * abs(th)); gg <- sum(gb^2)
+          a <- min(2 * a_prev, 1e3); ok <- FALSE  # start from twice the last accepted step
+          for (j in 1:30) {
+            fa <- loss_fun(th - a * gb, xc, yc) + sum(pm * abs(th - a * gb))
+            if (is.finite(fa) && fa <= fc - 1e-4 * a * gg) { ok <- TRUE; break }
+            a <- a / 2
+          }
+          nsteps <- nsteps + 1
+          if (ok) { th <- th - a * gb; a_prev <- a; al <- c(al, a) } else nrej <- nrej + 1
         } else if (alg == "mom") {           # heavy ball on the batch gradient
           vel <- mom * vel - lr * gb
           th <- th + vel
@@ -1065,7 +1097,7 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
           th <- th - lr * (m1 / (1 - 0.9^tt)) / (sqrt(m2 / (1 - 0.999^tt)) + 1e-8)
         }
       }
-      AL[k + 1] <- if (alg == "sgdls") mean(al) else lr
+      AL[k + 1] <- if (alg %in% c("sgdls", "sgdls2")) (if (length(al)) mean(al) else 0) else lr
       next
     }
 
@@ -1132,6 +1164,9 @@ run_alg <- function(alg, th0, x, y, maxit, lr = 0.1, mom = 0.9, m = 20,
   if (stored && grepl("^maximum", note))
     note <- paste0("stopped after ", maxit, " iterations, to keep the stored path of the ",
                    p, " weights within 4 million numbers")
+  if (alg == "sgdls2" && nsteps > 0)
+    note <- paste0(note, "; ", round(100 * nrej / nsteps), "% of the mini-batch steps were not ",
+                   "taken (no sufficient decrease on the check batch)")
   i <- seq_len(n)
   list(P = P[i, , drop = FALSE], F = Fv[i], L = Lv[i], GN = GN[i],
        A = AL[i], n = n, note = note)
@@ -1143,6 +1178,7 @@ ALGS <- c("Gradient descent, fixed learning rate"     = "gdfix",
           "BFGS (quasi-Newton)"                       = "bfgs",
           "L-BFGS (limited memory)"                   = "lbfgs",
           "SGD + line search (on each mini-batch)"    = "sgdls",
+          "SGD + line search (on an independent batch)" = "sgdls2",
           "SGD + momentum"                            = "mom",
           "SGD + Adam"                                = "adam")
 
@@ -1286,8 +1322,8 @@ LRCHOICES <- setNames(as.character(LRGRID), format(LRGRID, scientific = FALSE, d
 ## one optimizer: its menu, then the parameters that belong to the chosen method
 opt_row <- function(s, selected, col, none = FALSE) {
   a <- paste0("input.alg", s)
-  has_lr <- paste0("['gdfix', 'sgdls', 'mom', 'adam'].indexOf(", a, ") >= 0")
-  has_b  <- paste0("['sgdls', 'mom', 'adam'].indexOf(", a, ") >= 0")
+  has_lr <- paste0("['gdfix', 'sgdls', 'sgdls2', 'mom', 'adam'].indexOf(", a, ") >= 0")
+  has_b  <- paste0("['sgdls', 'sgdls2', 'mom', 'adam'].indexOf(", a, ") >= 0")
   fluidRow(
     column(1, div(style = paste0("padding-top: 28px; font-size: 20px; color: ", col, ";"),
                   tags$b(s))),
@@ -1482,10 +1518,10 @@ server <- function(input, output, session) {
     s <- s
     observeEvent(list(input[[paste0("alg", s)]], input$xscale, Jr()), {
       a <- input[[paste0("alg", s)]]
-      base <- c(gdfix = 0.3, sgdls = 0.3, mom = 0.03, adam = 0.1)[a]
+      base <- c(gdfix = 0.3, sgdls = 0.3, sgdls2 = 0.3, mom = 0.03, adam = 0.1)[a]
       if (!is.null(a) && !is.na(base)) {
         v <- unname(base) / xsc()^(if (a == "adam") 1 else 2) *
-          (if (a == "sgdls") 1 else 4 / Jr())
+          (if (a %in% c("sgdls", "sgdls2")) 1 else 4 / Jr())
         r <- LRGRID[which.min(abs(log(LRGRID) - log(v)))]
         updateSelectInput(session, paste0("lr", s), selected = as.character(r))
       }
@@ -1560,7 +1596,7 @@ server <- function(input, output, session) {
     }), 400)
     reactive({
       S <- pars(); if (is.null(S)) return(NULL); a <- S$a
-      fixed <- a %in% c("gdfix", "sgdls", "mom", "adam")
+      fixed <- a %in% c("gdfix", "sgdls", "sgdls2", "mom", "adam")
       req(!fixed || !is.null(S$lr))
       run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
               lr  = if (fixed) as.numeric(S$lr) else NA,
