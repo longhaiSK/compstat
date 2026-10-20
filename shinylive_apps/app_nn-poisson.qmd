@@ -493,8 +493,8 @@ ui <- fluidPage(
     $(document).on('click', '#toend', function() { kplay(false); kset(kslider().options.max); });
     Shiny.addCustomMessageHandler('krun', function(m) {
       kplay(false);
-      // a new run is shown at its last iteration (play starts again from 0)
-      var s = kslider(); if (s) { s.update({max: m.max, from: m.max}); $('#kshow').trigger('change'); }
+      // a new run is shown at its last iteration, or at the start if the box is unticked
+      var s = kslider(); if (s) { s.update({max: m.max, from: m.last ? m.max : 0}); $('#kshow').trigger('change'); }
       if (m.play) kplay(true); });
   "))),
   ## small text for the row of weight buttons; labels kept to one line
@@ -567,7 +567,8 @@ ui <- fluidPage(
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
-             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+             checkboxInput("autoplay", "Autoplay on change", FALSE),
+             checkboxInput("autolast", "Auto Display of Last Iteration", TRUE)),
       column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
@@ -728,6 +729,7 @@ server <- function(input, output, session) {
   observeEvent(list(runA(), runB()), {
     nmax <- max(runA()$n, if (is.null(runB())) 0L else runB()$n)
     session$sendCustomMessage("krun", list(max = nmax - 1L,
+                                           last = !isFALSE(input$autolast),
                                            play = isTRUE(input$autoplay) && nmax > 1))
   })
   kraw <- reactive(as.integer(if (is.null(input$kshow)) 0L else input$kshow))
@@ -942,7 +944,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$), and multiplied by $4/J$ for the number of units; raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
-**The fit.** The panel above the network shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed). The loss is the full average negative log-likelihood, $\frac1n\sum_i \big(\lambda_i - y_i \log\lambda_i + \log y_i!\big)$: the $\log y_i!$ term does not depend on the weights and does not change the fit, but without it the training and test losses would sit on different baselines, because the two samples have different counts. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
+**The fit.** The panel above the network shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed). The loss is the full average negative log-likelihood, $\frac1n\sum_i \big(\lambda_i - y_i \log\lambda_i + \log y_i!\big)$: the $\log y_i!$ term does not depend on the weights and does not change the fit, but without it the training and test losses would sit on different baselines, because the two samples have different counts. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). A new run is shown at its last iteration; untick *Auto Display of Last Iteration* (under the playback buttons) to show it at iteration 0 instead, with the starting weights and the starting curve, which is the better view for seeing how the network is built. The loss is not convex, so different starts can end at different fits; try **Random** a few times.
 
 A Gaussian version of this app, for regression with normal noise, is [Fitting a Gaussian Neural Network by Gradient Methods](app_sgd.html).
 
@@ -1435,8 +1437,8 @@ ui <- fluidPage(
     $(document).on('click', '#toend', function() { kplay(false); kset(kslider().options.max); });
     Shiny.addCustomMessageHandler('krun', function(m) {
       kplay(false);
-      // a new run is shown at its last iteration (play starts again from 0)
-      var s = kslider(); if (s) { s.update({max: m.max, from: m.max}); $('#kshow').trigger('change'); }
+      // a new run is shown at its last iteration, or at the start if the box is unticked
+      var s = kslider(); if (s) { s.update({max: m.max, from: m.last ? m.max : 0}); $('#kshow').trigger('change'); }
       if (m.play) kplay(true); });
   "))),
   ## small text for the row of weight buttons; labels kept to one line
@@ -1509,7 +1511,8 @@ ui <- fluidPage(
                              class = "btn-primary"),
                     ctrl_btn("step",  "forward-step",  "One iteration forward"),
                     ctrl_btn("toend", "forward-fast",  "To the end")),
-             checkboxInput("autoplay", "Autoplay on change", FALSE)),
+             checkboxInput("autoplay", "Autoplay on change", FALSE),
+             checkboxInput("autolast", "Auto Display of Last Iteration", TRUE)),
       column(3, sliderInput("kshow", "Iteration shown", min = 0, max = 100,
                             value = 0, step = 1, width = "100%"))
     )
@@ -1670,6 +1673,7 @@ server <- function(input, output, session) {
   observeEvent(list(runA(), runB()), {
     nmax <- max(runA()$n, if (is.null(runB())) 0L else runB()$n)
     session$sendCustomMessage("krun", list(max = nmax - 1L,
+                                           last = !isFALSE(input$autolast),
                                            play = isTRUE(input$autoplay) && nmax > 1))
   })
   kraw <- reactive(as.integer(if (is.null(input$kshow)) 0L else input$kshow))
