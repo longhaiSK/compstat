@@ -589,7 +589,9 @@ ui <- fluidPage(
                           choices = c(0.05, 0.1, 0.25, 0.5, 1),
                           selected = 0.25, width = "100%")),
           div(style = "width: 90px; margin-left: 6px;",
-              selectInput("netsel", "Network of", choices = c("A", "B"), width = "100%"))),
+              selectInput("netsel", "Network of", choices = c("A", "B"), width = "100%")),
+          div(style = "margin-left: 10px; white-space: nowrap;",
+              checkboxInput("runopt", "Run Optimizations", TRUE))),
       plotOutput("netv", height = "350px", click = "netv_click")),
     ## ---- right: how the optimizer is doing: the loss and the rate ---------
     column(6,
@@ -638,10 +640,6 @@ server <- function(input, output, session) {
       }
     })
   })
-  ## showing the units is for seeing how the network is built, so a new run opens at iteration 0
-  observeEvent(input$showparts, updateCheckboxInput(session, "autolast",
-                                                    value = !isTRUE(input$showparts)),
-               ignoreInit = TRUE)
   observeEvent(input$setzero, theta0(rep(0, 3 * Jr() + 1)))
   observeEvent(input$newstart, {
     rseed(rseed() + 1); J <- Jr()
@@ -703,7 +701,8 @@ server <- function(input, output, session) {
     pars <- debounce(reactive({
       a <- input[[paste0("alg", s)]]
       if (is.null(a) || a == "none") return(NULL)
-      list(a = a, th0 = theta0(), D = DAT(), maxit = as.numeric(input$maxit),
+      list(a = a, th0 = theta0(), D = DAT(),
+           maxit = if (isFALSE(input$runopt)) 0 else as.numeric(input$maxit),
            tol = if (is.null(input$gtol)) 1e-6 else as.numeric(input$gtol),
            patience = if (is.null(input$stall)) Inf else as.numeric(input$stall),
            lr = input[[paste0("lr", s)]], mom = input[[paste0("mom", s)]],
@@ -713,12 +712,14 @@ server <- function(input, output, session) {
       S <- pars(); if (is.null(S)) return(NULL); a <- S$a
       fixed <- a %in% c("gdfix", "sgdls", "sgdls2", "mom", "adam")
       req(!fixed || !is.null(S$lr))
-      run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
+      r <- run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
               lr  = if (fixed) as.numeric(S$lr) else NA,
               mom = if (a == "mom") S$mom else NA,
               m   = if (a %in% MINIBATCH) as.numeric(S$m) else NA,
               lmem = if (a == "lbfgs" && !is.null(S$mem)) as.numeric(S$mem) else 10,
               lam = S$lam)
+      if (S$maxit == 0) r$note <- "optimization is off: Run Optimizations is unticked"
+      r
     })
   }
   runA <- mkrun("A"); runB <- mkrun("B")
@@ -948,7 +949,7 @@ In the app $\beta_1 = 0.9$, $\beta_2 = 0.999$ and $\epsilon = 10^{-8}$ for Adam,
 
 **Scale of $x$.** The predictor is multiplied by this factor and the slope weights of the generating network are divided by it, so the true curve is the same function of $x$ divided by the scale and only the parameterization changes. The gradient with respect to a slope weight $w_{j1}$ carries a factor $x$ and the gradient with respect to an intercept does not, so a scale far from 1 makes the gradients of the weights differ by orders of magnitude. A single learning rate is then right for some weights and wrong for others: fixed-rate GD and momentum must shrink it to suit the most sensitive weight, which makes the other weights crawl, while Adam, which rescales each weight separately, needs a smaller change. When the scale changes, the app resets each learning rate to a value divided by $s^2$ for fixed-rate GD, SGD and momentum (the curvature in a slope weight grows like $s^2$) and by $s$ for Adam (its step is measured in the weight itself, which shrinks like $1/s$), and multiplied by $4/J$ for the number of units; raise the rate again to see the instability, and use **True Value** as the start to see the noise of the mini-batch methods around a good fit. The line-search methods are less sensitive, because the step length adapts, but BFGS and CG slow down when the problem is badly scaled. Changing the scale restarts the run.
 
-**The fit.** The panel above the network shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed). The loss is the full average negative log-likelihood, $\frac1n\sum_i \big(\lambda_i - y_i \log\lambda_i + \log y_i!\big)$: the $\log y_i!$ term does not depend on the weights and does not change the fit, but without it the training and test losses would sit on different baselines, because the two samples have different counts. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). A new run is shown at its last iteration; untick *Auto Display of Last Iteration* (under the playback buttons) to show it at iteration 0 instead (ticking the box that shows the units unticks it for you, and unticking that box ticks it again), with the starting weights and the starting curve, which is the better view for seeing how the network is built. The loss is not convex, so different starts can end at different fits; try **Random** a few times.
+**The fit.** The panel above the network shows the generated counts, the true mean curve (dashed red, with its two modes), the mean curve at the starting weights (grey) and the current fit (green). Two optimizers, **A** (green) and **B** (blue, or *None*), are run from the same start on the same data, each with its own settings, and both fits are drawn at the same iteration, so any two of the methods can be compared; the loss plot shows both paths. The default pair is SGD with Adam against gradient descent with a line search, which shows what the mini-batch updates buy per pass through the data. Because $\log\lambda = v_0 + \sum_j v_j h_j$, the units combine by adding in the exponent, not by adding curves, so the second plot shows the fit on the log scale: the scaled units $v_j h_j$ (dotted; orange, blue, black and cyan for units 1 to 4, and grey for units 5 to $J$ added together) simply add up to $\log\lambda$ (green), and the true $\log\lambda$ (dashed red) is the target. The box above the plots shows or hides this second plot; it is off by default. Beneath the fit is the loss per iteration, for the training sample (solid) and for an independent *test* sample (dashed). The loss is the full average negative log-likelihood, $\frac1n\sum_i \big(\lambda_i - y_i \log\lambda_i + \log y_i!\big)$: the $\log y_i!$ term does not depend on the weights and does not change the fit, but without it the training and test losses would sit on different baselines, because the two samples have different counts. The loss plot is on a log10 scale by default, since the loss is often close to its floor and the methods differ only in the last digits; the buttons under it switch to the loss itself, or to the log of the loss minus the smallest value either run reaches, which makes the rate of convergence readable. The first row of controls sets up the data and the model (sample size, scale of $x$, number of hidden units, L1 penalty, and a new dataset); the next two rows choose optimizers A and B and the settings of each (learning rate, momentum, mini-batch size); the last row holds the maximum number of iterations, the colour contrast, the playback buttons, and a slider that shows the fit at any iteration of the run (it follows the playback, and you can drag it to scrub through the run). A new run is shown at its last iteration; untick *Auto Display of Last Iteration* (under the playback buttons) to show it at iteration 0 instead, with the starting weights and the starting curve, which is the better view for seeing how the network is built. The box *Run Optimizations* at the end of the row of weight buttons is ticked by default; untick it to freeze the optimization, so that the plots show the starting weights only (use *True Value*, *Random*, *Zero* and the network plot to change them, with *Show the units* ticked to see how the units add up to the curve). The loss is not convex, so different starts can end at different fits; try **Random** a few times.
 
 A Gaussian version of this app, for regression with normal noise, is [Fitting a Gaussian Neural Network by Gradient Methods](app_sgd.html).
 
@@ -1537,7 +1538,9 @@ ui <- fluidPage(
                           choices = c(0.05, 0.1, 0.25, 0.5, 1),
                           selected = 0.25, width = "100%")),
           div(style = "width: 90px; margin-left: 6px;",
-              selectInput("netsel", "Network of", choices = c("A", "B"), width = "100%"))),
+              selectInput("netsel", "Network of", choices = c("A", "B"), width = "100%")),
+          div(style = "margin-left: 10px; white-space: nowrap;",
+              checkboxInput("runopt", "Run Optimizations", TRUE))),
       plotOutput("netv", height = "350px", click = "netv_click")),
     ## ---- right: how the optimizer is doing: the loss and the rate ---------
     column(6,
@@ -1586,10 +1589,6 @@ server <- function(input, output, session) {
       }
     })
   })
-  ## showing the units is for seeing how the network is built, so a new run opens at iteration 0
-  observeEvent(input$showparts, updateCheckboxInput(session, "autolast",
-                                                    value = !isTRUE(input$showparts)),
-               ignoreInit = TRUE)
   observeEvent(input$setzero, theta0(rep(0, 3 * Jr() + 1)))
   observeEvent(input$newstart, {
     rseed(rseed() + 1); J <- Jr()
@@ -1651,7 +1650,8 @@ server <- function(input, output, session) {
     pars <- debounce(reactive({
       a <- input[[paste0("alg", s)]]
       if (is.null(a) || a == "none") return(NULL)
-      list(a = a, th0 = theta0(), D = DAT(), maxit = as.numeric(input$maxit),
+      list(a = a, th0 = theta0(), D = DAT(),
+           maxit = if (isFALSE(input$runopt)) 0 else as.numeric(input$maxit),
            tol = if (is.null(input$gtol)) 1e-6 else as.numeric(input$gtol),
            patience = if (is.null(input$stall)) Inf else as.numeric(input$stall),
            lr = input[[paste0("lr", s)]], mom = input[[paste0("mom", s)]],
@@ -1661,12 +1661,14 @@ server <- function(input, output, session) {
       S <- pars(); if (is.null(S)) return(NULL); a <- S$a
       fixed <- a %in% c("gdfix", "sgdls", "sgdls2", "mom", "adam")
       req(!fixed || !is.null(S$lr))
-      run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
+      r <- run_alg(a, S$th0, S$D$x, S$D$y, S$maxit, tol = S$tol, patience = S$patience,
               lr  = if (fixed) as.numeric(S$lr) else NA,
               mom = if (a == "mom") S$mom else NA,
               m   = if (a %in% MINIBATCH) as.numeric(S$m) else NA,
               lmem = if (a == "lbfgs" && !is.null(S$mem)) as.numeric(S$mem) else 10,
               lam = S$lam)
+      if (S$maxit == 0) r$note <- "optimization is off: Run Optimizations is unticked"
+      r
     })
   }
   runA <- mkrun("A"); runB <- mkrun("B")
