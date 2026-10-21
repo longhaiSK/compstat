@@ -783,7 +783,7 @@ S(t \mid k, \lambda) = P(T > t) = e^{-(t/\lambda)^k},
 $$
 
 with shape $k > 0$ and scale $\lambda > 0$ ($k = 1$ is the exponential
-distribution). Unit $i$ is followed up to a censoring time $c_i$, independent
+distribution); @fig-weibull-densities shows how they change the density. Unit $i$ is followed up to a censoring time $c_i$, independent
 of $T_i$, and we record
 
 $$
@@ -795,6 +795,27 @@ unit ($\delta_i = 0$) we know only that $T_i > c_i = y_i$.
 
 **Observed data**: $(y_i, \delta_i)$, $i = 1, \ldots, n$. **Missing**: $T_i$ for
 the units with $\delta_i = 0$.
+
+```{r}
+#| label: fig-weibull-densities
+#| fig-width: 10
+#| fig-height: 4.4
+#| fig-cap: "Illustrates how the shape $k$ and the scale $\\lambda$ change the Weibull density.
+#|   Left: different shapes with $\\lambda = 10$ ($k < 1$ is decreasing with a spike at 0, $k = 1$ is exponential, $k > 1$ has a mode). Right: different scales with $k = 2$, which stretch the density along the time axis."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+tt <- seq(0.01, 30, length.out = 400)
+ks <- c(0.5, 1, 1.5, 3); cl <- c("firebrick", "darkorange", "steelblue", "darkgreen")
+plot(NA, xlim = c(0, 30), ylim = c(0, 0.3), xlab = "t", ylab = "density",
+     main = expression("shape varies, " * lambda == 10))
+for (j in seq_along(ks)) lines(tt, dweibull(tt, ks[j], 10), col = cl[j], lwd = 2)
+legend("topright", paste0("k = ", ks), col = cl, lwd = 2, bty = "n")
+ls_ <- c(5, 10, 20)
+plot(NA, xlim = c(0, 40), ylim = c(0, 0.23), xlab = "t", ylab = "density",
+     main = expression("scale varies, " * k == 2))
+tt2 <- seq(0.01, 40, length.out = 400)
+for (j in seq_along(ls_)) lines(tt2, dweibull(tt2, 2, ls_[j]), col = cl[j], lwd = 2)
+legend("topright", paste0("lambda = ", ls_), col = cl, lwd = 2, bty = "n")
+```
 
 **Observed likelihood.** A failure contributes its density, a censored unit its
 survival probability:
@@ -847,7 +868,36 @@ $$
 T_i = \lambda_t \,(a_i + E)^{1/k_t}, \qquad E \sim \text{Exp}(1),
 $$
 
-which gives both expectations that are needed. For any power $s > 0$,
+```{r}
+#| label: fig-weibull-estep
+#| fig-width: 10
+#| fig-height: 4.6
+#| fig-cap: "Illustrates the conditional distribution of a censored lifetime in the E-step.
+#|   Left: the Weibull density $f(t \\mid k_t, \\lambda_t)$ and, in red, the density of $T$ given $T > c$, which is the part of $f$ beyond $c$ divided by $S(c)$. Right: the same on the exponential scale $U = (T/\\lambda_t)^{k_t}$, where the conditional density $e^{-(u - a)}$ is the standard exponential shifted to start at $a = (c/\\lambda_t)^{k_t}$ (the memoryless property)."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+k_t <- 1.5; lam_t <- 10; cc <- 12; a_c <- (cc / lam_t)^k_t
+tt <- seq(0, 30, length.out = 500)
+plot(tt, dweibull(tt, k_t, lam_t), type = "l", lwd = 2, xlab = "t", ylab = "density",
+     ylim = c(0, 0.2), main = expression("Weibull: " * f(t) * " and " * f(t * "|" * T > c)))
+tb <- tt[tt >= cc]
+polygon(c(cc, tb, 30), c(0, dweibull(tb, k_t, lam_t), 0), col = adjustcolor("gray70", 0.6), border = NA)
+lines(tb, dweibull(tb, k_t, lam_t) / pweibull(cc, k_t, lam_t, lower.tail = FALSE),
+      col = "firebrick", lwd = 2)
+abline(v = cc, lty = 2)
+legend("topright", c("f(t)", "f(t) beyond c (area S(c))", "f(t | T > c)"),
+       col = c("black", "gray70", "firebrick"), lwd = c(2, 8, 2), bty = "n")
+uu <- seq(0, 6, length.out = 500)
+plot(uu, dexp(uu), type = "l", lwd = 2, xlab = "u", ylab = "density", ylim = c(0, 1.5),
+     main = expression("exponential scale: " * U == (T / lambda[t])^{k[t]}))
+ub <- uu[uu >= a_c]
+polygon(c(a_c, ub, 6), c(0, dexp(ub), 0), col = adjustcolor("gray70", 0.6), border = NA)
+lines(ub, dexp(ub - a_c), col = "firebrick", lwd = 2)
+abline(v = a_c, lty = 2)
+legend("topright", c("Exp(1)", "Exp(1) beyond a (area e^-a)", "u | U > a: a + Exp(1)"),
+       col = c("black", "gray70", "firebrick"), lwd = c(2, 8, 2), bty = "n")
+```
+
+@fig-weibull-estep illustrates the two conditional distributions. which gives both expectations that are needed. For any power $s > 0$,
 
 $$
 E\big(T_i^{\,s} \mid T_i > c_i, \theta^{(t)}\big)
