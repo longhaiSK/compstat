@@ -1077,6 +1077,34 @@ event <- Tlife <= cens
 c(censored_fraction = mean(!event), failures = sum(event))
 ```
 
+@fig-weibull-data1 shows the data against the generating density: a censored unit
+is plotted at its censoring time, so the red points sit where the follow-up ended
+and say only that the lifetime lies to their right.
+
+```{r}
+#| label: fig-weibull-data1
+#| fig-width: 7
+#| fig-height: 4.2
+#| fig-cap: "Illustrates the data of Simulation 1 with the Weibull density that generated the lifetimes.
+#|   Black points are observed failures and red points are right-censored times; heights are random and only separate the points."
+### the data with the generating density: failures in black, censored times in red
+plot_weib_data <- function(y, event, k, lam, main, xmax = max(y)) {
+    tt <- seq(0, xmax, length.out = 300); dens <- dweibull(tt, k, lam)
+    ytop <- max(dens[is.finite(dens)]) * 1.25
+    plot(tt, dens, type = "l", lwd = 2, ylim = c(0, ytop), xlim = c(0, xmax),
+         xlab = "time", ylab = "density", main = main)
+    h <- runif(length(y), 0, 0.22 * ytop)                  # random heights, to separate the points
+    points(y[event],  h[event],  pch = 16, cex = 0.7, col = adjustcolor("black", 0.6))
+    points(y[!event], h[!event], pch = 16, cex = 0.7, col = adjustcolor("red", 0.7))
+    legend("topright", c("true density", "failure", "censored"), lwd = c(2, NA, NA),
+           pch = c(NA, 16, 16), col = c("black", "black", "red"), bty = "n")
+}
+
+set.seed(1)
+par(mar = c(4, 4, 2, 1))
+plot_weib_data(y, event, k_true, lam_true, "Simulation 1: n = 200", xmax = 30)
+```
+
 ```{r}
 #| label: weibull-run
 fit <- em_weib(y, event, k0 = 1, lam0 = mean(y))
@@ -1134,16 +1162,36 @@ censored fraction.
 ```{r}
 #| label: weibull-rate
 set.seed(812)
-rate_row <- function(mean_cens, n = 400, k = 2, lam = 10) {
-    Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mean_cens)
-    yy <- pmin(Tl, cc); ee <- Tl <= cc
-    p  <- em_weib_known_k(yy, ee, k, tol = 1e-13)
+mean_cens <- c(200, 30, 12, 6)
+rate_data <- lapply(mean_cens, function(mc, n = 400, k = 2, lam = 10) {
+    Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mc)
+    list(y = pmin(Tl, cc), event = Tl <= cc)
+})
+rate_row <- function(dat, k = 2) {
+    p   <- em_weib_known_k(dat$y, dat$event, k, tol = 1e-13)
     err <- abs(p - tail(p, 1))
-    c(censored = mean(!ee), iterations = length(p) - 1,
+    c(censored = mean(!dat$event), iterations = length(p) - 1,
       error_ratio = err[8] / err[7])
 }
-rate_tab <- t(sapply(c(200, 30, 12, 6), rate_row))
+rate_tab <- t(sapply(rate_data, rate_row))
 knitr::kable(round(rate_tab, 3), caption = "Known-shape EM: the error ratio of successive iterations is close to the censored fraction, so heavier censoring needs more iterations.")
+```
+
+@fig-weibull-data2 shows the four data sets.
+
+```{r}
+#| label: fig-weibull-data2
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: "Illustrates the four data sets of Simulation 2 ($n = 400$, $k = 2$, $\\lambda = 10$), from light to heavy censoring.
+#|   Black points are failures and red points are right-censored times; the curve is the generating density."
+set.seed(1)
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for (j in 1:4) {
+    d <- rate_data[[j]]
+    plot_weib_data(d$y, d$event, 2, 10, paste0("censored: ", round(100 * mean(!d$event)), "%"),
+                   xmax = 30)
+}
 ```
 
 The same holds for the full two-parameter EM, whose speed also falls as
@@ -1155,7 +1203,22 @@ Finally, a Monte Carlo experiment with $n = 100$ and true values $k = 2$,
 $\lambda = 10$. Each data set is analysed in three ways: EM with the censoring
 accounted for, discarding the censored units, and treating the censoring times
 as if they were failure times. The averages over 200 replications are in
-@tbl-weibull-mc.
+@tbl-weibull-mc. @fig-weibull-data3 shows one simulated data set at each censoring level.
+
+```{r}
+#| label: fig-weibull-data3
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: "Illustrates one simulated data set ($n = 100$, $k = 2$, $\\lambda = 10$) at each of the four censoring levels of Simulation 3.
+#|   Black points are failures and red points are right-censored times; the curve is the generating density."
+set.seed(3)
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for (mc in c(200, 30, 12, 6)) {
+    Tl <- rweibull(100, 2, 10); cc <- rexp(100, 1 / mc)
+    plot_weib_data(pmin(Tl, cc), Tl <= cc, 2, 10,
+                   paste0("censored: ", round(100 * mean(Tl > cc)), "%"), xmax = 30)
+}
+```
 
 ```{r}
 #| label: tbl-weibull-mc
