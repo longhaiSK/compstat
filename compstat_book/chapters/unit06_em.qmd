@@ -761,6 +761,382 @@ any method; the contrast with the mixture example is instructive, since there
 the multimodality and the constraint on $p$ were what made the general
 optimizers fragile.
 
+## Example 3: Right-Censored Weibull Data {#sec-weibull}
+
+Survival and reliability data are the standard home of censoring. A unit is
+followed until it fails or until the study ends, whichever comes first, and a
+unit still running at the end tells us only that its lifetime exceeds the
+follow-up time. The Poisson example of @sec-poisson censored a count; here the
+missing quantity is a continuous lifetime, and, unlike the Poisson case, the
+complete-data log-likelihood is *not* linear in it.
+
+### Data and likelihoods
+
+Let $T_1, \ldots, T_n$ be independent lifetimes with the Weibull density and
+survival function
+
+$$
+f(t \mid k, \lambda) = \frac{k}{\lambda}\Big(\frac{t}{\lambda}\Big)^{k-1} e^{-(t/\lambda)^k},
+\qquad
+S(t \mid k, \lambda) = P(T > t) = e^{-(t/\lambda)^k},
+\qquad t > 0,
+$$
+
+with shape $k > 0$ and scale $\lambda > 0$ ($k = 1$ is the exponential
+distribution). Unit $i$ is followed up to a censoring time $c_i$, independent
+of $T_i$, and we record
+
+$$
+y_i = \min(T_i, c_i), \qquad \delta_i = I(T_i \le c_i) .
+$$
+
+Let $d = \sum_i \delta_i$ be the number of observed failures. For a censored
+unit ($\delta_i = 0$) we know only that $T_i > c_i = y_i$.
+
+**Observed data**: $(y_i, \delta_i)$, $i = 1, \ldots, n$. **Missing**: $T_i$ for
+the units with $\delta_i = 0$.
+
+**Observed likelihood.** A failure contributes its density, a censored unit its
+survival probability:
+
+$$
+L_{\text{obs}}(k, \lambda) = \prod_{i:\,\delta_i = 1} f(y_i \mid k, \lambda)
+\prod_{i:\,\delta_i = 0} S(y_i \mid k, \lambda),
+$$
+
+$$
+\ell_{\text{obs}}(k, \lambda)
+= d \log k - d\, k \log \lambda + (k - 1) \sum_{i:\,\delta_i = 1} \log y_i
+- \sum_{i=1}^{n} \Big(\frac{y_i}{\lambda}\Big)^k .
+$$
+
+If $k$ is known, setting $\partial \ell_{\text{obs}} / \partial \lambda = 0$
+gives $\hat\lambda^k = \sum_{i=1}^n y_i^k / d$, but for unknown $k$ there is no
+closed form, and the maximization has to be done numerically. EM replaces it by
+a sequence of simpler problems.
+
+**Complete-data log-likelihood.** If all $T_i$ were seen,
+
+$$
+\ell_{\text{comp}}(k, \lambda)
+= n \log k - n k \log \lambda + (k - 1) \sum_{i=1}^{n} \log T_i
+- \lambda^{-k} \sum_{i=1}^{n} T_i^{\,k} .
+$$
+
+It depends on the missing $T_i$ through $\log T_i$ and $T_i^{\,k}$, two
+*nonlinear* functions. As warned in the overview, the E-step therefore needs
+$E(\log T_i \mid \cdot)$ and $E(T_i^{\,k} \mid \cdot)$, not
+$\big(\log E(T_i \mid \cdot)\big)$ or $E(T_i \mid \cdot)^k$, and substituting
+$E(T_i \mid \cdot)$ for $T_i$ would give the wrong algorithm.
+
+### E-step
+
+Write $\theta^{(t)} = (k_t, \lambda_t)$ for the current value. The key fact is
+that $U = (T/\lambda_t)^{k_t}$ has the standard exponential distribution, so
+for a censored unit
+
+$$
+T_i > c_i \iff U_i > a_i, \qquad a_i = (c_i / \lambda_t)^{k_t},
+$$
+
+and by the memoryless property of the exponential distribution
+$U_i \mid U_i > a_i \;\overset{d}{=}\; a_i + E$ with $E \sim \text{Exp}(1)$. Hence,
+given the data and $\theta^{(t)}$,
+
+$$
+T_i = \lambda_t \,(a_i + E)^{1/k_t}, \qquad E \sim \text{Exp}(1),
+$$
+
+which gives both expectations that are needed. For any power $s > 0$,
+
+$$
+E\big(T_i^{\,s} \mid T_i > c_i, \theta^{(t)}\big)
+= \lambda_t^{\,s}\, E\big[(a_i + E)^{s/k_t}\big]
+= \lambda_t^{\,s}\, e^{a_i}\, \Gamma\!\big(1 + s/k_t,\; a_i\big),
+$$
+
+where $\Gamma(b, a) = \int_a^\infty u^{b-1} e^{-u}\,du$ is the upper incomplete gamma
+function. For the power $s = k_t$ this reduces to the elementary expression
+$\lambda_t^{k_t}(a_i + 1) = c_i^{k_t} + \lambda_t^{k_t}$: a censored unit is
+expected to run on for one more unit of the exponential clock. For the
+logarithm, integration by parts gives
+
+$$
+E\big(\log T_i \mid T_i > c_i, \theta^{(t)}\big)
+= \log \lambda_t + \frac{1}{k_t}\Big[\log a_i + e^{a_i} E_1(a_i)\Big],
+\qquad E_1(a) = \int_a^\infty \frac{e^{-u}}{u}\,du ,
+$$
+
+the exponential integral. For an observed failure the expectations are simply
+$y_i^{\,s}$ and $\log y_i$. Collect
+
+$$
+S_{\log}^{(t)} = \sum_{i=1}^{n} E\big(\log T_i \mid \cdot\big),
+\qquad
+S_k^{(t)}(k) = \sum_{i=1}^{n} E\big(T_i^{\,k} \mid \cdot\big)
+= \sum_{i:\,\delta_i = 1} y_i^{\,k}
++ \sum_{i:\,\delta_i = 0} \lambda_t^{\,k}\, e^{a_i}\, \Gamma\!\big(1 + k/k_t,\; a_i\big) .
+$$
+
+Then
+
+$$
+Q\big(k, \lambda \mid \theta^{(t)}\big)
+= n \log k - n k \log \lambda + (k - 1)\, S_{\log}^{(t)} - \lambda^{-k} S_k^{(t)}(k) .
+$$
+
+### M-step
+
+For fixed $k$, $\partial Q / \partial \lambda = -nk/\lambda + k \lambda^{-k-1} S_k^{(t)}(k) = 0$ gives
+
+$$
+\lambda^{k} = \frac{1}{n} S_k^{(t)}(k) ,
+$$
+
+the Weibull MLE of $\lambda^k$ for complete data, with each $T_i^{\,k}$ replaced by
+its conditional expectation. Substituting this back gives the profile of $Q$ in
+$k$ alone, up to a constant,
+
+$$
+Q_p(k) = n \log k - n \log\!\Big(\tfrac{1}{n} S_k^{(t)}(k)\Big) + (k - 1)\, S_{\log}^{(t)},
+$$
+
+so the M-step maximizes the one-dimensional function $Q_p$ (here by `optimize`)
+and then sets $\lambda_{t+1} = \big(S_k^{(t)}(k_{t+1})/n\big)^{1/k_{t+1}}$.
+Because $S_k^{(t)}(k)$ depends on $k$, no closed form exists for $k_{t+1}$, but
+every M-step is a cheap one-dimensional problem, whereas the original problem
+couples $k$ and $\lambda$ through the censored terms.
+
+### Special case: known shape
+
+If $k$ is known, only $E(T_i^{\,k} \mid \cdot) = c_i^{\,k} + \lambda_t^{\,k}$ is
+needed, and the update is in closed form,
+
+$$
+\lambda_{t+1}^{\,k}
+= \frac{1}{n}\Big[\sum_{i:\,\delta_i = 1} y_i^{\,k}
++ \sum_{i:\,\delta_i = 0} \big(y_i^{\,k} + \lambda_t^{\,k}\big)\Big]
+= \frac{\sum_{i=1}^n y_i^{\,k} + (n - d)\,\lambda_t^{\,k}}{n} ,
+$$
+
+the same structure as the Poisson update: the complete-data estimate with each
+censored value replaced by its conditional expectation. Its fixed point
+satisfies $\lambda^k = \big(\sum_i y_i^{\,k} + (n-d)\lambda^k\big)/n$, that is
+$\lambda^k = \sum_i y_i^{\,k}/d$, which is the MLE. Subtracting the fixed point
+from the update gives, exactly,
+
+$$
+\lambda_{t+1}^{\,k} - \hat\lambda^{\,k} = \frac{n - d}{n}\,\big(\lambda_t^{\,k} - \hat\lambda^{\,k}\big) ,
+$$
+
+so the error contracts by the *fraction of censored units* at every iteration.
+This is the general rule that EM converges at a rate equal to the fraction of
+missing information: with 10% censoring the algorithm is fast, and with 70%
+censoring it is slow.
+
+### Implementation
+
+```{r}
+#| label: weibull-em
+
+### observed log-likelihood; y = min(T, c), event = (T <= c)
+loglik_weib <- function(k, lam, y, event) {
+    sum(event * (log(k) - k * log(lam) + (k - 1) * log(y))) - sum((y / lam)^k)
+}
+
+### E(log(a + E)), E ~ Exp(1): the integral behind E(log T | T > c)
+elog_term <- function(a) integrate(function(x) log(a + x) * exp(-x), 0, Inf)$value
+
+### E-step: the two sums S_log and S_k(.) of the text
+e_step_weib <- function(y, event, k_t, lam_t) {
+    cen <- !event
+    a   <- (y[cen] / lam_t)^k_t
+    elogT <- log(y)
+    elogT[cen] <- log(lam_t) + vapply(a, elog_term, numeric(1)) / k_t
+    ## S_k(k) = sum_i E(T_i^k | data, theta_t); computed on the log scale so that
+    ## a large a = (c / lam_t)^k_t cannot overflow exp(a)
+    S_k <- function(k) {
+        s <- k / k_t
+        sum(y[event]^k) +
+            sum(lam_t^k * exp(a + pgamma(a, s + 1, lower.tail = FALSE, log.p = TRUE) +
+                              lgamma(s + 1)))
+    }
+    list(S_log = sum(elogT), S_k = S_k)
+}
+
+### EM: the M-step maximizes the profile Q_p(k) in one dimension, then sets lambda
+em_weib <- function(y, event, k0 = 1, lam0 = mean(y), iterations = 200, tol = 1e-10) {
+    n <- length(y); k <- k0; lam <- lam0
+    out <- matrix(NA_real_, iterations + 1, 3,
+                  dimnames = list(NULL, c("k", "lambda", "log_lik")))
+    out[1, ] <- c(k, lam, loglik_weib(k, lam, y, event))
+    for (i in seq_len(iterations)) {
+        E  <- e_step_weib(y, event, k, lam)                                  # E-step
+        Qp <- function(kk) n * log(kk) - n * log(E$S_k(kk) / n) + (kk - 1) * E$S_log
+        k  <- optimize(Qp, c(k / 4, 4 * k), maximum = TRUE, tol = 1e-12)$maximum   # M-step
+        lam <- (E$S_k(k) / n)^(1 / k)
+        out[i + 1, ] <- c(k, lam, loglik_weib(k, lam, y, event))
+        if (abs(out[i + 1, 3] - out[i, 3]) < tol) {
+            out <- out[seq_len(i + 1), , drop = FALSE]; break
+        }
+    }
+    out
+}
+
+### known shape: the closed-form update of the text
+em_weib_known_k <- function(y, event, k, lam0 = mean(y), iterations = 200, tol = 1e-10) {
+    n <- length(y); d <- sum(event); path <- lam <- lam0
+    for (i in seq_len(iterations)) {
+        lam_new <- ((sum(y^k) + (n - d) * lam^k) / n)^(1 / k)
+        path <- c(path, lam_new)
+        if (abs(lam_new - lam) < tol * lam) break
+        lam <- lam_new
+    }
+    path
+}
+```
+
+Before using the E-step it is worth checking the two formulas against brute
+force. Draw $T = \lambda_t (a + E)^{1/k_t}$ many times and compare:
+
+```{r}
+#| label: weibull-check
+set.seed(812)
+a <- 1.3; k_t <- 1.7; lam_t <- 8
+Tsim <- lam_t * (a + rexp(1e6))^(1 / k_t)
+c(monte_carlo = mean(log(Tsim)),  formula = log(lam_t) + elog_term(a) / k_t)
+c(monte_carlo = mean(Tsim^2),
+  formula = lam_t^2 * exp(a + pgamma(a, 2 / k_t + 1, lower.tail = FALSE, log.p = TRUE) +
+                          lgamma(2 / k_t + 1)))
+```
+
+### Simulation 1: one data set
+
+Lifetimes are Weibull with $k = 1.5$ and $\lambda = 10$, and censoring times are
+exponential with mean $20$, independent of the lifetimes, which censors about
+30% of $n = 200$ units.
+
+```{r}
+#| label: weibull-data
+set.seed(812)
+n <- 200; k_true <- 1.5; lam_true <- 10
+Tlife <- rweibull(n, k_true, lam_true)
+cens  <- rexp(n, 1 / 20)
+y     <- pmin(Tlife, cens)
+event <- Tlife <= cens
+c(censored_fraction = mean(!event), failures = sum(event))
+```
+
+```{r}
+#| label: weibull-run
+fit <- em_weib(y, event, k0 = 1, lam0 = mean(y))
+round(fit[c(1:6, nrow(fit)), ], 5)
+nrow(fit) - 1                                     # iterations used
+all(diff(fit[, "log_lik"]) >= -1e-10)             # ascending property
+```
+
+The log-likelihood increases at every iteration, as the ascending property
+requires. To check the limit, compare with a direct numerical maximization of
+$\ell_{\text{obs}}$ and with the Weibull regression of the `survival` package,
+which fits the same model by a Newton-type method:
+
+```{r}
+#| label: weibull-check-fit
+direct <- optim(c(0, 0), function(p) -loglik_weib(exp(p[1]), exp(p[2]), y, event),
+                control = list(reltol = 1e-14))
+sr <- survival::survreg(survival::Surv(y, event) ~ 1, dist = "weibull")
+rbind(EM      = fit[nrow(fit), c("k", "lambda")],
+      optim   = exp(direct$par),
+      survreg = c(1 / sr$scale, exp(coef(sr))))
+```
+
+The three agree to several digits. @fig-weibull-paths shows the EM paths from
+three different starting values on the contours of $\ell_{\text{obs}}$.
+
+```{r}
+#| label: fig-weibull-paths
+#| fig-width: 7
+#| fig-height: 5
+#| fig-cap: "Illustrates EM for right-censored Weibull data from three starting values: every run climbs the observed log-likelihood to the same maximum.
+#|   Contours of the observed log-likelihood in $(k, \\lambda)$ with the EM paths; the cross marks the true value and the circle the maximum likelihood estimate."
+kg <- seq(0.6, 3, length.out = 120); lg <- seq(6, 16, length.out = 120)
+ll <- outer(kg, lg, Vectorize(function(k, l) loglik_weib(k, l, y, event)))
+contour(kg, lg, ll, levels = max(ll) - c(0.5, 1, 2, 4, 8, 16, 32, 64),
+        labels = paste0("-", c(0.5, 1, 2, 4, 8, 16, 32, 64)), xlab = "shape k",
+        ylab = "scale lambda", col = "gray60")
+starts <- list(c(0.7, 14), c(2.8, 7), c(2.5, 15))
+cols <- c("firebrick", "steelblue", "darkgreen")
+for (j in seq_along(starts)) {
+    p <- em_weib(y, event, starts[[j]][1], starts[[j]][2])
+    lines(p[, "k"], p[, "lambda"], type = "o", pch = 16, cex = 0.6, col = cols[j])
+}
+points(k_true, lam_true, pch = 4, lwd = 2, cex = 1.5)
+points(fit[nrow(fit), "k"], fit[nrow(fit), "lambda"], pch = 1, cex = 2)
+```
+
+### Simulation 2: the censoring rate sets the speed
+
+For known shape ($k = 2$) the contraction factor is the censored fraction, as
+derived above. The table runs the closed-form EM on data sets with increasing
+censoring and compares the observed ratio of successive errors with the
+censored fraction.
+
+```{r}
+#| label: weibull-rate
+set.seed(812)
+rate_row <- function(mean_cens, n = 400, k = 2, lam = 10) {
+    Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mean_cens)
+    yy <- pmin(Tl, cc); ee <- Tl <= cc
+    p  <- em_weib_known_k(yy, ee, k, tol = 1e-13)
+    err <- abs(p - tail(p, 1))
+    c(censored = mean(!ee), iterations = length(p) - 1,
+      error_ratio = err[8] / err[7])
+}
+rate_tab <- t(sapply(c(200, 30, 12, 6), rate_row))
+knitr::kable(round(rate_tab, 3), caption = "Known-shape EM: the error ratio of successive iterations is close to the censored fraction, so heavier censoring needs more iterations.")
+```
+
+The same holds for the full two-parameter EM, whose speed also falls as
+censoring grows (@tbl-weibull-mc, column *iterations*).
+
+### Simulation 3: what ignoring the censoring costs
+
+Finally, a Monte Carlo experiment with $n = 100$ and true values $k = 2$,
+$\lambda = 10$. Each data set is analysed in three ways: EM with the censoring
+accounted for, discarding the censored units, and treating the censoring times
+as if they were failure times. The averages over 200 replications are in
+@tbl-weibull-mc.
+
+```{r}
+#| label: tbl-weibull-mc
+#| tbl-cap: "Monte Carlo averages over 200 data sets of $n = 100$ (true $k = 2$, $\\lambda = 10$), for four censoring levels: the EM estimates are close to the truth at every level, while discarding the censored units or treating them as failures biases the scale (and the shape) downward, increasingly so with the amount of censoring."
+set.seed(812)
+sim_weib <- function(mean_cens, nrep = 200, n = 100, k = 2, lam = 10) {
+    res <- replicate(nrep, {
+        Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mean_cens)
+        yy <- pmin(Tl, cc); ee <- Tl <= cc
+        r   <- em_weib(yy, ee, 1, mean(yy), tol = 1e-8)
+        drop <- survival::survreg(survival::Surv(yy[ee], rep(TRUE, sum(ee))) ~ 1,
+                                  dist = "weibull")
+        asfail <- survival::survreg(survival::Surv(yy, rep(TRUE, n)) ~ 1, dist = "weibull")
+        c(censored = mean(!ee), iterations = nrow(r) - 1,
+          k_EM = unname(r[nrow(r), "k"]), lambda_EM = unname(r[nrow(r), "lambda"]),
+          k_drop = 1 / drop$scale, lambda_drop = unname(exp(coef(drop))),
+          k_asfail = 1 / asfail$scale, lambda_asfail = unname(exp(coef(asfail))))
+    })
+    rowMeans(res)
+}
+mc <- t(sapply(c(200, 30, 12, 6), sim_weib))
+knitr::kable(round(mc, 2), row.names = FALSE)
+```
+
+With light censoring all three analyses are close. As censoring grows,
+discarding the censored units removes exactly the long lifetimes and treating
+the censoring times as failures declares them to have failed early, so both
+underestimate the scale and the shape; the EM estimates stay near the truth
+because each censored unit contributes what the model says about its unobserved
+lifetime, not a made-up value.
+
 ## More Complex Applications
 
 ### Model-based clustering
