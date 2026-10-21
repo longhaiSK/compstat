@@ -1155,9 +1155,31 @@ points(fit[nrow(fit), "k"], fit[nrow(fit), "lambda"], pch = 1, cex = 2)
 ### Simulation 2: the censoring rate sets the speed
 
 For known shape ($k = 2$) the contraction factor is the censored fraction, as
-derived above. The table runs the closed-form EM on data sets with increasing
-censoring and compares the observed ratio of successive errors with the
-censored fraction.
+derived above. The simulation draws four data sets of $n = 400$ lifetimes with
+increasing censoring (@fig-weibull-data2), then runs the closed-form EM on each
+and compares the observed ratio of successive errors with the censored fraction
+(@tbl-weibull-rate).
+
+```{r}
+#| label: fig-weibull-data2
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: "Illustrates the four data sets of Simulation 2 ($n = 400$, $k = 2$, $\\lambda = 10$), from light to heavy censoring.
+#|   Black points are failures and red points are right-censored times; the curve is the generating density."
+set.seed(812)
+mean_cens <- c(200, 30, 12, 6)
+rate_data <- lapply(mean_cens, function(mc, n = 400, k = 2, lam = 10) {
+    Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mc)
+    list(y = pmin(Tl, cc), event = Tl <= cc)
+})
+set.seed(1)
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+for (j in 1:4) {
+    d <- rate_data[[j]]
+    plot_weib_data(d$y, d$event, 2, 10, paste0("censored: ", round(100 * mean(!d$event)), "%"),
+                   xmax = 30)
+}
+```
 
 The *error* of iteration $t$ is the distance to the limit,
 $e_t = |\lambda_t - \hat\lambda|$, where $\hat\lambda$ is the value the
@@ -1177,13 +1199,9 @@ then about $\log(\text{tolerance}) / \log(\text{ratio})$, which is why the
 iteration count grows sharply as the ratio approaches 1.
 
 ```{r}
-#| label: weibull-rate
-set.seed(812)
-mean_cens <- c(200, 30, 12, 6)
-rate_data <- lapply(mean_cens, function(mc, n = 400, k = 2, lam = 10) {
-    Tl <- rweibull(n, k, lam); cc <- rexp(n, 1 / mc)
-    list(y = pmin(Tl, cc), event = Tl <= cc)
-})
+#| label: tbl-weibull-rate
+#| tbl-cap: "Shows that the error ratio of the closed-form EM for known shape is close to the censored fraction, so heavier censoring needs more iterations.
+#|   Known-shape EM on the four data sets of Simulation 2: realized censored fraction, iterations to convergence, and the error ratio $e_7/e_6$ of two successive iterations."
 rate_row <- function(dat, k = 2) {
     p   <- em_weib_known_k(dat$y, dat$event, k, tol = 1e-13)
     err <- abs(p - tail(p, 1))
@@ -1191,24 +1209,7 @@ rate_row <- function(dat, k = 2) {
       error_ratio = err[8] / err[7])
 }
 rate_tab <- t(sapply(rate_data, rate_row))
-knitr::kable(round(rate_tab, 3), caption = "Known-shape EM: the error ratio $e_7/e_6$ of two successive iterations is close to the censored fraction, so heavier censoring needs more iterations.")
-```
-
-@fig-weibull-data2 shows the four data sets.
-
-```{r}
-#| label: fig-weibull-data2
-#| fig-width: 10
-#| fig-height: 6
-#| fig-cap: "Illustrates the four data sets of Simulation 2 ($n = 400$, $k = 2$, $\\lambda = 10$), from light to heavy censoring.
-#|   Black points are failures and red points are right-censored times; the curve is the generating density."
-set.seed(1)
-par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
-for (j in 1:4) {
-    d <- rate_data[[j]]
-    plot_weib_data(d$y, d$event, 2, 10, paste0("censored: ", round(100 * mean(!d$event)), "%"),
-                   xmax = 30)
-}
+knitr::kable(round(rate_tab, 3))
 ```
 
 The same holds for the full two-parameter EM, whose speed also falls as
@@ -1239,7 +1240,8 @@ for (mc in c(200, 30, 12, 6)) {
 
 ```{r}
 #| label: tbl-weibull-mc
-#| tbl-cap: "Monte Carlo averages over 200 data sets of $n = 100$ (true $k = 2$, $\\lambda = 10$), for four censoring levels: the EM estimates are close to the truth at every level, while discarding the censored units or treating them as failures biases the scale (and the shape) downward, increasingly so with the amount of censoring."
+#| tbl-cap: "Shows what ignoring the censoring costs: EM stays near the truth while the two naive analyses are biased.
+#|   Monte Carlo averages over 200 data sets of $n = 100$ (true $k = 2$, $\\lambda = 10$), for four censoring levels: the EM estimates are close to the truth at every level, while discarding the censored units or treating them as failures biases the scale (and the shape) downward, increasingly so with the amount of censoring."
 set.seed(812)
 sim_weib <- function(mean_cens, nrep = 200, n = 100, k = 2, lam = 10) {
     res <- replicate(nrep, {
