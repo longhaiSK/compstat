@@ -1279,6 +1279,407 @@ underestimate the scale and the shape; the EM estimates stay near the truth
 because each censored unit contributes what the model says about its unobserved
 lifetime, not a made-up value.
 
+## Example 4: Logistic Regression as a Latent-Variable Problem {#sec-logistic}
+
+Logistic regression is usually fitted directly, by Newton's method on the
+observed log-likelihood (`glm` uses iteratively reweighted least squares, which
+for the logit link is exactly Newton's method). It can also be viewed as a
+missing-data problem: each binary response is a thresholded version of an
+unobserved continuous variable. This example derives the EM algorithm implied
+by that view and compares it with `glm`. The point is not speed (EM will lose)
+but to see the general machinery at work on a familiar model, and to see the
+fraction of missing information decide the convergence rate once more.
+
+### The latent-variable model
+
+Let $x_i$ be the covariate vector of unit $i$ (with a leading 1) and
+$\mu_i = x_i^\top\beta$. Suppose
+
+$$
+z_i = \mu_i + \varepsilon_i, \qquad \varepsilon_i \overset{iid}{\sim} \text{Logistic}(0, 1),
+\qquad y_i = I(z_i > 0),
+$$
+
+where the standard logistic distribution has CDF and density
+
+$$
+F(r) = \frac{1}{1 + e^{-r}}, \qquad f(r) = F(r)\{1 - F(r)\} = \frac{e^{-r}}{(1 + e^{-r})^2} .
+$$
+
+That is, $z_i \sim \text{Logistic}(x_i^\top\beta)$ and only its sign is recorded.
+Because the logistic density is symmetric,
+
+$$
+P(y_i = 1 \mid \beta) = P(\varepsilon_i > -\mu_i) = 1 - F(-\mu_i) = F(\mu_i)
+= \frac{1}{1 + e^{-x_i^\top\beta}} ,
+$$
+
+which is the logistic regression model. The left panel of @fig-logit-latent
+shows $p_i = P(y_i = 1)$ as the area of the latent density to the right of 0.
+(With a normal $\varepsilon_i$ the same construction gives probit regression.)
+
+**Observed data**: $(x_i, y_i)$, $i = 1, \ldots, n$. **Missing**: $z_1, \ldots, z_n$.
+
+**Complete log-likelihood.** Since $y_i$ is a function of $z_i$, the complete
+data are just the $z_i$, and
+
+$$
+\ell_{\text{comp}}(\beta) = \sum_{i=1}^n \log f(z_i - x_i^\top\beta),
+\qquad \log f(r) = -r - 2\log(1 + e^{-r}) .
+$$
+
+This is a linear regression with logistic instead of normal errors. It is not
+linear in $z_i$, so the E-step needs the whole conditional distribution of
+$z_i$, not just its mean (the warning of the overview), and the M-step has no
+closed form.
+
+**Observed log-likelihood.**
+
+$$
+\ell_{\text{obs}}(\beta) = \sum_{i=1}^n \big\{ y_i \log p_i + (1 - y_i)\log(1 - p_i) \big\},
+\qquad p_i = F(x_i^\top\beta) .
+$$
+
+### E-step
+
+Given $y_i$ and the current $\beta_t$, $z_i$ has the
+$\text{Logistic}(\mu_i^{(t)})$ density truncated to $(0, \infty)$ if $y_i = 1$
+and to $(-\infty, 0]$ if $y_i = 0$ (right panel of @fig-logit-latent). The
+truncation is easiest to describe on the probability scale. Let
+$U_i = F(z_i - \mu_i^{(t)})$. Without conditioning, $U_i$ is uniform on
+$(0, 1)$; the event $z_i > 0$ is the event $U_i > F(-\mu_i^{(t)}) = 1 - p_i^{(t)}$.
+Hence
+
+$$
+U_i \mid y_i, \beta_t \sim
+\begin{cases}
+\text{Unif}\big(1 - p_i^{(t)},\ 1\big), & y_i = 1, \\
+\text{Unif}\big(0,\ 1 - p_i^{(t)}\big), & y_i = 0,
+\end{cases}
+\qquad
+z_i = \mu_i^{(t)} + \operatorname{logit}(U_i) .
+$$
+
+Write $(a_i, b_i)$ for the interval of $U_i$. Then
+
+$$
+Q(\beta \mid \beta_t) = \sum_{i=1}^n \frac{1}{b_i - a_i}\int_{a_i}^{b_i}
+\log f\big(\mu_i^{(t)} + \operatorname{logit}(u) - x_i^\top\beta\big)\, du .
+$$
+
+The integrals have no closed form, but each is one-dimensional over a known
+interval, so Gauss–Legendre quadrature with $K$ nodes $u_{ik}$ and weights
+$w_k$ ($\sum_k w_k = 1$) on $(a_i, b_i)$ handles it:
+
+$$
+Q(\beta \mid \beta_t) \approx \sum_{i=1}^n \sum_{k=1}^K w_k \log f(z_{ik} - x_i^\top\beta),
+\qquad z_{ik} = \mu_i^{(t)} + \operatorname{logit}(u_{ik}) .
+$$
+
+The E-step therefore replaces each binary $y_i$ by $K$ weighted pseudo-values
+$z_{ik}$ of the latent variable, all on the side of 0 that $y_i$ dictates.
+
+```{r}
+#| label: fig-logit-latent
+#| fig-width: 10
+#| fig-height: 4.2
+#| fig-cap: "Illustrates logistic regression as a thresholded latent variable and the conditional distributions of the latent variable used in the E-step.
+#|   Left: the latent $z_i \\sim \\text{Logistic}(\\mu_i)$ with $\\mu_i = 0.8$; the red area to the right of 0 is $p_i = P(y_i = 1)$ and the grey area is $1 - p_i$. Right: the density of $z_i$ given $y_i = 1$ (red) and given $y_i = 0$ (grey), each the matching part of the left density renormalized."
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+mu_i <- 0.8; p_i <- plogis(mu_i); zz <- seq(-6, 7, length.out = 500)
+dz <- dlogis(zz, mu_i)
+plot(zz, dz, type = "n", xlab = "z", ylab = "density",
+     main = bquote(list("Logistic(" * mu[i] == .(mu_i) * ")", p[i] == .(round(p_i, 3)))))
+polygon(c(0, zz[zz > 0], max(zz)), c(0, dz[zz > 0], 0), col = "firebrick", border = NA)
+polygon(c(min(zz), zz[zz <= 0], 0), c(0, dz[zz <= 0], 0), col = "gray80", border = NA)
+lines(zz, dz, lwd = 2); abline(v = 0, lty = 2)
+text(2.2, 0.06, "y = 1", col = "white", font = 2); text(-1.6, 0.03, "y = 0", font = 2)
+plot(zz, ifelse(zz > 0, dz / p_i, NA), type = "l", lwd = 2, col = "firebrick",
+     ylim = c(0, max(dz / (1 - p_i))), xlab = "z", ylab = "density",
+     main = expression("conditional density of " * z[i] * " given " * y[i]))
+lines(zz, ifelse(zz <= 0, dz / (1 - p_i), NA), lwd = 2, col = "gray50")
+abline(v = 0, lty = 2)
+legend("topright", c("given y = 1", "given y = 0"), col = c("firebrick", "gray50"),
+       lwd = 2, bty = "n")
+```
+
+### M-step
+
+The M-step maximizes the weighted pseudo-data log-likelihood of the
+logistic-error regression. With $r_{ik} = z_{ik} - x_i^\top\beta$ and
+$\psi(r) = -\frac{d}{dr}\log f(r) = 2F(r) - 1$, so that $\psi'(r) = 2f(r)$,
+its gradient and Hessian are
+
+$$
+\nabla_\beta Q = \sum_{i=1}^n x_i \sum_{k=1}^K w_k\, \psi(r_{ik}),
+\qquad
+\nabla^2_\beta Q = -\sum_{i=1}^n x_i x_i^\top \sum_{k=1}^K w_k\, 2 f(r_{ik}) .
+$$
+
+The Hessian is negative definite, so $Q(\cdot \mid \beta_t)$ is concave and a
+few Newton steps from $\beta_t$ find its maximum. The M-step is thus itself an
+iterative algorithm, as it was for the Weibull shape in @sec-weibull. The price
+is specific to the logistic link: with normal errors (probit) $\ell_{\text{comp}}$
+is a least-squares criterion, and the M-step is the ordinary least-squares fit
+of $E(z_i \mid y_i, \beta_t)$, a truncated-normal mean, on $x_i$.
+
+### The fixed point is the logistic MLE
+
+At $\beta = \beta_t$, $r_i = z_i - \mu_i^{(t)} = \operatorname{logit}(U_i)$, so
+$\psi(r_i) = 2U_i - 1$. Averaging over the uniform distributions of the E-step,
+
+$$
+E\big(2U_i - 1 \mid y_i, \beta_t\big) =
+\begin{cases}
+2\big(1 - p_i^{(t)}/2\big) - 1 = 1 - p_i^{(t)}, & y_i = 1, \\
+2\big(1 - p_i^{(t)}\big)/2 - 1 = -p_i^{(t)}, & y_i = 0,
+\end{cases}
+\;=\; y_i - p_i^{(t)} ,
+$$
+
+and therefore
+
+$$
+\nabla_\beta Q(\beta \mid \beta_t)\Big|_{\beta = \beta_t}
+= \sum_{i=1}^n x_i\big(y_i - p_i^{(t)}\big) = \nabla \ell_{\text{obs}}(\beta_t),
+$$
+
+the logistic-regression score (Fisher's identity). A fixed point of EM solves
+$\sum_i x_i(y_i - p_i) = 0$, which is the equation `glm` solves. Because the
+integrand $2u - 1$ is linear in $u$, Gauss–Legendre quadrature computes this
+gradient exactly for every $K$, so the number of nodes affects the path of the
+iterates but not where they end.
+
+### Implementation
+
+```{r}
+#| label: logit-em
+
+### Gauss-Legendre nodes and weights on (0, 1), weights summing to 1
+### (Golub-Welsch: eigen-decomposition of the Jacobi matrix)
+gauss_legendre01 <- function(K) {
+    j <- seq_len(K - 1); b <- j / sqrt(4 * j^2 - 1)
+    J <- matrix(0, K, K); J[cbind(j, j + 1)] <- b; J[cbind(j + 1, j)] <- b
+    e <- eigen(J, symmetric = TRUE)
+    list(u = (rev(e$values) + 1) / 2, w = rev(e$vectors[1, ])^2)
+}
+
+### observed log-likelihood of logistic regression
+loglik_logit <- function(beta, X, y) {
+    eta <- drop(X %*% beta)
+    sum(plogis(eta, log.p = TRUE)[y == 1]) + sum(plogis(-eta, log.p = TRUE)[y == 0])
+}
+
+### E-step: n x K matrix of pseudo-values z_ik = mu_i + logit(u_ik), with the
+### nodes u_ik placed in (1 - p_i, 1) when y_i = 1 and in (0, 1 - p_i) when y_i = 0
+e_step_logit <- function(beta_t, X, y, gl) {
+    mu <- drop(X %*% beta_t)
+    p  <- plogis(mu)
+    lo <- ifelse(y == 1, 1 - p, 0)
+    hi <- ifelse(y == 1, 1, 1 - p)
+    mu + qlogis(lo + outer(hi - lo, gl$u))
+}
+
+### M-step: Newton's method for the logistic-error regression of the weighted
+### pseudo-values on X, started at the current beta (step halving as a safeguard)
+m_step_logit <- function(Z, X, w, beta, tol = 1e-10, maxit = 50) {
+    Q <- function(b) sum(dlogis(Z - drop(X %*% b), log = TRUE) %*% w)
+    for (it in seq_len(maxit)) {
+        R    <- Z - drop(X %*% beta)
+        grad <- crossprod(X, drop((2 * plogis(R) - 1) %*% w))
+        hess <- crossprod(X, X * drop((2 * dlogis(R)) %*% w))   # minus the Hessian
+        step <- drop(solve(hess, grad))
+        Q0   <- Q(beta)
+        while (Q(beta + step) < Q0 - 1e-12) step <- step / 2
+        beta <- beta + step
+        if (max(abs(step)) < tol) break
+    }
+    beta
+}
+
+em_logit <- function(X, y, beta0 = rep(0, ncol(X)), K = 20,
+                     iterations = 2000, tol = 1e-9) {
+    gl <- gauss_legendre01(K); beta <- beta0
+    out <- matrix(NA_real_, iterations + 1, ncol(X) + 1,
+                  dimnames = list(NULL, c(colnames(X), "log_lik")))
+    out[1, ] <- c(beta, loglik_logit(beta, X, y))
+    for (i in seq_len(iterations)) {
+        Z        <- e_step_logit(beta, X, y, gl)          # E-step
+        beta_new <- m_step_logit(Z, X, gl$w, beta)        # M-step
+        out[i + 1, ] <- c(beta_new, loglik_logit(beta_new, X, y))
+        done <- max(abs(beta_new - beta)) < tol
+        beta <- beta_new
+        if (done) break
+    }
+    out[seq_len(i + 1), , drop = FALSE]
+}
+```
+
+### Comparison with `glm`
+
+Two data sets of $n = 500$ share the covariates, an intercept, a standard normal
+$x_1$ and a binary $x_2$, and differ in the strength of the effects: $\beta =
+(0.3, 0.5, -0.5)$ (weak) and four times that (strong). EM starts at
+$\beta = 0$ and uses $K = 20$ nodes; `glm` uses its default start and a tight
+convergence tolerance so that both are accurate to many digits.
+
+```{r}
+#| label: logit-data
+set.seed(812)
+n <- 500
+X <- cbind("(Intercept)" = 1, x1 = rnorm(n), x2 = rbinom(n, 1, 0.5))
+beta_true <- list(weak = c(0.3, 0.5, -0.5), strong = 4 * c(0.3, 0.5, -0.5))
+y_logit   <- lapply(beta_true, function(b) rbinom(n, 1, plogis(drop(X %*% b))))
+
+fits <- lapply(y_logit, function(y) {
+    glm_time <- system.time(
+        fit <- glm(y ~ X - 1, family = binomial, control = glm.control(epsilon = 1e-14))
+    )[["elapsed"]]
+    em_time <- system.time(path <- em_logit(X, y))[["elapsed"]]
+    list(glm = fit, path = path, glm_time = glm_time, em_time = em_time)
+})
+```
+
+```{r}
+#| label: tbl-logit-compare
+#| tbl-cap: "Shows that the EM algorithm built on the latent logistic variable reaches the same estimates and log-likelihood as `glm`, but needs many more iterations, especially when the effects are strong.
+#|   Estimates, maximized log-likelihood, iterations and elapsed time (seconds) of `glm` and of EM ($K = 20$ quadrature nodes, started at $\\beta = 0$) on the two data sets."
+cmp <- do.call(rbind, lapply(names(fits), function(s) {
+    f <- fits[[s]]; last <- f$path[nrow(f$path), ]
+    data.frame(data = s, method = c("glm", "EM"),
+               b0 = c(coef(f$glm)[1], last[1]), b1 = c(coef(f$glm)[2], last[2]),
+               b2 = c(coef(f$glm)[3], last[3]),
+               log_lik = c(as.numeric(logLik(f$glm)), last["log_lik"]),
+               iterations = c(f$glm$iter, nrow(f$path) - 1),
+               seconds = c(f$glm_time, f$em_time))
+}))
+gt::gt(cmp) |>
+    gt::fmt_number(columns = c(b0, b1, b2), decimals = 6) |>
+    gt::fmt_number(columns = log_lik, decimals = 6) |>
+    gt::fmt_number(columns = seconds, decimals = 3) |>
+    gt::cols_label(b0 = gt::md("$\\hat\\beta_0$"), b1 = gt::md("$\\hat\\beta_1$"),
+                   b2 = gt::md("$\\hat\\beta_2$"), log_lik = gt::md("$\\ell_{\\text{obs}}$"))
+```
+
+The two methods agree to about six digits in every coefficient and to the
+displayed precision in the log-likelihood, as the fixed-point argument
+predicts. `glm` needs a handful of Newton iterations; EM needs a few times more
+on the weak data set and many more on the strong one, and each EM iteration
+is also more expensive (an $n \times K$ E-step and an inner Newton loop).
+The next subsection explains the difference between the two data sets.
+
+### Convergence rate and the missing information
+
+Near the MLE $\hat\beta$, EM is the linear map
+$\beta_{t+1} - \hat\beta \approx J\,(\beta_t - \hat\beta)$ with
+
+$$
+J = I - I_{\text{comp}}^{-1}\, I_{\text{obs}},
+\qquad
+I_{\text{obs}} = \sum_{i=1}^n x_i x_i^\top \hat p_i(1 - \hat p_i),
+\qquad
+I_{\text{comp}} = -\nabla^2_\beta Q(\beta \mid \hat\beta)\Big|_{\beta = \hat\beta}
+= \sum_{i=1}^n x_i x_i^\top c_i ,
+$$
+
+where $I_{\text{comp}}$ is the complete-data information given the observed
+data, and $J$ is the matrix fraction of missing information. The error
+eventually shrinks by the factor $\rho$, the largest eigenvalue of $J$, per
+iteration. At $\beta = \hat\beta$, $f(r_i) = U_i(1 - U_i)$, so
+$c_i = E\{2U_i(1 - U_i) \mid y_i\}$ with $U_i$ uniform on $(a_i, b_i)$:
+
+$$
+c_i = \frac{2\{G(b_i) - G(a_i)\}}{b_i - a_i},
+\qquad G(u) = \frac{u^2}{2} - \frac{u^3}{3} .
+$$
+
+When $\hat p_i = 1/2$, $c_i = 1/3$ while $\hat p_i(1 - \hat p_i) = 1/4$, so a
+unit carries $3/4$ of its complete-data information and the missing fraction
+is $1/4$. When $\hat p_i$ is near 0 or 1, $\hat p_i(1 - \hat p_i) \to 0$ while
+$c_i$ for the likely outcome stays near $1/3$: knowing that $z_i$ landed on the
+side of 0 where it almost surely lands says almost nothing about where $z_i$
+is, so nearly all the information about $z_i$ is missing. Strong effects push
+many $\hat p_i$ toward 0 and 1, $\rho$ toward 1, and EM slows down.
+
+```{r}
+#| label: logit-rate
+em_rate_logit <- function(beta, X, y) {
+    p  <- plogis(drop(X %*% beta))
+    lo <- ifelse(y == 1, 1 - p, 0); hi <- ifelse(y == 1, 1, 1 - p)
+    G  <- function(u) u^2 / 2 - u^3 / 3
+    I_comp <- crossprod(X, X * 2 * (G(hi) - G(lo)) / (hi - lo))
+    I_obs  <- crossprod(X, X * p * (1 - p))
+    max(Mod(eigen(diag(ncol(X)) - solve(I_comp, I_obs), only.values = TRUE)$values))
+}
+```
+
+```{r}
+#| label: fig-logit-paths
+#| fig-width: 7
+#| fig-height: 4.6
+#| fig-cap: "Illustrates that the convergence rate of EM for logistic regression is set by the fraction of missing information, which is larger when the effects are strong.
+#|   Distance $\\|\\beta_t - \\hat\\beta\\|$ of the EM iterates from the MLE (log scale) on the two data sets; the dashed lines have the slopes $\\log_{10}\\rho$ predicted by the largest eigenvalue $\\rho$ of $I - I_{\\text{comp}}^{-1} I_{\\text{obs}}$."
+cols <- c(weak = "steelblue", strong = "firebrick")
+plot(NULL, xlim = c(0, max(sapply(fits, function(f) nrow(f$path)))),
+     ylim = c(-10, 1), xlab = "EM iteration t",
+     ylab = expression(log[10] * " ||" * beta[t] - hat(beta) * "||"))
+rho <- sapply(names(fits), function(s) {
+    f <- fits[[s]]; bhat <- coef(f$glm)
+    err <- sqrt(rowSums(sweep(f$path[, 1:3, drop = FALSE], 2, bhat)^2))
+    t <- seq_along(err) - 1
+    lines(t, log10(err), type = "o", pch = 16, cex = 0.5, col = cols[s])
+    r <- em_rate_logit(bhat, X, y_logit[[s]])
+    abline(log10(err[6]) - 5 * log10(r), log10(r), lty = 2, col = cols[s])
+    r
+})
+legend("topright", sprintf("%s effects: \u03c1 = %.3f", names(fits), rho),
+       col = cols, lwd = 2, bty = "n")
+```
+
+The observed slopes follow the predicted ones: on the weak data set
+$\rho \approx `r round(rho[["weak"]], 2)`$ and the error falls by an order of
+magnitude every two or three iterations; on the strong one
+$\rho \approx `r round(rho[["strong"]], 2)`$ and each order of magnitude costs
+about $`r round(-1 / log10(rho[["strong"]]))`$ iterations. Newton's method
+(`glm`) is immune to this, because it uses $I_{\text{obs}}$ directly and
+converges quadratically.
+
+### Remarks
+
+- **The choice of augmentation matters.** The same model admits other latent
+  variables. Writing the logistic likelihood as a mixture over Pólya–Gamma
+  variables $\omega_i$ (Polson, Scott and Windle, 2013) gives an EM whose
+  E-step is $E(\omega_i \mid y_i, \beta_t) = \tanh(\mu_i^{(t)}/2)/(2\mu_i^{(t)})$
+  and whose M-step is the closed-form weighted least-squares fit
+  $\beta_{t+1} = (X^\top \Omega_t X)^{-1} X^\top (y - \tfrac12)$,
+  $\Omega_t = \operatorname{diag}\{E(\omega_i \mid y_i, \beta_t)\}$. The
+  check below runs it on the same two data sets; it reaches the same MLE in
+  fewer iterations than the latent-logistic EM, each of them cheap.
+- **Why bother?** For a point estimate, not much: Newton/IRLS is faster. The
+  latent-variable view earns its keep elsewhere. Thresholded latent variables
+  underlie ordinal and multivariate probit models, and the same augmentations
+  give the Gibbs samplers of Bayesian binary regression (Albert and Chib, 1993,
+  for probit; Pólya–Gamma for logit), where the conditional distributions
+  derived above are exactly what is sampled.
+
+```{r}
+#| label: logit-pg
+em_pg_logit <- function(X, y, beta = rep(0, ncol(X)), iterations = 2000, tol = 1e-9) {
+    for (i in seq_len(iterations)) {
+        mu    <- drop(X %*% beta)
+        omega <- ifelse(abs(mu) < 1e-8, 1 / 4, tanh(mu / 2) / (2 * mu))   # E-step
+        beta_new <- drop(solve(crossprod(X, X * omega), crossprod(X, y - 1 / 2)))  # M-step
+        done <- max(abs(beta_new - beta)) < tol
+        beta <- beta_new
+        if (done) break
+    }
+    c(beta, iterations = i)
+}
+t(sapply(names(fits), function(s)
+    c(round(em_pg_logit(X, y_logit[[s]]), 6),
+      latent_logistic_EM_iterations = nrow(fits[[s]]$path) - 1)))
+```
+
 ## More Complex Applications
 
 ### Model-based clustering
