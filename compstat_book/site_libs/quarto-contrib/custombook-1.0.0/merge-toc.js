@@ -397,14 +397,32 @@ document.addEventListener("DOMContentLoaded", function() {
     const spacer = document.createElement('div');
     spacer.id = 'tb-spacer';
     bar.appendChild(menuBtn);
-    // narrow screens: Quarto's own header is hidden, so this button opens its sidebar
+    // narrow screens: Quarto's own header is hidden, so this button opens its sidebar,
+    // which then lists the sections of this chapter. It floats at the right edge of the
+    // page (bookstyles.css), not in the top bar.
     const contentsBtn = iconButton('tb-contents', '<i class="bi bi-layout-text-sidebar-reverse"></i>', 'Contents of this chapter');
     contentsBtn.addEventListener('click', e => {
       e.stopPropagation();
       const q = document.querySelector('#quarto-header .quarto-btn-toggle');
       if (q) q.click();
     });
-    bar.appendChild(contentsBtn);
+    if (document.getElementById('quarto-sidebar')) document.body.appendChild(contentsBtn);
+    // on narrow screens the opened sidebar closes again after a section is chosen,
+    // or on a tap anywhere outside it
+    const sidebarEl = document.getElementById('quarto-sidebar');
+    const closeSidebar = () => {
+      if (window.innerWidth < 992 && sidebarEl && sidebarEl.classList.contains('show')) {
+        const q = document.querySelector('#quarto-header .quarto-btn-toggle');
+        if (q) q.click();
+      }
+    };
+    if (sidebarEl) {
+      // capture phase: the section links stop the click from bubbling
+      sidebarEl.addEventListener('click', e => { if (e.target.closest('a')) closeSidebar(); }, true);
+      document.addEventListener('click', e => {
+        if (!e.target.closest('#quarto-sidebar, #tb-contents')) closeSidebar();
+      });
+    }
     bar.appendChild(book);
     bar.appendChild(spacer);
     // the source-code link of the sidebar header moves to the bar, left of the settings

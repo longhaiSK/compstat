@@ -11,20 +11,28 @@ format: html
 options(digits = 22)
 
 ```
-```{=html}
-<style>
-.pv table { border-collapse: collapse; margin: 0.6em auto; font-family: monospace; }
-.pv td, .pv th { border: 2px solid #555; min-width: 2em; height: 1.5em;
-                 text-align: center !important; padding: 0.3em 0.3em; font-size: 0.95em; }
-.pv th { border: none; font-size: 0.7em; color: #666; font-weight: normal; }
-.pv td.s { background: #fbe4ec; }   /* sign */
-.pv td.m { background: #e3eefb; }   /* mantissa / digits */
-.pv td.e { background: #e7f6e0; }   /* exponent */
-.pv td.x { background: #ffd6d6; color: #b00000; font-weight: bold; } /* lost / invalid */
-.pv td.p { border: none; padding: 0; min-width: 0; font-weight: bold; } /* punctuation */
-.pv .cap { font-size: 0.85em; color: #444; text-align: center !important; margin-top: -0.3em; }
-</style>
-```
+
+<!-- Digit boxes for the place-value displays of this chapter: \pvm mantissa,
+\pvs sign, \pve exponent, \pvz alignment zero (not stored), \pvx digit rounded
+off, \pvo no room (overflow/underflow), \pvn plain box, \pvh column heading.
+These definitions are for MathJax (HTML); the PDF defines the same macros in
+_extensions/custombook/header.tex. -->
+
+::: {.content-visible when-format="html"}
+::: {.hidden}
+$$
+\newcommand{\pvbx}[4]{\bbox[#2,3px,border:1.5px #1]{\textcolor{#3}{\mathtt{#4}}\vphantom{0}}}
+\newcommand{\pvm}[1]{\pvbx{solid ##555}{##e3eefb}{black}{#1}}
+\newcommand{\pvs}[1]{\pvbx{solid ##555}{##fbe4ec}{black}{#1}}
+\newcommand{\pve}[1]{\pvbx{solid ##555}{##e7f6e0}{black}{#1}}
+\newcommand{\pvn}[1]{\pvbx{solid ##555}{white}{black}{#1}}
+\newcommand{\pvz}[1]{\pvbx{dashed ##bbb}{white}{##bbb}{#1}}
+\newcommand{\pvx}[1]{\pvbx{solid ##555}{##fde0e0}{##b22222}{#1}}
+\newcommand{\pvo}[1]{\pvbx{solid ##555}{##fde0e0}{##b22222}{\mathbf{#1}}}
+\newcommand{\pvh}[1]{{\scriptstyle\textcolor{gray}{#1}}}
+$$
+:::
+:::
 
 Statistical computation is arithmetic on a machine that stores every number in a fixed number of binary digits. This chapter describes how integers and real numbers are represented, what goes wrong when a computation exceeds the capacity of that representation (overflow, underflow, and roundoff error), and the standard techniques for writing statistical code that avoids these failures: reordering sums, rewriting formulas, and working on the logarithmic scale.
 
@@ -37,25 +45,31 @@ Statistical computation is arithmetic on a machine that stores every number in a
 
 Every number is a string of digits in boxes, and each box has a **place value**. In base 10,
 
-::: {.pv}
-<table>
-<tr><th>10³</th><th>10²</th><th>10¹</th><th>10⁰</th></tr>
-<tr><td class="m">1</td><td class="m">3</td><td class="m">4</td><td class="m">8</td></tr>
-</table>
-<p class="cap">$1348 = 1\times10^3 + 3\times10^2 + 4\times10^1 + 8\times10^0$</p>
-
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+\pvh{10^{3}} & \pvh{10^{2}} & \pvh{10^{1}} & \pvh{10^{0}} \\
+\pvm{1} & \pvm{3} & \pvm{4} & \pvm{8}
+\end{array}
+\\[4pt]
+1348 = 1\times10^3 + 3\times10^2 + 4\times10^1 + 8\times10^0
+\end{array}
+$$
 
 A computer uses base 2, so each box, called a **bit**, holds 0 or 1:
 
-::: {.pv}
-<table>
-<tr><th>2³</th><th>2²</th><th>2¹</th><th>2⁰</th></tr>
-<tr><td class="m">1</td><td class="m">1</td><td class="m">0</td><td class="m">1</td></tr>
-</table>
-<p class="cap">$1101_2 = 1\times2^3 + 1\times2^2 + 0\times2^1 + 1\times2^0 = 13$</p>
-
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+\pvh{2^{3}} & \pvh{2^{2}} & \pvh{2^{1}} & \pvh{2^{0}} \\
+\pvm{1} & \pvm{1} & \pvm{0} & \pvm{1}
+\end{array}
+\\[4pt]
+1101_2 = 1\times2^3 + 1\times2^2 + 0\times2^1 + 1\times2^0 = 13
+\end{array}
+$$
 
 Everything that follows is a consequence of one fact: the number of boxes is fixed in advance.
 
@@ -65,13 +79,17 @@ $$
 $$
 A 4-bit example: the largest storable integer is $1111_2 = 15$, and $15 + 1 = 16 = 10000_2$ needs a fifth box that does not exist.
 
-::: {.pv}
-<table>
-<tr><th>2⁴</th><th>2³</th><th>2²</th><th>2¹</th><th>2⁰</th></tr>
-<tr><td class="x">1</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td></tr>
-</table>
-<p class="cap">The leading 1 has nowhere to go: **integer overflow**</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+\pvh{2^{4}} & \pvh{2^{3}} & \pvh{2^{2}} & \pvh{2^{1}} & \pvh{2^{0}} \\
+\pvx{1} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0}
+\end{array}
+\\[4pt]
+\text{The leading 1 has nowhere to go: } \textbf{integer overflow}
+\end{array}
+$$
 
 To represent negative values, one of the boxes is used as a **sign bit**, leaving $p-1$ boxes for the magnitude. With 32 bits, a signed integer $u$ is
 $$
@@ -79,13 +97,17 @@ u = (-1)^{s}\sum_{i=0}^{30} d_i\,2^i, \qquad s\in\{0,1\}.
 $$
 The largest integer has the sign bit $0$ and the other 31 boxes all equal to $1$:
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th>2³⁰</th><th>2²⁹</th><th>…</th><th>2¹</th><th>2⁰</th></tr>
-<tr><td class="s">+</td><td class="m">1</td><td class="m">1</td><td class="m">…</td><td class="m">1</td><td class="m">1</td></tr>
-</table>
-<p class="cap">$u^{\max} = \sum_{i=0}^{30} 2^i = 2^{31}-1 = 2147483647$</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccccc@{}}
+\pvh{\text{sign}} & \pvh{2^{30}} & \pvh{2^{29}} & \pvh{\cdots} & \pvh{2^{1}} & \pvh{2^{0}} \\
+\pvs{+} & \pvm{1} & \pvm{1} & \pvm{\cdots} & \pvm{1} & \pvm{1}
+\end{array}
+\\[4pt]
+u^{\max} = \sum_{i=0}^{30} 2^i = 2^{31}-1 = 2147483647
+\end{array}
+$$
 
 and the smallest is its negative, $u^{\min} = -(2^{31}-1)$. When an integer computation leaves this range, R does not wrap around silently, as C does; it returns `NA` with a warning.
 
@@ -120,13 +142,13 @@ $$
 x = (-1)^{s} \times 1.d_1 d_2 \cdots d_p \times 2^{\,e}.
 $$
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th colspan="4">mantissa (fixed number of digits)</th><th></th><th colspan="2">exponent</th></tr>
-<tr><td class="s">+</td><td class="m">1</td><td class="p">.</td><td class="m">d₁</td><td class="m">d₂ … d<sub>p</sub></td><td class="p">×2^</td><td class="s">±</td><td class="e">e</td></tr>
-</table>
-
-:::
+$$
+\notag
+\begin{array}{@{}cccccccc@{}}
+\pvh{\text{sign}} &  \\
+\pvs{+} & \pvm{1} & . & \pvm{d_1} & \pvm{d_2 \cdots  d_p} & \times2^\wedge & \pvs{\pm} & \pve{e}
+\end{array}
+$$
 
 More precisely, a floating point number $x$ is represented by a vector of bits $(s,d_0,\ldots,d_{t-1},e_1,\ldots, e_{k-1})$ as,
 $$
@@ -135,16 +157,6 @@ $$
 
 ### Zoom Models for Representable Floating Numbers
 
-```{=html}
-<style>
-.pv td.z  { color: #bbb; border-style: dashed; }          /* alignment zero, not stored */
-.pv td.x  { background: #fde0e0; color: #b22222; text-decoration: line-through; } /* digit rounded off */
-.pv td.o  { background: #fde0e0; color: #b22222; font-weight: bold; }            /* no room: overflow/underflow */
-.pv td.op { border: none; background: none; font-weight: bold; }
-.pv td.nb { border: none; background: none; }
-.pv tr.sum td:not(.op):not(.nb) { border-top: 3px solid #333; }
-</style>
-```
 
 A floating point number is a **ruler** and a **zoom setting**. The mantissa is a ruler with a fixed number of equally spaced marks; the exponent stretches it by $10^{e}$ over $[10^{e}, 10^{e+1})$. Stretching adds no marks, so the marks spread apart as the zoom grows.
 
@@ -152,13 +164,17 @@ A floating point number is a **ruler** and a **zoom setting**. The mantissa is a
 
 Each number is stored in six boxes: a sign, a two-digit mantissa $d_1.d_2$ ($d_1\in\{1,\ldots,9\}$, $d_2\in\{0,\ldots,9\}$), and an exponent made of a sign and one decimal digit, so $e\in\{-9,\ldots,0,\ldots,+9\}$.
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th></tr>
-<tr><td class="s">+</td><td class="m">3</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">+</td><td class="e">0</td></tr>
-</table>
-<p class="cap">$+3.1\times10^{+0}$, the closest storable value to $\pi$</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccc@{}}
+\pvh{\text{sign}} & \pvh{1} &  & \pvh{10^{-1}} &  & \pvh{\pm} & \pvh{\text{exp}} \\
+\pvs{+} & \pvm{3} & . & \pvm{1} & \times10^\wedge & \pvs{+} & \pve{0}
+\end{array}
+\\[4pt]
++3.1\times10^{+0} \text{, the closest storable value to } \pi
+\end{array}
+$$
 
 Each of the $19$ zoom levels is a ruler of $90$ marks. At the lowest zoom $e=-9$ the leading digit may also be $0$ (**subnormal** numbers), which fills the gap between $0$ and $1.0\times10^{-9}$.
 
@@ -209,101 +225,120 @@ axis(1, at = seq(0, 100, 10))
 
 A real number between two marks is stored as the nearer mark. The three numbers below share the same mantissa boxes and differ only in the exponent, so the absolute error scales with the zoom while the relative error does not.
 
-::: {.pv}
-<table>
-<tr><th>$x$</th><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th><th>stored</th><th>error</th></tr>
-<tr><td class="nb">$0.234$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">−</td><td class="e">1</td><td class="nb">$0.23$</td><td class="nb">$0.004$ (1.7%)</td></tr>
-<tr><td class="nb">$2.34$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">+</td><td class="e">0</td><td class="nb">$2.3$</td><td class="nb">$0.04$ (1.7%)</td></tr>
-<tr><td class="nb">$23.4$</td><td class="s">+</td><td class="m">2</td><td class="p">.</td><td class="m">3</td><td class="p">×10^</td><td class="s">+</td><td class="e">1</td><td class="nb">$23$</td><td class="nb">$0.4$ (1.7%)</td></tr>
-</table>
-:::
+$$
+\notag
+\begin{array}{@{}cccccccccc@{}}
+\pvh{x} & \pvh{\text{sign}} & \pvh{1} &  & \pvh{10^{-1}} &  & \pvh{\pm} & \pvh{\text{exp}} & \pvh{\text{stored}} & \pvh{\text{error}} \\
+0.234 & \pvs{+} & \pvm{2} & . & \pvm{3} & \times10^\wedge & \pvs{-} & \pve{1} & 0.23 & 0.004\ (1.7\%) \\
+2.34 & \pvs{+} & \pvm{2} & . & \pvm{3} & \times10^\wedge & \pvs{+} & \pve{0} & 2.3 & 0.04\ (1.7\%) \\
+23.4 & \pvs{+} & \pvm{2} & . & \pvm{3} & \times10^\wedge & \pvs{+} & \pve{1} & 23 & 0.4\ (1.7\%)
+\end{array}
+$$
 
 The same rounding occurs in arithmetic. To add, the two numbers are aligned by place value; solid boxes are stored digits, dashed boxes are alignment zeros, and the result keeps only the two boxes starting at its leading digit, so digits to the right (red) are rounded off.
 
-:::: {.columns}
-
-::: {.column width="33%"}
-::: {.pv}
-<table>
-<tr><th></th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
-<tr><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="nb"></td></tr>
-<tr><td class="op">+</td><td class="z">0</td><td class="p">.</td><td class="m">1</td><td class="m">0</td></tr>
-<tr class="sum"><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="x">0</td></tr>
-</table>
-<p class="cap">$1.0 + 0.10 = 1.1 \ne 1.0$</p>
-:::
-:::
-
-::: {.column width="33%"}
-::: {.pv}
-<table>
-<tr><th></th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
-<tr><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">0</td><td class="nb"></td></tr>
-<tr><td class="op">+</td><td class="z">0</td><td class="p">.</td><td class="m">1</td><td class="m">4</td></tr>
-<tr class="sum"><td class="op"></td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="x">4</td></tr>
-</table>
-<p class="cap">$1.0 + 0.14 \to 1.1$</p>
-:::
-:::
-
-::: {.column width="33%"}
-::: {.pv}
-<table>
-<tr><th></th><th>10¹</th><th>10⁰</th><th></th><th>10⁻¹</th><th>10⁻²</th></tr>
-<tr><td class="op"></td><td class="m">1</td><td class="m">0</td><td class="p">.</td><td class="nb"></td><td class="nb"></td></tr>
-<tr><td class="op">+</td><td class="z">0</td><td class="z">0</td><td class="p">.</td><td class="m">4</td><td class="m">0</td></tr>
-<tr class="sum"><td class="op"></td><td class="m">1</td><td class="m">0</td><td class="p">.</td><td class="x">4</td><td class="x">0</td></tr>
-</table>
-<p class="cap">$10 + 0.40 \to 10$</p>
-:::
-:::
-
-::::
+$$
+\notag
+\begin{array}{c@{\qquad}c@{\qquad}c}
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+ & \pvh{10^{0}} &  & \pvh{10^{-1}} & \pvh{10^{-2}} \\
+ & \pvm{1} & . & \pvm{0} &  \\
++ & \pvz{0} & . & \pvm{1} & \pvm{0} \\
+\hline
+ & \pvm{1} & . & \pvm{1} & \pvx{0}
+\end{array}
+\\[4pt]
+1.0 + 0.10 = 1.1 \ne 1.0
+\end{array}
+&
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+ & \pvh{10^{0}} &  & \pvh{10^{-1}} & \pvh{10^{-2}} \\
+ & \pvm{1} & . & \pvm{0} &  \\
++ & \pvz{0} & . & \pvm{1} & \pvm{4} \\
+\hline
+ & \pvm{1} & . & \pvm{1} & \pvx{4}
+\end{array}
+\\[4pt]
+1.0 + 0.14 \to 1.1
+\end{array}
+&
+\begin{array}{c}
+\begin{array}{@{}cccccc@{}}
+ & \pvh{10^{1}} & \pvh{10^{0}} &  & \pvh{10^{-1}} & \pvh{10^{-2}} \\
+ & \pvm{1} & \pvm{0} & . &  &  \\
++ & \pvz{0} & \pvz{0} & . & \pvm{4} & \pvm{0} \\
+\hline
+ & \pvm{1} & \pvm{0} & . & \pvx{4} & \pvx{0}
+\end{array}
+\\[4pt]
+10 + 0.40 \to 10
+\end{array}
+\end{array}
+$$
 
 The **machine epsilon** $\epsilon$ is the gap next to $1$, the smallest increment that the second mantissa box can register when added to $1$; here $\epsilon = 0.1$ (left). Smaller increments fall into the red box: the digit $4$ is lost (middle), and at zoom $e=+1$ the whole addend $0.40$ is lost (right). Relative to the magnitude, the resolution is about $\epsilon$ at every zoom.
 
 #### Largest and smallest numbers
 
-::: {.pv}
-<table>
-<tr><th></th><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th><th>value</th></tr>
-<tr><td class="nb">largest</td><td class="s">+</td><td class="m">9</td><td class="p">.</td><td class="m">9</td><td class="p">×10^</td><td class="s">+</td><td class="e">9</td><td class="nb">$9.9\times10^{9}$</td></tr>
-<tr><td class="nb">smallest positive</td><td class="s">+</td><td class="m">0</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td><td class="nb">$0.1\times10^{-9}$</td></tr>
-<tr><td class="nb">largest negative</td><td class="s">−</td><td class="m">0</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td><td class="nb">$-0.1\times10^{-9}$</td></tr>
-<tr><td class="nb">smallest</td><td class="s">−</td><td class="m">9</td><td class="p">.</td><td class="m">9</td><td class="p">×10^</td><td class="s">+</td><td class="e">9</td><td class="nb">$-9.9\times10^{9}$</td></tr>
-</table>
-<p class="cap">Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccccc@{}}
+ & \pvh{\text{sign}} & \pvh{1} &  & \pvh{10^{-1}} &  & \pvh{\pm} & \pvh{\text{exp}} & \pvh{\text{value}} \\
+\text{largest} & \pvs{+} & \pvm{9} & . & \pvm{9} & \times10^\wedge & \pvs{+} & \pve{9} & 9.9\times10^{9} \\
+\text{smallest positive} & \pvs{+} & \pvm{0} & . & \pvm{1} & \times10^\wedge & \pvs{-} & \pve{9} & 0.1\times10^{-9} \\
+\text{largest negative} & \pvs{-} & \pvm{0} & . & \pvm{1} & \times10^\wedge & \pvs{-} & \pve{9} & -0.1\times10^{-9} \\
+\text{smallest} & \pvs{-} & \pvm{9} & . & \pvm{9} & \times10^\wedge & \pvs{+} & \pve{9} & -9.9\times10^{9}
+\end{array}
+\\[4pt]
+\text{Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent}
+\end{array}
+$$
 
 **Overflow.** A result with magnitude at least $9.95\times10^{9}$ needs the exponent $+10$, which the single exponent digit cannot hold, so it is returned as $\pm\infty$:
 
-::: {.pv}
-<table>
-<tr><th></th><th>10¹⁰</th><th>10⁹</th><th>10⁸</th></tr>
-<tr><td class="op"></td><td class="nb"></td><td class="m">6</td><td class="m">0</td></tr>
-<tr><td class="op">+</td><td class="nb"></td><td class="m">5</td><td class="m">0</td></tr>
-<tr class="sum"><td class="op"></td><td class="o">1</td><td class="m">1</td><td class="x">0</td></tr>
-</table>
-<p class="cap">$6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty$</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+ & \pvh{10^{10}} & \pvh{10^{9}} & \pvh{10^{8}} \\
+ &  & \pvm{6} & \pvm{0} \\
++ &  & \pvm{5} & \pvm{0} \\
+\hline
+ & \pvo{1} & \pvm{1} & \pvx{0}
+\end{array}
+\\[4pt]
+6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty
+\end{array}
+$$
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th></th><th>±</th><th>exp</th></tr>
-<tr><td class="s">+</td><td class="m">1</td><td class="p">.</td><td class="m">1</td><td class="p">×10^</td><td class="s">+</td><td class="o">10</td></tr>
-</table>
-<p class="cap">The exponent $10$ needs two digits but has one box: overflow</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccc@{}}
+\pvh{\text{sign}} & \pvh{1} &  & \pvh{10^{-1}} &  & \pvh{\pm} & \pvh{\text{exp}} \\
+\pvs{+} & \pvm{1} & . & \pvm{1} & \times10^\wedge & \pvs{+} & \pvo{10}
+\end{array}
+\\[4pt]
+\text{The exponent } 10 \text{ needs two digits but has one box: overflow}
+\end{array}
+$$
 
 **Underflow.** A result with magnitude below $0.05\times10^{-9}$ has no box pattern and is returned as $0$:
 
-::: {.pv}
-<table>
-<tr><th>sign</th><th>1</th><th></th><th>10⁻¹</th><th>10⁻²</th><th></th><th>±</th><th>exp</th></tr>
-<tr><td class="s">+</td><td class="m">0</td><td class="p">.</td><td class="x">0</td><td class="o">1</td><td class="p">×10^</td><td class="s">−</td><td class="e">9</td></tr>
-</table>
-<p class="cap">$(0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0$: the digit $1$ falls outside the mantissa</p>
-:::
+$$
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccccccc@{}}
+\pvh{\text{sign}} & \pvh{1} &  & \pvh{10^{-1}} & \pvh{10^{-2}} &  & \pvh{\pm} & \pvh{\text{exp}} \\
+\pvs{+} & \pvm{0} & . & \pvx{0} & \pvo{1} & \times10^\wedge & \pvs{-} & \pve{9}
+\end{array}
+\\[4pt]
+(0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0 \text{: the digit } 1 \text{ falls outside the mantissa}
+\end{array}
+$$
 
 Every later operation treats the underflowed result as exactly zero.
 
@@ -312,7 +347,7 @@ Every later operation treats the underflowed result as exactly zero.
 A double uses the same boxes in base $2$: $1$ sign bit, $11$ exponent bits, and $52$ mantissa bits after an implicit leading $1$. The exponent is stored with a bias of $1023$, so the codes $1,\ldots,2046$ give $e\in[-1022, 1023]$; the code $0$ is reserved for $0$ and the subnormals, and the code $2047$ for `Inf` and `NaN`.
 
 $$
-\newcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
+\renewcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
 \begin{array}{rccccccl}
  & \text{sign} & \text{mantissa} & & & \text{exponent} & & \\[4pt]
 1 & \bx{+} & {\color{gray}1.}\overbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}^{52\text{ bits}} & & \times2^\wedge & \overbrace{\bx{+}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}}^{11\text{ bits}} & & \\
@@ -615,13 +650,13 @@ $$
 $$
 With 16 significant digits, $3\times10^{16}$ is stored with a gap of about $4$ between neighbouring representable numbers, so the true answer $2$ lives entirely in the lost digits.
 
-::: {.pv}
-<table>
-<tr><th colspan="16">16 mantissa digits</th><th>lost</th></tr>
-<tr><td class="m">3</td><td class="p">.</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">1</td><td class="m">2</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">0</td><td class="m">1</td><td class="x">4</td><td class="p">×10^16</td></tr>
-</table>
-
-:::
+$$
+\notag
+\begin{array}{@{}cccccccccccccccccc@{}}
+\pvh{\text{lost}} \\
+\pvm{3} & . & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{1} & \pvm{2} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{0} & \pvm{1} & \pvx{4} & \times10^{16}
+\end{array}
+$$
 
 ```{r}
 #| label: variance-formulas
@@ -728,6 +763,7 @@ The same construction, named `log1mexp`, is shipped by several CRAN packages (in
 
 ```{r}
 #| label: fig-log1mexp
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
 #| fig-cap: "Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u.
 #|   The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference."
 #| fig-width: 10

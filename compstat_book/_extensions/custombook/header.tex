@@ -180,3 +180,86 @@
   top=5pt, bottom=5pt,
   breakable
 }
+
+% --- Chapter macros used in several display equations ---
+% \[ ... \] is an equation group above, so a \newcommand inside one display
+% would vanish at its end. Define such macros here; the chapter keeps a
+% \renewcommand inside its first display for MathJax (HTML).
+\newcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
+
+% --- Characters missing from Times New Roman or Latin Modern Math ---
+% Superscript/subscript digits typed as Unicode in tables and text, check
+% marks, and \setminus (U+29F5 is absent from latinmodern-math).
+\usepackage{newunicodechar}
+\usepackage{pifont}
+\newunicodechar{⁰}{\textsuperscript{0}}
+\newunicodechar{¹}{\textsuperscript{1}}
+\newunicodechar{²}{\textsuperscript{2}}
+\newunicodechar{³}{\textsuperscript{3}}
+\newunicodechar{⁴}{\textsuperscript{4}}
+\newunicodechar{⁵}{\textsuperscript{5}}
+\newunicodechar{⁶}{\textsuperscript{6}}
+\newunicodechar{⁷}{\textsuperscript{7}}
+\newunicodechar{⁸}{\textsuperscript{8}}
+\newunicodechar{⁹}{\textsuperscript{9}}
+\newunicodechar{⁻}{\textsuperscript{\textminus}}
+\newunicodechar{₁}{\textsubscript{1}}
+\newunicodechar{₂}{\textsubscript{2}}
+\newunicodechar{✓}{\ding{51}}
+\newunicodechar{✗}{\ding{55}}
+\AtBeginDocument{\renewcommand{\setminus}{\mathbin{\backslash}}}
+
+% --- Code and printed output ---
+% Wrap long source lines instead of running past the margin, and set code a
+% size smaller and printed R output two sizes smaller.
+% (\AtBeginDocument: Pandoc defines Highlighting after the header includes.)
+\usepackage{fvextra}
+\AtBeginDocument{%
+  \RecustomVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\},breaklines,breakanywhere,fontsize=\small}%
+  \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,fontsize=\scriptsize}%
+}
+
+% --- Fit gt tables to the text width ---
+% gt sets its tables as \begin{tabular*}{width}{@{\extracolsep{\fill}}spec}, with
+% fixed column widths that can add up to more than the line; gt-latex.lua
+% rewrites them as \begin{gtfit}{width}{spec} (and maps gt's fixed 12pt/20pt
+% fonts to the document's sizes). A table that fits is set at gt's width as
+% before; a wider one is set at its natural width, and scaled down to the line
+% width if needed.
+\usepackage{environ}
+\usepackage{adjustbox}
+\newsavebox{\gtfitbox}
+\NewEnviron{gtfit}[2]{%
+  \sbox{\gtfitbox}{\begin{tabular}{#2}\BODY\end{tabular}}%
+  \ifdim\wd\gtfitbox>#1\relax
+    \adjustbox{max width=\linewidth}{\usebox{\gtfitbox}}%
+  \else
+    \begin{tabular*}{#1}{@{\extracolsep{\fill}}#2}\BODY\end{tabular*}%
+  \fi
+  \par}% end the line, so that gt's footnotes start below the table
+
+% --- Place-value digit boxes (Computer Arithmetic chapter) ---
+% The chapter writes its digit displays as math arrays with these macros;
+% MathJax gets its own definitions in the chapter.
+% \pvm mantissa, \pvs sign, \pve exponent, \pvz alignment zero (not stored),
+% \pvx digit rounded off, \pvo no room, \pvn plain box, \pvh column heading.
+\definecolor{pvm}{HTML}{E3EEFB}
+\definecolor{pvs}{HTML}{FBE4EC}
+\definecolor{pve}{HTML}{E7F6E0}
+\definecolor{pvx}{HTML}{FDE0E0}
+\definecolor{pvred}{HTML}{B22222}
+\newsavebox{\pvsave}
+% \pvbx{frame}{background}{text colour}{content}; at least 0.75em wide
+\newcommand{\pvbx}[4]{%
+  \sbox{\pvsave}{$\textcolor{#3}{\mathtt{#4}}$}%
+  \ifdim\wd\pvsave<0.75em\sbox{\pvsave}{\makebox[0.75em]{\usebox{\pvsave}}}\fi
+  {\setlength{\fboxsep}{2pt}\setlength{\fboxrule}{0.8pt}%
+   \fcolorbox{#1}{#2}{\vrule width 0pt height 0.8em depth 0.25em\usebox{\pvsave}}}}
+\newcommand{\pvm}[1]{\pvbx{gray!70!black}{pvm}{black}{#1}}
+\newcommand{\pvs}[1]{\pvbx{gray!70!black}{pvs}{black}{#1}}
+\newcommand{\pve}[1]{\pvbx{gray!70!black}{pve}{black}{#1}}
+\newcommand{\pvn}[1]{\pvbx{gray!70!black}{white}{black}{#1}}
+\newcommand{\pvz}[1]{\pvbx{gray!35}{white}{gray!55}{#1}}
+\newcommand{\pvx}[1]{\pvbx{gray!70!black}{pvx}{pvred}{#1}}
+\newcommand{\pvo}[1]{\pvbx{gray!70!black}{pvx}{pvred}{\mathbf{#1}}}
+\newcommand{\pvh}[1]{{\scriptstyle\textcolor{gray}{#1}}}

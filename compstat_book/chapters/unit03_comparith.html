@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-08">
+<meta name="dcterms.date" content="2026-10-23">
 
 <title>arithmetic-chapter – Elements of Statistical Computation</title>
 <style>
@@ -351,7 +351,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 8, 2026</p>
+      <p class="date">October 23, 2026</p>
     </div>
   </div>
   
@@ -363,190 +363,82 @@ window.Quarto = {
 </header>
 
 
-<style>
-.pv table { border-collapse: collapse; margin: 0.6em auto; font-family: monospace; }
-.pv td, .pv th { border: 2px solid #555; min-width: 2em; height: 1.5em;
-                 text-align: center !important; padding: 0.3em 0.3em; font-size: 0.95em; }
-.pv th { border: none; font-size: 0.7em; color: #666; font-weight: normal; }
-.pv td.s { background: #fbe4ec; }   /* sign */
-.pv td.m { background: #e3eefb; }   /* mantissa / digits */
-.pv td.e { background: #e7f6e0; }   /* exponent */
-.pv td.x { background: #ffd6d6; color: #b00000; font-weight: bold; } /* lost / invalid */
-.pv td.p { border: none; padding: 0; min-width: 0; font-weight: bold; } /* punctuation */
-.pv .cap { font-size: 0.85em; color: #444; text-align: center !important; margin-top: -0.3em; }
-</style>
+<!-- Digit boxes for the place-value displays of this chapter: \pvm mantissa,
+\pvs sign, \pve exponent, \pvz alignment zero (not stored), \pvx digit rounded
+off, \pvo no room (overflow/underflow), \pvn plain box, \pvh column heading.
+These definitions are for MathJax (HTML); the PDF defines the same macros in
+_extensions/custombook/header.tex. -->
+<div class="hidden">
+<p><span class="math display">\[
+\newcommand{\pvbx}[4]{\bbox[#2,3px,border:1.5px #1]{\textcolor{#3}{\mathtt{#4}}\vphantom{0}}}
+\newcommand{\pvm}[1]{\pvbx{solid ##555}{##e3eefb}{black}{#1}}
+\newcommand{\pvs}[1]{\pvbx{solid ##555}{##fbe4ec}{black}{#1}}
+\newcommand{\pve}[1]{\pvbx{solid ##555}{##e7f6e0}{black}{#1}}
+\newcommand{\pvn}[1]{\pvbx{solid ##555}{white}{black}{#1}}
+\newcommand{\pvz}[1]{\pvbx{dashed ##bbb}{white}{##bbb}{#1}}
+\newcommand{\pvx}[1]{\pvbx{solid ##555}{##fde0e0}{##b22222}{#1}}
+\newcommand{\pvo}[1]{\pvbx{solid ##555}{##fde0e0}{##b22222}{\mathbf{#1}}}
+\newcommand{\pvh}[1]{{\scriptstyle\textcolor{gray}{#1}}}
+\]</span></p>
+</div>
 <p>Statistical computation is arithmetic on a machine that stores every number in a fixed number of binary digits. This chapter describes how integers and real numbers are represented, what goes wrong when a computation exceeds the capacity of that representation (overflow, underflow, and roundoff error), and the standard techniques for writing statistical code that avoids these failures: reordering sums, rewriting formulas, and working on the logarithmic scale.</p>
 <section id="representations-of-numbers-in-computer" class="level2" data-number="3.1">
 <h2 data-number="3.1" class="anchored" data-anchor-id="representations-of-numbers-in-computer"><span class="header-section-number">3.1</span> Representations of Numbers in Computer</h2>
 <section id="integers" class="level3" data-number="3.1.1">
 <h3 data-number="3.1.1" class="anchored" data-anchor-id="integers"><span class="header-section-number">3.1.1</span> Integers</h3>
 <p>Every number is a string of digits in boxes, and each box has a <strong>place value</strong>. In base 10,</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-10³
-</th>
-<th>
-10²
-</th>
-<th>
-10¹
-</th>
-<th>
-10⁰
-</th>
-</tr>
-<tr>
-<td class="m">
-1
-</td>
-<td class="m">
-3
-</td>
-<td class="m">
-4
-</td>
-<td class="m">
-8
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(1348 = 1\times10^3 + 3\times10^2 + 4\times10^1 + 8\times10^0\)</span>
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+\pvh{10^{3}} &amp; \pvh{10^{2}} &amp; \pvh{10^{1}} &amp; \pvh{10^{0}} \\
+\pvm{1} &amp; \pvm{3} &amp; \pvm{4} &amp; \pvm{8}
+\end{array}
+\\[4pt]
+1348 = 1\times10^3 + 3\times10^2 + 4\times10^1 + 8\times10^0
+\end{array}
+\]</span></p>
 <p>A computer uses base 2, so each box, called a <strong>bit</strong>, holds 0 or 1:</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-2³
-</th>
-<th>
-2²
-</th>
-<th>
-2¹
-</th>
-<th>
-2⁰
-</th>
-</tr>
-<tr>
-<td class="m">
-1
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-1
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(1101_2 = 1\times2^3 + 1\times2^2 + 0\times2^1 + 1\times2^0 = 13\)</span>
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+\pvh{2^{3}} &amp; \pvh{2^{2}} &amp; \pvh{2^{1}} &amp; \pvh{2^{0}} \\
+\pvm{1} &amp; \pvm{1} &amp; \pvm{0} &amp; \pvm{1}
+\end{array}
+\\[4pt]
+1101_2 = 1\times2^3 + 1\times2^2 + 0\times2^1 + 1\times2^0 = 13
+\end{array}
+\]</span></p>
 <p>Everything that follows is a consequence of one fact: the number of boxes is fixed in advance.</p>
 <p>An integer is stored in a fixed number of bits, typically 32 or 64. With <span class="math inline">\(p\)</span> bits the largest unsigned value is obtained by filling every box with 1, <span class="math display">\[
 \sum_{i=0}^{p-1} 2^i = 2^p - 1 .
 \]</span> A 4-bit example: the largest storable integer is <span class="math inline">\(1111_2 = 15\)</span>, and <span class="math inline">\(15 + 1 = 16 = 10000_2\)</span> needs a fifth box that does not exist.</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-2⁴
-</th>
-<th>
-2³
-</th>
-<th>
-2²
-</th>
-<th>
-2¹
-</th>
-<th>
-2⁰
-</th>
-</tr>
-<tr>
-<td class="x">
-1
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-The leading 1 has nowhere to go: <strong>integer overflow</strong>
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+\pvh{2^{4}} &amp; \pvh{2^{3}} &amp; \pvh{2^{2}} &amp; \pvh{2^{1}} &amp; \pvh{2^{0}} \\
+\pvx{1} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0}
+\end{array}
+\\[4pt]
+\text{The leading 1 has nowhere to go: } \textbf{integer overflow}
+\end{array}
+\]</span></p>
 <p>To represent negative values, one of the boxes is used as a <strong>sign bit</strong>, leaving <span class="math inline">\(p-1\)</span> boxes for the magnitude. With 32 bits, a signed integer <span class="math inline">\(u\)</span> is <span class="math display">\[
 u = (-1)^{s}\sum_{i=0}^{30} d_i\,2^i, \qquad s\in\{0,1\}.
 \]</span> The largest integer has the sign bit <span class="math inline">\(0\)</span> and the other 31 boxes all equal to <span class="math inline">\(1\)</span>:</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-sign
-</th>
-<th>
-2³⁰
-</th>
-<th>
-2²⁹
-</th>
-<th>
-…
-</th>
-<th>
-2¹
-</th>
-<th>
-2⁰
-</th>
-</tr>
-<tr>
-<td class="s">
-+
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-…
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-1
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(u^{\max} = \sum_{i=0}^{30} 2^i = 2^{31}-1 = 2147483647\)</span>
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccccc@{}}
+\pvh{\text{sign}} &amp; \pvh{2^{30}} &amp; \pvh{2^{29}} &amp; \pvh{\cdots} &amp; \pvh{2^{1}} &amp; \pvh{2^{0}} \\
+\pvs{+} &amp; \pvm{1} &amp; \pvm{1} &amp; \pvm{\cdots} &amp; \pvm{1} &amp; \pvm{1}
+\end{array}
+\\[4pt]
+u^{\max} = \sum_{i=0}^{30} 2^i = 2^{31}-1 = 2147483647
+\end{array}
+\]</span></p>
 <p>and the smallest is its negative, <span class="math inline">\(u^{\min} = -(2^{31}-1)\)</span>. When an integer computation leaves this range, R does not wrap around silently, as C does; it returns <code>NA</code> with a warning.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>.Machine<span class="sc">$</span>integer.max</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -593,118 +485,34 @@ sign
 <p>A real number is stored in the form of scientific notation: a <strong>sign</strong>, a <strong>mantissa</strong> holding the significant digits, and an <strong>exponent</strong>: <span class="math display">\[
 x = (-1)^{s} \times 1.d_1 d_2 \cdots d_p \times 2^{\,e}.
 \]</span></p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-sign
-</th>
-<th colspan="4">
-mantissa (fixed number of digits)
-</th>
-<th>
-</th>
-<th colspan="2">
-exponent
-</th>
-</tr>
-<tr>
-<td class="s">
-+
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-d₁
-</td>
-<td class="m">
-d₂ … d<sub>p</sub>
-</td>
-<td class="p">
-×2^
-</td>
-<td class="s">
-±
-</td>
-<td class="e">
-e
-</td>
-</tr>
-</tbody></table>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{@{}cccccccc@{}}
+\pvh{\text{sign}} &amp;  \\
+\pvs{+} &amp; \pvm{1} &amp; . &amp; \pvm{d_1} &amp; \pvm{d_2 \cdots  d_p} &amp; \times2^\wedge &amp; \pvs{\pm} &amp; \pve{e}
+\end{array}
+\]</span></p>
 <p>More precisely, a floating point number <span class="math inline">\(x\)</span> is represented by a vector of bits <span class="math inline">\((s,d_0,\ldots,d_{t-1},e_1,\ldots, e_{k-1})\)</span> as, <span class="math display">\[
 x = (-1)^s \sum_{i=0}^{t-1}d_i2^{-i}\times 2^{\sum_{i=0}^{k-1}e_i2^i-2^{k-1}}.
 \]</span></p>
 </section>
 <section id="zoom-models-for-representable-floating-numbers" class="level3" data-number="3.1.3">
 <h3 data-number="3.1.3" class="anchored" data-anchor-id="zoom-models-for-representable-floating-numbers"><span class="header-section-number">3.1.3</span> Zoom Models for Representable Floating Numbers</h3>
-<style>
-.pv td.z  { color: #bbb; border-style: dashed; }          /* alignment zero, not stored */
-.pv td.x  { background: #fde0e0; color: #b22222; text-decoration: line-through; } /* digit rounded off */
-.pv td.o  { background: #fde0e0; color: #b22222; font-weight: bold; }            /* no room: overflow/underflow */
-.pv td.op { border: none; background: none; font-weight: bold; }
-.pv td.nb { border: none; background: none; }
-.pv tr.sum td:not(.op):not(.nb) { border-top: 3px solid #333; }
-</style>
 <p>A floating point number is a <strong>ruler</strong> and a <strong>zoom setting</strong>. The mantissa is a ruler with a fixed number of equally spaced marks; the exponent stretches it by <span class="math inline">\(10^{e}\)</span> over <span class="math inline">\([10^{e}, 10^{e+1})\)</span>. Stretching adds no marks, so the marks spread apart as the zoom grows.</p>
 <section id="a-toy-decimal-computer" class="level4" data-number="3.1.3.1">
 <h4 data-number="3.1.3.1" class="anchored" data-anchor-id="a-toy-decimal-computer"><span class="header-section-number">3.1.3.1</span> A toy decimal computer</h4>
 <p>Each number is stored in six boxes: a sign, a two-digit mantissa <span class="math inline">\(d_1.d_2\)</span> (<span class="math inline">\(d_1\in\{1,\ldots,9\}\)</span>, <span class="math inline">\(d_2\in\{0,\ldots,9\}\)</span>), and an exponent made of a sign and one decimal digit, so <span class="math inline">\(e\in\{-9,\ldots,0,\ldots,+9\}\)</span>.</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-sign
-</th>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-</th>
-<th>
-±
-</th>
-<th>
-exp
-</th>
-</tr>
-<tr>
-<td class="s">
-+
-</td>
-<td class="m">
-3
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="e">
-0
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(+3.1\times10^{+0}\)</span>, the closest storable value to <span class="math inline">\(\pi\)</span>
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccc@{}}
+\pvh{\text{sign}} &amp; \pvh{1} &amp;  &amp; \pvh{10^{-1}} &amp;  &amp; \pvh{\pm} &amp; \pvh{\text{exp}} \\
+\pvs{+} &amp; \pvm{3} &amp; . &amp; \pvm{1} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pve{0}
+\end{array}
+\\[4pt]
++3.1\times10^{+0} \text{, the closest storable value to } \pi
+\end{array}
+\]</span></p>
 <p>Each of the <span class="math inline">\(19\)</span> zoom levels is a ruler of <span class="math inline">\(90\)</span> marks. At the lowest zoom <span class="math inline">\(e=-9\)</span> the leading digit may also be <span class="math inline">\(0\)</span> (<strong>subnormal</strong> numbers), which fills the gap between <span class="math inline">\(0\)</span> and <span class="math inline">\(1.0\times10^{-9}\)</span>.</p>
 <table class="caption-top table">
 <colgroup>
@@ -809,692 +617,119 @@ Figure&nbsp;3.1: Illustrates how floating-point numbers are spaced on the real l
 <section id="rounding-error-and-machine-epsilon" class="level4" data-number="3.1.3.2">
 <h4 data-number="3.1.3.2" class="anchored" data-anchor-id="rounding-error-and-machine-epsilon"><span class="header-section-number">3.1.3.2</span> Rounding error and machine epsilon</h4>
 <p>A real number between two marks is stored as the nearer mark. The three numbers below share the same mantissa boxes and differ only in the exponent, so the absolute error scales with the zoom while the relative error does not.</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-<span class="math inline">\(x\)</span>
-</th>
-<th>
-sign
-</th>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-</th>
-<th>
-±
-</th>
-<th>
-exp
-</th>
-<th>
-stored
-</th>
-<th>
-error
-</th>
-</tr>
-<tr>
-<td class="nb">
-<span class="math inline">\(0.234\)</span>
-</td>
-<td class="s">
-+
-</td>
-<td class="m">
-2
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-3
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-−
-</td>
-<td class="e">
-1
-</td>
-<td class="nb">
-<span class="math inline">\(0.23\)</span>
-</td>
-<td class="nb">
-<span class="math inline">\(0.004\)</span> (1.7%)
-</td>
-</tr>
-<tr>
-<td class="nb">
-<span class="math inline">\(2.34\)</span>
-</td>
-<td class="s">
-+
-</td>
-<td class="m">
-2
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-3
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="e">
-0
-</td>
-<td class="nb">
-<span class="math inline">\(2.3\)</span>
-</td>
-<td class="nb">
-<span class="math inline">\(0.04\)</span> (1.7%)
-</td>
-</tr>
-<tr>
-<td class="nb">
-<span class="math inline">\(23.4\)</span>
-</td>
-<td class="s">
-+
-</td>
-<td class="m">
-2
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-3
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="e">
-1
-</td>
-<td class="nb">
-<span class="math inline">\(23\)</span>
-</td>
-<td class="nb">
-<span class="math inline">\(0.4\)</span> (1.7%)
-</td>
-</tr>
-</tbody></table>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{@{}cccccccccc@{}}
+\pvh{x} &amp; \pvh{\text{sign}} &amp; \pvh{1} &amp;  &amp; \pvh{10^{-1}} &amp;  &amp; \pvh{\pm} &amp; \pvh{\text{exp}} &amp; \pvh{\text{stored}} &amp; \pvh{\text{error}} \\
+0.234 &amp; \pvs{+} &amp; \pvm{2} &amp; . &amp; \pvm{3} &amp; \times10^\wedge &amp; \pvs{-} &amp; \pve{1} &amp; 0.23 &amp; 0.004\ (1.7\%) \\
+2.34 &amp; \pvs{+} &amp; \pvm{2} &amp; . &amp; \pvm{3} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pve{0} &amp; 2.3 &amp; 0.04\ (1.7\%) \\
+23.4 &amp; \pvs{+} &amp; \pvm{2} &amp; . &amp; \pvm{3} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pve{1} &amp; 23 &amp; 0.4\ (1.7\%)
+\end{array}
+\]</span></p>
 <p>The same rounding occurs in arithmetic. To add, the two numbers are aligned by place value; solid boxes are stored digits, dashed boxes are alignment zeros, and the result keeps only the two boxes starting at its leading digit, so digits to the right (red) are rounded off.</p>
-<div class="columns">
-<div class="column" style="width:33%;">
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-</th>
-<th>
-10⁰
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-10⁻²
-</th>
-</tr>
-<tr>
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-0
-</td>
-<td class="nb">
-</td>
-</tr>
-<tr>
-<td class="op">
-+
-</td>
-<td class="z">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-0
-</td>
-</tr>
-<tr class="sum">
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="x">
-0
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(1.0 + 0.10 = 1.1 \ne 1.0\)</span>
-</p>
-</div>
-</div><div class="column" style="width:33%;">
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-</th>
-<th>
-10⁰
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-10⁻²
-</th>
-</tr>
-<tr>
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-0
-</td>
-<td class="nb">
-</td>
-</tr>
-<tr>
-<td class="op">
-+
-</td>
-<td class="z">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-4
-</td>
-</tr>
-<tr class="sum">
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="x">
-4
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(1.0 + 0.14 \to 1.1\)</span>
-</p>
-</div>
-</div><div class="column" style="width:33%;">
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-</th>
-<th>
-10¹
-</th>
-<th>
-10⁰
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-10⁻²
-</th>
-</tr>
-<tr>
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="nb">
-</td>
-<td class="nb">
-</td>
-</tr>
-<tr>
-<td class="op">
-+
-</td>
-<td class="z">
-0
-</td>
-<td class="z">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-4
-</td>
-<td class="m">
-0
-</td>
-</tr>
-<tr class="sum">
-<td class="op">
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="x">
-4
-</td>
-<td class="x">
-0
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(10 + 0.40 \to 10\)</span>
-</p>
-</div>
-</div>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c@{\qquad}c@{\qquad}c}
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+&amp; \pvh{10^{0}} &amp;  &amp; \pvh{10^{-1}} &amp; \pvh{10^{-2}} \\
+&amp; \pvm{1} &amp; . &amp; \pvm{0} &amp;  \\
++ &amp; \pvz{0} &amp; . &amp; \pvm{1} &amp; \pvm{0} \\
+\hline
+&amp; \pvm{1} &amp; . &amp; \pvm{1} &amp; \pvx{0}
+\end{array}
+\\[4pt]
+1.0 + 0.10 = 1.1 \ne 1.0
+\end{array}
+&amp;
+\begin{array}{c}
+\begin{array}{@{}ccccc@{}}
+&amp; \pvh{10^{0}} &amp;  &amp; \pvh{10^{-1}} &amp; \pvh{10^{-2}} \\
+&amp; \pvm{1} &amp; . &amp; \pvm{0} &amp;  \\
++ &amp; \pvz{0} &amp; . &amp; \pvm{1} &amp; \pvm{4} \\
+\hline
+&amp; \pvm{1} &amp; . &amp; \pvm{1} &amp; \pvx{4}
+\end{array}
+\\[4pt]
+1.0 + 0.14 \to 1.1
+\end{array}
+&amp;
+\begin{array}{c}
+\begin{array}{@{}cccccc@{}}
+&amp; \pvh{10^{1}} &amp; \pvh{10^{0}} &amp;  &amp; \pvh{10^{-1}} &amp; \pvh{10^{-2}} \\
+&amp; \pvm{1} &amp; \pvm{0} &amp; . &amp;  &amp;  \\
++ &amp; \pvz{0} &amp; \pvz{0} &amp; . &amp; \pvm{4} &amp; \pvm{0} \\
+\hline
+&amp; \pvm{1} &amp; \pvm{0} &amp; . &amp; \pvx{4} &amp; \pvx{0}
+\end{array}
+\\[4pt]
+10 + 0.40 \to 10
+\end{array}
+\end{array}
+\]</span></p>
 <p>The <strong>machine epsilon</strong> <span class="math inline">\(\epsilon\)</span> is the gap next to <span class="math inline">\(1\)</span>, the smallest increment that the second mantissa box can register when added to <span class="math inline">\(1\)</span>; here <span class="math inline">\(\epsilon = 0.1\)</span> (left). Smaller increments fall into the red box: the digit <span class="math inline">\(4\)</span> is lost (middle), and at zoom <span class="math inline">\(e=+1\)</span> the whole addend <span class="math inline">\(0.40\)</span> is lost (right). Relative to the magnitude, the resolution is about <span class="math inline">\(\epsilon\)</span> at every zoom.</p>
 </section>
 <section id="largest-and-smallest-numbers" class="level4" data-number="3.1.3.3">
 <h4 data-number="3.1.3.3" class="anchored" data-anchor-id="largest-and-smallest-numbers"><span class="header-section-number">3.1.3.3</span> Largest and smallest numbers</h4>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-</th>
-<th>
-sign
-</th>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-</th>
-<th>
-±
-</th>
-<th>
-exp
-</th>
-<th>
-value
-</th>
-</tr>
-<tr>
-<td class="nb">
-largest
-</td>
-<td class="s">
-+
-</td>
-<td class="m">
-9
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-9
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="e">
-9
-</td>
-<td class="nb">
-<span class="math inline">\(9.9\times10^{9}\)</span>
-</td>
-</tr>
-<tr>
-<td class="nb">
-smallest positive
-</td>
-<td class="s">
-+
-</td>
-<td class="m">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-−
-</td>
-<td class="e">
-9
-</td>
-<td class="nb">
-<span class="math inline">\(0.1\times10^{-9}\)</span>
-</td>
-</tr>
-<tr>
-<td class="nb">
-largest negative
-</td>
-<td class="s">
-−
-</td>
-<td class="m">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-−
-</td>
-<td class="e">
-9
-</td>
-<td class="nb">
-<span class="math inline">\(-0.1\times10^{-9}\)</span>
-</td>
-</tr>
-<tr>
-<td class="nb">
-smallest
-</td>
-<td class="s">
-−
-</td>
-<td class="m">
-9
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-9
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="e">
-9
-</td>
-<td class="nb">
-<span class="math inline">\(-9.9\times10^{9}\)</span>
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccccc@{}}
+&amp; \pvh{\text{sign}} &amp; \pvh{1} &amp;  &amp; \pvh{10^{-1}} &amp;  &amp; \pvh{\pm} &amp; \pvh{\text{exp}} &amp; \pvh{\text{value}} \\
+\text{largest} &amp; \pvs{+} &amp; \pvm{9} &amp; . &amp; \pvm{9} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pve{9} &amp; 9.9\times10^{9} \\
+\text{smallest positive} &amp; \pvs{+} &amp; \pvm{0} &amp; . &amp; \pvm{1} &amp; \times10^\wedge &amp; \pvs{-} &amp; \pve{9} &amp; 0.1\times10^{-9} \\
+\text{largest negative} &amp; \pvs{-} &amp; \pvm{0} &amp; . &amp; \pvm{1} &amp; \times10^\wedge &amp; \pvs{-} &amp; \pve{9} &amp; -0.1\times10^{-9} \\
+\text{smallest} &amp; \pvs{-} &amp; \pvm{9} &amp; . &amp; \pvm{9} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pve{9} &amp; -9.9\times10^{9}
+\end{array}
+\\[4pt]
+\text{Largest mantissa with the largest exponent; smallest subnormal mantissa with the smallest exponent}
+\end{array}
+\]</span></p>
 <p><strong>Overflow.</strong> A result with magnitude at least <span class="math inline">\(9.95\times10^{9}\)</span> needs the exponent <span class="math inline">\(+10\)</span>, which the single exponent digit cannot hold, so it is returned as <span class="math inline">\(\pm\infty\)</span>:</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-</th>
-<th>
-10¹⁰
-</th>
-<th>
-10⁹
-</th>
-<th>
-10⁸
-</th>
-</tr>
-<tr>
-<td class="op">
-</td>
-<td class="nb">
-</td>
-<td class="m">
-6
-</td>
-<td class="m">
-0
-</td>
-</tr>
-<tr>
-<td class="op">
-+
-</td>
-<td class="nb">
-</td>
-<td class="m">
-5
-</td>
-<td class="m">
-0
-</td>
-</tr>
-<tr class="sum">
-<td class="op">
-</td>
-<td class="o">
-1
-</td>
-<td class="m">
-1
-</td>
-<td class="x">
-0
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\(6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty\)</span>
-</p>
-</div>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-sign
-</th>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-</th>
-<th>
-±
-</th>
-<th>
-exp
-</th>
-</tr>
-<tr>
-<td class="s">
-+
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-1
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-+
-</td>
-<td class="o">
-10
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-The exponent <span class="math inline">\(10\)</span> needs two digits but has one box: overflow
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccc@{}}
+&amp; \pvh{10^{10}} &amp; \pvh{10^{9}} &amp; \pvh{10^{8}} \\
+&amp;  &amp; \pvm{6} &amp; \pvm{0} \\
++ &amp;  &amp; \pvm{5} &amp; \pvm{0} \\
+\hline
+&amp; \pvo{1} &amp; \pvm{1} &amp; \pvx{0}
+\end{array}
+\\[4pt]
+6.0\times10^{9} + 5.0\times10^{9} = 1.1\times10^{+10} \to \infty
+\end{array}
+\]</span></p>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}ccccccc@{}}
+\pvh{\text{sign}} &amp; \pvh{1} &amp;  &amp; \pvh{10^{-1}} &amp;  &amp; \pvh{\pm} &amp; \pvh{\text{exp}} \\
+\pvs{+} &amp; \pvm{1} &amp; . &amp; \pvm{1} &amp; \times10^\wedge &amp; \pvs{+} &amp; \pvo{10}
+\end{array}
+\\[4pt]
+\text{The exponent } 10 \text{ needs two digits but has one box: overflow}
+\end{array}
+\]</span></p>
 <p><strong>Underflow.</strong> A result with magnitude below <span class="math inline">\(0.05\times10^{-9}\)</span> has no box pattern and is returned as <span class="math inline">\(0\)</span>:</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th>
-sign
-</th>
-<th>
-1
-</th>
-<th>
-</th>
-<th>
-10⁻¹
-</th>
-<th>
-10⁻²
-</th>
-<th>
-</th>
-<th>
-±
-</th>
-<th>
-exp
-</th>
-</tr>
-<tr>
-<td class="s">
-+
-</td>
-<td class="m">
-0
-</td>
-<td class="p">
-.
-</td>
-<td class="x">
-0
-</td>
-<td class="o">
-1
-</td>
-<td class="p">
-×10^
-</td>
-<td class="s">
-−
-</td>
-<td class="e">
-9
-</td>
-</tr>
-</tbody></table>
-<p class="cap">
-<span class="math inline">\((0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0\)</span>: the digit <span class="math inline">\(1\)</span> falls outside the mantissa
-</p>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{c}
+\begin{array}{@{}cccccccc@{}}
+\pvh{\text{sign}} &amp; \pvh{1} &amp;  &amp; \pvh{10^{-1}} &amp; \pvh{10^{-2}} &amp;  &amp; \pvh{\pm} &amp; \pvh{\text{exp}} \\
+\pvs{+} &amp; \pvm{0} &amp; . &amp; \pvx{0} &amp; \pvo{1} &amp; \times10^\wedge &amp; \pvs{-} &amp; \pve{9}
+\end{array}
+\\[4pt]
+(0.1\times10^{-9})\times0.1 = 0.01\times10^{-9} \to 0 \text{: the digit } 1 \text{ falls outside the mantissa}
+\end{array}
+\]</span></p>
 <p>Every later operation treats the underflowed result as exactly zero.</p>
 </section>
 <section id="doubles" class="level4" data-number="3.1.3.4">
 <h4 data-number="3.1.3.4" class="anchored" data-anchor-id="doubles"><span class="header-section-number">3.1.3.4</span> Doubles</h4>
 <p>A double uses the same boxes in base <span class="math inline">\(2\)</span>: <span class="math inline">\(1\)</span> sign bit, <span class="math inline">\(11\)</span> exponent bits, and <span class="math inline">\(52\)</span> mantissa bits after an implicit leading <span class="math inline">\(1\)</span>. The exponent is stored with a bias of <span class="math inline">\(1023\)</span>, so the codes <span class="math inline">\(1,\ldots,2046\)</span> give <span class="math inline">\(e\in[-1022, 1023]\)</span>; the code <span class="math inline">\(0\)</span> is reserved for <span class="math inline">\(0\)</span> and the subnormals, and the code <span class="math inline">\(2047\)</span> for <code>Inf</code> and <code>NaN</code>.</p>
 <p><span class="math display">\[
-\newcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
+\renewcommand{\bx}[1]{\boxed{\mathtt{#1}}\!}
 \begin{array}{rccccccl}
 &amp; \text{sign} &amp; \text{mantissa} &amp; &amp; &amp; \text{exponent} &amp; &amp; \\[4pt]
 1 &amp; \bx{+} &amp; {\color{gray}1.}\overbrace{\bx{0}\bx{0}\bx{0}\cdots\bx{0}\bx{0}\bx{0}}^{52\text{ bits}} &amp; &amp; \times2^\wedge &amp; \overbrace{\bx{+}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}\bx{0}}^{11\text{ bits}} &amp; &amp; \\
@@ -2180,74 +1415,13 @@ Table&nbsp;3.3: Shows that reformulating the computation as 1/exp(|x|) removes t
 <p>Take <span class="math inline">\(x = (1, 2, 3)\)</span>: the deviations are <span class="math inline">\((-1, 0, 1)\)</span>, so <span class="math inline">\(\sum(x_i-\overline x)^2 = 2\)</span>. Now shift by <span class="math inline">\(M = 10^{8}\)</span>, giving <span class="math inline">\(x = (M+1, M+2, M+3)\)</span>. The deviations and the answer are unchanged, but the one-pass formula computes <span class="math display">\[
 \sum x_i^2 \approx 3\times10^{16}, \qquad \frac{(\sum x_i)^2}{n} \approx 3\times10^{16}, \qquad \text{difference} = 2.
 \]</span> With 16 significant digits, <span class="math inline">\(3\times10^{16}\)</span> is stored with a gap of about <span class="math inline">\(4\)</span> between neighbouring representable numbers, so the true answer <span class="math inline">\(2\)</span> lives entirely in the lost digits.</p>
-<div class="pv">
-<table>
-<tbody><tr>
-<th colspan="16">
-16 mantissa digits
-</th>
-<th>
-lost
-</th>
-</tr>
-<tr>
-<td class="m">
-3
-</td>
-<td class="p">
-.
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-1
-</td>
-<td class="m">
-2
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-0
-</td>
-<td class="m">
-1
-</td>
-<td class="x">
-4
-</td>
-<td class="p">
-×10^16
-</td>
-</tr>
-</tbody></table>
-</div>
+<p><span class="math display">\[
+\notag
+\begin{array}{@{}cccccccccccccccccc@{}}
+\pvh{\text{lost}} \\
+\pvm{3} &amp; . &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{1} &amp; \pvm{2} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{0} &amp; \pvm{1} &amp; \pvx{4} &amp; \times10^{16}
+\end{array}
+\]</span></p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb92"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb92-1"><a href="#cb92-1" aria-hidden="true" tabindex="-1"></a><span class="do">## one-pass (computational) formula</span></span>
 <span id="cb92-2"><a href="#cb92-2" aria-hidden="true" tabindex="-1"></a>var1 <span class="ot">&lt;-</span> <span class="cf">function</span>(x) { n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); (<span class="fu">sum</span>(x<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> <span class="fu">sum</span>(x)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> n) <span class="sc">/</span> (n <span class="sc">-</span> <span class="dv">1</span>) }</span>
