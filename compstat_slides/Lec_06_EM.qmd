@@ -96,9 +96,9 @@ $$
 
 - Equivalently $H(P,q)\ge H(P,P)$: the cross-entropy is smallest at $q=P$. This is what forces the $H$-term to behave as needed in the ascending-property proof (next slides), and what makes $F(\tilde P,\theta)$ a lower bound on $\ell_{\text{obs}}(\theta)$ later on
 
-## Simulation Check: $E_P[\log P(X)] > E_P[\log q(X)]$
+## Simulation Check: $-E_P[\log q(X)] > -E_P[\log P(X)]$
 
-$KL(P\|q) = E_P[\log P(X)] - E_P[\log q(X)] > 0$ whenever $q\ne P$: draw $x_1,\ldots,x_n\sim P$ and compare $\log P(x_i)$ (blue) to $\log q(x_i)$ (red) at the *same* sampled points.
+$KL(P\|q) = H(P,q) - H(P,P) = -E_P[\log q(X)] + E_P[\log P(X)] > 0$ whenever $q\ne P$: draw $x_1,\ldots,x_n\sim P$ and compare $-\log P(x_i)$ (blue) to $-\log q(x_i)$ (red) at the *same* sampled points; the observations are shown (jittered) along the $x$-axis.
 
 ```{r}
 #| fig-width: 10
@@ -106,32 +106,35 @@ $KL(P\|q) = E_P[\log P(X)] - E_P[\log q(X)] > 0$ whenever $q\ne P$: draw $x_1,\l
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
 mu_p <- 0; sd_p <- 1; mu_q <- 1.2; sd_q <- 1.6; nsamp <- 40
 x  <- rnorm(nsamp, mu_p, sd_p)                   # samples from P
-lp <- dnorm(x, mu_p, sd_p, log = TRUE)
-lq <- dnorm(x, mu_q, sd_q, log = TRUE)
+nlp <- -dnorm(x, mu_p, sd_p, log = TRUE)         # -log P(x_i)
+nlq <- -dnorm(x, mu_q, sd_q, log = TRUE)         # -log q(x_i)
 
 curve(dnorm(x, mu_p, sd_p), -4, 6, lwd = 3, col = "steelblue", xlab = "x", ylab = "density",
       main = "P(x), q(x), and the samples")
 curve(dnorm(x, mu_q, sd_q), add = TRUE, lwd = 3, col = "firebrick")
-rug(x, col = "gray30", lwd = 1.5)
+points(x, runif(nsamp, 0.005, 0.03), pch = 19, col = "gray30", cex = 0.8)   # jittered observations
 legend("topright", bty = "n", lwd = 3, col = c("steelblue", "firebrick"),
        legend = c(expression(P(x)), expression(q(x))))
 
 ord <- order(x)
-plot(x[ord], lp[ord], type = "b", pch = 19, col = "steelblue", lwd = 2,
-     xlab = "x (sorted)", ylab = "log-density at sample", ylim = range(c(lp, lq)),
-     main = expression(log~P(x[i])~vs.~log~q(x[i])))
-lines(x[ord], lq[ord], type = "b", pch = 19, col = "firebrick", lwd = 2)
-segments(x[ord], lp[ord], x[ord], lq[ord], col = "gray70")
-abline(h = mean(lp), col = "steelblue", lty = 2, lwd = 2)
-abline(h = mean(lq), col = "firebrick", lty = 2, lwd = 2)
-legend("bottomleft", bty = "n", lwd = 2, lty = c(1, 1, 2, 2), pch = c(19, 19, NA, NA),
+yr  <- range(c(nlp, nlq)); gap <- diff(yr)
+plot(x[ord], nlp[ord], type = "b", pch = 19, col = "steelblue", lwd = 2,
+     xlab = "x", ylab = "negative log-density at sample",
+     ylim = c(yr[1] - 0.12 * gap, yr[2]),
+     main = expression(-log~P(x[i])~vs.~-log~q(x[i])))
+lines(x[ord], nlq[ord], type = "b", pch = 19, col = "firebrick", lwd = 2)
+segments(x[ord], nlp[ord], x[ord], nlq[ord], col = "gray70")
+abline(h = mean(nlp), col = "steelblue", lty = 2, lwd = 2)
+abline(h = mean(nlq), col = "firebrick", lty = 2, lwd = 2)
+points(x, yr[1] - 0.09 * gap + runif(nsamp, 0, 0.05 * gap), pch = 19, col = "gray30", cex = 0.8)
+legend("top", bty = "n", lwd = 2, lty = c(1, 1, 2, 2), pch = c(19, 19, NA, NA),
        col = c("steelblue", "firebrick", "steelblue", "firebrick"),
-       legend = c(expression(log~P(x[i])), expression(log~q(x[i])),
-                  bquote(mean(log~P(x[i])) == .(round(mean(lp), 2))),
-                  bquote(mean(log~q(x[i])) == .(round(mean(lq), 2)))))
+       legend = c(expression(-log~P(x[i])), expression(-log~q(x[i])),
+                  bquote(mean(-log~P(x[i])) == .(round(mean(nlp), 2))),
+                  bquote(mean(-log~q(x[i])) == .(round(mean(nlq), 2)))))
 ```
 
-- The blue dashed line (average of $\log P(x_i)$) always sits above the red one (average of $\log q(x_i)$); their gap is the (Monte Carlo estimate of the) $KL(P\|q)$
+- The red dashed line (average of $-\log q(x_i)$, an estimate of the cross-entropy $H(P,q)$) always sits above the blue one (average of $-\log P(x_i)$, an estimate of the entropy $H(P,P)$); their gap is the (Monte Carlo estimate of the) $KL(P\|q)$
 
 
 ## Ascending Property of EM
