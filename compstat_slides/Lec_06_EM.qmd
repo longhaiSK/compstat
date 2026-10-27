@@ -139,36 +139,30 @@ legend("top", bty = "n", lwd = 2, lty = c(1, 1, 2, 2), pch = c(19, 19, NA, NA),
 
 ## Ascending Property of EM
 
-Write $h(Y,Z\mid\theta) = P(Y,Z\mid\theta)$, $\;g(Y\mid\theta) = \int h(Y,Z\mid\theta)\,dZ$, $\;K(Z\mid Y,\theta) = h/g$.
-
 **Theorem.** $\;\ell_{\text{obs}}(\hat\theta^{(t+1)}) \ \ge\ \ell_{\text{obs}}(\hat\theta^{(t)})$.
 
-**Key identity.** Since $\log g(Y\mid\theta) = \log h(Y,Z\mid\theta) - \log K(Z\mid Y,\theta)$ for every $Z$, taking $E_{Z\mid Y,\theta_0}$ of both sides gives, for any $\theta_0$,
+**Key identity.** For every $z$, $\log P(Y\mid\theta) = \log P(Y,z\mid\theta) - \log P(z\mid Y,\theta)$. Averaging both sides over an *arbitrary* distribution $\tilde P$ of $Z$ gives
 $$
-\ell_{\text{obs}}(\theta) = \underbrace{E_{Z\mid Y,\theta_0}\big[\log h(Y,Z\mid\theta)\big]}_{Q(\theta\mid\theta_0)}
-+ \underbrace{\Big(-E_{Z\mid Y,\theta_0}\big[\log K(Z\mid Y,\theta)\big]\Big)}_{H\big(K(\cdot\mid Y,\theta_0),\,K(\cdot\mid Y,\theta)\big)}
+\ell_{\text{obs}}(\theta) = \underbrace{\int \tilde P(z)\log P(Y,z\mid\theta)\,dz}_{\text{average complete log-likelihood}}
++ \underbrace{H\big(\tilde P,\,P(\cdot\mid Y,\theta)\big)}_{\text{cross-entropy}}
+\qquad\text{for any }\tilde P .
 $$
 
-The last term is the cross-entropy $H(P,q)$ of $q = K(\cdot\mid Y,\theta)$ relative to $P = K(\cdot\mid Y,\theta_0)$. Intuition: maximizing $Q$ makes the first term larger, and the cross-entropy is smallest at $\theta=\theta_0$ (Gibbs' inequality), so it can only grow when $\theta$ moves — hence $\ell_{\text{obs}}$ is increased.
+Taking $\tilde P = P(\cdot\mid Y,\hat\theta^{(t)})$ turns the first term into $Q(\theta\mid\hat\theta^{(t)})$. Intuition: the M-step makes $Q$ larger, and the cross-entropy is smallest at $\theta=\hat\theta^{(t)}$ (Gibbs' inequality), so it can only grow when $\theta$ moves — hence $\ell_{\text{obs}}$ is increased.
 
 ## Formal Proof {style="font-size: 30px"}
 
-**Proof.** Write $K_t = K(\cdot\mid Y,\hat\theta^{(t)})$. Set $\theta_0 = \hat\theta^{(t)}$ and subtract the identity $\ell_{\text{obs}}(\theta) = Q(\theta\mid\hat\theta^{(t)}) + H(K_t, K(\cdot\mid Y,\theta))$ evaluated at $\theta = \hat\theta^{(t)}$ from the same identity at $\theta = \hat\theta^{(t+1)}$:
+**Proof.** Let $\tilde P = P(\cdot\mid Y,\hat\theta^{(t)})$ and $P_\theta = P(\cdot\mid Y,\theta)$, so $\tilde P = P_{\hat\theta^{(t)}}$. Subtract the key identity at $\theta=\hat\theta^{(t)}$ from the same identity at $\theta=\hat\theta^{(t+1)}$:
 $$
 \begin{aligned}
 \ell_{\text{obs}}(\hat\theta^{(t+1)}) - \ell_{\text{obs}}(\hat\theta^{(t)})
 &= \big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]
-+ \big[H(K_t,K_{t+1}) - H(K_t,K_t)\big] \\[2mm]
++ \big[H(\tilde P,P_{\hat\theta^{(t+1)}}) - H(\tilde P,\tilde P)\big] \\[2mm]
 &= \underbrace{\big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]}_{\ge 0 \text{ by the M-step}}
-+ \underbrace{KL\big(K_t\,\big\|\,K_{t+1}\big)}_{\ge 0 \text{ by Gibbs' inequality}} \ \ge\ 0,
++ \underbrace{KL\big(\tilde P\,\big\|\,P_{\hat\theta^{(t+1)}}\big)}_{\ge 0 \text{ by Gibbs' inequality}} \ \ge\ 0,
 \end{aligned}
 $$
-where the second line uses $H(P,q) - H(P,P) = KL(P\|q)$:
-$$
-H(K_t,K_{t+1}) - H(K_t,K_t)
-= E_{\hat\theta^{(t)}}\!\left[\log \frac{K(Z\mid Y,\hat\theta^{(t)})}{K(Z\mid Y,\hat\theta^{(t+1)})} \,\Big|\, Y\right]
-= KL\big(K_t\,\big\|\,K_{t+1}\big). \qquad\blacksquare
-$$
+where $H(\tilde P,P_{\hat\theta^{(t)}}) = H(\tilde P,\tilde P)$ because $\tilde P = P_{\hat\theta^{(t)}}$, and $H(P,q) - H(P,P) = KL(P\|q)$. $\blacksquare$
 
 ## The Function $F(\tilde P,\theta)$: Derivation {.smaller}
 
@@ -176,14 +170,11 @@ Let $\tilde P(\cdot)$ be any distribution on the hidden data $Z$, and define
 
 $$F(\tilde P,\theta) = \int \tilde P(z)\log P(Y,z\mid\theta)\,dz - \int \tilde P(z)\log\tilde P(z)\,dz .$$
 
-**Step 1.** Factor the complete-data density, $P(Y,z\mid\theta) = P(Y\mid\theta)\,P(z\mid Y,\theta)$, so
-$$\log P(Y,z\mid\theta) = \ell_{\text{obs}}(\theta) + \log P(z\mid Y,\theta),\qquad \ell_{\text{obs}}(\theta)=\log P(Y\mid\theta).$$
+**Step 1.** The second term is the entropy $H(\tilde P,\tilde P)$ and does not involve $\theta$. The first term is, by the key identity of the ascending property,
+$$\int \tilde P(z)\log P(Y,z\mid\theta)\,dz = \ell_{\text{obs}}(\theta) - H\big(\tilde P,\,P(\cdot\mid Y,\theta)\big).$$
 
-**Step 2.** Substitute into $F$:
-$$F(\tilde P,\theta) = \int \tilde P(z)\,\ell_{\text{obs}}(\theta)\,dz + \int \tilde P(z)\log P(z\mid Y,\theta)\,dz - \int \tilde P(z)\log\tilde P(z)\,dz .$$
-
-**Step 3.** $\ell_{\text{obs}}(\theta)$ does not depend on $z$ and $\int\tilde P(z)\,dz = 1$, so the first term is $\ell_{\text{obs}}(\theta)$. Combine the other two:
-$$F(\tilde P,\theta) = \ell_{\text{obs}}(\theta) - \int \tilde P(z)\log\frac{\tilde P(z)}{P(z\mid Y,\theta)}\,dz = \ell_{\text{obs}}(\theta) - KL\big(\tilde P\,\Vert{}\,P(\cdot\mid Y,\theta)\big).$$
+**Step 2.** Substitute:
+$$F(\tilde P,\theta) = \ell_{\text{obs}}(\theta) - \Big[H\big(\tilde P,\,P(\cdot\mid Y,\theta)\big) - H(\tilde P,\tilde P)\Big] = \ell_{\text{obs}}(\theta) - KL\big(\tilde P\,\Vert{}\,P(\cdot\mid Y,\theta)\big).$$
 
 ## EM as Alternating Optimization {.smaller}
 
