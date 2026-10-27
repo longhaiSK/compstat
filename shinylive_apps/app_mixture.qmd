@@ -120,6 +120,8 @@ ui <- fluidPage(
             h5("Starting value"),
             selectInput("preset", NULL, choices = names(presets),
                         selected = "far outside the data: (0.5, -10, 5)"),
+            actionButton("newstart", "Regenerate starting value", width = "100%"),
+            tags$div(style = "height: 10px;"),
 
             labeled_numeric("p0",   "p  ",   0.5, min = 0.01, max = 0.99, step = 0.1),
             labeled_numeric("mu10", "mu1",   -10,   step = 1),
@@ -163,12 +165,22 @@ server <- function(input, output, session) {
     })
 
     ## preset -> fill the three boxes
-    observeEvent(list(input$preset, input$dataset, input$n, seed()), {
+    ## "Regenerate starting value" draws a new random-labels start
+    observeEvent(input$newstart, {
+        if (input$preset != "random labels")
+            updateSelectInput(session, "preset", selected = "random labels")
+    })
+
+    observeEvent(list(input$preset, input$dataset, input$n, seed(), input$newstart), {
         pr <- presets[[input$preset]]
         if (is.null(pr)) return(invisible(NULL))          # manual entry
         if (length(pr) == 1 && is.na(pr)) {               # random labels
             y <- Y()
-            lab <- rbinom(length(y), 1, 0.5)
+            set.seed(NULL)                                # Y() fixes the seed; draw a fresh start
+            repeat {
+                lab <- rbinom(length(y), 1, 0.5)
+                if (any(lab == 1) && any(lab == 0)) break
+            }
             pr <- c(0.5, mean(y[lab == 1]), mean(y[lab == 0]))
         }
         updateNumericInput(session, "p0",   value = round(pr[1], 3))
@@ -451,6 +463,8 @@ ui <- fluidPage(
             h5("Starting value"),
             selectInput("preset", NULL, choices = names(presets),
                         selected = "far outside the data: (0.5, -10, 5)"),
+            actionButton("newstart", "Regenerate starting value", width = "100%"),
+            tags$div(style = "height: 10px;"),
 
             labeled_numeric("p0",   "p  ",   0.5, min = 0.01, max = 0.99, step = 0.1),
             labeled_numeric("mu10", "mu1",   -10,   step = 1),
@@ -494,12 +508,22 @@ server <- function(input, output, session) {
     })
 
     ## preset -> fill the three boxes
-    observeEvent(list(input$preset, input$dataset, input$n, seed()), {
+    ## "Regenerate starting value" draws a new random-labels start
+    observeEvent(input$newstart, {
+        if (input$preset != "random labels")
+            updateSelectInput(session, "preset", selected = "random labels")
+    })
+
+    observeEvent(list(input$preset, input$dataset, input$n, seed(), input$newstart), {
         pr <- presets[[input$preset]]
         if (is.null(pr)) return(invisible(NULL))          # manual entry
         if (length(pr) == 1 && is.na(pr)) {               # random labels
             y <- Y()
-            lab <- rbinom(length(y), 1, 0.5)
+            set.seed(NULL)                                # Y() fixes the seed; draw a fresh start
+            repeat {
+                lab <- rbinom(length(y), 1, 0.5)
+                if (any(lab == 1) && any(lab == 0)) break
+            }
             pr <- c(0.5, mean(y[lab == 1]), mean(y[lab == 0]))
         }
         updateNumericInput(session, "p0",   value = round(pr[1], 3))
