@@ -32,7 +32,7 @@ Thursday 1:00-2:00 PM, in MCLN 219, or online via [Zoom](https://usask-ca.zoom.u
 
 ## Course Materials
 
-1. [HTML Book with Detailed R Demo](compstat_book/){target="_blank"} [[PDF]](compstat_book/CompStat-LLi.pdf){target="_blank"}
+1. Textbook with R Demo: [[HTML]](compstat_book/){target="_blank"}, [[PDF]](compstat_book/CompStat-LLi.pdf){target="_blank"}
 2. [HTML Lecture Slides](compstat_slides/){target="_blank"}
 3. [Shinylive Apps for Statistical Computation](shinylive_apps/){target="_blank"}
 4. [One-drive folder for Assignments](https://usaskca1-my.sharepoint.com/:f:/g/personal/lol553_usask_ca/IgDx-SEhuq_kSJStlP6vZGQ2AeUjsg0RQ_sJNmZIRV1WhIk){target="_blank"}
