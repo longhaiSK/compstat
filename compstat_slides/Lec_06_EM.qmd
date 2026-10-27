@@ -247,14 +247,59 @@ where $KL(P\Vert{}q) = \int P(z)\log\frac{P(z)}{q(z)}\,dz \ge 0$.
 * **M-step** = maximize $F$ over $\theta$ with $\tilde P$ fixed: the second term of $F$ is free of $\theta$, so this is $\arg\max_\theta Q(\theta\mid\hat\theta^{(t)})$
 * **Tight Bound** = at $\theta = \hat\theta^{(t)}$ (after the E-step), $KL=0$, meaning the lower bound exactly equals the observed log-likelihood: $F(\tilde P,\hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$
 
+## EM as Coordinate Ascent on $F$: A Picture {.smaller}
+
+Left: $F(\tilde P,\theta)$ as a surface over $(\theta,\tilde P)$ (darker = higher; $\tilde P$ is a distribution of $Z$, here $P(Z=1)$). Along the dashed curve $\tilde P = P(\cdot\mid Y,\theta)$ we have $KL=0$, so $F=\ell_{\text{obs}}(\theta)$; everywhere else $F<\ell_{\text{obs}}(\theta)$. EM climbs by alternating moves:
+
+- **E-step**: move in $\tilde P$ (vertical) up to the dashed curve
+- **M-step**: move in $\theta$ (horizontal), $\tilde P$ fixed
+
+Right: each horizontal slice $F(\tilde P_t,\cdot)$ is a lower bound of $\ell_{\text{obs}}$ touching it at $\hat\theta^{(t)}$ (schematic example).
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.4
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
+lobs  <- function(th) -(th - 4)^2 / 8 + 0.3 * sin(th)
+qstar <- function(th) plogis(1.1 * (th - 2.5))            # P(z = 1 | Y, theta)
+kl    <- function(q, p) q * log(q / p) + (1 - q) * log((1 - q) / (1 - p))
+Fq    <- function(q, th) lobs(th) - kl(q, qstar(th))
+th <- seq(0, 8, length.out = 200); q <- seq(0.01, 0.99, length.out = 200)
+Fm <- outer(q, th, Fq)
+top <- max(lobs(th))
+image(th, q, t(Fm), col = hcl.colors(60, "YlGnBu", rev = TRUE), zlim = c(top - 4, top),
+      xlab = expression(theta), ylab = expression(tilde(P)(z == 1)), main = expression(F(tilde(P), theta)))
+contour(th, q, t(Fm), add = TRUE, levels = seq(top - 4, top, 0.5), col = "gray40", drawlabels = FALSE)
+lines(th, qstar(th), lty = 2, lwd = 2)
+text(0.2, 0.93, expression(tilde(P) == P(z==1*"|"*Y*","*theta)), adj = 0, cex = 0.9)
+t_cur <- 0.4; q_cur <- 0.02
+for (k in 1:5) {
+    qk <- qstar(t_cur)                                    # E-step: vertical move to the ridge
+    tn <- optimize(function(x) Fq(qk, x), c(0, 8), maximum = TRUE)$maximum   # M-step: horizontal move
+    arrows(t_cur, q_cur, t_cur, qk, length = 0.07, lwd = 2, col = "firebrick")
+    arrows(t_cur, qk, tn, qk, length = 0.07, lwd = 2, col = "darkorange")
+    t_cur <- tn; q_cur <- qk
+}
+legend("bottomright", bg = "white", lwd = 2, col = c("firebrick", "darkorange"), legend = c("E-step: move in P~", "M-step: move in theta"))
+curve(lobs(x), 0, 8, lwd = 3, xlab = expression(theta), ylab = "", main = expression(l[obs](theta)~and~F(tilde(P)[t], theta)), ylim = c(top - 4, top + 0.3))
+t_cur <- 0.4; cols <- c("firebrick", "darkorange", "forestgreen")
+for (k in 1:3) {
+    qk <- qstar(t_cur)
+    lines(th, Fq(qk, th), lwd = 2, lty = 2, col = cols[k])
+    points(t_cur, lobs(t_cur), pch = 19, col = cols[k])
+    t_cur <- optimize(function(x) Fq(qk, x), c(0, 8), maximum = TRUE)$maximum
+}
+```
+
 ## $Q$ Functions as Tangent Lower Bounds
 
-Take $\tilde P = P(\cdot\mid Y,\hat\theta^{(t)})$. Then $F(\tilde P,\theta) = Q(\theta\mid\hat\theta^{(t)}) + \text{const}$, where the constant $H(\tilde P,\tilde P)$ is free of $\theta$, and
-$$Q(\theta\mid\hat\theta^{(t)}) + \text{const} = \ell_{\text{obs}}(\theta) - KL\big(\tilde P\,\Vert{}\,P(\cdot\mid Y,\theta)\big) \ \le\ \ell_{\text{obs}}(\theta).$$
+Fix $\tilde P_t = P(\cdot\mid Y,\hat\theta^{(t)})$ and view $F(\tilde P_t,\theta)$ as a function of $\theta$ only. It equals $Q(\theta\mid\hat\theta^{(t)})$ plus the number $H(\tilde P_t,\tilde P_t)$, which differs from one iteration to the next but does not change with $\theta$, so it shifts the curve vertically without changing where its maximum is. By $F = \ell_{\text{obs}} - KL$:
 
-- **Lower bound**: $KL\ge 0$, so $Q + \text{const}$ lies **below** $\ell_{\text{obs}}$ everywhere
-- **Tangent**: $KL = 0$ at $\theta=\hat\theta^{(t)}$, so it **touches** $\ell_{\text{obs}}$ there
-- Maximizing it (the M-step) moves uphill on $\ell_{\text{obs}}$: the new point has $\ell_{\text{obs}} \ge Q+\text{const} \ge$ the old value
+- **Lower bound**: $F(\tilde P_t,\theta)\le\ell_{\text{obs}}(\theta)$ for all $\theta$, since $KL\ge 0$
+- **Tangent**: $F(\tilde P_t,\hat\theta^{(t)})=\ell_{\text{obs}}(\hat\theta^{(t)})$, since $KL=0$ there
+- **Uphill**: the M-step maximizes the bound, so $\ell_{\text{obs}}(\hat\theta^{(t+1)}) \ge F(\tilde P_t,\hat\theta^{(t+1)}) \ge F(\tilde P_t,\hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$
+
+The dashed curves show $F(\tilde P_t,\theta)$ for $t=0,1,2$.
 
 ```{r}
 #| fig-width: 9
@@ -274,7 +319,7 @@ for (k in 1:3) {
   lt <- lt_new
 }
 legend("bottomright", bty = "n", lwd = c(3, 2), lty = c(1, 2),
-       legend = c(expression(l[obs](theta)), expression(Q(theta*"|"*hat(theta)^(t)) + "const")))
+       legend = c(expression(l[obs](theta)), expression(F(tilde(P)[t]*","*theta))))
 ```
 
 
