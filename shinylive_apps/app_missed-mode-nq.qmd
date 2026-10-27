@@ -14,6 +14,30 @@ pagetitle: "missed-mode-nq-shinylive"
 #| viewerHeight: 600
 library(shiny)
 
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
+
 ui <- fluidPage(
     sidebarLayout(
         sidebarPanel(
@@ -101,6 +125,30 @@ Shows how a fixed quadrature grid can miss the posterior mode entirely, so that 
 
 ````r
 library(shiny)
+
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
 
 ui <- fluidPage(
     sidebarLayout(
