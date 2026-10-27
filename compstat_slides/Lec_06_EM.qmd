@@ -77,6 +77,9 @@ legend("bottomright", bty = "n", lwd = c(1, 3, 3), lty = c(1, 1, 2), col = c("gr
 **Definition**: for densities $P(z)$ and $q(z)$ on the same space,
 $$KL(P\|q) = \int P(z)\log\frac{P(z)}{q(z)}\,dz = E_P\!\left[\log\frac{P(Z)}{q(Z)}\right]$$
 
+It is the cross-entropy minus the entropy, where $H(P,q) = -\int P(z)\log q(z)\,dz$ is the **cross-entropy** and $H(P,P)$ the entropy of $P$:
+$$KL(P\|q) = H(P,q) - H(P,P)$$
+
 
 
 **Theorem (Gibbs' inequality)**: $KL(P\|q) \ge 0$, with equality iff $P = q$ (a.e.)
@@ -91,7 +94,7 @@ $$
 **Remarks:**
 
 - Measures how much $q$ diverges from $P$; not symmetric ($KL(P\|q)\ne KL(q\|P)$ in general).
-- This inequality is what forces the $H$-term to decrease in the ascending-property proof (next slides), and what makes $F(\tilde P,\theta)$ a lower bound on $\ell_{\text{obs}}(\theta)$ later on
+- Equivalently $H(P,q)\ge H(P,P)$: the cross-entropy is smallest at $q=P$. This is what forces the $H$-term to behave as needed in the ascending-property proof (next slides), and what makes $F(\tilde P,\theta)$ a lower bound on $\ell_{\text{obs}}(\theta)$ later on
 
 ## Simulation Check: $E_P[\log P(X)] > E_P[\log q(X)]$
 
@@ -140,30 +143,29 @@ Write $h(Y,Z\mid\theta) = P(Y,Z\mid\theta)$, $\;g(Y\mid\theta) = \int h(Y,Z\mid\
 **Key identity.** Since $\log g(Y\mid\theta) = \log h(Y,Z\mid\theta) - \log K(Z\mid Y,\theta)$ for every $Z$, taking $E_{Z\mid Y,\theta_0}$ of both sides gives, for any $\theta_0$,
 $$
 \ell_{\text{obs}}(\theta) = \underbrace{E_{Z\mid Y,\theta_0}\big[\log h(Y,Z\mid\theta)\big]}_{Q(\theta\mid\theta_0)}
-- \underbrace{E_{Z\mid Y,\theta_0}\big[\log K(Z\mid Y,\theta)\big]}_{H(\theta\mid\theta_0)}
++ \underbrace{\Big(-E_{Z\mid Y,\theta_0}\big[\log K(Z\mid Y,\theta)\big]\Big)}_{H\big(K(\cdot\mid Y,\theta_0),\,K(\cdot\mid Y,\theta)\big)}
 $$
 
-Intuition: maximizing $Q$ makes the first term larger, and for *any* optimizer $\theta$ the second term $H$ (without the minus sign) is decreased — so $\ell_{\text{obs}}$ is increased.
+The last term is the cross-entropy $H(P,q)$ of $q = K(\cdot\mid Y,\theta)$ relative to $P = K(\cdot\mid Y,\theta_0)$. Intuition: maximizing $Q$ makes the first term larger, and the cross-entropy is smallest at $\theta=\theta_0$ (Gibbs' inequality), so it can only grow when $\theta$ moves — hence $\ell_{\text{obs}}$ is increased.
 
 ## Formal Proof {style="font-size: 30px"}
 
-**Proof.** Set $\theta_0 = \hat\theta^{(t)}$ and subtract the identity $\ell_{\text{obs}}(\theta) = Q(\theta\mid\hat\theta^{(t)}) - H(\theta\mid\hat\theta^{(t)})$ evaluated at $\theta = \hat\theta^{(t)}$ from the same identity at $\theta = \hat\theta^{(t+1)}$:
+**Proof.** Write $K_t = K(\cdot\mid Y,\hat\theta^{(t)})$. Set $\theta_0 = \hat\theta^{(t)}$ and subtract the identity $\ell_{\text{obs}}(\theta) = Q(\theta\mid\hat\theta^{(t)}) + H(K_t, K(\cdot\mid Y,\theta))$ evaluated at $\theta = \hat\theta^{(t)}$ from the same identity at $\theta = \hat\theta^{(t+1)}$:
 $$
 \begin{aligned}
 \ell_{\text{obs}}(\hat\theta^{(t+1)}) - \ell_{\text{obs}}(\hat\theta^{(t)})
 &= \big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]
-- \big[H(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - H(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big] \\[2mm]
++ \big[H(K_t,K_{t+1}) - H(K_t,K_t)\big] \\[2mm]
 &= \underbrace{\big[Q(\hat\theta^{(t+1)}\mid\hat\theta^{(t)}) - Q(\hat\theta^{(t)}\mid\hat\theta^{(t)})\big]}_{\ge 0 \text{ by the M-step}}
-+ \underbrace{KL\big(K(\cdot\mid Y,\hat\theta^{(t)})\,\big\|\,K(\cdot\mid Y,\hat\theta^{(t+1)})\big)}_{\ge 0 \text{ by Gibbs' inequality}} \ \ge\ 0,
++ \underbrace{KL\big(K_t\,\big\|\,K_{t+1}\big)}_{\ge 0 \text{ by Gibbs' inequality}} \ \ge\ 0,
 \end{aligned}
 $$
-where the second line uses
+where the second line uses $H(P,q) - H(P,P) = KL(P\|q)$:
 $$
-H(\hat\theta^{(t)}\mid\hat\theta^{(t)}) - H(\theta\mid\hat\theta^{(t)})
-= E_{\hat\theta^{(t)}}\!\left[\log \frac{K(Z\mid Y,\hat\theta^{(t)})}{K(Z\mid Y,\theta)} \,\Big|\, Y\right]
-= KL\big(K(\cdot\mid Y,\hat\theta^{(t)})\,\big\|\,K(\cdot\mid Y,\theta)\big)
+H(K_t,K_{t+1}) - H(K_t,K_t)
+= E_{\hat\theta^{(t)}}\!\left[\log \frac{K(Z\mid Y,\hat\theta^{(t)})}{K(Z\mid Y,\hat\theta^{(t+1)})} \,\Big|\, Y\right]
+= KL\big(K_t\,\big\|\,K_{t+1}\big). \qquad\blacksquare
 $$
-at $\theta = \hat\theta^{(t+1)}$. $\blacksquare$
 
 ## The Function $F(\tilde P,\theta)$: Derivation {.smaller}
 
