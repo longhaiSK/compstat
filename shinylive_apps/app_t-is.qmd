@@ -1,6 +1,6 @@
 ---
 engine: markdown
-title: "Importance Sampling of a Student-$t$ Interval"
+title: "Estimate t Probability with Normal Sample"
 pagetitle: "t-is-shinylive"
 ---
 
@@ -73,30 +73,35 @@ is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
 }
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1),
-            sliderInput("c1", HTML("c<sub>1</sub>"), min = -5, max = 10, value = 1, step = 0.25),
-            sliderInput("c2", HTML("c<sub>2</sub>"), min = -5, max = 15, value = 3, step = 0.25),
-            checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE),
-            sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25),
-            sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25),
-            selectInput("S", "sample size  S",
-                        choices = c(200, 1000, 5000, 20000), selected = 1000),
-            actionButton("new", "New sample"),
-            checkboxInput("logw", "log scale for weights", FALSE)
-        ),
-        mainPanel(width = 9, plotOutput("panels", height = "680px"))
+    wellPanel(
+        fluidRow(
+            column(3, sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1)),
+            column(3, sliderInput("c", HTML("interval (c<sub>1</sub>, c<sub>2</sub>)"), min = -5, max = 15,
+                                  value = c(1, 3), step = 0.25),
+                      checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE)),
+            column(3, sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25)),
+            column(3, sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25))),
+        fluidRow(
+            column(3, selectInput("S", "sample size  S",
+                                  choices = c(200, 1000, 5000, 20000), selected = 1000)),
+            column(3, br(), actionButton("new", "New sample")),
+            column(3, br(), checkboxInput("logw", "log scale for weights", FALSE)))
+    ),
+    fluidRow(
+        column(8, plotOutput("panels", height = "560px")),
+        column(4,
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+            h5("Estimate"),
+            tableOutput("tab"))
     )
 )
 
-server <- function(input, output) {
+server <- function(input, output, session) {
 
     sim <- reactive({
         S  <- as.integer(input$S)
-        c1 <- input$c1
-        c2 <- if (input$c2inf) Inf else input$c2
+        c1 <- input$c[1]
+        c2 <- if (input$c2inf) Inf else input$c[2]
         validate(need(c2 > c1, "c2 must be greater than c1"))
         mu <- input$mu; sg <- input$sg; df <- input$df
 
@@ -139,15 +144,10 @@ server <- function(input, output) {
         lines(xs, gt, lwd = 3, col = "steelblue")
         rug(X, col = adjustcolor("steelblue", 0.25))
         legend("bottomleft", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lwd = c(4, 3, NA, NA, NA),
-               col = c("firebrick", "steelblue", NA, NA, NA),
-               text.col = c("black", "black", "black", "black", ci_col),
+               lwd = c(4, 3), col = c("firebrick", "steelblue"),
                legend = c(
                    sprintf("target: t(df=%g) on (c1, c2)", s$df),
-                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg),
-                   sprintf("true  P = %.5g", s$truth),
-                   sprintf("est.   P = %.5g", s$Chat),
-                   sprintf("95%% CI = (%.5g, %.5g)", lwr, upr)))
+                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg)))
 
         ## ---- bottom panel: normalized weights ------------------------
         par(mar = c(4.5, 5, 0.4, 1))
@@ -164,15 +164,21 @@ server <- function(input, output) {
         }
         abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
         legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lty = c(2, NA, NA), lwd = c(2, NA, NA),
-               col = c("darkgreen", NA, NA),
-               text.col = "blue",
-               legend = c("1 / S  (perfectly balanced weights)",
-                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
-                                  s$ess, 100 * s$ess / s$S, s$S),
-                          sprintf("largest weight = %.1f%% of the total",
-                                  100 * max(wn))))
+               lty = 2, lwd = 2, col = "darkgreen", legend = "1 / S  (perfectly balanced weights)")
     })
+
+    output$tab <- renderTable({
+        s <- sim()
+        lwr <- s$Chat - 1.96 * s$se; upr <- s$Chat + 1.96 * s$se
+        data.frame(
+            Quantity = c("true P(c1 < X < c2)", "estimate", "95% CI", "CI covers the truth?",
+                         "ESS", "ESS (% of S)", "largest weight (% of total)"),
+            Value = c(sprintf("%.5g", s$truth), sprintf("%.5g", s$Chat),
+                      sprintf("(%.5g, %.5g)", lwr, upr),
+                      if (lwr <= s$truth && s$truth <= upr) "yes" else "no",
+                      sprintf("%.1f", s$ess), sprintf("%.2f", 100 * s$ess / s$S),
+                      sprintf("%.1f", 100 * max(s$wn))))
+    }, striped = TRUE, align = "ll", width = "100%")
 }
 
 shinyApp(ui, server)
@@ -180,18 +186,19 @@ shinyApp(ui, server)
 
 ## About the app
 
-Shows how the choice of constants and proposal determines whether importance sampling of a Student-$t$ interval is reliable, by displaying the target, the proposal, and the importance weights. Sliders control $c_{1}$, $c_{2}$ (or $c_{2}=\infty$ via the checkbox), the target's degrees of freedom $\nu$, and the proposal's $\mu,\sigma$; the top panel compares the (normalized) target and proposal densities on a log scale, with the CI in the legend colored by whether it covers the truth, and the bottom panel shows the normalized importance weights at the sampled points.
+Shows how the choice of constants and proposal determines whether importance sampling of a Student-$t$ interval is reliable, by displaying the target, the proposal, and the importance weights. A two-handled slider sets $(c_{1},c_{2})$ (or $c_{2}=\infty$ via the checkbox), and further sliders set the target's degrees of freedom $\nu$ and the proposal's $\mu,\sigma$; the controls are in the panel at the top, the top plot compares the (normalized) target and proposal densities on a log scale, the bottom plot shows the normalized importance weights at the sampled points, and the table to the right of the plots gives the true probability, the estimate, its 95% CI (with whether it covers the truth), the effective sample size and the largest weight.
 
 The app above puts $c_{1}$, $c_{2}$, $\mu$, $\sigma$ and the target's degrees
 of freedom $\nu$ under slider control (a checkbox sends $c_{2}$ to $\infty$),
 and displays, on a common $x$-axis: the two truncated densities on a log
 scale with a rug of the draws, and the normalized importance weights
-$\tilde w_{i}=w_{i}/\sum_{j}w_{j}$ at the sampled points. The legend reports
-the true $P(c_{1}<X<c_{2})$, the estimate, and its nominal 95% interval,
-colored green when the interval covers the truth and red when it does not.
+$\tilde w_{i}=w_{i}/\sum_{j}w_{j}$ at the sampled points. The table beside
+the plots reports the true $P(c_{1}<X<c_{2})$, the estimate, its nominal 95%
+interval and whether the interval covers the truth, the effective sample size
+and the largest weight.
 Leave $c_{2}$ finite and the estimator behaves; check the box and watch it
 misbehave exactly as the variance calculation predicts, while
-$S_{\text{eff}}$ in the bottom panel need not warn you either way.
+$S_{\text{eff}}$ in the table need not warn you either way.
 
 Several settings repay attention.
 
@@ -278,30 +285,35 @@ is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
 }
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1),
-            sliderInput("c1", HTML("c<sub>1</sub>"), min = -5, max = 10, value = 1, step = 0.25),
-            sliderInput("c2", HTML("c<sub>2</sub>"), min = -5, max = 15, value = 3, step = 0.25),
-            checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE),
-            sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25),
-            sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25),
-            selectInput("S", "sample size  S",
-                        choices = c(200, 1000, 5000, 20000), selected = 1000),
-            actionButton("new", "New sample"),
-            checkboxInput("logw", "log scale for weights", FALSE)
-        ),
-        mainPanel(width = 9, plotOutput("panels", height = "680px"))
+    wellPanel(
+        fluidRow(
+            column(3, sliderInput("df", HTML("target df &nu;"), min = 1, max = 30, value = 3, step = 1)),
+            column(3, sliderInput("c", HTML("interval (c<sub>1</sub>, c<sub>2</sub>)"), min = -5, max = 15,
+                                  value = c(1, 3), step = 0.25),
+                      checkboxInput("c2inf", HTML("c<sub>2</sub> = &infin;  (infinite-variance case)"), FALSE)),
+            column(3, sliderInput("mu", HTML("proposal &mu;"), min = -5, max = 20, value = 0, step = 0.25)),
+            column(3, sliderInput("sg", HTML("proposal &sigma;"), min = 0.25, max = 10, value = 1, step = 0.25))),
+        fluidRow(
+            column(3, selectInput("S", "sample size  S",
+                                  choices = c(200, 1000, 5000, 20000), selected = 1000)),
+            column(3, br(), actionButton("new", "New sample")),
+            column(3, br(), checkboxInput("logw", "log scale for weights", FALSE)))
+    ),
+    fluidRow(
+        column(8, plotOutput("panels", height = "560px")),
+        column(4,
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+            h5("Estimate"),
+            tableOutput("tab"))
     )
 )
 
-server <- function(input, output) {
+server <- function(input, output, session) {
 
     sim <- reactive({
         S  <- as.integer(input$S)
-        c1 <- input$c1
-        c2 <- if (input$c2inf) Inf else input$c2
+        c1 <- input$c[1]
+        c2 <- if (input$c2inf) Inf else input$c[2]
         validate(need(c2 > c1, "c2 must be greater than c1"))
         mu <- input$mu; sg <- input$sg; df <- input$df
 
@@ -344,15 +356,10 @@ server <- function(input, output) {
         lines(xs, gt, lwd = 3, col = "steelblue")
         rug(X, col = adjustcolor("steelblue", 0.25))
         legend("bottomleft", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lwd = c(4, 3, NA, NA, NA),
-               col = c("firebrick", "steelblue", NA, NA, NA),
-               text.col = c("black", "black", "black", "black", ci_col),
+               lwd = c(4, 3), col = c("firebrick", "steelblue"),
                legend = c(
                    sprintf("target: t(df=%g) on (c1, c2)", s$df),
-                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg),
-                   sprintf("true  P = %.5g", s$truth),
-                   sprintf("est.   P = %.5g", s$Chat),
-                   sprintf("95%% CI = (%.5g, %.5g)", lwr, upr)))
+                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg)))
 
         ## ---- bottom panel: normalized weights ------------------------
         par(mar = c(4.5, 5, 0.4, 1))
@@ -369,15 +376,21 @@ server <- function(input, output) {
         }
         abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
         legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lty = c(2, NA, NA), lwd = c(2, NA, NA),
-               col = c("darkgreen", NA, NA),
-               text.col = "blue",
-               legend = c("1 / S  (perfectly balanced weights)",
-                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
-                                  s$ess, 100 * s$ess / s$S, s$S),
-                          sprintf("largest weight = %.1f%% of the total",
-                                  100 * max(wn))))
+               lty = 2, lwd = 2, col = "darkgreen", legend = "1 / S  (perfectly balanced weights)")
     })
+
+    output$tab <- renderTable({
+        s <- sim()
+        lwr <- s$Chat - 1.96 * s$se; upr <- s$Chat + 1.96 * s$se
+        data.frame(
+            Quantity = c("true P(c1 < X < c2)", "estimate", "95% CI", "CI covers the truth?",
+                         "ESS", "ESS (% of S)", "largest weight (% of total)"),
+            Value = c(sprintf("%.5g", s$truth), sprintf("%.5g", s$Chat),
+                      sprintf("(%.5g, %.5g)", lwr, upr),
+                      if (lwr <= s$truth && s$truth <= upr) "yes" else "no",
+                      sprintf("%.1f", s$ess), sprintf("%.2f", 100 * s$ess / s$S),
+                      sprintf("%.1f", 100 * max(s$wn))))
+    }, striped = TRUE, align = "ll", width = "100%")
 }
 
 shinyApp(ui, server)

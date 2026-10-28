@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-27">
+<meta name="dcterms.date" content="2026-10-28">
 
 <title>t-is-shinylive – Shinylive Apps for Statistical Computation</title>
 <style>
@@ -220,7 +220,7 @@ window.Quarto = {
   </li>  
         <li>
     <a class="dropdown-item" href="./app_t-is.html">
- <span class="dropdown-text">Importance Sampling of a Student-t Interval</span></a>
+ <span class="dropdown-text">Estimate t Probability with Normal Sample</span></a>
   </li>  
         <li>
     <a class="dropdown-item" href="./app_marlik.html">
@@ -252,7 +252,7 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Importance Sampling of a Student-<span class="math inline">\(t\)</span> Interval</h1>
+<h1 class="title">Estimate t Probability with Normal Sample</h1>
 </div>
 
 
@@ -269,7 +269,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 27, 2026</p>
+      <p class="date">October 28, 2026</p>
     </div>
   </div>
   
@@ -351,30 +351,35 @@ is_t_interval &lt;- function(S, df, c1, c2, mu, sigma, seed = NULL) {
 }
 
 ui &lt;- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("df", HTML("target df &amp;nu;"), min = 1, max = 30, value = 3, step = 1),
-            sliderInput("c1", HTML("c&lt;sub&gt;1&lt;/sub&gt;"), min = -5, max = 10, value = 1, step = 0.25),
-            sliderInput("c2", HTML("c&lt;sub&gt;2&lt;/sub&gt;"), min = -5, max = 15, value = 3, step = 0.25),
-            checkboxInput("c2inf", HTML("c&lt;sub&gt;2&lt;/sub&gt; = &amp;infin;  (infinite-variance case)"), FALSE),
-            sliderInput("mu", HTML("proposal &amp;mu;"), min = -5, max = 20, value = 0, step = 0.25),
-            sliderInput("sg", HTML("proposal &amp;sigma;"), min = 0.25, max = 10, value = 1, step = 0.25),
-            selectInput("S", "sample size  S",
-                        choices = c(200, 1000, 5000, 20000), selected = 1000),
-            actionButton("new", "New sample"),
-            checkboxInput("logw", "log scale for weights", FALSE)
-        ),
-        mainPanel(width = 9, plotOutput("panels", height = "680px"))
+    wellPanel(
+        fluidRow(
+            column(3, sliderInput("df", HTML("target df &amp;nu;"), min = 1, max = 30, value = 3, step = 1)),
+            column(3, sliderInput("c", HTML("interval (c&lt;sub&gt;1&lt;/sub&gt;, c&lt;sub&gt;2&lt;/sub&gt;)"), min = -5, max = 15,
+                                  value = c(1, 3), step = 0.25),
+                      checkboxInput("c2inf", HTML("c&lt;sub&gt;2&lt;/sub&gt; = &amp;infin;  (infinite-variance case)"), FALSE)),
+            column(3, sliderInput("mu", HTML("proposal &amp;mu;"), min = -5, max = 20, value = 0, step = 0.25)),
+            column(3, sliderInput("sg", HTML("proposal &amp;sigma;"), min = 0.25, max = 10, value = 1, step = 0.25))),
+        fluidRow(
+            column(3, selectInput("S", "sample size  S",
+                                  choices = c(200, 1000, 5000, 20000), selected = 1000)),
+            column(3, br(), actionButton("new", "New sample")),
+            column(3, br(), checkboxInput("logw", "log scale for weights", FALSE)))
+    ),
+    fluidRow(
+        column(8, plotOutput("panels", height = "560px")),
+        column(4,
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+            h5("Estimate"),
+            tableOutput("tab"))
     )
 )
 
-server &lt;- function(input, output) {
+server &lt;- function(input, output, session) {
 
     sim &lt;- reactive({
         S  &lt;- as.integer(input$S)
-        c1 &lt;- input$c1
-        c2 &lt;- if (input$c2inf) Inf else input$c2
+        c1 &lt;- input$c[1]
+        c2 &lt;- if (input$c2inf) Inf else input$c[2]
         validate(need(c2 &gt; c1, "c2 must be greater than c1"))
         mu &lt;- input$mu; sg &lt;- input$sg; df &lt;- input$df
 
@@ -417,15 +422,10 @@ server &lt;- function(input, output) {
         lines(xs, gt, lwd = 3, col = "steelblue")
         rug(X, col = adjustcolor("steelblue", 0.25))
         legend("bottomleft", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lwd = c(4, 3, NA, NA, NA),
-               col = c("firebrick", "steelblue", NA, NA, NA),
-               text.col = c("black", "black", "black", "black", ci_col),
+               lwd = c(4, 3), col = c("firebrick", "steelblue"),
                legend = c(
                    sprintf("target: t(df=%g) on (c1, c2)", s$df),
-                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg),
-                   sprintf("true  P = %.5g", s$truth),
-                   sprintf("est.   P = %.5g", s$Chat),
-                   sprintf("95%% CI = (%.5g, %.5g)", lwr, upr)))
+                   sprintf("proposal: N(%.2f, %.2f^2) on (c1, c2)", s$mu, s$sg)))
 
         ## ---- bottom panel: normalized weights ------------------------
         par(mar = c(4.5, 5, 0.4, 1))
@@ -442,22 +442,28 @@ server &lt;- function(input, output) {
         }
         abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
         legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lty = c(2, NA, NA), lwd = c(2, NA, NA),
-               col = c("darkgreen", NA, NA),
-               text.col = "blue",
-               legend = c("1 / S  (perfectly balanced weights)",
-                          sprintf("ESS = %.1f   (%.2f%% of S = %d)",
-                                  s$ess, 100 * s$ess / s$S, s$S),
-                          sprintf("largest weight = %.1f%% of the total",
-                                  100 * max(wn))))
+               lty = 2, lwd = 2, col = "darkgreen", legend = "1 / S  (perfectly balanced weights)")
     })
+
+    output$tab &lt;- renderTable({
+        s &lt;- sim()
+        lwr &lt;- s$Chat - 1.96 * s$se; upr &lt;- s$Chat + 1.96 * s$se
+        data.frame(
+            Quantity = c("true P(c1 &lt; X &lt; c2)", "estimate", "95% CI", "CI covers the truth?",
+                         "ESS", "ESS (% of S)", "largest weight (% of total)"),
+            Value = c(sprintf("%.5g", s$truth), sprintf("%.5g", s$Chat),
+                      sprintf("(%.5g, %.5g)", lwr, upr),
+                      if (lwr &lt;= s$truth &amp;&amp; s$truth &lt;= upr) "yes" else "no",
+                      sprintf("%.1f", s$ess), sprintf("%.2f", 100 * s$ess / s$S),
+                      sprintf("%.1f", 100 * max(s$wn))))
+    }, striped = TRUE, align = "ll", width = "100%")
 }
 
 shinyApp(ui, server)</code></pre>
 <section id="about-the-app" class="level2">
 <h2 class="anchored" data-anchor-id="about-the-app">About the app</h2>
-<p>Shows how the choice of constants and proposal determines whether importance sampling of a Student-<span class="math inline">\(t\)</span> interval is reliable, by displaying the target, the proposal, and the importance weights. Sliders control <span class="math inline">\(c_{1}\)</span>, <span class="math inline">\(c_{2}\)</span> (or <span class="math inline">\(c_{2}=\infty\)</span> via the checkbox), the target’s degrees of freedom <span class="math inline">\(\nu\)</span>, and the proposal’s <span class="math inline">\(\mu,\sigma\)</span>; the top panel compares the (normalized) target and proposal densities on a log scale, with the CI in the legend colored by whether it covers the truth, and the bottom panel shows the normalized importance weights at the sampled points.</p>
-<p>The app above puts <span class="math inline">\(c_{1}\)</span>, <span class="math inline">\(c_{2}\)</span>, <span class="math inline">\(\mu\)</span>, <span class="math inline">\(\sigma\)</span> and the target’s degrees of freedom <span class="math inline">\(\nu\)</span> under slider control (a checkbox sends <span class="math inline">\(c_{2}\)</span> to <span class="math inline">\(\infty\)</span>), and displays, on a common <span class="math inline">\(x\)</span>-axis: the two truncated densities on a log scale with a rug of the draws, and the normalized importance weights <span class="math inline">\(\tilde w_{i}=w_{i}/\sum_{j}w_{j}\)</span> at the sampled points. The legend reports the true <span class="math inline">\(P(c_{1}&lt;X&lt;c_{2})\)</span>, the estimate, and its nominal 95% interval, colored green when the interval covers the truth and red when it does not. Leave <span class="math inline">\(c_{2}\)</span> finite and the estimator behaves; check the box and watch it misbehave exactly as the variance calculation predicts, while <span class="math inline">\(S_{\text{eff}}\)</span> in the bottom panel need not warn you either way.</p>
+<p>Shows how the choice of constants and proposal determines whether importance sampling of a Student-<span class="math inline">\(t\)</span> interval is reliable, by displaying the target, the proposal, and the importance weights. A two-handled slider sets <span class="math inline">\((c_{1},c_{2})\)</span> (or <span class="math inline">\(c_{2}=\infty\)</span> via the checkbox), and further sliders set the target’s degrees of freedom <span class="math inline">\(\nu\)</span> and the proposal’s <span class="math inline">\(\mu,\sigma\)</span>; the controls are in the panel at the top, the top plot compares the (normalized) target and proposal densities on a log scale, the bottom plot shows the normalized importance weights at the sampled points, and the table to the right of the plots gives the true probability, the estimate, its 95% CI (with whether it covers the truth), the effective sample size and the largest weight.</p>
+<p>The app above puts <span class="math inline">\(c_{1}\)</span>, <span class="math inline">\(c_{2}\)</span>, <span class="math inline">\(\mu\)</span>, <span class="math inline">\(\sigma\)</span> and the target’s degrees of freedom <span class="math inline">\(\nu\)</span> under slider control (a checkbox sends <span class="math inline">\(c_{2}\)</span> to <span class="math inline">\(\infty\)</span>), and displays, on a common <span class="math inline">\(x\)</span>-axis: the two truncated densities on a log scale with a rug of the draws, and the normalized importance weights <span class="math inline">\(\tilde w_{i}=w_{i}/\sum_{j}w_{j}\)</span> at the sampled points. The table beside the plots reports the true <span class="math inline">\(P(c_{1}&lt;X&lt;c_{2})\)</span>, the estimate, its nominal 95% interval and whether the interval covers the truth, the effective sample size and the largest weight. Leave <span class="math inline">\(c_{2}\)</span> finite and the estimator behaves; check the box and watch it misbehave exactly as the variance calculation predicts, while <span class="math inline">\(S_{\text{eff}}\)</span> in the table need not warn you either way.</p>
 <p>Several settings repay attention.</p>
 <ul>
 <li><strong><span class="math inline">\(c_{2}\)</span> finite (the default).</strong> Target and proposal share the same bounded support, so the weights have finite variance: raising <span class="math inline">\(S\)</span> improves the estimate at the usual <span class="math inline">\(1/\sqrt S\)</span> rate, and the 95% interval covers about as often as it claims to.</li>
@@ -538,81 +544,81 @@ shinyApp(ui, server)</code></pre>
 <span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
-<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sidebarLayout</span>(</span>
-<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sidebarPanel</span>(</span>
-<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>            <span class="at">width =</span> <span class="dv">3</span>,</span>
-<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>            <span class="fu">sliderInput</span>(<span class="st">"df"</span>, <span class="fu">HTML</span>(<span class="st">"target df &amp;nu;"</span>), <span class="at">min =</span> <span class="dv">1</span>, <span class="at">max =</span> <span class="dv">30</span>, <span class="at">value =</span> <span class="dv">3</span>, <span class="at">step =</span> <span class="dv">1</span>),</span>
-<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>            <span class="fu">sliderInput</span>(<span class="st">"c1"</span>, <span class="fu">HTML</span>(<span class="st">"c&lt;sub&gt;1&lt;/sub&gt;"</span>), <span class="at">min =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">max =</span> <span class="dv">10</span>, <span class="at">value =</span> <span class="dv">1</span>, <span class="at">step =</span> <span class="fl">0.25</span>),</span>
-<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>            <span class="fu">sliderInput</span>(<span class="st">"c2"</span>, <span class="fu">HTML</span>(<span class="st">"c&lt;sub&gt;2&lt;/sub&gt;"</span>), <span class="at">min =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">max =</span> <span class="dv">15</span>, <span class="at">value =</span> <span class="dv">3</span>, <span class="at">step =</span> <span class="fl">0.25</span>),</span>
-<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>            <span class="fu">checkboxInput</span>(<span class="st">"c2inf"</span>, <span class="fu">HTML</span>(<span class="st">"c&lt;sub&gt;2&lt;/sub&gt; = &amp;infin;  (infinite-variance case)"</span>), <span class="cn">FALSE</span>),</span>
-<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>            <span class="fu">sliderInput</span>(<span class="st">"mu"</span>, <span class="fu">HTML</span>(<span class="st">"proposal &amp;mu;"</span>), <span class="at">min =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">max =</span> <span class="dv">20</span>, <span class="at">value =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="fl">0.25</span>),</span>
-<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>            <span class="fu">sliderInput</span>(<span class="st">"sg"</span>, <span class="fu">HTML</span>(<span class="st">"proposal &amp;sigma;"</span>), <span class="at">min =</span> <span class="fl">0.25</span>, <span class="at">max =</span> <span class="dv">10</span>, <span class="at">value =</span> <span class="dv">1</span>, <span class="at">step =</span> <span class="fl">0.25</span>),</span>
-<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>            <span class="fu">selectInput</span>(<span class="st">"S"</span>, <span class="st">"sample size  S"</span>,</span>
-<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>                        <span class="at">choices =</span> <span class="fu">c</span>(<span class="dv">200</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">20000</span>), <span class="at">selected =</span> <span class="dv">1000</span>),</span>
-<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>            <span class="fu">actionButton</span>(<span class="st">"new"</span>, <span class="st">"New sample"</span>),</span>
-<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>            <span class="fu">checkboxInput</span>(<span class="st">"logw"</span>, <span class="st">"log scale for weights"</span>, <span class="cn">FALSE</span>)</span>
-<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>        ),</span>
-<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>        <span class="fu">mainPanel</span>(<span class="at">width =</span> <span class="dv">9</span>, <span class="fu">plotOutput</span>(<span class="st">"panels"</span>, <span class="at">height =</span> <span class="st">"680px"</span>))</span>
-<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output) {</span>
-<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>    sim <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
-<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>        S  <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(input<span class="sc">$</span>S)</span>
-<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>        c1 <span class="ot">&lt;-</span> input<span class="sc">$</span>c1</span>
-<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>        c2 <span class="ot">&lt;-</span> <span class="cf">if</span> (input<span class="sc">$</span>c2inf) <span class="cn">Inf</span> <span class="cf">else</span> input<span class="sc">$</span>c2</span>
-<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>        <span class="fu">validate</span>(<span class="fu">need</span>(c2 <span class="sc">&gt;</span> c1, <span class="st">"c2 must be greater than c1"</span>))</span>
-<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>        mu <span class="ot">&lt;-</span> input<span class="sc">$</span>mu; sg <span class="ot">&lt;-</span> input<span class="sc">$</span>sg; df <span class="ot">&lt;-</span> input<span class="sc">$</span>df</span>
-<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>        r <span class="ot">&lt;-</span> <span class="fu">is_t_interval</span>(S, df, c1, c2, mu, sg, <span class="at">seed =</span> input<span class="sc">$</span>new <span class="sc">+</span> <span class="dv">1</span>)</span>
-<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>        <span class="fu">c</span>(r, <span class="fu">list</span>(<span class="at">S =</span> S, <span class="at">c1 =</span> c1, <span class="at">c2 =</span> c2, <span class="at">mu =</span> mu, <span class="at">sg =</span> sg, <span class="at">df =</span> df))</span>
-<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>panels <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>        s  <span class="ot">&lt;-</span> <span class="fu">sim</span>()</span>
-<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        c1 <span class="ot">&lt;-</span> s<span class="sc">$</span>c1; c2 <span class="ot">&lt;-</span> s<span class="sc">$</span>c2; X <span class="ot">&lt;-</span> s<span class="sc">$</span>X</span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        lo <span class="ot">&lt;-</span> c1</span>
-<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>        hi <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(c2)) c2 <span class="cf">else</span> <span class="fu">max</span>(<span class="fu">max</span>(X) <span class="sc">+</span> <span class="fl">0.5</span>, c1 <span class="sc">+</span> <span class="dv">5</span>)</span>
-<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>        xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(lo, hi, <span class="at">length.out =</span> <span class="dv">800</span>)</span>
-<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>        <span class="do">## both densities normalized on (c1, c2)</span></span>
-<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>        ft <span class="ot">&lt;-</span> <span class="fu">dt</span>(xs, s<span class="sc">$</span>df) <span class="sc">/</span> s<span class="sc">$</span>truth</span>
-<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>        gt <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(xs, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg) <span class="sc">/</span> (<span class="fu">pnorm</span>(c2, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg) <span class="sc">-</span> <span class="fu">pnorm</span>(c1, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg))</span>
-<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>        yl <span class="ot">&lt;-</span> <span class="fu">range</span>(<span class="fu">c</span>(ft, gt)[<span class="fu">c</span>(ft, gt) <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
-<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>        yl[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">max</span>(yl[<span class="dv">1</span>], <span class="fl">1e-12</span>)</span>
-<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>        lwr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se</span>
-<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>        upr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se</span>
-<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        covered <span class="ot">&lt;-</span> lwr <span class="sc">&lt;=</span> s<span class="sc">$</span>truth <span class="sc">&amp;&amp;</span> s<span class="sc">$</span>truth <span class="sc">&lt;=</span> upr</span>
-<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>        ci_col  <span class="ot">&lt;-</span> <span class="cf">if</span> (covered) <span class="st">"darkgreen"</span> <span class="cf">else</span> <span class="st">"firebrick"</span></span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>    <span class="fu">wellPanel</span>(</span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">sliderInput</span>(<span class="st">"df"</span>, <span class="fu">HTML</span>(<span class="st">"target df &amp;nu;"</span>), <span class="at">min =</span> <span class="dv">1</span>, <span class="at">max =</span> <span class="dv">30</span>, <span class="at">value =</span> <span class="dv">3</span>, <span class="at">step =</span> <span class="dv">1</span>)),</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">sliderInput</span>(<span class="st">"c"</span>, <span class="fu">HTML</span>(<span class="st">"interval (c&lt;sub&gt;1&lt;/sub&gt;, c&lt;sub&gt;2&lt;/sub&gt;)"</span>), <span class="at">min =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">max =</span> <span class="dv">15</span>,</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">value =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">step =</span> <span class="fl">0.25</span>),</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">checkboxInput</span>(<span class="st">"c2inf"</span>, <span class="fu">HTML</span>(<span class="st">"c&lt;sub&gt;2&lt;/sub&gt; = &amp;infin;  (infinite-variance case)"</span>), <span class="cn">FALSE</span>)),</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">sliderInput</span>(<span class="st">"mu"</span>, <span class="fu">HTML</span>(<span class="st">"proposal &amp;mu;"</span>), <span class="at">min =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">max =</span> <span class="dv">20</span>, <span class="at">value =</span> <span class="dv">0</span>, <span class="at">step =</span> <span class="fl">0.25</span>)),</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">sliderInput</span>(<span class="st">"sg"</span>, <span class="fu">HTML</span>(<span class="st">"proposal &amp;sigma;"</span>), <span class="at">min =</span> <span class="fl">0.25</span>, <span class="at">max =</span> <span class="dv">10</span>, <span class="at">value =</span> <span class="dv">1</span>, <span class="at">step =</span> <span class="fl">0.25</span>))),</span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">selectInput</span>(<span class="st">"S"</span>, <span class="st">"sample size  S"</span>,</span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">choices =</span> <span class="fu">c</span>(<span class="dv">200</span>, <span class="dv">1000</span>, <span class="dv">5000</span>, <span class="dv">20000</span>), <span class="at">selected =</span> <span class="dv">1000</span>)),</span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"new"</span>, <span class="st">"New sample"</span>)),</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">3</span>, <span class="fu">br</span>(), <span class="fu">checkboxInput</span>(<span class="st">"logw"</span>, <span class="st">"log scale for weights"</span>, <span class="cn">FALSE</span>)))</span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">8</span>, <span class="fu">plotOutput</span>(<span class="st">"panels"</span>, <span class="at">height =</span> <span class="st">"560px"</span>)),</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">4</span>,</span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>            tags<span class="sc">$</span><span class="fu">style</span>(<span class="st">"#tab td, #tab th { white-space: nowrap; }"</span>),</span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>            <span class="fu">h5</span>(<span class="st">"Estimate"</span>),</span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>            <span class="fu">tableOutput</span>(<span class="st">"tab"</span>))</span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>    sim <span class="ot">&lt;-</span> <span class="fu">reactive</span>({</span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>        S  <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(input<span class="sc">$</span>S)</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>        c1 <span class="ot">&lt;-</span> input<span class="sc">$</span>c[<span class="dv">1</span>]</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>        c2 <span class="ot">&lt;-</span> <span class="cf">if</span> (input<span class="sc">$</span>c2inf) <span class="cn">Inf</span> <span class="cf">else</span> input<span class="sc">$</span>c[<span class="dv">2</span>]</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>        <span class="fu">validate</span>(<span class="fu">need</span>(c2 <span class="sc">&gt;</span> c1, <span class="st">"c2 must be greater than c1"</span>))</span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>        mu <span class="ot">&lt;-</span> input<span class="sc">$</span>mu; sg <span class="ot">&lt;-</span> input<span class="sc">$</span>sg; df <span class="ot">&lt;-</span> input<span class="sc">$</span>df</span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>        r <span class="ot">&lt;-</span> <span class="fu">is_t_interval</span>(S, df, c1, c2, mu, sg, <span class="at">seed =</span> input<span class="sc">$</span>new <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        <span class="fu">c</span>(r, <span class="fu">list</span>(<span class="at">S =</span> S, <span class="at">c1 =</span> c1, <span class="at">c2 =</span> c2, <span class="at">mu =</span> mu, <span class="at">sg =</span> sg, <span class="at">df =</span> df))</span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>panels <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>        s  <span class="ot">&lt;-</span> <span class="fu">sim</span>()</span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>        c1 <span class="ot">&lt;-</span> s<span class="sc">$</span>c1; c2 <span class="ot">&lt;-</span> s<span class="sc">$</span>c2; X <span class="ot">&lt;-</span> s<span class="sc">$</span>X</span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>        lo <span class="ot">&lt;-</span> c1</span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>        hi <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">is.finite</span>(c2)) c2 <span class="cf">else</span> <span class="fu">max</span>(<span class="fu">max</span>(X) <span class="sc">+</span> <span class="fl">0.5</span>, c1 <span class="sc">+</span> <span class="dv">5</span>)</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>        xs <span class="ot">&lt;-</span> <span class="fu">seq</span>(lo, hi, <span class="at">length.out =</span> <span class="dv">800</span>)</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>        <span class="do">## both densities normalized on (c1, c2)</span></span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>        ft <span class="ot">&lt;-</span> <span class="fu">dt</span>(xs, s<span class="sc">$</span>df) <span class="sc">/</span> s<span class="sc">$</span>truth</span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>        gt <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(xs, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg) <span class="sc">/</span> (<span class="fu">pnorm</span>(c2, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg) <span class="sc">-</span> <span class="fu">pnorm</span>(c1, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg))</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        yl <span class="ot">&lt;-</span> <span class="fu">range</span>(<span class="fu">c</span>(ft, gt)[<span class="fu">c</span>(ft, gt) <span class="sc">&gt;</span> <span class="dv">0</span>])</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>        yl[<span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">max</span>(yl[<span class="dv">1</span>], <span class="fl">1e-12</span>)</span>
 <span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>        <span class="fu">layout</span>(<span class="fu">matrix</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>, <span class="dv">2</span>), <span class="at">heights =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">2</span>))</span>
-<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>        <span class="do">## ---- top panel: the two densities ----------------------------</span></span>
-<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">0.4</span>, <span class="dv">5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
-<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(xs, ft, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"y"</span>, <span class="at">ylim =</span> yl, <span class="at">xlim =</span> <span class="fu">c</span>(lo, hi),</span>
-<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>             <span class="at">xaxt =</span> <span class="st">"n"</span>, <span class="at">xlab =</span> <span class="st">""</span>, <span class="at">ylab =</span> <span class="st">"density (log scale)"</span>,</span>
-<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="st">"target and proposal, both normalized on (c1, c2)"</span>)</span>
-<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(c2)) {</span>
-<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>            <span class="fu">rect</span>(<span class="fu">max</span>(X), yl[<span class="dv">1</span>], hi, yl[<span class="dv">2</span>] <span class="sc">*</span> <span class="dv">10</span>,</span>
-<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>                 <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"grey60"</span>, <span class="fl">0.18</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>            <span class="fu">text</span>(<span class="fu">max</span>(X), yl[<span class="dv">2</span>], <span class="st">"  no draw ever reached here"</span>, <span class="at">adj =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.4</span>),</span>
-<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>                 <span class="at">col =</span> <span class="st">"grey35"</span>, <span class="at">cex =</span> <span class="fl">0.95</span>)</span>
-<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xs, ft, <span class="at">lwd =</span> <span class="dv">4</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
-<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xs, gt, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
-<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rug</span>(X, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"steelblue"</span>, <span class="fl">0.25</span>))</span>
-<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomleft"</span>, <span class="at">inset =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.05</span>), <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">1.05</span>,</span>
-<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>               <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">3</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>               <span class="at">text.col =</span> <span class="fu">c</span>(<span class="st">"black"</span>, <span class="st">"black"</span>, <span class="st">"black"</span>, <span class="st">"black"</span>, ci_col),</span>
-<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(</span>
-<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"target: t(df=%g) on (c1, c2)"</span>, s<span class="sc">$</span>df),</span>
-<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"proposal: N(%.2f, %.2f^2) on (c1, c2)"</span>, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg),</span>
-<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"true  P = %.5g"</span>, s<span class="sc">$</span>truth),</span>
-<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"est.   P = %.5g"</span>, s<span class="sc">$</span>Chat),</span>
-<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"95%% CI = (%.5g, %.5g)"</span>, lwr, upr)))</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>        lwr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se</span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>        upr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>        covered <span class="ot">&lt;-</span> lwr <span class="sc">&lt;=</span> s<span class="sc">$</span>truth <span class="sc">&amp;&amp;</span> s<span class="sc">$</span>truth <span class="sc">&lt;=</span> upr</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>        ci_col  <span class="ot">&lt;-</span> <span class="cf">if</span> (covered) <span class="st">"darkgreen"</span> <span class="cf">else</span> <span class="st">"firebrick"</span></span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>        <span class="fu">layout</span>(<span class="fu">matrix</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>, <span class="dv">2</span>), <span class="at">heights =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">2</span>))</span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>        <span class="do">## ---- top panel: the two densities ----------------------------</span></span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">0.4</span>, <span class="dv">5</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(xs, ft, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"y"</span>, <span class="at">ylim =</span> yl, <span class="at">xlim =</span> <span class="fu">c</span>(lo, hi),</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>             <span class="at">xaxt =</span> <span class="st">"n"</span>, <span class="at">xlab =</span> <span class="st">""</span>, <span class="at">ylab =</span> <span class="st">"density (log scale)"</span>,</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="st">"target and proposal, both normalized on (c1, c2)"</span>)</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(c2)) {</span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>            <span class="fu">rect</span>(<span class="fu">max</span>(X), yl[<span class="dv">1</span>], hi, yl[<span class="dv">2</span>] <span class="sc">*</span> <span class="dv">10</span>,</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>                 <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"grey60"</span>, <span class="fl">0.18</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>            <span class="fu">text</span>(<span class="fu">max</span>(X), yl[<span class="dv">2</span>], <span class="st">"  no draw ever reached here"</span>, <span class="at">adj =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">1.4</span>),</span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>                 <span class="at">col =</span> <span class="st">"grey35"</span>, <span class="at">cex =</span> <span class="fl">0.95</span>)</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xs, ft, <span class="at">lwd =</span> <span class="dv">4</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xs, gt, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rug</span>(X, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"steelblue"</span>, <span class="fl">0.25</span>))</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomleft"</span>, <span class="at">inset =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.05</span>), <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">1.05</span>,</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>               <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">3</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>),</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"target: t(df=%g) on (c1, c2)"</span>, s<span class="sc">$</span>df),</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">sprintf</span>(<span class="st">"proposal: N(%.2f, %.2f^2) on (c1, c2)"</span>, s<span class="sc">$</span>mu, s<span class="sc">$</span>sg)))</span>
 <span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>        <span class="do">## ---- bottom panel: normalized weights ------------------------</span></span>
 <span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">4.5</span>, <span class="dv">5</span>, <span class="fl">0.4</span>, <span class="dv">1</span>))</span>
@@ -629,18 +635,24 @@ shinyApp(ui, server)</code></pre>
 <span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>        }</span>
 <span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>        <span class="fu">abline</span>(<span class="at">h =</span> <span class="dv">1</span> <span class="sc">/</span> s<span class="sc">$</span>S, <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"darkgreen"</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
 <span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">inset =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.05</span>), <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">1.05</span>,</span>
-<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>               <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"darkgreen"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>               <span class="at">text.col =</span> <span class="st">"blue"</span>,</span>
-<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"1 / S  (perfectly balanced weights)"</span>,</span>
-<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">sprintf</span>(<span class="st">"ESS = %.1f   (%.2f%% of S = %d)"</span>,</span>
-<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>                                  s<span class="sc">$</span>ess, <span class="dv">100</span> <span class="sc">*</span> s<span class="sc">$</span>ess <span class="sc">/</span> s<span class="sc">$</span>S, s<span class="sc">$</span>S),</span>
-<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">sprintf</span>(<span class="st">"largest weight = %.1f%% of the total"</span>,</span>
-<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>                                  <span class="dv">100</span> <span class="sc">*</span> <span class="fu">max</span>(wn))))</span>
-<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>               <span class="at">lty =</span> <span class="dv">2</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"darkgreen"</span>, <span class="at">legend =</span> <span class="st">"1 / S  (perfectly balanced weights)"</span>)</span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>tab <span class="ot">&lt;-</span> <span class="fu">renderTable</span>({</span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>        s <span class="ot">&lt;-</span> <span class="fu">sim</span>()</span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>        lwr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se; upr <span class="ot">&lt;-</span> s<span class="sc">$</span>Chat <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> s<span class="sc">$</span>se</span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>        <span class="fu">data.frame</span>(</span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>            <span class="at">Quantity =</span> <span class="fu">c</span>(<span class="st">"true P(c1 &lt; X &lt; c2)"</span>, <span class="st">"estimate"</span>, <span class="st">"95% CI"</span>, <span class="st">"CI covers the truth?"</span>,</span>
+<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>                         <span class="st">"ESS"</span>, <span class="st">"ESS (% of S)"</span>, <span class="st">"largest weight (% of total)"</span>),</span>
+<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>            <span class="at">Value =</span> <span class="fu">c</span>(<span class="fu">sprintf</span>(<span class="st">"%.5g"</span>, s<span class="sc">$</span>truth), <span class="fu">sprintf</span>(<span class="st">"%.5g"</span>, s<span class="sc">$</span>Chat),</span>
+<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">sprintf</span>(<span class="st">"(%.5g, %.5g)"</span>, lwr, upr),</span>
+<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>                      <span class="cf">if</span> (lwr <span class="sc">&lt;=</span> s<span class="sc">$</span>truth <span class="sc">&amp;&amp;</span> s<span class="sc">$</span>truth <span class="sc">&lt;=</span> upr) <span class="st">"yes"</span> <span class="cf">else</span> <span class="st">"no"</span>,</span>
+<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">sprintf</span>(<span class="st">"%.1f"</span>, s<span class="sc">$</span>ess), <span class="fu">sprintf</span>(<span class="st">"%.2f"</span>, <span class="dv">100</span> <span class="sc">*</span> s<span class="sc">$</span>ess <span class="sc">/</span> s<span class="sc">$</span>S),</span>
+<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>                      <span class="fu">sprintf</span>(<span class="st">"%.1f"</span>, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">max</span>(s<span class="sc">$</span>wn))))</span>
+<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">striped =</span> <span class="cn">TRUE</span>, <span class="at">align =</span> <span class="st">"ll"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)</span>
+<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 </div>
