@@ -611,52 +611,6 @@ monotonically from each. Note how slowly the run from $\lambda^{(0)} = 100$
 descends at first — a single-parameter illustration of the same slow-drift
 behaviour seen in the mixture app.
 
-### Tangent lower bounds
-
-The bound picture of @sec-alternating, for this model. Here $\tilde P_t$ is the
-conditional distribution of the $n - m$ censored counts, independent Bernoulli
-variables with success probability $p_t = \lambda^{(t)}/(1 + \lambda^{(t)})$, so
-its entropy is
-$H(\tilde P_t, \tilde P_t) = -(n - m)\left[p_t \log p_t + (1 - p_t)\log(1 - p_t)\right]$.
-Each bound
-
-$$
-F(\tilde P_t, \lambda)
-= Q\!\left(\lambda \mid \lambda^{(t)}\right) + H(\tilde P_t, \tilde P_t)
-$$
-
-is the curve $Q(\cdot \mid \lambda^{(t)})$ shifted vertically by this number,
-which differs from one iteration to the next but not with $\lambda$. It lies
-below $\ell_{\text{obs}}$ and touches it at $\lambda^{(t)}$; maximizing it moves
-uphill on $\ell_{\text{obs}}$ itself.
-
-```{r}
-#| label: fig-tangent-bound
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-width: 9
-#| fig-height: 5
-#| fig-cap: "Illustrates why EM increases the likelihood: each iteration maximizes a lower bound, the Q function plus the entropy of the current conditional distribution, that touches the observed log-likelihood at the current estimate.
-#|   Three EM iterations viewed as successive tangent lower bounds of the observed log-likelihood."
-lo <- sapply(lam, lobs); top <- max(lo)
-par(mar = c(4, 4, 1, 1))
-plot(lam, lo, type = "l", lwd = 3, xlab = expression(theta),
-     ylab = "log-likelihood", ylim = c(top - 16, top + 2.5))
-lt <- 0.5; cols <- c("firebrick", "darkorange", "forestgreen")
-for (k in 1:3) {
-  p_t <- lt / (1 + lt)
-  H_t <- -ncen_d * (p_t * log(p_t) + (1 - p_t) * log(1 - p_t))   # H(P_t, P_t)
-  lines(lam, sapply(lam, Qfun, lt = lt) + H_t, col = cols[k], lwd = 2, lty = 2)
-  points(lt, lobs(lt), pch = 19, col = cols[k])               # = Q(lt | lt) + H_t
-  lt_new <- (sum(yobs_d) + ncen_d * lt / (1 + lt)) / n_d     # M-step
-  segments(lt_new, top - 16, lt_new, lobs(lt_new), col = cols[k], lty = 3)
-  text(lt, lobs(lt), bquote(hat(theta)^(.(k - 1))), pos = 3, col = cols[k], xpd = NA)
-  lt <- lt_new
-}
-legend("bottomright", bty = "n", lwd = c(3, 2), lty = c(1, 2),
-       legend = c(expression(l[obs](theta)),
-                  expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t]))))
-```
-
 ### Comparison with general-purpose optimizers
 
 ```{r}
@@ -2000,6 +1954,52 @@ arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
 axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
 mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
 })
+```
+
+### Example: tangent lower bounds for censored Poisson data
+
+An example of @fig-em-steps for the censored Poisson model of @sec-poisson. Here $\tilde P_t$ is the
+conditional distribution of the $n - m$ censored counts, independent Bernoulli
+variables with success probability $p_t = \lambda^{(t)}/(1 + \lambda^{(t)})$, so
+its entropy is
+$H(\tilde P_t, \tilde P_t) = -(n - m)\left[p_t \log p_t + (1 - p_t)\log(1 - p_t)\right]$.
+Each bound
+
+$$
+F(\tilde P_t, \lambda)
+= Q\!\left(\lambda \mid \lambda^{(t)}\right) + H(\tilde P_t, \tilde P_t)
+$$
+
+is the curve $Q(\cdot \mid \lambda^{(t)})$ shifted vertically by this number,
+which differs from one iteration to the next but not with $\lambda$. It lies
+below $\ell_{\text{obs}}$ and touches it at $\lambda^{(t)}$; maximizing it moves
+uphill on $\ell_{\text{obs}}$ itself.
+
+```{r}
+#| label: fig-tangent-bound
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 9
+#| fig-height: 5
+#| fig-cap: "Illustrates why EM increases the likelihood: each iteration maximizes a lower bound, the Q function plus the entropy of the current conditional distribution, that touches the observed log-likelihood at the current estimate.
+#|   Three EM iterations viewed as successive tangent lower bounds of the observed log-likelihood."
+lo <- sapply(lam, lobs); top <- max(lo)
+par(mar = c(4, 4, 1, 1))
+plot(lam, lo, type = "l", lwd = 3, xlab = expression(theta),
+     ylab = "log-likelihood", ylim = c(top - 16, top + 2.5))
+lt <- 0.5; cols <- c("firebrick", "darkorange", "forestgreen")
+for (k in 1:3) {
+  p_t <- lt / (1 + lt)
+  H_t <- -ncen_d * (p_t * log(p_t) + (1 - p_t) * log(1 - p_t))   # H(P_t, P_t)
+  lines(lam, sapply(lam, Qfun, lt = lt) + H_t, col = cols[k], lwd = 2, lty = 2)
+  points(lt, lobs(lt), pch = 19, col = cols[k])               # = Q(lt | lt) + H_t
+  lt_new <- (sum(yobs_d) + ncen_d * lt / (1 + lt)) / n_d     # M-step
+  segments(lt_new, top - 16, lt_new, lobs(lt_new), col = cols[k], lty = 3)
+  text(lt, lobs(lt), bquote(hat(theta)^(.(k - 1))), pos = 3, col = cols[k], xpd = NA)
+  lt <- lt_new
+}
+legend("bottomright", bty = "n", lwd = c(3, 2), lty = c(1, 2),
+       legend = c(expression(l[obs](theta)),
+                  expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t]))))
 ```
 
 ## Summary
