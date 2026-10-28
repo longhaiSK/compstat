@@ -1,12 +1,12 @@
 ---
 engine: markdown
-title: "Marginal Likelihood of Normal Data by a 2-D Product Midpoint Rule"
+title: "Marginal Likelihood of Normal Data: Midpoint, Laplace and Gauss–Hermite"
 pagetitle: "marlik-2d-quadrature-shinylive"
 ---
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 760
+#| viewerHeight: 1150
 library(shiny)
 
 ### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
@@ -38,27 +38,43 @@ log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 mu_0 <- 0; w_0 <- 0                                   # prior means for mu and w = log(sigma)
 sigma_true <- 2                                       # true sd of the simulated data
 
+### Gauss-Hermite nodes z_j and weights w_j for the weight function exp(-z^2/2) (Golub-Welsch)
+gauss_hermite <- function(k) {
+    J <- matrix(0, k, k)
+    for (i in seq_len(k - 1)) J[i, i + 1] <- J[i + 1, i] <- sqrt(i)
+    e <- eigen(J, symmetric = TRUE)
+    list(z = e$values, w = sqrt(2 * pi) * e$vectors[1, ]^2)
+}
+
 ui <- fluidPage(
     wellPanel(
         fluidRow(
-            column(2, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
+            column(3, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
                                   value = -5, step = 0.5)),
-            column(2, sliderInput("n_obs", "number of observations", min = 10, max = 200,
+            column(3, sliderInput("n_obs", "number of observations", min = 10, max = 200,
                                   value = 100, step = 10)),
-            column(2, sliderInput("n_grid", "grid points per axis", min = 5, max = 100,
+            column(3, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(3, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
+                                  value = 10, step = 1))),
+        fluidRow(
+            column(3, sliderInput("n_grid", "midpoint grid points per axis", min = 5, max = 100,
                                   value = 20, step = 5)),
-            column(2, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
-                                  value = 10, step = 1)),
-            column(2, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
-                                  value = 10, step = 1)),
-            column(2, actionButton("new", "New sample"),
-                      checkboxInput("zoom", "zoom to the posterior", FALSE)))
+            column(3, sliderInput("n_gh", "Gauss-Hermite nodes per axis", min = 2, max = 30,
+                                  value = 5, step = 1)),
+            column(3, actionButton("new", "New sample")),
+            column(3, checkboxInput("zoom", "zoom to the posterior", FALSE)))
     ),
     fluidRow(
-        column(6, plotOutput("nat",  height = "420px")),
-        column(6, plotOutput("unit", height = "420px"))
+        column(6, plotOutput("nat",  height = "380px")),
+        column(6, plotOutput("unit", height = "380px"))
     ),
-    h5(textOutput("summary"))
+    fluidRow(
+        column(6, plotOutput("nat_gh", height = "380px")),
+        column(6, plotOutput("z_gh",   height = "380px"))
+    ),
+    h4("log P(y) computed by each method"),
+    tableOutput("tab")
 )
 
 server <- function(input, output, session) {
@@ -70,7 +86,12 @@ server <- function(input, output, session) {
         list(n = length(x), S1 = sum(x), S2 = sum(x^2), xbar = mean(x), sd = sd(x))
     })
 
-    ### log L(mu, w) + log pi(mu, w) on the outer product of the vectors mu and w (sd = exp(w))
+    ### log L(mu, w) + log pi(mu, w) at the points (mu[i], w[i]), and on the outer product of mu and w
+    log_post_pt <- function(mu, w, d, sig_mu, sig_w) {
+        SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
+        -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * SS +
+            dnorm(mu, mu_0, sig_mu, log = TRUE) + dnorm(w, w_0, sig_w, log = TRUE)
+    }
     log_post <- function(mu, w, d, sig_mu, sig_w) {
         SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
         outer(SS, w, function(ss, w) -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * ss) +
@@ -80,11 +101,16 @@ server <- function(input, output, session) {
     st <- reactive({
         d <- dat(); sig_mu <- input$sig_mu; sig_w <- input$sig_w
 
-        ### reference value: a fine grid centred on the posterior mode, from the Laplace approximation
-        fit <- nlm(function(th) -log_post(th[1], th[2], d, sig_mu, sig_w)[1, 1],
-                   c(d$xbar, log(d$sd)), hessian = TRUE)
+        ### Laplace approximation: posterior mode and curvature
+        fit  <- nlm(function(th) -log_post_pt(th[1], th[2], d, sig_mu, sig_w),
+                    c(d$xbar, log(d$sd)), hessian = TRUE)
         mode <- fit$estimate
-        se   <- sqrt(diag(solve(fit$hessian)))
+        H    <- fit$hessian
+        Lc   <- t(chol(solve(H)))                              # covariance = Lc Lc'
+        se   <- sqrt(diag(solve(H)))
+        log_lap <- -fit$minimum + log(2 * pi) - 0.5 * as.numeric(determinant(H)$modulus)
+
+        ### reference value: a fine grid centred on the posterior mode
         mu_f <- mode[1] + seq(-8, 8, length.out = 400) * se[1]
         w_f  <- mode[2] + seq(-8, 8, length.out = 400) * se[2]
         log_true <- log_sum_exp(as.vector(log_post(mu_f, w_f, d, sig_mu, sig_w))) +
@@ -97,15 +123,25 @@ server <- function(input, output, session) {
         log_mid <- log_sum_exp(as.vector(G)) + 2 * log(h)
         wn <- exp(G - max(G)); wn <- wn / sum(wn)
 
-        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, log_true = log_true,
-             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2))
+        ### Gauss-Hermite rule centred and scaled by the Laplace approximation: theta = mode + Lc z
+        gh <- gauss_hermite(input$n_gh)
+        Z  <- as.matrix(expand.grid(z1 = gh$z, z2 = gh$z))
+        Wt <- as.vector(outer(gh$w, gh$w))
+        Th <- t(mode + Lc %*% t(Z))                            # nodes in the (mu, w) scale
+        lf <- log_post_pt(Th[, 1], Th[, 2], d, sig_mu, sig_w) + 0.5 * rowSums(Z^2) + log(Wt) +
+            sum(log(diag(Lc)))
+        log_gh <- log_sum_exp(lf)
+
+        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, Lc = Lc,
+             log_true = log_true, log_lap = log_lap,
+             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2),
+             k = input$n_gh, Z = Z, Th = Th, log_gh = log_gh)
     })
 
     heat_cols <- hcl.colors(40, "YlOrRd", rev = TRUE)
 
-    ### left: the function L(mu, w) pi(mu, w) on its natural scale, with the grid mapped back to (mu, w)
-    output$nat <- renderPlot({
-        s <- st()
+    ### a heatmap of L(mu, w) pi(mu, w) on its natural scale, with a set of points drawn on top
+    draw_nat <- function(s, pts, ptlab) {
         if (input$zoom) {
             xr <- s$mode[1] + c(-6, 6) * s$se[1]; yr <- s$mode[2] + c(-6, 6) * s$se[2]
         } else {
@@ -118,14 +154,19 @@ server <- function(input, output, session) {
         image(mu_g, w_g, f, col = heat_cols, xlab = expression(mu), ylab = expression(w == log~sigma),
               main = expression(L(mu, w)~pi(mu, w)~"(natural scale)"))
         if (max(f) > 0) contour(mu_g, w_g, f, nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
-        pts <- expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid))
-        points(pts, pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+        points(pts, pch = 19, cex = 0.4, col = adjustcolor("black", 0.55))
         points(s$mode[1], s$mode[2], pch = 3, lwd = 2, col = "steelblue", cex = 1.3)
         legend("topright", bty = "n", pch = c(19, 3), col = c("gray30", "steelblue"),
-               legend = c("midpoint grid, mapped back", "posterior mode"), cex = 0.85)
+               legend = c(ptlab, "posterior mode"), cex = 0.85)
+    }
+
+    ### row 1, left: the midpoint grid mapped back to (mu, w)
+    output$nat <- renderPlot({
+        s <- st()
+        draw_nat(s, expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid)), "midpoint grid, mapped back")
     })
 
-    ### right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
+    ### row 1, right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
     output$unit <- renderPlot({
         s <- st()
         m <- 200; ug <- (seq_len(m) - 0.5) / m
@@ -139,11 +180,42 @@ server <- function(input, output, session) {
         points(expand.grid(s$grid, s$grid), pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
     })
 
-    output$summary <- renderText({
+    ### row 2, left: the Gauss-Hermite nodes mapped to (mu, w)
+    output$nat_gh <- renderPlot({
         s <- st()
-        sprintf("log P(y): reference %.3f, midpoint rule on a %d x %d grid %.3f (error %.3f); effective number of grid points %.1f of %d.",
-                s$log_true, s$n, s$n, s$log_mid, s$log_mid - s$log_true, s$ess, s$n^2)
+        draw_nat(s, data.frame(mu = s$Th[, 1], w = s$Th[, 2]), "Gauss-Hermite nodes")
     })
+
+    ### row 2, right: the posterior in the Laplace-standardized coordinates z, where theta = mode + Lc z;
+    ### dashed circles are the contours of the standard normal that the Gauss-Hermite weight assumes
+    output$z_gh <- renderPlot({
+        s <- st()
+        zg <- seq(-4.5, 4.5, length.out = 200)
+        Zg <- as.matrix(expand.grid(zg, zg))
+        Tg <- t(s$mode + s$Lc %*% t(Zg))
+        lp <- matrix(log_post_pt(Tg[, 1], Tg[, 2], s$d, s$sig_mu, s$sig_w), 200, 200)
+        par(mar = c(4, 4, 3, 1))
+        image(zg, zg, exp(lp - max(lp)), col = heat_cols, xlab = expression(z[1]), ylab = expression(z[2]),
+              main = expression(L~pi~"in Laplace-standardized coordinates z"))
+        contour(zg, zg, outer(zg, zg, function(a, b) exp(-0.5 * (a^2 + b^2))), levels = exp(-0.5 * c(1, 4, 9)),
+                drawlabels = FALSE, add = TRUE, col = "steelblue", lty = 2, lwd = 1.5)
+        points(s$Z, pch = 19, cex = 0.5, col = adjustcolor("black", 0.6))
+    })
+
+    output$tab <- renderTable({
+        s <- st()
+        est <- c(s$log_true, s$log_lap, s$log_mid, s$log_gh)
+        data.frame(
+            Method = c("reference (fine grid centred on the posterior mode)",
+                       "Laplace approximation",
+                       sprintf("product midpoint rule, logistic grid, %d x %d", s$n, s$n),
+                       sprintf("Gauss-Hermite rule, Laplace-standardized, %d x %d", s$k, s$k)),
+            `Function evaluations` = c(400^2, 1, s$n^2, s$k^2),
+            `log P(y)` = sprintf("%.3f", est),
+            `error` = c("", sprintf("%.3f", est[-1] - est[1])),
+            `effective grid points` = c("", "", sprintf("%.1f", s$ess), ""),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lrrrr")
 }
 
 shinyApp(ui, server)
@@ -151,20 +223,31 @@ shinyApp(ui, server)
 
 ## About the app
 
-Shows how the product midpoint rule of the Numerical Quadrature unit computes the marginal likelihood of normal data when both the mean $\mu$ and the standard deviation are unknown, and how it fails when the posterior is far from where the grid looks.
+Shows how the product midpoint rule of the Numerical Quadrature unit computes the marginal likelihood of normal data when both the mean $\mu$ and the standard deviation are unknown, how it fails when the posterior is far from where the grid looks, and how a Gauss–Hermite rule centred and scaled by the Laplace approximation avoids the failure.
 
 **The problem.** Data $y_1,\ldots,y_n\mid\mu,\sigma\overset{iid}{\sim}N(\mu,\sigma^2)$ are simulated with the "data location" as the true mean and $\sigma=2$. With $w=\log\sigma$, the priors are independent, $\mu\sim N(0,\sigma_\mu^2)$ and $w\sim N(0,\sigma_w^2)$, and the marginal likelihood is the two-dimensional integral
 $$P(y)=\iint L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw .$$
-Mapping each parameter to $(0,1)$ by $u=1/(1+e^{-\mu})$, $v=1/(1+e^{-w})$ gives $P(y)=\int_0^1\!\int_0^1 g(u,v)\,du\,dv$ with $g(u,v)=L\pi\big/\{u(1-u)v(1-v)\}$, and the product midpoint rule is $P(y)\approx h^2\sum_{j,k}g(u_j,v_k)$ with $u_j=(j-\tfrac12)h$, $v_k=(k-\tfrac12)h$, $h=1/n$.
 
-**The two plots.** Both are contour heatmaps of the same integral in different coordinates.
+**Rule 1: product midpoint rule on a logistic grid.** Mapping each parameter to $(0,1)$ by $u=1/(1+e^{-\mu})$, $v=1/(1+e^{-w})$ gives $P(y)=\int_0^1\!\int_0^1 g(u,v)\,du\,dv$ with $g(u,v)=L\pi\big/\{u(1-u)v(1-v)\}$, and the midpoint rule is $P(y)\approx h^2\sum_{j,k}g(u_j,v_k)$ with $u_j=(j-\tfrac12)h$, $v_k=(k-\tfrac12)h$, $h=1/n$. The grid is fixed in advance and does not look at where the posterior is.
 
-* *Left:* $L(\mu,w)\pi(\mu,w)$ on its natural scale, with the midpoint grid mapped back to $(\mu,w)$ by the logistic transform. The grid points crowd around $(0,0)$ and thin out quickly away from it. The cross marks the posterior mode. Tick "zoom to the posterior" to see the shape of the posterior itself.
-* *Right:* the transformed integrand $g(u,v)$ on the unit square, with the grid of $n\times n$ midpoints (the lines are drawn for up to 40 points per axis).
+**Rule 2: Laplace approximation.** Let $\hat\theta=(\hat\mu,\hat w)$ be the posterior mode and $H$ the Hessian of $-\log(L\pi)$ there. Approximating the log of the integrand by a quadratic gives
+$$\log P(y)\approx\log\{L\pi\}(\hat\theta)+\log 2\pi-\tfrac12\log\det H,$$
+one function evaluation after the optimization.
 
-The line under the plots compares the midpoint estimate of $\log P(y)$ with a reference value computed on a fine grid centred on the posterior mode, and gives the effective number of grid points $1/\sum_i \tilde g_i^2$ ($\tilde g_i$ the normalized values of $g$ at the grid points), a measure of how many points carry the mass.
+**Rule 3: Gauss–Hermite rule centred and scaled by the Laplace approximation.** Write the covariance of the Laplace approximation as $\Sigma=H^{-1}=CC^\top$ and change variables to $\theta=\hat\theta+Cz$, so that $z\sim N(0,I)$ under the approximation. With $\phi_2$ the standard bivariate normal density,
+$$P(y)=|\det C|\iint \frac{(L\pi)(\hat\theta+Cz)}{\phi_2(z)}\,\phi_2(z)\,dz\;\approx\;|\det C|\sum_{j=1}^k\sum_{l=1}^k \omega_j\,\omega_l\,e^{(z_j^2+z_l^2)/2}\,(L\pi)(\hat\theta+C z_{jl}),$$
+where $z_j$ and $\omega_j$ are the nodes and weights of the $k$-point Gauss–Hermite rule for the weight $e^{-z^2/2}$ and $z_{jl}=(z_j,z_l)$. Each term is the posterior kernel divided by its Laplace normal density, a ratio that is nearly constant when the posterior is close to normal, so a handful of nodes per axis is enough. The Cholesky factor $C$ also takes care of the correlation between $\mu$ and $w$.
 
-**What to try.** With the data location near 0 and a vague prior, a modest grid is accurate. Move the data location to $-5$ and then $-20$: the posterior moves out into the tail of the grid, $g$ becomes a thin spike near the boundary of the square, the effective number of grid points collapses, and the estimate becomes wrong by a large amount however many points per axis you add (a larger sample makes the posterior narrower and the failure worse). The prior sds control how much of the square the vague prior spreads over.
+**The four plots.** Each is a contour heatmap of the same posterior kernel in a different coordinate system, with the points of a rule drawn on top.
+
+* *Row 1, left:* $L\pi$ on its natural scale with the logistic midpoint grid mapped back to $(\mu,w)$. The grid points crowd around $(0,0)$ and thin out quickly away from it. The cross is the posterior mode. Tick "zoom to the posterior" (it applies to both left plots) to see the shape of the posterior itself.
+* *Row 1, right:* the transformed integrand $g(u,v)$ on the unit square with the $n\times n$ midpoint grid (the lines are drawn for up to 40 points per axis).
+* *Row 2, left:* the same natural-scale surface with the Gauss–Hermite nodes $\hat\theta+Cz_{jl}$, which sit on and around the posterior wherever it is.
+* *Row 2, right:* the posterior in the standardized coordinates $z$, with the Gauss–Hermite nodes and dashed circles at 1, 2 and 3 standard deviations of the standard normal that the rule assumes. The closer the posterior is to the circles, the better the rule works.
+
+**The table** lists the value of $\log P(y)$ from each method, the number of function evaluations, the error against the reference (a fine product grid centred on the posterior mode), and, for the midpoint rule, the effective number of grid points $1/\sum_i\tilde g_i^2$ ($\tilde g_i$ the normalized values of $g$ at the grid points), a measure of how many points carry the mass.
+
+**What to try.** With the data location near 0 and a vague prior, all the rules are close to the reference. Move the data location to $-5$ and then $-20$: the posterior moves out into the tail of the logistic grid, $g$ becomes a thin spike near the boundary of the square, the effective number of grid points collapses, and the midpoint error becomes large however many points per axis you add (a larger sample makes the posterior narrower and the failure worse). The Laplace-centred Gauss–Hermite rule is unaffected by the location of the data and is accurate with 5 to 10 nodes per axis. The Laplace approximation alone is already close for normal data with a moderate $n$, and the Gauss–Hermite rule improves on it as the number of nodes grows. Reduce the number of observations to see the posterior depart from normality and the Laplace error grow.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -200,27 +283,43 @@ log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 mu_0 <- 0; w_0 <- 0                                   # prior means for mu and w = log(sigma)
 sigma_true <- 2                                       # true sd of the simulated data
 
+### Gauss-Hermite nodes z_j and weights w_j for the weight function exp(-z^2/2) (Golub-Welsch)
+gauss_hermite <- function(k) {
+    J <- matrix(0, k, k)
+    for (i in seq_len(k - 1)) J[i, i + 1] <- J[i + 1, i] <- sqrt(i)
+    e <- eigen(J, symmetric = TRUE)
+    list(z = e$values, w = sqrt(2 * pi) * e$vectors[1, ]^2)
+}
+
 ui <- fluidPage(
     wellPanel(
         fluidRow(
-            column(2, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
+            column(3, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
                                   value = -5, step = 0.5)),
-            column(2, sliderInput("n_obs", "number of observations", min = 10, max = 200,
+            column(3, sliderInput("n_obs", "number of observations", min = 10, max = 200,
                                   value = 100, step = 10)),
-            column(2, sliderInput("n_grid", "grid points per axis", min = 5, max = 100,
+            column(3, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(3, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
+                                  value = 10, step = 1))),
+        fluidRow(
+            column(3, sliderInput("n_grid", "midpoint grid points per axis", min = 5, max = 100,
                                   value = 20, step = 5)),
-            column(2, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
-                                  value = 10, step = 1)),
-            column(2, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
-                                  value = 10, step = 1)),
-            column(2, actionButton("new", "New sample"),
-                      checkboxInput("zoom", "zoom to the posterior", FALSE)))
+            column(3, sliderInput("n_gh", "Gauss-Hermite nodes per axis", min = 2, max = 30,
+                                  value = 5, step = 1)),
+            column(3, actionButton("new", "New sample")),
+            column(3, checkboxInput("zoom", "zoom to the posterior", FALSE)))
     ),
     fluidRow(
-        column(6, plotOutput("nat",  height = "420px")),
-        column(6, plotOutput("unit", height = "420px"))
+        column(6, plotOutput("nat",  height = "380px")),
+        column(6, plotOutput("unit", height = "380px"))
     ),
-    h5(textOutput("summary"))
+    fluidRow(
+        column(6, plotOutput("nat_gh", height = "380px")),
+        column(6, plotOutput("z_gh",   height = "380px"))
+    ),
+    h4("log P(y) computed by each method"),
+    tableOutput("tab")
 )
 
 server <- function(input, output, session) {
@@ -232,7 +331,12 @@ server <- function(input, output, session) {
         list(n = length(x), S1 = sum(x), S2 = sum(x^2), xbar = mean(x), sd = sd(x))
     })
 
-    ### log L(mu, w) + log pi(mu, w) on the outer product of the vectors mu and w (sd = exp(w))
+    ### log L(mu, w) + log pi(mu, w) at the points (mu[i], w[i]), and on the outer product of mu and w
+    log_post_pt <- function(mu, w, d, sig_mu, sig_w) {
+        SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
+        -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * SS +
+            dnorm(mu, mu_0, sig_mu, log = TRUE) + dnorm(w, w_0, sig_w, log = TRUE)
+    }
     log_post <- function(mu, w, d, sig_mu, sig_w) {
         SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
         outer(SS, w, function(ss, w) -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * ss) +
@@ -242,11 +346,16 @@ server <- function(input, output, session) {
     st <- reactive({
         d <- dat(); sig_mu <- input$sig_mu; sig_w <- input$sig_w
 
-        ### reference value: a fine grid centred on the posterior mode, from the Laplace approximation
-        fit <- nlm(function(th) -log_post(th[1], th[2], d, sig_mu, sig_w)[1, 1],
-                   c(d$xbar, log(d$sd)), hessian = TRUE)
+        ### Laplace approximation: posterior mode and curvature
+        fit  <- nlm(function(th) -log_post_pt(th[1], th[2], d, sig_mu, sig_w),
+                    c(d$xbar, log(d$sd)), hessian = TRUE)
         mode <- fit$estimate
-        se   <- sqrt(diag(solve(fit$hessian)))
+        H    <- fit$hessian
+        Lc   <- t(chol(solve(H)))                              # covariance = Lc Lc'
+        se   <- sqrt(diag(solve(H)))
+        log_lap <- -fit$minimum + log(2 * pi) - 0.5 * as.numeric(determinant(H)$modulus)
+
+        ### reference value: a fine grid centred on the posterior mode
         mu_f <- mode[1] + seq(-8, 8, length.out = 400) * se[1]
         w_f  <- mode[2] + seq(-8, 8, length.out = 400) * se[2]
         log_true <- log_sum_exp(as.vector(log_post(mu_f, w_f, d, sig_mu, sig_w))) +
@@ -259,15 +368,25 @@ server <- function(input, output, session) {
         log_mid <- log_sum_exp(as.vector(G)) + 2 * log(h)
         wn <- exp(G - max(G)); wn <- wn / sum(wn)
 
-        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, log_true = log_true,
-             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2))
+        ### Gauss-Hermite rule centred and scaled by the Laplace approximation: theta = mode + Lc z
+        gh <- gauss_hermite(input$n_gh)
+        Z  <- as.matrix(expand.grid(z1 = gh$z, z2 = gh$z))
+        Wt <- as.vector(outer(gh$w, gh$w))
+        Th <- t(mode + Lc %*% t(Z))                            # nodes in the (mu, w) scale
+        lf <- log_post_pt(Th[, 1], Th[, 2], d, sig_mu, sig_w) + 0.5 * rowSums(Z^2) + log(Wt) +
+            sum(log(diag(Lc)))
+        log_gh <- log_sum_exp(lf)
+
+        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, Lc = Lc,
+             log_true = log_true, log_lap = log_lap,
+             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2),
+             k = input$n_gh, Z = Z, Th = Th, log_gh = log_gh)
     })
 
     heat_cols <- hcl.colors(40, "YlOrRd", rev = TRUE)
 
-    ### left: the function L(mu, w) pi(mu, w) on its natural scale, with the grid mapped back to (mu, w)
-    output$nat <- renderPlot({
-        s <- st()
+    ### a heatmap of L(mu, w) pi(mu, w) on its natural scale, with a set of points drawn on top
+    draw_nat <- function(s, pts, ptlab) {
         if (input$zoom) {
             xr <- s$mode[1] + c(-6, 6) * s$se[1]; yr <- s$mode[2] + c(-6, 6) * s$se[2]
         } else {
@@ -280,14 +399,19 @@ server <- function(input, output, session) {
         image(mu_g, w_g, f, col = heat_cols, xlab = expression(mu), ylab = expression(w == log~sigma),
               main = expression(L(mu, w)~pi(mu, w)~"(natural scale)"))
         if (max(f) > 0) contour(mu_g, w_g, f, nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
-        pts <- expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid))
-        points(pts, pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+        points(pts, pch = 19, cex = 0.4, col = adjustcolor("black", 0.55))
         points(s$mode[1], s$mode[2], pch = 3, lwd = 2, col = "steelblue", cex = 1.3)
         legend("topright", bty = "n", pch = c(19, 3), col = c("gray30", "steelblue"),
-               legend = c("midpoint grid, mapped back", "posterior mode"), cex = 0.85)
+               legend = c(ptlab, "posterior mode"), cex = 0.85)
+    }
+
+    ### row 1, left: the midpoint grid mapped back to (mu, w)
+    output$nat <- renderPlot({
+        s <- st()
+        draw_nat(s, expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid)), "midpoint grid, mapped back")
     })
 
-    ### right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
+    ### row 1, right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
     output$unit <- renderPlot({
         s <- st()
         m <- 200; ug <- (seq_len(m) - 0.5) / m
@@ -301,11 +425,42 @@ server <- function(input, output, session) {
         points(expand.grid(s$grid, s$grid), pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
     })
 
-    output$summary <- renderText({
+    ### row 2, left: the Gauss-Hermite nodes mapped to (mu, w)
+    output$nat_gh <- renderPlot({
         s <- st()
-        sprintf("log P(y): reference %.3f, midpoint rule on a %d x %d grid %.3f (error %.3f); effective number of grid points %.1f of %d.",
-                s$log_true, s$n, s$n, s$log_mid, s$log_mid - s$log_true, s$ess, s$n^2)
+        draw_nat(s, data.frame(mu = s$Th[, 1], w = s$Th[, 2]), "Gauss-Hermite nodes")
     })
+
+    ### row 2, right: the posterior in the Laplace-standardized coordinates z, where theta = mode + Lc z;
+    ### dashed circles are the contours of the standard normal that the Gauss-Hermite weight assumes
+    output$z_gh <- renderPlot({
+        s <- st()
+        zg <- seq(-4.5, 4.5, length.out = 200)
+        Zg <- as.matrix(expand.grid(zg, zg))
+        Tg <- t(s$mode + s$Lc %*% t(Zg))
+        lp <- matrix(log_post_pt(Tg[, 1], Tg[, 2], s$d, s$sig_mu, s$sig_w), 200, 200)
+        par(mar = c(4, 4, 3, 1))
+        image(zg, zg, exp(lp - max(lp)), col = heat_cols, xlab = expression(z[1]), ylab = expression(z[2]),
+              main = expression(L~pi~"in Laplace-standardized coordinates z"))
+        contour(zg, zg, outer(zg, zg, function(a, b) exp(-0.5 * (a^2 + b^2))), levels = exp(-0.5 * c(1, 4, 9)),
+                drawlabels = FALSE, add = TRUE, col = "steelblue", lty = 2, lwd = 1.5)
+        points(s$Z, pch = 19, cex = 0.5, col = adjustcolor("black", 0.6))
+    })
+
+    output$tab <- renderTable({
+        s <- st()
+        est <- c(s$log_true, s$log_lap, s$log_mid, s$log_gh)
+        data.frame(
+            Method = c("reference (fine grid centred on the posterior mode)",
+                       "Laplace approximation",
+                       sprintf("product midpoint rule, logistic grid, %d x %d", s$n, s$n),
+                       sprintf("Gauss-Hermite rule, Laplace-standardized, %d x %d", s$k, s$k)),
+            `Function evaluations` = c(400^2, 1, s$n^2, s$k^2),
+            `log P(y)` = sprintf("%.3f", est),
+            `error` = c("", sprintf("%.3f", est[-1] - est[1])),
+            `effective grid points` = c("", "", sprintf("%.1f", s$ess), ""),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lrrrr")
 }
 
 shinyApp(ui, server)
