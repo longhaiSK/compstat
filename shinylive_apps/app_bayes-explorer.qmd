@@ -67,7 +67,8 @@ ui <- fluidPage(
         numericInput("n_nn", "n (observations)", value = 15, min = 1, step = 1),
         numericInput("ybar_nn", "sample mean y-bar", value = 3, step = 0.5)
       ),
-      helpText("Dashed = prior, solid = posterior. The dotted vertical line ",
+      helpText("Dashed = prior, solid = posterior, dash-dotted green = likelihood ",
+               "(right axis, scaled to a maximum of 1). The dotted vertical line ",
                "is the MLE (y/n for Bernoulli, S/n for Poisson, y-bar for Normal). ",
                "*Log marginal likelihood is exact for Bernoulli; for Poisson ",
                "and Normal it is shown up to an additive constant that ",
@@ -86,7 +87,17 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 
   output$densplot <- renderPlot({
-    par(mar = c(4, 4, 2, 1))
+    par(mar = c(4, 4, 2, 4.5))
+    ## likelihood (relative to its maximum) on a second y-axis, drawn on the density scale
+    addlik <- function(loglik, from, to, ylim, col) {
+      xs <- seq(from, to, length.out = 500)
+      ll <- loglik(xs)
+      L <- exp(ll - max(ll))
+      lines(xs, L * ylim[2] / 1.1, lwd = 2, col = col, lty = 4)
+      axis(4, at = c(0, 0.5, 1) * ylim[2] / 1.1, labels = c(0, 0.5, 1), col = col,
+           col.axis = col, las = 1)
+      mtext("likelihood (relative to its maximum)", side = 4, line = 3, col = col)
+    }
     if (input$model == "bb") {
       a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- input$y_bb
       post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
@@ -95,9 +106,11 @@ server <- function(input, output, session) {
       curve(dbeta(x, a1, a0), 0, 1, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(theta), ylab = "density", ylim = ylim)
       curve(dbeta(x, post_a1, post_a0), add = TRUE, lwd = 3, col = "steelblue")
+      addlik(function(x) dbinom(y, n, x, log = TRUE), 0, 1, ylim, "forestgreen")
       abline(v = y / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "steelblue"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "steelblue", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     } else if (input$model == "pg") {
       alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
       post_alpha <- alpha + S; post_beta <- beta + n
@@ -107,9 +120,11 @@ server <- function(input, output, session) {
       curve(dgamma(x, alpha, beta), 0, hi, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(lambda), ylab = "density", ylim = ylim)
       curve(dgamma(x, post_alpha, post_beta), add = TRUE, lwd = 3, col = "firebrick")
+      addlik(function(x) dpois(S, n * x, log = TRUE), 0, hi, ylim, "forestgreen")
       abline(v = S / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "firebrick"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "firebrick", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     } else {
       mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
       n <- input$n_nn; ybar <- input$ybar_nn
@@ -124,9 +139,11 @@ server <- function(input, output, session) {
       curve(dnorm(x, mu0, prior_sd), lo, hi, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(mu), ylab = "density", ylim = ylim)
       curve(dnorm(x, post_mu, post_sd), add = TRUE, lwd = 3, col = "darkorchid")
+      addlik(function(x) dnorm(ybar, x, sigma / sqrt(n), log = TRUE), lo, hi, ylim, "forestgreen")
       abline(v = ybar, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "darkorchid"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "darkorchid", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     }
   })
 
@@ -265,7 +282,8 @@ ui <- fluidPage(
         numericInput("n_nn", "n (observations)", value = 15, min = 1, step = 1),
         numericInput("ybar_nn", "sample mean y-bar", value = 3, step = 0.5)
       ),
-      helpText("Dashed = prior, solid = posterior. The dotted vertical line ",
+      helpText("Dashed = prior, solid = posterior, dash-dotted green = likelihood ",
+               "(right axis, scaled to a maximum of 1). The dotted vertical line ",
                "is the MLE (y/n for Bernoulli, S/n for Poisson, y-bar for Normal). ",
                "*Log marginal likelihood is exact for Bernoulli; for Poisson ",
                "and Normal it is shown up to an additive constant that ",
@@ -284,7 +302,17 @@ ui <- fluidPage(
 server <- function(input, output, session) {
 
   output$densplot <- renderPlot({
-    par(mar = c(4, 4, 2, 1))
+    par(mar = c(4, 4, 2, 4.5))
+    ## likelihood (relative to its maximum) on a second y-axis, drawn on the density scale
+    addlik <- function(loglik, from, to, ylim, col) {
+      xs <- seq(from, to, length.out = 500)
+      ll <- loglik(xs)
+      L <- exp(ll - max(ll))
+      lines(xs, L * ylim[2] / 1.1, lwd = 2, col = col, lty = 4)
+      axis(4, at = c(0, 0.5, 1) * ylim[2] / 1.1, labels = c(0, 0.5, 1), col = col,
+           col.axis = col, las = 1)
+      mtext("likelihood (relative to its maximum)", side = 4, line = 3, col = col)
+    }
     if (input$model == "bb") {
       a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- input$y_bb
       post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
@@ -293,9 +321,11 @@ server <- function(input, output, session) {
       curve(dbeta(x, a1, a0), 0, 1, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(theta), ylab = "density", ylim = ylim)
       curve(dbeta(x, post_a1, post_a0), add = TRUE, lwd = 3, col = "steelblue")
+      addlik(function(x) dbinom(y, n, x, log = TRUE), 0, 1, ylim, "forestgreen")
       abline(v = y / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "steelblue"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "steelblue", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     } else if (input$model == "pg") {
       alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- input$S_pg
       post_alpha <- alpha + S; post_beta <- beta + n
@@ -305,9 +335,11 @@ server <- function(input, output, session) {
       curve(dgamma(x, alpha, beta), 0, hi, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(lambda), ylab = "density", ylim = ylim)
       curve(dgamma(x, post_alpha, post_beta), add = TRUE, lwd = 3, col = "firebrick")
+      addlik(function(x) dpois(S, n * x, log = TRUE), 0, hi, ylim, "forestgreen")
       abline(v = S / n, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "firebrick"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "firebrick", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     } else {
       mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
       n <- input$n_nn; ybar <- input$ybar_nn
@@ -322,9 +354,11 @@ server <- function(input, output, session) {
       curve(dnorm(x, mu0, prior_sd), lo, hi, lwd = 2, lty = 2, col = "gray40",
             xlab = expression(mu), ylab = "density", ylim = ylim)
       curve(dnorm(x, post_mu, post_sd), add = TRUE, lwd = 3, col = "darkorchid")
+      addlik(function(x) dnorm(ybar, x, sigma / sqrt(n), log = TRUE), lo, hi, ylim, "forestgreen")
       abline(v = ybar, lty = 3)
-      legend("topright", bty = "n", lwd = c(2, 3), lty = c(2, 1), col = c("gray40", "darkorchid"),
-             legend = c("prior", "posterior"))
+      legend("topright", bty = "n", lwd = c(2, 3, 2), lty = c(2, 1, 4),
+             col = c("gray40", "darkorchid", "forestgreen"),
+             legend = c("prior", "posterior", "likelihood (right axis)"))
     }
   })
 
