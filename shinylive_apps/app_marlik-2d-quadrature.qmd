@@ -1,0 +1,316 @@
+---
+engine: markdown
+title: "Marginal Likelihood of Normal Data by a 2-D Product Midpoint Rule"
+pagetitle: "marlik-2d-quadrature-shinylive"
+---
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 760
+library(shiny)
+
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
+
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+mu_0 <- 0; w_0 <- 0                                   # prior means for mu and w = log(sigma)
+sigma_true <- 2                                       # true sd of the simulated data
+
+ui <- fluidPage(
+    wellPanel(
+        fluidRow(
+            column(2, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
+                                  value = -5, step = 0.5)),
+            column(2, sliderInput("n_obs", "number of observations", min = 10, max = 200,
+                                  value = 100, step = 10)),
+            column(2, sliderInput("n_grid", "grid points per axis", min = 5, max = 100,
+                                  value = 20, step = 5)),
+            column(2, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(2, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(2, actionButton("new", "New sample"),
+                      checkboxInput("zoom", "zoom to the posterior", FALSE)))
+    ),
+    fluidRow(
+        column(6, plotOutput("nat",  height = "420px")),
+        column(6, plotOutput("unit", height = "420px"))
+    ),
+    h5(textOutput("summary"))
+)
+
+server <- function(input, output, session) {
+
+    ### simulated normal data: y_i ~ N(mu_true, sigma_true^2); only the sufficient statistics are needed
+    dat <- reactive({
+        set.seed(input$new + 1)
+        x <- input$mu_true + sigma_true * rnorm(input$n_obs)
+        list(n = length(x), S1 = sum(x), S2 = sum(x^2), xbar = mean(x), sd = sd(x))
+    })
+
+    ### log L(mu, w) + log pi(mu, w) on the outer product of the vectors mu and w (sd = exp(w))
+    log_post <- function(mu, w, d, sig_mu, sig_w) {
+        SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
+        outer(SS, w, function(ss, w) -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * ss) +
+            outer(dnorm(mu, mu_0, sig_mu, log = TRUE), dnorm(w, w_0, sig_w, log = TRUE), "+")
+    }
+
+    st <- reactive({
+        d <- dat(); sig_mu <- input$sig_mu; sig_w <- input$sig_w
+
+        ### reference value: a fine grid centred on the posterior mode, from the Laplace approximation
+        fit <- nlm(function(th) -log_post(th[1], th[2], d, sig_mu, sig_w)[1, 1],
+                   c(d$xbar, log(d$sd)), hessian = TRUE)
+        mode <- fit$estimate
+        se   <- sqrt(diag(solve(fit$hessian)))
+        mu_f <- mode[1] + seq(-8, 8, length.out = 400) * se[1]
+        w_f  <- mode[2] + seq(-8, 8, length.out = 400) * se[2]
+        log_true <- log_sum_exp(as.vector(log_post(mu_f, w_f, d, sig_mu, sig_w))) +
+            log(diff(mu_f[1:2])) + log(diff(w_f[1:2]))
+
+        ### product midpoint rule on the unit square, u = logistic(mu), v = logistic(w)
+        n <- input$n_grid; h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
+        log_jac <- function(u) -log(u) - log(1 - u)            # log |d mu / d u|
+        G <- log_post(qlogis(grid), qlogis(grid), d, sig_mu, sig_w) + outer(log_jac(grid), log_jac(grid), "+")
+        log_mid <- log_sum_exp(as.vector(G)) + 2 * log(h)
+        wn <- exp(G - max(G)); wn <- wn / sum(wn)
+
+        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, log_true = log_true,
+             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2))
+    })
+
+    heat_cols <- hcl.colors(40, "YlOrRd", rev = TRUE)
+
+    ### left: the function L(mu, w) pi(mu, w) on its natural scale, with the grid mapped back to (mu, w)
+    output$nat <- renderPlot({
+        s <- st()
+        if (input$zoom) {
+            xr <- s$mode[1] + c(-6, 6) * s$se[1]; yr <- s$mode[2] + c(-6, 6) * s$se[2]
+        } else {
+            xr <- c(-30, 30); yr <- c(-5, 5)
+        }
+        mu_g <- seq(xr[1], xr[2], length.out = 300); w_g <- seq(yr[1], yr[2], length.out = 300)
+        lp <- log_post(mu_g, w_g, s$d, s$sig_mu, s$sig_w)
+        f  <- exp(lp - max(lp))
+        par(mar = c(4, 4, 3, 1))
+        image(mu_g, w_g, f, col = heat_cols, xlab = expression(mu), ylab = expression(w == log~sigma),
+              main = expression(L(mu, w)~pi(mu, w)~"(natural scale)"))
+        if (max(f) > 0) contour(mu_g, w_g, f, nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
+        pts <- expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid))
+        points(pts, pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+        points(s$mode[1], s$mode[2], pch = 3, lwd = 2, col = "steelblue", cex = 1.3)
+        legend("topright", bty = "n", pch = c(19, 3), col = c("gray30", "steelblue"),
+               legend = c("midpoint grid, mapped back", "posterior mode"), cex = 0.85)
+    })
+
+    ### right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
+    output$unit <- renderPlot({
+        s <- st()
+        m <- 200; ug <- (seq_len(m) - 0.5) / m
+        G <- log_post(qlogis(ug), qlogis(ug), s$d, s$sig_mu, s$sig_w) +
+            outer(s$log_jac(ug), s$log_jac(ug), "+")
+        par(mar = c(4, 4, 3, 1))
+        image(ug, ug, exp(G - max(G)), col = heat_cols, xlab = "u", ylab = "v",
+              main = expression(g(u, v) == L~pi~"/"~"{"*u(1-u)*v(1-v)*"}"~"(unit square)"))
+        contour(ug, ug, exp(G - max(G)), nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
+        if (s$n <= 40) abline(v = seq(0, 1, by = s$h), h = seq(0, 1, by = s$h), col = adjustcolor("gray30", 0.35))
+        points(expand.grid(s$grid, s$grid), pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+    })
+
+    output$summary <- renderText({
+        s <- st()
+        sprintf("log P(y): reference %.3f, midpoint rule on a %d x %d grid %.3f (error %.3f); effective number of grid points %.1f of %d.",
+                s$log_true, s$n, s$n, s$log_mid, s$log_mid - s$log_true, s$ess, s$n^2)
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Shows how the product midpoint rule of the Numerical Quadrature unit computes the marginal likelihood of normal data when both the mean $\mu$ and the standard deviation are unknown, and how it fails when the posterior is far from where the grid looks.
+
+**The problem.** Data $y_1,\ldots,y_n\mid\mu,\sigma\overset{iid}{\sim}N(\mu,\sigma^2)$ are simulated with the "data location" as the true mean and $\sigma=2$. With $w=\log\sigma$, the priors are independent, $\mu\sim N(0,\sigma_\mu^2)$ and $w\sim N(0,\sigma_w^2)$, and the marginal likelihood is the two-dimensional integral
+$$P(y)=\iint L(\mu,w)\,\pi(\mu,w)\,d\mu\,dw .$$
+Mapping each parameter to $(0,1)$ by $u=1/(1+e^{-\mu})$, $v=1/(1+e^{-w})$ gives $P(y)=\int_0^1\!\int_0^1 g(u,v)\,du\,dv$ with $g(u,v)=L\pi\big/\{u(1-u)v(1-v)\}$, and the product midpoint rule is $P(y)\approx h^2\sum_{j,k}g(u_j,v_k)$ with $u_j=(j-\tfrac12)h$, $v_k=(k-\tfrac12)h$, $h=1/n$.
+
+**The two plots.** Both are contour heatmaps of the same integral in different coordinates.
+
+* *Left:* $L(\mu,w)\pi(\mu,w)$ on its natural scale, with the midpoint grid mapped back to $(\mu,w)$ by the logistic transform. The grid points crowd around $(0,0)$ and thin out quickly away from it. The cross marks the posterior mode. Tick "zoom to the posterior" to see the shape of the posterior itself.
+* *Right:* the transformed integrand $g(u,v)$ on the unit square, with the grid of $n\times n$ midpoints (the lines are drawn for up to 40 points per axis).
+
+The line under the plots compares the midpoint estimate of $\log P(y)$ with a reference value computed on a fine grid centred on the posterior mode, and gives the effective number of grid points $1/\sum_i \tilde g_i^2$ ($\tilde g_i$ the normalized values of $g$ at the grid points), a measure of how many points carry the mass.
+
+**What to try.** With the data location near 0 and a vague prior, a modest grid is accurate. Move the data location to $-5$ and then $-20$: the posterior moves out into the tail of the grid, $g$ becomes a thin spike near the boundary of the square, the effective number of grid points collapses, and the estimate becomes wrong by a large amount however many points per axis you add (a larger sample makes the posterior narrower and the failure worse). The prior sds control how much of the square the vague prior spreads over.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
+
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+
+mu_0 <- 0; w_0 <- 0                                   # prior means for mu and w = log(sigma)
+sigma_true <- 2                                       # true sd of the simulated data
+
+ui <- fluidPage(
+    wellPanel(
+        fluidRow(
+            column(2, sliderInput("mu_true", "data location (true mu)", min = -20, max = 20,
+                                  value = -5, step = 0.5)),
+            column(2, sliderInput("n_obs", "number of observations", min = 10, max = 200,
+                                  value = 100, step = 10)),
+            column(2, sliderInput("n_grid", "grid points per axis", min = 5, max = 100,
+                                  value = 20, step = 5)),
+            column(2, sliderInput("sig_mu", "prior sd of mu", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(2, sliderInput("sig_w", "prior sd of w", min = 1, max = 20,
+                                  value = 10, step = 1)),
+            column(2, actionButton("new", "New sample"),
+                      checkboxInput("zoom", "zoom to the posterior", FALSE)))
+    ),
+    fluidRow(
+        column(6, plotOutput("nat",  height = "420px")),
+        column(6, plotOutput("unit", height = "420px"))
+    ),
+    h5(textOutput("summary"))
+)
+
+server <- function(input, output, session) {
+
+    ### simulated normal data: y_i ~ N(mu_true, sigma_true^2); only the sufficient statistics are needed
+    dat <- reactive({
+        set.seed(input$new + 1)
+        x <- input$mu_true + sigma_true * rnorm(input$n_obs)
+        list(n = length(x), S1 = sum(x), S2 = sum(x^2), xbar = mean(x), sd = sd(x))
+    })
+
+    ### log L(mu, w) + log pi(mu, w) on the outer product of the vectors mu and w (sd = exp(w))
+    log_post <- function(mu, w, d, sig_mu, sig_w) {
+        SS <- d$S2 - 2 * mu * d$S1 + d$n * mu^2
+        outer(SS, w, function(ss, w) -0.5 * d$n * log(2 * pi) - d$n * w - 0.5 * exp(-2 * w) * ss) +
+            outer(dnorm(mu, mu_0, sig_mu, log = TRUE), dnorm(w, w_0, sig_w, log = TRUE), "+")
+    }
+
+    st <- reactive({
+        d <- dat(); sig_mu <- input$sig_mu; sig_w <- input$sig_w
+
+        ### reference value: a fine grid centred on the posterior mode, from the Laplace approximation
+        fit <- nlm(function(th) -log_post(th[1], th[2], d, sig_mu, sig_w)[1, 1],
+                   c(d$xbar, log(d$sd)), hessian = TRUE)
+        mode <- fit$estimate
+        se   <- sqrt(diag(solve(fit$hessian)))
+        mu_f <- mode[1] + seq(-8, 8, length.out = 400) * se[1]
+        w_f  <- mode[2] + seq(-8, 8, length.out = 400) * se[2]
+        log_true <- log_sum_exp(as.vector(log_post(mu_f, w_f, d, sig_mu, sig_w))) +
+            log(diff(mu_f[1:2])) + log(diff(w_f[1:2]))
+
+        ### product midpoint rule on the unit square, u = logistic(mu), v = logistic(w)
+        n <- input$n_grid; h <- 1 / n; grid <- (seq_len(n) - 0.5) * h
+        log_jac <- function(u) -log(u) - log(1 - u)            # log |d mu / d u|
+        G <- log_post(qlogis(grid), qlogis(grid), d, sig_mu, sig_w) + outer(log_jac(grid), log_jac(grid), "+")
+        log_mid <- log_sum_exp(as.vector(G)) + 2 * log(h)
+        wn <- exp(G - max(G)); wn <- wn / sum(wn)
+
+        list(d = d, sig_mu = sig_mu, sig_w = sig_w, mode = mode, se = se, log_true = log_true,
+             n = n, h = h, grid = grid, log_jac = log_jac, log_mid = log_mid, ess = 1 / sum(wn^2))
+    })
+
+    heat_cols <- hcl.colors(40, "YlOrRd", rev = TRUE)
+
+    ### left: the function L(mu, w) pi(mu, w) on its natural scale, with the grid mapped back to (mu, w)
+    output$nat <- renderPlot({
+        s <- st()
+        if (input$zoom) {
+            xr <- s$mode[1] + c(-6, 6) * s$se[1]; yr <- s$mode[2] + c(-6, 6) * s$se[2]
+        } else {
+            xr <- c(-30, 30); yr <- c(-5, 5)
+        }
+        mu_g <- seq(xr[1], xr[2], length.out = 300); w_g <- seq(yr[1], yr[2], length.out = 300)
+        lp <- log_post(mu_g, w_g, s$d, s$sig_mu, s$sig_w)
+        f  <- exp(lp - max(lp))
+        par(mar = c(4, 4, 3, 1))
+        image(mu_g, w_g, f, col = heat_cols, xlab = expression(mu), ylab = expression(w == log~sigma),
+              main = expression(L(mu, w)~pi(mu, w)~"(natural scale)"))
+        if (max(f) > 0) contour(mu_g, w_g, f, nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
+        pts <- expand.grid(mu = qlogis(s$grid), w = qlogis(s$grid))
+        points(pts, pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+        points(s$mode[1], s$mode[2], pch = 3, lwd = 2, col = "steelblue", cex = 1.3)
+        legend("topright", bty = "n", pch = c(19, 3), col = c("gray30", "steelblue"),
+               legend = c("midpoint grid, mapped back", "posterior mode"), cex = 0.85)
+    })
+
+    ### right: the transformed integrand g(u, v) on the unit square, with the midpoint grid
+    output$unit <- renderPlot({
+        s <- st()
+        m <- 200; ug <- (seq_len(m) - 0.5) / m
+        G <- log_post(qlogis(ug), qlogis(ug), s$d, s$sig_mu, s$sig_w) +
+            outer(s$log_jac(ug), s$log_jac(ug), "+")
+        par(mar = c(4, 4, 3, 1))
+        image(ug, ug, exp(G - max(G)), col = heat_cols, xlab = "u", ylab = "v",
+              main = expression(g(u, v) == L~pi~"/"~"{"*u(1-u)*v(1-v)*"}"~"(unit square)"))
+        contour(ug, ug, exp(G - max(G)), nlevels = 6, drawlabels = FALSE, add = TRUE, col = "gray30")
+        if (s$n <= 40) abline(v = seq(0, 1, by = s$h), h = seq(0, 1, by = s$h), col = adjustcolor("gray30", 0.35))
+        points(expand.grid(s$grid, s$grid), pch = 19, cex = 0.35, col = adjustcolor("black", 0.5))
+    })
+
+    output$summary <- renderText({
+        s <- st()
+        sprintf("log P(y): reference %.3f, midpoint rule on a %d x %d grid %.3f (error %.3f); effective number of grid points %.1f of %d.",
+                s$log_true, s$n, s$n, s$log_mid, s$log_mid - s$log_true, s$ess, s$n^2)
+    })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Numerical Quadrature](../compstat_book/chapters/unit08_integral.html)* in the book.
