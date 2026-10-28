@@ -1,6 +1,6 @@
 ---
 engine: markdown
-title: "A Quadrature Grid Missing the Posterior Mode"
+title: "Quadrature Grids: Logistic vs Laplace-Normalized"
 pagetitle: "missed-mode-nq-shinylive"
 ---
 
@@ -11,7 +11,7 @@ pagetitle: "missed-mode-nq-shinylive"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 680
+#| viewerHeight: 900
 library(shiny)
 
 ### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
@@ -47,51 +47,63 @@ ui <- fluidPage(
                                   min = 2, max = 25, value = 9, step = 1)))
     ),
     fluidRow(
-        column(6, plotOutput("squeeze", height = "440px")),
-        column(6, plotOutput("integrand", height = "440px"))
+        column(6, plotOutput("mu_logit", height = "340px")),
+        column(6, plotOutput("u_logit", height = "340px"))
+    ),
+    fluidRow(
+        column(6, plotOutput("mu_laplace", height = "340px")),
+        column(6, plotOutput("u_laplace", height = "340px"))
     )
 )
 
 server <- function(input, output, session) {
 
-    output$squeeze <- renderPlot({
-        n_eff <- 3                                  # likelihood as if 3 obs, sigma = 1
-        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
-        prior <- function(mu) dnorm(mu, 0, 5)
-        z     <- function(mu) L(mu) * prior(mu)
+    n_eff <- 3; sigma_prior <- 5                    # likelihood as if 3 obs, sigma = 1; prior N(0, 5^2)
 
-        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-
-        ### this z(mu) is a normal-normal conjugate kernel, so the true log
-        ### marginal likelihood is available directly by numerical integration
+    ### everything that depends on mu_hat: the kernel z, the true log P(y), and the two grid transforms
+    setup <- function(mu_hat) {
+        log_z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        z <- function(mu) exp(log_z(mu))
+        ### normal-normal conjugate kernel: the true log marginal likelihood by numerical integration
         log_marlik <- log(integrate(z, -Inf, Inf)$value)
+        ### Laplace approximation for THIS mu_hat: its mode and se define the second transform
+        op <- nlm(function(mu) -log_z(mu), p = mu_hat, hessian = TRUE)
+        m  <- op$estimate
+        se <- 1 / sqrt(op$hessian[1, 1])
+        list(z = z, log_z = log_z, log_marlik = log_marlik,
+             logit = list(q = qlogis, p = plogis, d = dlogis,
+                          lab = expression(u == 1 / (1 + e^-mu)),
+                          main = "Logistic grid: mu = logit(u)"),
+             laplace = list(q = function(u) qnorm(u, m, se), p = function(mu) pnorm(mu, m, se),
+                            d = function(mu) dnorm(mu, m, se),
+                            lab = expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                            main = "Laplace-normalized grid: mu = mode + se * qnorm(u)"))
+    }
 
-        lo <- -20; hi <- 20                  # fixed x-axis
-        mu_grid <- seq(lo, hi, length.out = 500)
+    log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 
-        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
-        mu_pts <- log(u_pts / (1 - u_pts))          # mu = logit(u)
-
-        ### the midpoint-rule quadrature estimate actually built from this grid:
-        ### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du
-        log_z    <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-            dnorm(mu, 0, 5, log = TRUE)
-        h        <- 1 / input$n_pts
-        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log(u_pts * (1 - u_pts))) + log(h)
+    ### the grid is the midpoint rule in u, mapped back to mu by the transform q; d = du/dmu
+    mu_plot <- function(type) {
+        S <- setup(input$mu_hat); tr <- S[[type]]
+        mu_grid <- seq(-20, 20, length.out = 500)          # fixed x-axis
+        u_pts   <- (seq_len(input$n_pts) - 0.5) / input$n_pts
+        mu_pts  <- tr$q(u_pts)
+        log_quad <- log_sum_exp(S$log_z(mu_pts) - log(tr$d(mu_pts))) + log(1 / input$n_pts)
 
         par(mar = c(4, 4, 2, 4))
-        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+        plot(mu_grid, S$z(mu_grid), type = "l", lwd = 3, col = "firebrick", main = tr$main,
              xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
-        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+        polygon(c(mu_grid, rev(mu_grid)), c(S$z(mu_grid), rep(0, length(mu_grid))),
                 col = adjustcolor("firebrick", 0.15), border = NA)
-        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
-        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+        segments(mu_pts, 0, mu_pts, S$z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, S$z(mu_pts), pch = 19, col = "gray30")
 
         par(new = TRUE)
-        plot(mu_grid, plogis(mu_grid), type = "l", lwd = 3, col = "steelblue",
+        plot(mu_grid, tr$p(mu_grid), type = "l", lwd = 3, col = "steelblue",
              axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
         axis(4, col.axis = "steelblue", col.ticks = "steelblue")
-        mtext(expression(u == 1 / (1 + e^-mu)), side = 4, line = 2.5, col = "steelblue")
+        mtext(tr$lab, side = 4, line = 2.5, col = "steelblue")
 
         guide_col <- adjustcolor("gray50", 0.6)
         segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
@@ -99,41 +111,42 @@ server <- function(input, output, session) {
         points(mu_pts, u_pts, pch = 19, col = "gray30")
 
         legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
-               legend = c(expression(z(mu) == pi(mu) * L(mu)),
-                          expression(u == 1 / (1 + e^-mu)),
-                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
-                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
-    })
+               cex = 0.85,
+               legend = c(expression(z(mu) == pi(mu) * L(mu)), tr$lab,
+                          as.expression(bquote("true"~log~P(y) == .(round(S$log_marlik, 3)))),
+                          as.expression(bquote("quadrature"~log~P(y) == .(round(log_quad, 3))))))
+    }
 
-    output$integrand <- renderPlot({
-        n_eff <- 3
-        g <- function(u) {                            # z(logit(u)) / (u(1-u)), the integrand in u
-            mu <- qlogis(u)
-            exp(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                dnorm(mu, 0, 5, log = TRUE) - log(u * (1 - u)))
-        }
+    ### the function the midpoint rule integrates over u: g(u) = z(q(u)) / d(q(u)), with rectangles
+    u_plot <- function(type) {
+        S <- setup(input$mu_hat); tr <- S[[type]]
+        g <- function(u) { mu <- tr$q(u); exp(S$log_z(mu) - log(tr$d(mu))) }
         n      <- input$n_pts
         h      <- 1 / n
         u_pts  <- (seq_len(n) - 0.5) / n
         g_pts  <- g(u_pts)
         u_fine <- seq(0.0005, 0.9995, length.out = 2000)
         g_fine <- g(u_fine)
-
-        true_val <- integrate(g, 0, 1, subdivisions = 1000L, stop.on.error = FALSE)$value
+        true_val <- exp(S$log_marlik)                      # the area is the same for every transform
         quad_val <- sum(g_pts) * h
 
         par(mar = c(4, 4, 2, 1))
-        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick",
+        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick", main = "Integrand in u",
              ylim = c(0, max(g_fine, g_pts) * 1.1), xlab = expression(u),
-             ylab = expression(g(u) == z(logit(u)) / (u * (1 - u))))
+             ylab = expression(g(u) == z(mu(u)) / (du / dmu)))
         rect(u_pts - h / 2, 0, u_pts + h / 2, g_pts,
              col = adjustcolor("gray50", 0.3), border = "gray30")
         points(u_pts, g_pts, pch = 19, col = "gray30")
-        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA),
+        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA), cex = 0.85,
                legend = c(expression(g(u)),
                           as.expression(bquote("true area" == .(signif(true_val, 4)))),
                           as.expression(bquote("midpoint rule" == .(signif(quad_val, 4))))))
-    })
+    }
+
+    output$mu_logit   <- renderPlot(mu_plot("logit"))
+    output$u_logit    <- renderPlot(u_plot("logit"))
+    output$mu_laplace <- renderPlot(mu_plot("laplace"))
+    output$u_laplace  <- renderPlot(u_plot("laplace"))
 }
 
 shinyApp(ui, server)
@@ -149,12 +162,12 @@ To integrate over the whole real line with a fixed grid, the app maps $\mu$ to t
 $$P(y)=\int_0^1 \frac{z(\text{logit}\,u)}{u(1-u)}\,du\;\approx\;\frac1n\sum_{i=1}^n \frac{z(\text{logit}\,u_i)}{u_i(1-u_i)}.$$
 The grid is fixed in advance, without looking at where the posterior mass is.
 
-**What the plots show.**
+**What the plots show.** Two grids are compared on the same data, one per row; the sliders are shared. In each row the left plot shows $z(\mu)$ and the grid in $\mu$, and the right plot shows the function the rule actually integrates over $u$, with the midpoint rectangles.
 
-* *Left:* $z(\mu)$ (red) and the map $u=1/(1+e^{-\mu})$ (blue). The dots are the grid points $u_i$ and the $\mu_i=\text{logit}(u_i)$ they correspond to. Equally spaced $u_i$ are densely packed near $\mu=0$ and spread very thinly far from it.
-* *Right:* the function $g(u)=z(\text{logit}\,u)/\{u(1-u)\}$ that the rule integrates. The gray rectangles are the midpoint rule, and their total area is the quadrature estimate.
+* *Top row, logistic grid.* $\mu=\text{logit}(u)$, fixed in advance whatever the data. Left: $z(\mu)$ (red), the map $u=1/(1+e^{-\mu})$ (blue), and the grid points $u_i$ with the $\mu_i=\text{logit}(u_i)$ they correspond to. Equally spaced $u_i$ are densely packed near $\mu=0$ and spread very thinly far from it. Right: $g(u)=z(\text{logit}\,u)/\{u(1-u)\}$; the gray rectangles are the midpoint rule, and their total area is the estimate.
+* *Bottom row, Laplace-normalized grid.* The transform is centred and scaled by the Laplace approximation recomputed for the current $\hat\mu$: $u=\Phi\big((\mu-\hat\mu_L)/s_L\big)$, where $\hat\mu_L$ is the posterior mode and $s_L$ the inverse square root of the curvature there. The midpoint grid in $u$ is therefore uniform in *Laplace-normalized* space, so it concentrates where the posterior mass lives. Right: $g(u)=z(\mu(u))\big/\,\phi\big((\mu(u)-\hat\mu_L)/s_L\big)\big/s_L$, which is nearly flat, so a few rectangles already give the right area.
 
-**What to try.** At $\hat\mu=0$ the posterior mass sits under the grid, the rectangles follow $g(u)$, and the quadrature estimate agrees with the true value. As $\hat\mu$ moves to 8 or 20, the mass is squeezed into a tiny interval of $u$ near 1 that falls between grid points. The rule then sees essentially nothing and the estimate is wrong by many orders of magnitude, however many points you add. This is the general lesson: a fixed grid that ignores the location of the mode can miss it, which motivates adaptive quadrature and Laplace approximation.
+**What to try.** At $\hat\mu=0$ both grids work: the posterior mass sits under the logistic grid, and the two estimates agree with the true value. As $\hat\mu$ moves to 8 or 20, the logistic grid fails: the mass is squeezed into a tiny interval of $u$ near 1 that falls between grid points, so the rule sees essentially nothing and the estimate is wrong by many orders of magnitude, however many points you add. The Laplace-normalized grid follows the posterior wherever it sits, and its estimate stays close to the true value. The lesson is that a fixed grid that ignores the location of the mode can miss it, and that centring and scaling the grid with the Laplace approximation fixes this.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -194,51 +207,63 @@ ui <- fluidPage(
                                   min = 2, max = 25, value = 9, step = 1)))
     ),
     fluidRow(
-        column(6, plotOutput("squeeze", height = "440px")),
-        column(6, plotOutput("integrand", height = "440px"))
+        column(6, plotOutput("mu_logit", height = "340px")),
+        column(6, plotOutput("u_logit", height = "340px"))
+    ),
+    fluidRow(
+        column(6, plotOutput("mu_laplace", height = "340px")),
+        column(6, plotOutput("u_laplace", height = "340px"))
     )
 )
 
 server <- function(input, output, session) {
 
-    output$squeeze <- renderPlot({
-        n_eff <- 3                                  # likelihood as if 3 obs, sigma = 1
-        L     <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
-        prior <- function(mu) dnorm(mu, 0, 5)
-        z     <- function(mu) L(mu) * prior(mu)
+    n_eff <- 3; sigma_prior <- 5                    # likelihood as if 3 obs, sigma = 1; prior N(0, 5^2)
 
-        log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-
-        ### this z(mu) is a normal-normal conjugate kernel, so the true log
-        ### marginal likelihood is available directly by numerical integration
+    ### everything that depends on mu_hat: the kernel z, the true log P(y), and the two grid transforms
+    setup <- function(mu_hat) {
+        log_z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        z <- function(mu) exp(log_z(mu))
+        ### normal-normal conjugate kernel: the true log marginal likelihood by numerical integration
         log_marlik <- log(integrate(z, -Inf, Inf)$value)
+        ### Laplace approximation for THIS mu_hat: its mode and se define the second transform
+        op <- nlm(function(mu) -log_z(mu), p = mu_hat, hessian = TRUE)
+        m  <- op$estimate
+        se <- 1 / sqrt(op$hessian[1, 1])
+        list(z = z, log_z = log_z, log_marlik = log_marlik,
+             logit = list(q = qlogis, p = plogis, d = dlogis,
+                          lab = expression(u == 1 / (1 + e^-mu)),
+                          main = "Logistic grid: mu = logit(u)"),
+             laplace = list(q = function(u) qnorm(u, m, se), p = function(mu) pnorm(mu, m, se),
+                            d = function(mu) dnorm(mu, m, se),
+                            lab = expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                            main = "Laplace-normalized grid: mu = mode + se * qnorm(u)"))
+    }
 
-        lo <- -20; hi <- 20                  # fixed x-axis
-        mu_grid <- seq(lo, hi, length.out = 500)
+    log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
 
-        u_pts  <- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
-        mu_pts <- log(u_pts / (1 - u_pts))          # mu = logit(u)
-
-        ### the midpoint-rule quadrature estimate actually built from this grid:
-        ### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du
-        log_z    <- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-            dnorm(mu, 0, 5, log = TRUE)
-        h        <- 1 / input$n_pts
-        log_marlik_quad <- log_sum_exp(log_z(mu_pts) - log(u_pts * (1 - u_pts))) + log(h)
+    ### the grid is the midpoint rule in u, mapped back to mu by the transform q; d = du/dmu
+    mu_plot <- function(type) {
+        S <- setup(input$mu_hat); tr <- S[[type]]
+        mu_grid <- seq(-20, 20, length.out = 500)          # fixed x-axis
+        u_pts   <- (seq_len(input$n_pts) - 0.5) / input$n_pts
+        mu_pts  <- tr$q(u_pts)
+        log_quad <- log_sum_exp(S$log_z(mu_pts) - log(tr$d(mu_pts))) + log(1 / input$n_pts)
 
         par(mar = c(4, 4, 2, 4))
-        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+        plot(mu_grid, S$z(mu_grid), type = "l", lwd = 3, col = "firebrick", main = tr$main,
              xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
-        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+        polygon(c(mu_grid, rev(mu_grid)), c(S$z(mu_grid), rep(0, length(mu_grid))),
                 col = adjustcolor("firebrick", 0.15), border = NA)
-        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
-        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+        segments(mu_pts, 0, mu_pts, S$z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, S$z(mu_pts), pch = 19, col = "gray30")
 
         par(new = TRUE)
-        plot(mu_grid, plogis(mu_grid), type = "l", lwd = 3, col = "steelblue",
+        plot(mu_grid, tr$p(mu_grid), type = "l", lwd = 3, col = "steelblue",
              axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
         axis(4, col.axis = "steelblue", col.ticks = "steelblue")
-        mtext(expression(u == 1 / (1 + e^-mu)), side = 4, line = 2.5, col = "steelblue")
+        mtext(tr$lab, side = 4, line = 2.5, col = "steelblue")
 
         guide_col <- adjustcolor("gray50", 0.6)
         segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
@@ -246,41 +271,42 @@ server <- function(input, output, session) {
         points(mu_pts, u_pts, pch = 19, col = "gray30")
 
         legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
-               legend = c(expression(z(mu) == pi(mu) * L(mu)),
-                          expression(u == 1 / (1 + e^-mu)),
-                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
-                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
-    })
+               cex = 0.85,
+               legend = c(expression(z(mu) == pi(mu) * L(mu)), tr$lab,
+                          as.expression(bquote("true"~log~P(y) == .(round(S$log_marlik, 3)))),
+                          as.expression(bquote("quadrature"~log~P(y) == .(round(log_quad, 3))))))
+    }
 
-    output$integrand <- renderPlot({
-        n_eff <- 3
-        g <- function(u) {                            # z(logit(u)) / (u(1-u)), the integrand in u
-            mu <- qlogis(u)
-            exp(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                dnorm(mu, 0, 5, log = TRUE) - log(u * (1 - u)))
-        }
+    ### the function the midpoint rule integrates over u: g(u) = z(q(u)) / d(q(u)), with rectangles
+    u_plot <- function(type) {
+        S <- setup(input$mu_hat); tr <- S[[type]]
+        g <- function(u) { mu <- tr$q(u); exp(S$log_z(mu) - log(tr$d(mu))) }
         n      <- input$n_pts
         h      <- 1 / n
         u_pts  <- (seq_len(n) - 0.5) / n
         g_pts  <- g(u_pts)
         u_fine <- seq(0.0005, 0.9995, length.out = 2000)
         g_fine <- g(u_fine)
-
-        true_val <- integrate(g, 0, 1, subdivisions = 1000L, stop.on.error = FALSE)$value
+        true_val <- exp(S$log_marlik)                      # the area is the same for every transform
         quad_val <- sum(g_pts) * h
 
         par(mar = c(4, 4, 2, 1))
-        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick",
+        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick", main = "Integrand in u",
              ylim = c(0, max(g_fine, g_pts) * 1.1), xlab = expression(u),
-             ylab = expression(g(u) == z(logit(u)) / (u * (1 - u))))
+             ylab = expression(g(u) == z(mu(u)) / (du / dmu)))
         rect(u_pts - h / 2, 0, u_pts + h / 2, g_pts,
              col = adjustcolor("gray50", 0.3), border = "gray30")
         points(u_pts, g_pts, pch = 19, col = "gray30")
-        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA),
+        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA), cex = 0.85,
                legend = c(expression(g(u)),
                           as.expression(bquote("true area" == .(signif(true_val, 4)))),
                           as.expression(bquote("midpoint rule" == .(signif(quad_val, 4))))))
-    })
+    }
+
+    output$mu_logit   <- renderPlot(mu_plot("logit"))
+    output$u_logit    <- renderPlot(u_plot("logit"))
+    output$mu_laplace <- renderPlot(mu_plot("laplace"))
+    output$u_laplace  <- renderPlot(u_plot("laplace"))
 }
 
 shinyApp(ui, server)

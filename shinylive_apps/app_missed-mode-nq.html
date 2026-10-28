@@ -196,11 +196,7 @@ window.Quarto = {
   </li>  
         <li>
     <a class="dropdown-item" href="./app_missed-mode-nq.html">
- <span class="dropdown-text">A Quadrature Grid Missing the Posterior Mode</span></a>
-  </li>  
-        <li>
-    <a class="dropdown-item" href="./app_laplace-transform.html">
- <span class="dropdown-text">Adaptive Gauss–Hermite Quadrature</span></a>
+ <span class="dropdown-text">Quadrature Grids: Logistic vs Laplace-Normalized</span></a>
   </li>  
         <li>
     <a class="dropdown-item" href="./app_rejection.html">
@@ -248,7 +244,7 @@ window.Quarto = {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">A Quadrature Grid Missing the Posterior Mode</h1>
+<h1 class="title">Quadrature Grids: Logistic vs Laplace-Normalized</h1>
 </div>
 
 
@@ -285,7 +281,7 @@ window.Quarto = {
 #|   shinylive does not work in self-contained HTML documents.
 #|   Please set `embed-resources: false` in your metadata.
 #| standalone: true
-#| viewerHeight: 680
+#| viewerHeight: 900
 library(shiny)
 
 ### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
@@ -321,51 +317,63 @@ ui &lt;- fluidPage(
                                   min = 2, max = 25, value = 9, step = 1)))
     ),
     fluidRow(
-        column(6, plotOutput("squeeze", height = "440px")),
-        column(6, plotOutput("integrand", height = "440px"))
+        column(6, plotOutput("mu_logit", height = "340px")),
+        column(6, plotOutput("u_logit", height = "340px"))
+    ),
+    fluidRow(
+        column(6, plotOutput("mu_laplace", height = "340px")),
+        column(6, plotOutput("u_laplace", height = "340px"))
     )
 )
 
 server &lt;- function(input, output, session) {
 
-    output$squeeze &lt;- renderPlot({
-        n_eff &lt;- 3                                  # likelihood as if 3 obs, sigma = 1
-        L     &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff))
-        prior &lt;- function(mu) dnorm(mu, 0, 5)
-        z     &lt;- function(mu) L(mu) * prior(mu)
+    n_eff &lt;- 3; sigma_prior &lt;- 5                    # likelihood as if 3 obs, sigma = 1; prior N(0, 5^2)
 
-        log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
-
-        ### this z(mu) is a normal-normal conjugate kernel, so the true log
-        ### marginal likelihood is available directly by numerical integration
+    ### everything that depends on mu_hat: the kernel z, the true log P(y), and the two grid transforms
+    setup &lt;- function(mu_hat) {
+        log_z &lt;- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
+            dnorm(mu, 0, sigma_prior, log = TRUE)
+        z &lt;- function(mu) exp(log_z(mu))
+        ### normal-normal conjugate kernel: the true log marginal likelihood by numerical integration
         log_marlik &lt;- log(integrate(z, -Inf, Inf)$value)
+        ### Laplace approximation for THIS mu_hat: its mode and se define the second transform
+        op &lt;- nlm(function(mu) -log_z(mu), p = mu_hat, hessian = TRUE)
+        m  &lt;- op$estimate
+        se &lt;- 1 / sqrt(op$hessian[1, 1])
+        list(z = z, log_z = log_z, log_marlik = log_marlik,
+             logit = list(q = qlogis, p = plogis, d = dlogis,
+                          lab = expression(u == 1 / (1 + e^-mu)),
+                          main = "Logistic grid: mu = logit(u)"),
+             laplace = list(q = function(u) qnorm(u, m, se), p = function(mu) pnorm(mu, m, se),
+                            d = function(mu) dnorm(mu, m, se),
+                            lab = expression(u == Phi((mu - hat(mu)[L]) / s[L])),
+                            main = "Laplace-normalized grid: mu = mode + se * qnorm(u)"))
+    }
 
-        lo &lt;- -20; hi &lt;- 20                  # fixed x-axis
-        mu_grid &lt;- seq(lo, hi, length.out = 500)
+    log_sum_exp &lt;- function(lx) { m &lt;- max(lx); m + log(sum(exp(lx - m))) }
 
-        u_pts  &lt;- (seq_len(input$n_pts) - 0.5) / input$n_pts   # midpoint rule, uniform on (0, 1)
-        mu_pts &lt;- log(u_pts / (1 - u_pts))          # mu = logit(u)
-
-        ### the midpoint-rule quadrature estimate actually built from this grid:
-        ### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du
-        log_z    &lt;- function(mu) dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-            dnorm(mu, 0, 5, log = TRUE)
-        h        &lt;- 1 / input$n_pts
-        log_marlik_quad &lt;- log_sum_exp(log_z(mu_pts) - log(u_pts * (1 - u_pts))) + log(h)
+    ### the grid is the midpoint rule in u, mapped back to mu by the transform q; d = du/dmu
+    mu_plot &lt;- function(type) {
+        S &lt;- setup(input$mu_hat); tr &lt;- S[[type]]
+        mu_grid &lt;- seq(-20, 20, length.out = 500)          # fixed x-axis
+        u_pts   &lt;- (seq_len(input$n_pts) - 0.5) / input$n_pts
+        mu_pts  &lt;- tr$q(u_pts)
+        log_quad &lt;- log_sum_exp(S$log_z(mu_pts) - log(tr$d(mu_pts))) + log(1 / input$n_pts)
 
         par(mar = c(4, 4, 2, 4))
-        plot(mu_grid, z(mu_grid), type = "l", lwd = 3, col = "firebrick",
+        plot(mu_grid, S$z(mu_grid), type = "l", lwd = 3, col = "firebrick", main = tr$main,
              xlab = expression(mu), ylab = expression(z(mu) == pi(mu) * L(mu)))
-        polygon(c(mu_grid, rev(mu_grid)), c(z(mu_grid), rep(0, length(mu_grid))),
+        polygon(c(mu_grid, rev(mu_grid)), c(S$z(mu_grid), rep(0, length(mu_grid))),
                 col = adjustcolor("firebrick", 0.15), border = NA)
-        segments(mu_pts, 0, mu_pts, z(mu_pts), col = "gray30", lwd = 1.5)
-        points(mu_pts, z(mu_pts), pch = 19, col = "gray30")
+        segments(mu_pts, 0, mu_pts, S$z(mu_pts), col = "gray30", lwd = 1.5)
+        points(mu_pts, S$z(mu_pts), pch = 19, col = "gray30")
 
         par(new = TRUE)
-        plot(mu_grid, plogis(mu_grid), type = "l", lwd = 3, col = "steelblue",
+        plot(mu_grid, tr$p(mu_grid), type = "l", lwd = 3, col = "steelblue",
              axes = FALSE, xlab = "", ylab = "", ylim = c(0, 1))
         axis(4, col.axis = "steelblue", col.ticks = "steelblue")
-        mtext(expression(u == 1 / (1 + e^-mu)), side = 4, line = 2.5, col = "steelblue")
+        mtext(tr$lab, side = 4, line = 2.5, col = "steelblue")
 
         guide_col &lt;- adjustcolor("gray50", 0.6)
         segments(mu_pts, 0, mu_pts, u_pts, col = guide_col, lty = 3)
@@ -373,41 +381,42 @@ server &lt;- function(input, output, session) {
         points(mu_pts, u_pts, pch = 19, col = "gray30")
 
         legend("topleft", bty = "n", lwd = c(3, 3, NA, NA), col = c("firebrick", "steelblue", NA, NA),
-               legend = c(expression(z(mu) == pi(mu) * L(mu)),
-                          expression(u == 1 / (1 + e^-mu)),
-                          as.expression(bquote("true"~log~P(y) == .(round(log_marlik, 3)))),
-                          as.expression(bquote("quadrature, this grid"~log~P(y) == .(round(log_marlik_quad, 3))))))
-    })
+               cex = 0.85,
+               legend = c(expression(z(mu) == pi(mu) * L(mu)), tr$lab,
+                          as.expression(bquote("true"~log~P(y) == .(round(S$log_marlik, 3)))),
+                          as.expression(bquote("quadrature"~log~P(y) == .(round(log_quad, 3))))))
+    }
 
-    output$integrand &lt;- renderPlot({
-        n_eff &lt;- 3
-        g &lt;- function(u) {                            # z(logit(u)) / (u(1-u)), the integrand in u
-            mu &lt;- qlogis(u)
-            exp(dnorm(input$mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                dnorm(mu, 0, 5, log = TRUE) - log(u * (1 - u)))
-        }
+    ### the function the midpoint rule integrates over u: g(u) = z(q(u)) / d(q(u)), with rectangles
+    u_plot &lt;- function(type) {
+        S &lt;- setup(input$mu_hat); tr &lt;- S[[type]]
+        g &lt;- function(u) { mu &lt;- tr$q(u); exp(S$log_z(mu) - log(tr$d(mu))) }
         n      &lt;- input$n_pts
         h      &lt;- 1 / n
         u_pts  &lt;- (seq_len(n) - 0.5) / n
         g_pts  &lt;- g(u_pts)
         u_fine &lt;- seq(0.0005, 0.9995, length.out = 2000)
         g_fine &lt;- g(u_fine)
-
-        true_val &lt;- integrate(g, 0, 1, subdivisions = 1000L, stop.on.error = FALSE)$value
+        true_val &lt;- exp(S$log_marlik)                      # the area is the same for every transform
         quad_val &lt;- sum(g_pts) * h
 
         par(mar = c(4, 4, 2, 1))
-        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick",
+        plot(u_fine, g_fine, type = "l", lwd = 3, col = "firebrick", main = "Integrand in u",
              ylim = c(0, max(g_fine, g_pts) * 1.1), xlab = expression(u),
-             ylab = expression(g(u) == z(logit(u)) / (u * (1 - u))))
+             ylab = expression(g(u) == z(mu(u)) / (du / dmu)))
         rect(u_pts - h / 2, 0, u_pts + h / 2, g_pts,
              col = adjustcolor("gray50", 0.3), border = "gray30")
         points(u_pts, g_pts, pch = 19, col = "gray30")
-        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA),
+        legend("topright", bty = "n", lwd = c(3, NA, NA), col = c("firebrick", NA, NA), cex = 0.85,
                legend = c(expression(g(u)),
                           as.expression(bquote("true area" == .(signif(true_val, 4)))),
                           as.expression(bquote("midpoint rule" == .(signif(quad_val, 4))))))
-    })
+    }
+
+    output$mu_logit   &lt;- renderPlot(mu_plot("logit"))
+    output$u_logit    &lt;- renderPlot(u_plot("logit"))
+    output$mu_laplace &lt;- renderPlot(mu_plot("laplace"))
+    output$u_laplace  &lt;- renderPlot(u_plot("laplace"))
 }
 
 shinyApp(ui, server)</code></pre>
@@ -415,12 +424,12 @@ shinyApp(ui, server)</code></pre>
 <h2 class="anchored" data-anchor-id="about-the-app">About the app</h2>
 <p>Shows how a fixed quadrature grid can miss the posterior mode entirely, so that the computed marginal likelihood is badly wrong. The app models a single unknown mean <span class="math inline">\(\mu\)</span>.</p>
 <p><strong>The problem.</strong> The data enter through a normal likelihood <span class="math inline">\(L(\mu)=N(\hat\mu\mid\mu,1/3)\)</span>, the likelihood of three observations with unit variance whose sample mean is the slider value <span class="math inline">\(\hat\mu\)</span> (“data location”). The prior is <span class="math inline">\(\pi(\mu)=N(0,5^2)\)</span>. The marginal likelihood is <span class="math display">\[P(y)=\int_{-\infty}^{\infty} z(\mu)\,d\mu,\qquad z(\mu)=\pi(\mu)L(\mu).\]</span> To integrate over the whole real line with a fixed grid, the app maps <span class="math inline">\(\mu\)</span> to the unit interval by <span class="math inline">\(u=1/(1+e^{-\mu})\)</span>, so <span class="math inline">\(\mu=\text{logit}(u)\)</span>, and applies the <strong>midpoint rule</strong> with <span class="math inline">\(n\)</span> equally spaced points <span class="math inline">\(u_i=(i-0.5)/n\)</span> on <span class="math inline">\((0,1)\)</span>: <span class="math display">\[P(y)=\int_0^1 \frac{z(\text{logit}\,u)}{u(1-u)}\,du\;\approx\;\frac1n\sum_{i=1}^n \frac{z(\text{logit}\,u_i)}{u_i(1-u_i)}.\]</span> The grid is fixed in advance, without looking at where the posterior mass is.</p>
-<p><strong>What the plots show.</strong></p>
+<p><strong>What the plots show.</strong> Two grids are compared on the same data, one per row; the sliders are shared. In each row the left plot shows <span class="math inline">\(z(\mu)\)</span> and the grid in <span class="math inline">\(\mu\)</span>, and the right plot shows the function the rule actually integrates over <span class="math inline">\(u\)</span>, with the midpoint rectangles.</p>
 <ul>
-<li><em>Left:</em> <span class="math inline">\(z(\mu)\)</span> (red) and the map <span class="math inline">\(u=1/(1+e^{-\mu})\)</span> (blue). The dots are the grid points <span class="math inline">\(u_i\)</span> and the <span class="math inline">\(\mu_i=\text{logit}(u_i)\)</span> they correspond to. Equally spaced <span class="math inline">\(u_i\)</span> are densely packed near <span class="math inline">\(\mu=0\)</span> and spread very thinly far from it.</li>
-<li><em>Right:</em> the function <span class="math inline">\(g(u)=z(\text{logit}\,u)/\{u(1-u)\}\)</span> that the rule integrates. The gray rectangles are the midpoint rule, and their total area is the quadrature estimate.</li>
+<li><em>Top row, logistic grid.</em> <span class="math inline">\(\mu=\text{logit}(u)\)</span>, fixed in advance whatever the data. Left: <span class="math inline">\(z(\mu)\)</span> (red), the map <span class="math inline">\(u=1/(1+e^{-\mu})\)</span> (blue), and the grid points <span class="math inline">\(u_i\)</span> with the <span class="math inline">\(\mu_i=\text{logit}(u_i)\)</span> they correspond to. Equally spaced <span class="math inline">\(u_i\)</span> are densely packed near <span class="math inline">\(\mu=0\)</span> and spread very thinly far from it. Right: <span class="math inline">\(g(u)=z(\text{logit}\,u)/\{u(1-u)\}\)</span>; the gray rectangles are the midpoint rule, and their total area is the estimate.</li>
+<li><em>Bottom row, Laplace-normalized grid.</em> The transform is centred and scaled by the Laplace approximation recomputed for the current <span class="math inline">\(\hat\mu\)</span>: <span class="math inline">\(u=\Phi\big((\mu-\hat\mu_L)/s_L\big)\)</span>, where <span class="math inline">\(\hat\mu_L\)</span> is the posterior mode and <span class="math inline">\(s_L\)</span> the inverse square root of the curvature there. The midpoint grid in <span class="math inline">\(u\)</span> is therefore uniform in <em>Laplace-normalized</em> space, so it concentrates where the posterior mass lives. Right: <span class="math inline">\(g(u)=z(\mu(u))\big/\,\phi\big((\mu(u)-\hat\mu_L)/s_L\big)\big/s_L\)</span>, which is nearly flat, so a few rectangles already give the right area.</li>
 </ul>
-<p><strong>What to try.</strong> At <span class="math inline">\(\hat\mu=0\)</span> the posterior mass sits under the grid, the rectangles follow <span class="math inline">\(g(u)\)</span>, and the quadrature estimate agrees with the true value. As <span class="math inline">\(\hat\mu\)</span> moves to 8 or 20, the mass is squeezed into a tiny interval of <span class="math inline">\(u\)</span> near 1 that falls between grid points. The rule then sees essentially nothing and the estimate is wrong by many orders of magnitude, however many points you add. This is the general lesson: a fixed grid that ignores the location of the mode can miss it, which motivates adaptive quadrature and Laplace approximation.</p>
+<p><strong>What to try.</strong> At <span class="math inline">\(\hat\mu=0\)</span> both grids work: the posterior mass sits under the logistic grid, and the two estimates agree with the true value. As <span class="math inline">\(\hat\mu\)</span> moves to 8 or 20, the logistic grid fails: the mass is squeezed into a tiny interval of <span class="math inline">\(u\)</span> near 1 that falls between grid points, so the rule sees essentially nothing and the estimate is wrong by many orders of magnitude, however many points you add. The Laplace-normalized grid follows the posterior wherever it sits, and its estimate stays close to the true value. The lesson is that a fixed grid that ignores the location of the mode can miss it, and that centring and scaling the grid with the Laplace approximation fixes this.</p>
 <div class="callout callout-style-default callout-note callout-titled" title="R source for this app">
 <div class="callout-header d-flex align-content-center collapsed" data-bs-toggle="collapse" data-bs-target=".callout-1-contents" aria-controls="callout-1" aria-expanded="false" aria-label="Toggle callout">
 <div class="callout-icon-container">
@@ -468,96 +477,109 @@ shinyApp(ui, server)</code></pre>
 <span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">min =</span> <span class="dv">2</span>, <span class="at">max =</span> <span class="dv">25</span>, <span class="at">value =</span> <span class="dv">9</span>, <span class="at">step =</span> <span class="dv">1</span>)))</span>
 <span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>    ),</span>
 <span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
-<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"squeeze"</span>, <span class="at">height =</span> <span class="st">"440px"</span>)),</span>
-<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"integrand"</span>, <span class="at">height =</span> <span class="st">"440px"</span>))</span>
-<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
-<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>squeeze <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>        n_eff <span class="ot">&lt;-</span> <span class="dv">3</span>                                  <span class="co"># likelihood as if 3 obs, sigma = 1</span></span>
-<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>        L     <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(input<span class="sc">$</span>mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff))</span>
-<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a>        prior <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, <span class="dv">5</span>)</span>
-<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>        z     <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">L</span>(mu) <span class="sc">*</span> <span class="fu">prior</span>(mu)</span>
+<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"mu_logit"</span>, <span class="at">height =</span> <span class="st">"340px"</span>)),</span>
+<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"u_logit"</span>, <span class="at">height =</span> <span class="st">"340px"</span>))</span>
+<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
+<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"mu_laplace"</span>, <span class="at">height =</span> <span class="st">"340px"</span>)),</span>
+<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">6</span>, <span class="fu">plotOutput</span>(<span class="st">"u_laplace"</span>, <span class="at">height =</span> <span class="st">"340px"</span>))</span>
+<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a>    n_eff <span class="ot">&lt;-</span> <span class="dv">3</span>; sigma_prior <span class="ot">&lt;-</span> <span class="dv">5</span>                    <span class="co"># likelihood as if 3 obs, sigma = 1; prior N(0, 5^2)</span></span>
 <span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>        log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
-<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>        <span class="do">### this z(mu) is a normal-normal conjugate kernel, so the true log</span></span>
-<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>        <span class="do">### marginal likelihood is available directly by numerical integration</span></span>
-<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>        log_marlik <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">integrate</span>(z, <span class="sc">-</span><span class="cn">Inf</span>, <span class="cn">Inf</span>)<span class="sc">$</span>value)</span>
-<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>        lo <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">20</span>; hi <span class="ot">&lt;-</span> <span class="dv">20</span>                  <span class="co"># fixed x-axis</span></span>
-<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>        mu_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(lo, hi, <span class="at">length.out =</span> <span class="dv">500</span>)</span>
-<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>        u_pts  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(input<span class="sc">$</span>n_pts) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">/</span> input<span class="sc">$</span>n_pts   <span class="co"># midpoint rule, uniform on (0, 1)</span></span>
-<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>        mu_pts <span class="ot">&lt;-</span> <span class="fu">log</span>(u_pts <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u_pts))          <span class="co"># mu = logit(u)</span></span>
-<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>        <span class="do">### the midpoint-rule quadrature estimate actually built from this grid:</span></span>
-<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>        <span class="do">### integral of z(mu) dmu = integral of z(logit(u)) / (u(1-u)) du</span></span>
-<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>        log_z    <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(input<span class="sc">$</span>mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>            <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, <span class="dv">5</span>, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>        h        <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> input<span class="sc">$</span>n_pts</span>
-<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>        log_marlik_quad <span class="ot">&lt;-</span> <span class="fu">log_sum_exp</span>(<span class="fu">log_z</span>(mu_pts) <span class="sc">-</span> <span class="fu">log</span>(u_pts <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u_pts))) <span class="sc">+</span> <span class="fu">log</span>(h)</span>
-<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">4</span>))</span>
-<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(mu_grid, <span class="fu">z</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>,</span>
-<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>             <span class="at">xlab =</span> <span class="fu">expression</span>(mu), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)))</span>
-<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a>        <span class="fu">polygon</span>(<span class="fu">c</span>(mu_grid, <span class="fu">rev</span>(mu_grid)), <span class="fu">c</span>(<span class="fu">z</span>(mu_grid), <span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">length</span>(mu_grid))),</span>
-<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>                <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"firebrick"</span>, <span class="fl">0.15</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, <span class="fu">z</span>(mu_pts), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">lwd =</span> <span class="fl">1.5</span>)</span>
-<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(mu_pts, <span class="fu">z</span>(mu_pts), <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">new =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(mu_grid, <span class="fu">plogis</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
-<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>             <span class="at">axes =</span> <span class="cn">FALSE</span>, <span class="at">xlab =</span> <span class="st">""</span>, <span class="at">ylab =</span> <span class="st">""</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>))</span>
-<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a>        <span class="fu">axis</span>(<span class="dv">4</span>, <span class="at">col.axis =</span> <span class="st">"steelblue"</span>, <span class="at">col.ticks =</span> <span class="st">"steelblue"</span>)</span>
-<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>        <span class="fu">mtext</span>(<span class="fu">expression</span>(u <span class="sc">==</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> e<span class="sc">^-</span>mu)), <span class="at">side =</span> <span class="dv">4</span>, <span class="at">line =</span> <span class="fl">2.5</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
-<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>        guide_col <span class="ot">&lt;-</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.6</span>)</span>
-<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, u_pts, <span class="fu">max</span>(mu_grid), u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(mu_pts, u_pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">3</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)),</span>
-<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">expression</span>(u <span class="sc">==</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> e<span class="sc">^-</span>mu)),</span>
-<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"true"</span><span class="sc">~</span>log<span class="sc">~</span><span class="fu">P</span>(y) <span class="sc">==</span> .(<span class="fu">round</span>(log_marlik, <span class="dv">3</span>)))),</span>
-<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"quadrature, this grid"</span><span class="sc">~</span>log<span class="sc">~</span><span class="fu">P</span>(y) <span class="sc">==</span> .(<span class="fu">round</span>(log_marlik_quad, <span class="dv">3</span>))))))</span>
-<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>    <span class="do">### everything that depends on mu_hat: the kernel z, the true log P(y), and the two grid transforms</span></span>
+<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>    setup <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
+<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a>        log_z <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a>            <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a>        z <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">exp</span>(<span class="fu">log_z</span>(mu))</span>
+<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>        <span class="do">### normal-normal conjugate kernel: the true log marginal likelihood by numerical integration</span></span>
+<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a>        log_marlik <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">integrate</span>(z, <span class="sc">-</span><span class="cn">Inf</span>, <span class="cn">Inf</span>)<span class="sc">$</span>value)</span>
+<span id="cb2-56"><a href="#cb2-56" aria-hidden="true" tabindex="-1"></a>        <span class="do">### Laplace approximation for THIS mu_hat: its mode and se define the second transform</span></span>
+<span id="cb2-57"><a href="#cb2-57" aria-hidden="true" tabindex="-1"></a>        op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(<span class="cf">function</span>(mu) <span class="sc">-</span><span class="fu">log_z</span>(mu), <span class="at">p =</span> mu_hat, <span class="at">hessian =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-58"><a href="#cb2-58" aria-hidden="true" tabindex="-1"></a>        m  <span class="ot">&lt;-</span> op<span class="sc">$</span>estimate</span>
+<span id="cb2-59"><a href="#cb2-59" aria-hidden="true" tabindex="-1"></a>        se <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(op<span class="sc">$</span>hessian[<span class="dv">1</span>, <span class="dv">1</span>])</span>
+<span id="cb2-60"><a href="#cb2-60" aria-hidden="true" tabindex="-1"></a>        <span class="fu">list</span>(<span class="at">z =</span> z, <span class="at">log_z =</span> log_z, <span class="at">log_marlik =</span> log_marlik,</span>
+<span id="cb2-61"><a href="#cb2-61" aria-hidden="true" tabindex="-1"></a>             <span class="at">logit =</span> <span class="fu">list</span>(<span class="at">q =</span> qlogis, <span class="at">p =</span> plogis, <span class="at">d =</span> dlogis,</span>
+<span id="cb2-62"><a href="#cb2-62" aria-hidden="true" tabindex="-1"></a>                          <span class="at">lab =</span> <span class="fu">expression</span>(u <span class="sc">==</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> e<span class="sc">^-</span>mu)),</span>
+<span id="cb2-63"><a href="#cb2-63" aria-hidden="true" tabindex="-1"></a>                          <span class="at">main =</span> <span class="st">"Logistic grid: mu = logit(u)"</span>),</span>
+<span id="cb2-64"><a href="#cb2-64" aria-hidden="true" tabindex="-1"></a>             <span class="at">laplace =</span> <span class="fu">list</span>(<span class="at">q =</span> <span class="cf">function</span>(u) <span class="fu">qnorm</span>(u, m, se), <span class="at">p =</span> <span class="cf">function</span>(mu) <span class="fu">pnorm</span>(mu, m, se),</span>
+<span id="cb2-65"><a href="#cb2-65" aria-hidden="true" tabindex="-1"></a>                            <span class="at">d =</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu, m, se),</span>
+<span id="cb2-66"><a href="#cb2-66" aria-hidden="true" tabindex="-1"></a>                            <span class="at">lab =</span> <span class="fu">expression</span>(u <span class="sc">==</span> <span class="fu">Phi</span>((mu <span class="sc">-</span> <span class="fu">hat</span>(mu)[L]) <span class="sc">/</span> s[L])),</span>
+<span id="cb2-67"><a href="#cb2-67" aria-hidden="true" tabindex="-1"></a>                            <span class="at">main =</span> <span class="st">"Laplace-normalized grid: mu = mode + se * qnorm(u)"</span>))</span>
+<span id="cb2-68"><a href="#cb2-68" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-69"><a href="#cb2-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-70"><a href="#cb2-70" aria-hidden="true" tabindex="-1"></a>    log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
+<span id="cb2-71"><a href="#cb2-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-72"><a href="#cb2-72" aria-hidden="true" tabindex="-1"></a>    <span class="do">### the grid is the midpoint rule in u, mapped back to mu by the transform q; d = du/dmu</span></span>
+<span id="cb2-73"><a href="#cb2-73" aria-hidden="true" tabindex="-1"></a>    mu_plot <span class="ot">&lt;-</span> <span class="cf">function</span>(type) {</span>
+<span id="cb2-74"><a href="#cb2-74" aria-hidden="true" tabindex="-1"></a>        S <span class="ot">&lt;-</span> <span class="fu">setup</span>(input<span class="sc">$</span>mu_hat); tr <span class="ot">&lt;-</span> S[[type]]</span>
+<span id="cb2-75"><a href="#cb2-75" aria-hidden="true" tabindex="-1"></a>        mu_grid <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">20</span>, <span class="dv">20</span>, <span class="at">length.out =</span> <span class="dv">500</span>)          <span class="co"># fixed x-axis</span></span>
+<span id="cb2-76"><a href="#cb2-76" aria-hidden="true" tabindex="-1"></a>        u_pts   <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(input<span class="sc">$</span>n_pts) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">/</span> input<span class="sc">$</span>n_pts</span>
+<span id="cb2-77"><a href="#cb2-77" aria-hidden="true" tabindex="-1"></a>        mu_pts  <span class="ot">&lt;-</span> tr<span class="sc">$</span><span class="fu">q</span>(u_pts)</span>
+<span id="cb2-78"><a href="#cb2-78" aria-hidden="true" tabindex="-1"></a>        log_quad <span class="ot">&lt;-</span> <span class="fu">log_sum_exp</span>(S<span class="sc">$</span><span class="fu">log_z</span>(mu_pts) <span class="sc">-</span> <span class="fu">log</span>(tr<span class="sc">$</span><span class="fu">d</span>(mu_pts))) <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">/</span> input<span class="sc">$</span>n_pts)</span>
+<span id="cb2-79"><a href="#cb2-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-80"><a href="#cb2-80" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">4</span>))</span>
+<span id="cb2-81"><a href="#cb2-81" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(mu_grid, S<span class="sc">$</span><span class="fu">z</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">main =</span> tr<span class="sc">$</span>main,</span>
+<span id="cb2-82"><a href="#cb2-82" aria-hidden="true" tabindex="-1"></a>             <span class="at">xlab =</span> <span class="fu">expression</span>(mu), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)))</span>
+<span id="cb2-83"><a href="#cb2-83" aria-hidden="true" tabindex="-1"></a>        <span class="fu">polygon</span>(<span class="fu">c</span>(mu_grid, <span class="fu">rev</span>(mu_grid)), <span class="fu">c</span>(S<span class="sc">$</span><span class="fu">z</span>(mu_grid), <span class="fu">rep</span>(<span class="dv">0</span>, <span class="fu">length</span>(mu_grid))),</span>
+<span id="cb2-84"><a href="#cb2-84" aria-hidden="true" tabindex="-1"></a>                <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"firebrick"</span>, <span class="fl">0.15</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb2-85"><a href="#cb2-85" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, S<span class="sc">$</span><span class="fu">z</span>(mu_pts), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">lwd =</span> <span class="fl">1.5</span>)</span>
+<span id="cb2-86"><a href="#cb2-86" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(mu_pts, S<span class="sc">$</span><span class="fu">z</span>(mu_pts), <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
+<span id="cb2-87"><a href="#cb2-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-88"><a href="#cb2-88" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">new =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-89"><a href="#cb2-89" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(mu_grid, tr<span class="sc">$</span><span class="fu">p</span>(mu_grid), <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
+<span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>             <span class="at">axes =</span> <span class="cn">FALSE</span>, <span class="at">xlab =</span> <span class="st">""</span>, <span class="at">ylab =</span> <span class="st">""</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>        <span class="fu">axis</span>(<span class="dv">4</span>, <span class="at">col.axis =</span> <span class="st">"steelblue"</span>, <span class="at">col.ticks =</span> <span class="st">"steelblue"</span>)</span>
+<span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a>        <span class="fu">mtext</span>(tr<span class="sc">$</span>lab, <span class="at">side =</span> <span class="dv">4</span>, <span class="at">line =</span> <span class="fl">2.5</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>)</span>
 <span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>integrand <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        n_eff <span class="ot">&lt;-</span> <span class="dv">3</span></span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        g <span class="ot">&lt;-</span> <span class="cf">function</span>(u) {                            <span class="co"># z(logit(u)) / (u(1-u)), the integrand in u</span></span>
-<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>            mu <span class="ot">&lt;-</span> <span class="fu">qlogis</span>(u)</span>
-<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a>            <span class="fu">exp</span>(<span class="fu">dnorm</span>(input<span class="sc">$</span>mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>                <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, <span class="dv">5</span>, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log</span>(u <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u)))</span>
-<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>        n      <span class="ot">&lt;-</span> input<span class="sc">$</span>n_pts</span>
-<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>        h      <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
-<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>        u_pts  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">/</span> n</span>
-<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>        g_pts  <span class="ot">&lt;-</span> <span class="fu">g</span>(u_pts)</span>
-<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>        u_fine <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.0005</span>, <span class="fl">0.9995</span>, <span class="at">length.out =</span> <span class="dv">2000</span>)</span>
-<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>        g_fine <span class="ot">&lt;-</span> <span class="fu">g</span>(u_fine)</span>
-<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        true_val <span class="ot">&lt;-</span> <span class="fu">integrate</span>(g, <span class="dv">0</span>, <span class="dv">1</span>, <span class="at">subdivisions =</span> <span class="dv">1000</span>L, <span class="at">stop.on.error =</span> <span class="cn">FALSE</span>)<span class="sc">$</span>value</span>
-<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>        quad_val <span class="ot">&lt;-</span> <span class="fu">sum</span>(g_pts) <span class="sc">*</span> h</span>
-<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
-<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(u_fine, g_fine, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>,</span>
-<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fu">max</span>(g_fine, g_pts) <span class="sc">*</span> <span class="fl">1.1</span>), <span class="at">xlab =</span> <span class="fu">expression</span>(u),</span>
-<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">g</span>(u) <span class="sc">==</span> <span class="fu">z</span>(<span class="fu">logit</span>(u)) <span class="sc">/</span> (u <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u))))</span>
-<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rect</span>(u_pts <span class="sc">-</span> h <span class="sc">/</span> <span class="dv">2</span>, <span class="dv">0</span>, u_pts <span class="sc">+</span> h <span class="sc">/</span> <span class="dv">2</span>, g_pts,</span>
-<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>             <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.3</span>), <span class="at">border =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(u_pts, g_pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
-<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
-<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(<span class="fu">g</span>(u)),</span>
-<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"true area"</span> <span class="sc">==</span> .(<span class="fu">signif</span>(true_val, <span class="dv">4</span>)))),</span>
-<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"midpoint rule"</span> <span class="sc">==</span> .(<span class="fu">signif</span>(quad_val, <span class="dv">4</span>))))))</span>
-<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a>        guide_col <span class="ot">&lt;-</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.6</span>)</span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, <span class="dv">0</span>, mu_pts, u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a>        <span class="fu">segments</span>(mu_pts, u_pts, <span class="fu">max</span>(mu_grid), u_pts, <span class="at">col =</span> guide_col, <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(mu_pts, u_pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="dv">3</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="st">"steelblue"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>),</span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>               <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(<span class="fu">z</span>(mu) <span class="sc">==</span> <span class="fu">pi</span>(mu) <span class="sc">*</span> <span class="fu">L</span>(mu)), tr<span class="sc">$</span>lab,</span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"true"</span><span class="sc">~</span>log<span class="sc">~</span><span class="fu">P</span>(y) <span class="sc">==</span> .(<span class="fu">round</span>(S<span class="sc">$</span>log_marlik, <span class="dv">3</span>)))),</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"quadrature"</span><span class="sc">~</span>log<span class="sc">~</span><span class="fu">P</span>(y) <span class="sc">==</span> .(<span class="fu">round</span>(log_quad, <span class="dv">3</span>))))))</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>    <span class="do">### the function the midpoint rule integrates over u: g(u) = z(q(u)) / d(q(u)), with rectangles</span></span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>    u_plot <span class="ot">&lt;-</span> <span class="cf">function</span>(type) {</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        S <span class="ot">&lt;-</span> <span class="fu">setup</span>(input<span class="sc">$</span>mu_hat); tr <span class="ot">&lt;-</span> S[[type]]</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>        g <span class="ot">&lt;-</span> <span class="cf">function</span>(u) { mu <span class="ot">&lt;-</span> tr<span class="sc">$</span><span class="fu">q</span>(u); <span class="fu">exp</span>(S<span class="sc">$</span><span class="fu">log_z</span>(mu) <span class="sc">-</span> <span class="fu">log</span>(tr<span class="sc">$</span><span class="fu">d</span>(mu))) }</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>        n      <span class="ot">&lt;-</span> input<span class="sc">$</span>n_pts</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>        h      <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>        u_pts  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">/</span> n</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>        g_pts  <span class="ot">&lt;-</span> <span class="fu">g</span>(u_pts)</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>        u_fine <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="fl">0.0005</span>, <span class="fl">0.9995</span>, <span class="at">length.out =</span> <span class="dv">2000</span>)</span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>        g_fine <span class="ot">&lt;-</span> <span class="fu">g</span>(u_fine)</span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>        true_val <span class="ot">&lt;-</span> <span class="fu">exp</span>(S<span class="sc">$</span>log_marlik)                      <span class="co"># the area is the same for every transform</span></span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>        quad_val <span class="ot">&lt;-</span> <span class="fu">sum</span>(g_pts) <span class="sc">*</span> h</span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(u_fine, g_fine, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">main =</span> <span class="st">"Integrand in u"</span>,</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fu">max</span>(g_fine, g_pts) <span class="sc">*</span> <span class="fl">1.1</span>), <span class="at">xlab =</span> <span class="fu">expression</span>(u),</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">g</span>(u) <span class="sc">==</span> <span class="fu">z</span>(<span class="fu">mu</span>(u)) <span class="sc">/</span> (du <span class="sc">/</span> dmu)))</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>        <span class="fu">rect</span>(u_pts <span class="sc">-</span> h <span class="sc">/</span> <span class="dv">2</span>, <span class="dv">0</span>, u_pts <span class="sc">+</span> h <span class="sc">/</span> <span class="dv">2</span>, g_pts,</span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>             <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.3</span>), <span class="at">border =</span> <span class="st">"gray30"</span>)</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(u_pts, g_pts, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray30"</span>)</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"firebrick"</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="fu">expression</span>(<span class="fu">g</span>(u)),</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"true area"</span> <span class="sc">==</span> .(<span class="fu">signif</span>(true_val, <span class="dv">4</span>)))),</span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">as.expression</span>(<span class="fu">bquote</span>(<span class="st">"midpoint rule"</span> <span class="sc">==</span> .(<span class="fu">signif</span>(quad_val, <span class="dv">4</span>))))))</span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>mu_logit   <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>(<span class="fu">mu_plot</span>(<span class="st">"logit"</span>))</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>u_logit    <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>(<span class="fu">u_plot</span>(<span class="st">"logit"</span>))</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>mu_laplace <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>(<span class="fu">mu_plot</span>(<span class="st">"laplace"</span>))</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>u_laplace  <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>(<span class="fu">u_plot</span>(<span class="st">"laplace"</span>))</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 </div>
