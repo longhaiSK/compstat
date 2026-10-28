@@ -149,10 +149,12 @@ ui <- fluidPage(
                  "that produced it; their mean estimates P(l < X < u).")
     ),
     fluidRow(
-        column(9, plotOutput("panels", height = "560px")),
-        column(3,
+        column(8, plotOutput("panels", height = "560px")),
+        column(4,
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
             h5("Run summary"),
-            tableOutput("tab"))
+            tableOutput("tab"),
+            textOutput("status"))
     )
 )
 
@@ -240,24 +242,30 @@ server <- function(input, output, session) {
     ### The standard error uses the sample variance of the weights (an approximation, since the
     ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
     output$tab <- renderTable({
-        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.3f)", lp)
+        fmt  <- function(lp) if (lp > -700) sprintf("%.4g", exp(lp)) else sprintf("exp(%.4f)", lp)   # probability
+        flog <- function(lp) sprintf("%.4f", lp)                                                     # log probability
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
         T <- rv$tries
-        est <- ci <- "-"
+        est <- c("-", "-"); ci <- c("-", "-")
         if (T >= 2) {
             log_m  <- rv$logsumw - log(T)                          # log of the mean weight
             rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
             log_est <- log_m - 0.5 * log(2 * pi)
-            est <- fmt(log_est)
-            ci  <- sprintf("(%s, %s)", fmt(log_est + log(max(1 - 1.96 * rel_se, 1e-12))),
-                                        fmt(log_est + log1p(1.96 * rel_se)))
+            lo <- log_est + log(max(1 - 1.96 * rel_se, 1e-12)); hi <- log_est + log1p(1.96 * rel_se)
+            est <- c(fmt(log_est), flog(log_est))
+            ci  <- c(sprintf("(%s, %s)", fmt(lo), fmt(hi)), sprintf("(%s, %s)", flog(lo), flog(hi)))
         }
         data.frame(
-            Quantity = c("true P(l < X < u)", "IS estimate", "95% CI", "proposals so far",
-                         "samples accepted", "tangent points"),
-            Value = c(fmt(log_true), est, ci, T,
-                      sprintf("%d / %d", length(rv$samples), rv$target_n), length(rv$hull$x)))
-    }, striped = TRUE, align = "ll")
+            ` ` = c("true", "IS estimate", "95% CI"),
+            `P(l < X < u)` = c(fmt(log_true), est[1], ci[1]),
+            `log P` = c(flog(log_true), est[2], ci[2]),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lll", width = "100%")
+
+    output$status <- renderText({
+        sprintf("%d / %d samples accepted  |  %d proposals  |  %d tangent points",
+                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
+    })
 
     output$panels <- renderPlot({
         hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
@@ -464,10 +472,12 @@ ui <- fluidPage(
                  "that produced it; their mean estimates P(l < X < u).")
     ),
     fluidRow(
-        column(9, plotOutput("panels", height = "560px")),
-        column(3,
+        column(8, plotOutput("panels", height = "560px")),
+        column(4,
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
             h5("Run summary"),
-            tableOutput("tab"))
+            tableOutput("tab"),
+            textOutput("status"))
     )
 )
 
@@ -555,24 +565,30 @@ server <- function(input, output, session) {
     ### The standard error uses the sample variance of the weights (an approximation, since the
     ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
     output$tab <- renderTable({
-        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.3f)", lp)
+        fmt  <- function(lp) if (lp > -700) sprintf("%.4g", exp(lp)) else sprintf("exp(%.4f)", lp)   # probability
+        flog <- function(lp) sprintf("%.4f", lp)                                                     # log probability
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
         T <- rv$tries
-        est <- ci <- "-"
+        est <- c("-", "-"); ci <- c("-", "-")
         if (T >= 2) {
             log_m  <- rv$logsumw - log(T)                          # log of the mean weight
             rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
             log_est <- log_m - 0.5 * log(2 * pi)
-            est <- fmt(log_est)
-            ci  <- sprintf("(%s, %s)", fmt(log_est + log(max(1 - 1.96 * rel_se, 1e-12))),
-                                        fmt(log_est + log1p(1.96 * rel_se)))
+            lo <- log_est + log(max(1 - 1.96 * rel_se, 1e-12)); hi <- log_est + log1p(1.96 * rel_se)
+            est <- c(fmt(log_est), flog(log_est))
+            ci  <- c(sprintf("(%s, %s)", fmt(lo), fmt(hi)), sprintf("(%s, %s)", flog(lo), flog(hi)))
         }
         data.frame(
-            Quantity = c("true P(l < X < u)", "IS estimate", "95% CI", "proposals so far",
-                         "samples accepted", "tangent points"),
-            Value = c(fmt(log_true), est, ci, T,
-                      sprintf("%d / %d", length(rv$samples), rv$target_n), length(rv$hull$x)))
-    }, striped = TRUE, align = "ll")
+            ` ` = c("true", "IS estimate", "95% CI"),
+            `P(l < X < u)` = c(fmt(log_true), est[1], ci[1]),
+            `log P` = c(flog(log_true), est[2], ci[2]),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lll", width = "100%")
+
+    output$status <- renderText({
+        sprintf("%d / %d samples accepted  |  %d proposals  |  %d tangent points",
+                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
+    })
 
     output$panels <- renderPlot({
         hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
