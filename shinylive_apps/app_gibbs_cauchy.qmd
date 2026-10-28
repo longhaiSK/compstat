@@ -59,15 +59,15 @@ ui <- fluidPage(
             column(3, actionButton("restart", "↺ Restart", width = "100%")))
     ),
     fluidRow(
-        column(8,
+        column(7,
             fluidRow(
                 column(6, plotOutput("plane", height = "320px")),
                 column(6, plotOutput("vplot", height = "320px"))),
             fluidRow(
                 column(6, plotOutput("tr_mu", height = "240px")),
                 column(6, plotOutput("tr_sg", height = "240px")))),
-        column(4,
-            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+        column(5,
+            tags$style("#tab td, #tab th { white-space: nowrap; font-size: 85%; }"),
             h5("Where the sampler is"),
             textOutput("status"),
             h5("Posterior summaries"),
@@ -105,7 +105,17 @@ server <- function(input, output, session) {
         p <- post_grid(mu_g, sg_g)
         pm <- rowSums(p); ps <- colSums(p)
         e_mu <- sum(pm * mu_g); e_sg <- sum(ps * sg_g)
-        list(y = y, n = n, mu_g = mu_g, sg_g = sg_g, post = p,
+        q_of <- function(g, marg) approx(cumsum(marg), g, xout = c(0.025, 0.975), rule = 2)$y
+        ### maximum likelihood for Cauchy(mu, sigma) with a Wald interval from the observed information
+        ### (the interval for sigma is formed on the log scale and transformed back)
+        nll <- function(th) -sum(dcauchy(y, th[1], exp(th[2]), log = TRUE))
+        fit <- optim(c(median(y), log(s0)), nll, method = "BFGS", hessian = TRUE)
+        se  <- tryCatch(sqrt(diag(solve(fit$hessian))), error = function(e) c(NA, NA))
+        mle <- list(mu = fit$par[1], sg = exp(fit$par[2]), se_mu = se[1], se_sg = exp(fit$par[2]) * se[2],
+                    ci_mu = fit$par[1] + c(-1, 1) * 1.96 * se[1],
+                    ci_sg = exp(fit$par[2] + c(-1, 1) * 1.96 * se[2]))
+        list(y = y, n = n, mu_g = mu_g, sg_g = sg_g, post = p, mle = mle,
+             q_mu = q_of(mu_g, pm), q_sg = q_of(sg_g, ps),
              exact = c(mean_mu = e_mu, mean_sg = e_sg,
                        sd_mu = sqrt(sum(pm * (mu_g - e_mu)^2)), sd_sg = sqrt(sum(ps * (sg_g - e_sg)^2))))
     })
@@ -246,15 +256,23 @@ server <- function(input, output, session) {
     output$tr_sg <- renderPlot({ req(rv$mu); d <- dat(); trace_plot(rv$sg, d$exact["mean_sg"], d$exact["sd_sg"], expression(sigma)) })
 
     output$tab <- renderTable({
-        req(rv$mu); d <- dat(); t <- rv$t
+        req(rv$mu); d <- dat(); t <- rv$t; m <- d$mle
         burn <- floor(0.2 * t)
         idx <- if (t - burn >= 2) (burn + 2):(t + 1) else integer(0)
-        g <- if (length(idx)) c(mean(rv$mu[idx]), mean(rv$sg[idx]), sd(rv$mu[idx]), sd(rv$sg[idx])) else rep(NA, 4)
+        f4  <- function(x) sprintf("%.4f", x)
+        ci4 <- function(x) sprintf("(%.4f, %.4f)", x[1], x[2])
+        gm <- function(x) if (length(idx)) f4(mean(x[idx])) else "-"
+        gs <- function(x) if (length(idx)) f4(sd(x[idx])) else "-"
+        gq <- function(x) if (length(idx)) ci4(quantile(x[idx], c(0.025, 0.975))) else "-"
         data.frame(
-            Quantity = c("posterior mean of mu", "posterior mean of sigma", "posterior sd of mu", "posterior sd of sigma"),
-            Exact = sprintf("%.4f", d$exact),
-            Gibbs = ifelse(is.na(g), "-", sprintf("%.4f", g)))
-    }, striped = TRUE, align = "lrr", width = "100%")
+            ` ` = c("mu: mean / estimate", "mu: sd / SE", "mu: 95% interval",
+                    "sigma: mean / estimate", "sigma: sd / SE", "sigma: 95% interval"),
+            `Exact posterior` = c(f4(d$exact["mean_mu"]), f4(d$exact["sd_mu"]), ci4(d$q_mu),
+                                  f4(d$exact["mean_sg"]), f4(d$exact["sd_sg"]), ci4(d$q_sg)),
+            Gibbs = c(gm(rv$mu), gs(rv$mu), gq(rv$mu), gm(rv$sg), gs(rv$sg), gq(rv$sg)),
+            MLE = c(f4(m$mu), f4(m$se_mu), ci4(m$ci_mu), f4(m$sg), f4(m$se_sg), ci4(m$ci_sg)),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lrrr", width = "100%")
 }
 
 shinyApp(ui, server)
@@ -279,7 +297,7 @@ with $\mu_0=0$, $\tau=10$, $a_0=b_0=1$. One Gibbs iteration draws $v$ given $(\m
 * *Top left:* the exact joint posterior of $(\mu,\sigma)$ computed on a grid (contours and heat) with the Gibbs draws on top. The triangle is the starting value and the red dot the current state. With "show each Gibbs step" ticked, the plot shows the last two sub-steps: a green circle for the $v$ update (it does not move $(\mu,\sigma)$), an orange horizontal arrow for the $\mu$ update and a blue vertical arrow for the $\sigma$ update, which are the two legs of the staircase of a Gibbs sampler.
 * *Top right:* the current latent variances $v_i$ (log scale) against $y_i$; the outliers far from $\mu$ have the largest $v_i$.
 * *Bottom:* trace plots of $\mu$ and $\sigma$, with the exact posterior means (red dashed lines).
-* *Table:* exact posterior means and standard deviations from the grid, and the Gibbs estimates from the draws so far after discarding the first 20% as burn-in.
+* *Table:* for $\mu$ and for $\sigma$, the posterior mean, standard deviation and 95% credible interval, computed exactly on the grid and from the Gibbs draws so far (after discarding the first 20% as burn-in), next to the maximum likelihood estimate of the Cauchy model, its standard error and its 95% Wald interval. The MLE and its standard error come from the observed information at the maximum, and the interval for $\sigma$ is formed on the log scale and transformed back so that it stays positive. The prior is weak, so the posterior is centred near the MLE, but the posterior (and the Gibbs draws) account for the uncertainty without the normal approximation: the credible interval for $\sigma$ is asymmetric, and for small samples the Wald intervals are noticeably different.
 
 **Controls.** **Play** and **Pause** advance the sampler automatically, **Next** advances by one step, **End** runs to the last iteration and **Restart** starts the chain again. With "show each Gibbs step" ticked, Play and Next move one sub-step at a time (update $v$, then $\mu$, then $\sigma$); with it unticked they move by whole iterations, and "iterations per tick" sets how many iterations Play takes at each tick. Changing the data, the number of iterations or the starting values restarts the chain.
 
@@ -340,15 +358,15 @@ ui <- fluidPage(
             column(3, actionButton("restart", "↺ Restart", width = "100%")))
     ),
     fluidRow(
-        column(8,
+        column(7,
             fluidRow(
                 column(6, plotOutput("plane", height = "320px")),
                 column(6, plotOutput("vplot", height = "320px"))),
             fluidRow(
                 column(6, plotOutput("tr_mu", height = "240px")),
                 column(6, plotOutput("tr_sg", height = "240px")))),
-        column(4,
-            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+        column(5,
+            tags$style("#tab td, #tab th { white-space: nowrap; font-size: 85%; }"),
             h5("Where the sampler is"),
             textOutput("status"),
             h5("Posterior summaries"),
@@ -386,7 +404,17 @@ server <- function(input, output, session) {
         p <- post_grid(mu_g, sg_g)
         pm <- rowSums(p); ps <- colSums(p)
         e_mu <- sum(pm * mu_g); e_sg <- sum(ps * sg_g)
-        list(y = y, n = n, mu_g = mu_g, sg_g = sg_g, post = p,
+        q_of <- function(g, marg) approx(cumsum(marg), g, xout = c(0.025, 0.975), rule = 2)$y
+        ### maximum likelihood for Cauchy(mu, sigma) with a Wald interval from the observed information
+        ### (the interval for sigma is formed on the log scale and transformed back)
+        nll <- function(th) -sum(dcauchy(y, th[1], exp(th[2]), log = TRUE))
+        fit <- optim(c(median(y), log(s0)), nll, method = "BFGS", hessian = TRUE)
+        se  <- tryCatch(sqrt(diag(solve(fit$hessian))), error = function(e) c(NA, NA))
+        mle <- list(mu = fit$par[1], sg = exp(fit$par[2]), se_mu = se[1], se_sg = exp(fit$par[2]) * se[2],
+                    ci_mu = fit$par[1] + c(-1, 1) * 1.96 * se[1],
+                    ci_sg = exp(fit$par[2] + c(-1, 1) * 1.96 * se[2]))
+        list(y = y, n = n, mu_g = mu_g, sg_g = sg_g, post = p, mle = mle,
+             q_mu = q_of(mu_g, pm), q_sg = q_of(sg_g, ps),
              exact = c(mean_mu = e_mu, mean_sg = e_sg,
                        sd_mu = sqrt(sum(pm * (mu_g - e_mu)^2)), sd_sg = sqrt(sum(ps * (sg_g - e_sg)^2))))
     })
@@ -527,15 +555,23 @@ server <- function(input, output, session) {
     output$tr_sg <- renderPlot({ req(rv$mu); d <- dat(); trace_plot(rv$sg, d$exact["mean_sg"], d$exact["sd_sg"], expression(sigma)) })
 
     output$tab <- renderTable({
-        req(rv$mu); d <- dat(); t <- rv$t
+        req(rv$mu); d <- dat(); t <- rv$t; m <- d$mle
         burn <- floor(0.2 * t)
         idx <- if (t - burn >= 2) (burn + 2):(t + 1) else integer(0)
-        g <- if (length(idx)) c(mean(rv$mu[idx]), mean(rv$sg[idx]), sd(rv$mu[idx]), sd(rv$sg[idx])) else rep(NA, 4)
+        f4  <- function(x) sprintf("%.4f", x)
+        ci4 <- function(x) sprintf("(%.4f, %.4f)", x[1], x[2])
+        gm <- function(x) if (length(idx)) f4(mean(x[idx])) else "-"
+        gs <- function(x) if (length(idx)) f4(sd(x[idx])) else "-"
+        gq <- function(x) if (length(idx)) ci4(quantile(x[idx], c(0.025, 0.975))) else "-"
         data.frame(
-            Quantity = c("posterior mean of mu", "posterior mean of sigma", "posterior sd of mu", "posterior sd of sigma"),
-            Exact = sprintf("%.4f", d$exact),
-            Gibbs = ifelse(is.na(g), "-", sprintf("%.4f", g)))
-    }, striped = TRUE, align = "lrr", width = "100%")
+            ` ` = c("mu: mean / estimate", "mu: sd / SE", "mu: 95% interval",
+                    "sigma: mean / estimate", "sigma: sd / SE", "sigma: 95% interval"),
+            `Exact posterior` = c(f4(d$exact["mean_mu"]), f4(d$exact["sd_mu"]), ci4(d$q_mu),
+                                  f4(d$exact["mean_sg"]), f4(d$exact["sd_sg"]), ci4(d$q_sg)),
+            Gibbs = c(gm(rv$mu), gs(rv$mu), gq(rv$mu), gm(rv$sg), gs(rv$sg), gq(rv$sg)),
+            MLE = c(f4(m$mu), f4(m$se_mu), ci4(m$ci_mu), f4(m$sg), f4(m$se_sg), ci4(m$ci_sg)),
+            check.names = FALSE)
+    }, striped = TRUE, align = "lrrr", width = "100%")
 }
 
 shinyApp(ui, server)
