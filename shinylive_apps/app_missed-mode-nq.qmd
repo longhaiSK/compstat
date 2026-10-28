@@ -11,7 +11,7 @@ pagetitle: "missed-mode-nq-shinylive"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 760
+#| viewerHeight: 680
 library(shiny)
 
 ### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
@@ -41,20 +41,10 @@ renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
 ui <- fluidPage(
     wellPanel(
         fluidRow(
-            column(4,
-                sliderInput("mu_hat", "mu (data location)", min = -5, max = 25, value = 8, step = 0.5),
-                sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
-                            min = 2, max = 25, value = 9, step = 1)),
-            column(8,
-                helpText("The grid is a midpoint rule, uniform in u over (0, 1); ",
-                         "each point's mu is recovered as logit(u). Try mu = 0 ",
-                         "first (the grid sits right under the mass, and the two ",
-                         "legend numbers agree closely), then move mu up to 8 or ",
-                         "20: the quadrature estimate drifts far from the true ",
-                         "value however many grid points you add. The right plot shows ",
-                         "the function the midpoint rule actually integrates over u: ",
-                         "the rectangles are the quadrature, and their total area is ",
-                         "the estimate.")))
+            column(6, sliderInput("mu_hat", "mu (data location)", min = -5, max = 25,
+                                  value = 8, step = 0.5)),
+            column(6, sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                                  min = 2, max = 25, value = 9, step = 1)))
     ),
     fluidRow(
         column(6, plotOutput("squeeze", height = "440px")),
@@ -153,6 +143,19 @@ shinyApp(ui, server)
 
 Shows how a fixed quadrature grid can miss the posterior mode entirely, so that the computed marginal likelihood is badly wrong. The app models a single unknown mean $\mu$.
 
+**The problem.** The data enter through a normal likelihood $L(\mu)=N(\hat\mu\mid\mu,1/3)$, the likelihood of three observations with unit variance whose sample mean is the slider value $\hat\mu$ ("data location"). The prior is $\pi(\mu)=N(0,5^2)$. The marginal likelihood is
+$$P(y)=\int_{-\infty}^{\infty} z(\mu)\,d\mu,\qquad z(\mu)=\pi(\mu)L(\mu).$$
+To integrate over the whole real line with a fixed grid, the app maps $\mu$ to the unit interval by $u=1/(1+e^{-\mu})$, so $\mu=\text{logit}(u)$, and applies the **midpoint rule** with $n$ equally spaced points $u_i=(i-0.5)/n$ on $(0,1)$:
+$$P(y)=\int_0^1 \frac{z(\text{logit}\,u)}{u(1-u)}\,du\;\approx\;\frac1n\sum_{i=1}^n \frac{z(\text{logit}\,u_i)}{u_i(1-u_i)}.$$
+The grid is fixed in advance, without looking at where the posterior mass is.
+
+**What the plots show.**
+
+* *Left:* $z(\mu)$ (red) and the map $u=1/(1+e^{-\mu})$ (blue). The dots are the grid points $u_i$ and the $\mu_i=\text{logit}(u_i)$ they correspond to. Equally spaced $u_i$ are densely packed near $\mu=0$ and spread very thinly far from it.
+* *Right:* the function $g(u)=z(\text{logit}\,u)/\{u(1-u)\}$ that the rule integrates. The gray rectangles are the midpoint rule, and their total area is the quadrature estimate.
+
+**What to try.** At $\hat\mu=0$ the posterior mass sits under the grid, the rectangles follow $g(u)$, and the quadrature estimate agrees with the true value. As $\hat\mu$ moves to 8 or 20, the mass is squeezed into a tiny interval of $u$ near 1 that falls between grid points. The rule then sees essentially nothing and the estimate is wrong by many orders of magnitude, however many points you add. This is the general lesson: a fixed grid that ignores the location of the mode can miss it, which motivates adaptive quadrature and Laplace approximation.
+
 :::: {.callout-note collapse="true" title="R source for this app"}
 
 ````r
@@ -185,20 +188,10 @@ renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
 ui <- fluidPage(
     wellPanel(
         fluidRow(
-            column(4,
-                sliderInput("mu_hat", "mu (data location)", min = -5, max = 25, value = 8, step = 0.5),
-                sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
-                            min = 2, max = 25, value = 9, step = 1)),
-            column(8,
-                helpText("The grid is a midpoint rule, uniform in u over (0, 1); ",
-                         "each point's mu is recovered as logit(u). Try mu = 0 ",
-                         "first (the grid sits right under the mass, and the two ",
-                         "legend numbers agree closely), then move mu up to 8 or ",
-                         "20: the quadrature estimate drifts far from the true ",
-                         "value however many grid points you add. The right plot shows ",
-                         "the function the midpoint rule actually integrates over u: ",
-                         "the rectangles are the quadrature, and their total area is ",
-                         "the estimate.")))
+            column(6, sliderInput("mu_hat", "mu (data location)", min = -5, max = 25,
+                                  value = 8, step = 0.5)),
+            column(6, sliderInput("n_pts", "number of grid points in u (over 0 to 1)",
+                                  min = 2, max = 25, value = 9, step = 1)))
     ),
     fluidRow(
         column(6, plotOutput("squeeze", height = "440px")),
