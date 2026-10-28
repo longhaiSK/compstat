@@ -63,19 +63,18 @@ log_Ew2 <- function(d, sg) {
 }
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 8,
-                        value = 1, step = 0.05),
-            selectInput("S", "sample size  S",
-                        choices = c(500, 2000, 10000), selected = 2000),
-            numericInput("seed", "seed", value = 11, min = 1, step = 1),
-            actionButton("new", "New sample"),
-            tags$hr(style = "margin:8px 0"),
-            htmlOutput("readout")
-        ),
-        mainPanel(width = 9, plotOutput("panels", height = "660px"))
+    wellPanel(
+        fluidRow(
+            column(4, sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 8,
+                                  value = 1, step = 0.05)),
+            column(4, sliderInput("S", "sample size  S", min = 100, max = 20000,
+                                  value = 2000, step = 100)),
+            column(2, numericInput("seed", "seed", value = 11, min = 1, step = 1)),
+            column(2, br(), actionButton("new", "New sample")))
+    ),
+    fluidRow(
+        column(9, plotOutput("panels", height = "600px")),
+        column(3, h5("Estimates"), htmlOutput("readout"))
     )
 )
 
@@ -109,22 +108,17 @@ server <- function(input, output) {
         layout(matrix(1:2, 2), heights = c(3, 2))
 
         par(mar = c(0.4, 5, 3, 1))
-        yl <- c(1e-10, max(fx, gx) * 2)
-        plot(xs, fx, type = "n", log = "y", ylim = yl, xlim = xr, xaxt = "n",
-             xlab = "", ylab = "density (log scale)",
+        plot(xs, fx, type = "n", ylim = c(0, max(fx, gx) * 1.1), xlim = xr, xaxt = "n",
+             xlab = "", ylab = "density",
              main = "bimodal target and a proposal centred on one mode")
         lines(xs, fx, lwd = 4, col = "red")
         lines(xs, gx, lwd = 3, col = "grey60")
         rug(th, col = adjustcolor("grey45", 0.35))
-        legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
-               lwd = c(4, 3, NA, NA, NA),
-               col = c("grey25", "grey60", NA, NA, NA),
+        legend("top", bty = "n", cex = 1.05, text.col = "navy",
+               lwd = c(4, 3), col = c("red", "grey60"),
                legend = TeX(c(
                    r"(target $f$)",
-                   sprintf(r"(proposal $g$, sd $= %.2f$)", sg),
-                   sprintf(r"($C_f/C_g$: true 1, est. %.3f)", s$Chat),
-                   sprintf(r"(95%% CI $(%.3f, %.3f)$)", s$Chat - 1.96 * s$se, s$Chat + 1.96 * s$se),
-                   sprintf(r"($E_f(\theta)$: true 0, est. %.2f)", s$Ehat))))
+                   sprintf(r"(proposal $g$, sd $= %.2f$)", sg))))
 
         par(mar = c(4.5, 5, 0.4, 1))
         wn <- s$wn
@@ -135,13 +129,8 @@ server <- function(input, output) {
         segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
         abline(h = 1 / s$S, lty = 2, col = "grey55", lwd = 2)
         legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
-               lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA),
-               col = c("grey55", "grey25", NA, NA),
-               legend = TeX(c(
-                   r"($1/S$)",
-                   r"(normalized weight function)",
-                   sprintf(r"(observed $S_{eff}$ = %.1f%% of S)", 100 * s$ess / s$S),
-                   sprintf(r"(exact $S_{eff}$ = %.3g%% of S)", s$ess_x))))
+               lty = c(2, 1), lwd = c(2, 2), col = c("grey55", "grey25"),
+               legend = TeX(c(r"($1/S$)", r"(normalized weight function)")))
     })
 
     output$readout <- renderUI({
@@ -166,7 +155,15 @@ shinyApp(ui, server)
 
 Illustrates how importance sampling can fail without warning when the proposal is too narrow to cover the target. The proposal's standard deviation $\sigma$ is under slider control and both panels are redrawn for each setting. For $\sigma \le 1/\sqrt{2}$ the weight variance is infinite; near $\sigma = 1$ the failure is silent, with the observed effective sample size close to $S$ while the estimate of $C_f/C_g$ sits at one half; past $\sigma \approx 4$ the proposal reaches the second mode, the observed effective sample size falls, and the estimate moves onto the truth.
 
-the app above varies $\sigma$ with everything else held fixed. Three regimes appear.
+**The target $f$ and the proposal $g$.** The target is a normalized, equally weighted mixture of two unit-variance normals, with the modes at $\pm d$ and $d=5$,
+$$f(\theta)=\tfrac12\,N(\theta\mid -d,\,1)+\tfrac12\,N(\theta\mid d,\,1),$$
+and the proposal is a single normal centred on one of the modes, with the standard deviation $\sigma$ set by the slider,
+$$g(\theta)=N(\theta\mid -d,\,\sigma^2).$$
+Draw $\theta_1,\ldots,\theta_S\sim g$ and form the importance weights $w_s=f(\theta_s)/g(\theta_s)$. Because both densities are normalized, $C_f/C_g=1$, and
+$$\widehat{C_f/C_g}=\frac1S\sum_{s=1}^S w_s,\qquad \widehat{E_f(\theta)}=\frac{\sum_s w_s\theta_s}{\sum_s w_s},$$
+with true values $1$ and $0$. The 95% interval for $C_f/C_g$ is $\hat C\pm1.96\,s_w/\sqrt S$, where $s_w$ is the sample standard deviation of the weights. The quality of the draws is summarized by the effective sample size $S_{\text{eff}}=1/\sum_s\tilde w_s^2$ with $\tilde w_s=w_s/\sum_j w_j$, reported as a percentage of $S$ ("observed"), and by its exact value $S/E_g(w^2)$. The second moment $E_g(w^2)=\int f^2/g$ is finite only when $\sigma>1/\sqrt2$, so for smaller $\sigma$ the weight variance is infinite. The sample size $S$, the seed and a new sample are set in the control panel at the top; the estimates are listed to the right of the plots. The top plot shows $f$ and $g$ on the density scale, and the bottom plot the normalized weights of the draws (log scale), with the dashed line at $1/S$ marking perfectly balanced weights.
+
+The app above varies $\sigma$ with everything else held fixed. Three regimes appear.
 Below $\sigma=1/\sqrt{2}$ the variance is infinite and the exact effective
 fraction is reported as zero. Between there and roughly $\sigma=3$ the failure is
 silent in the sense above: observed $S_{\text{eff}}$ near $S$, estimate near
@@ -230,19 +227,18 @@ log_Ew2 <- function(d, sg) {
 }
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 8,
-                        value = 1, step = 0.05),
-            selectInput("S", "sample size  S",
-                        choices = c(500, 2000, 10000), selected = 2000),
-            numericInput("seed", "seed", value = 11, min = 1, step = 1),
-            actionButton("new", "New sample"),
-            tags$hr(style = "margin:8px 0"),
-            htmlOutput("readout")
-        ),
-        mainPanel(width = 9, plotOutput("panels", height = "660px"))
+    wellPanel(
+        fluidRow(
+            column(4, sliderInput("sg", HTML("proposal sd &sigma;"), min = 0.25, max = 8,
+                                  value = 1, step = 0.05)),
+            column(4, sliderInput("S", "sample size  S", min = 100, max = 20000,
+                                  value = 2000, step = 100)),
+            column(2, numericInput("seed", "seed", value = 11, min = 1, step = 1)),
+            column(2, br(), actionButton("new", "New sample")))
+    ),
+    fluidRow(
+        column(9, plotOutput("panels", height = "600px")),
+        column(3, h5("Estimates"), htmlOutput("readout"))
     )
 )
 
@@ -276,22 +272,17 @@ server <- function(input, output) {
         layout(matrix(1:2, 2), heights = c(3, 2))
 
         par(mar = c(0.4, 5, 3, 1))
-        yl <- c(1e-10, max(fx, gx) * 2)
-        plot(xs, fx, type = "n", log = "y", ylim = yl, xlim = xr, xaxt = "n",
-             xlab = "", ylab = "density (log scale)",
+        plot(xs, fx, type = "n", ylim = c(0, max(fx, gx) * 1.1), xlim = xr, xaxt = "n",
+             xlab = "", ylab = "density",
              main = "bimodal target and a proposal centred on one mode")
         lines(xs, fx, lwd = 4, col = "red")
         lines(xs, gx, lwd = 3, col = "grey60")
         rug(th, col = adjustcolor("grey45", 0.35))
-        legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
-               lwd = c(4, 3, NA, NA, NA),
-               col = c("grey25", "grey60", NA, NA, NA),
+        legend("top", bty = "n", cex = 1.05, text.col = "navy",
+               lwd = c(4, 3), col = c("red", "grey60"),
                legend = TeX(c(
                    r"(target $f$)",
-                   sprintf(r"(proposal $g$, sd $= %.2f$)", sg),
-                   sprintf(r"($C_f/C_g$: true 1, est. %.3f)", s$Chat),
-                   sprintf(r"(95%% CI $(%.3f, %.3f)$)", s$Chat - 1.96 * s$se, s$Chat + 1.96 * s$se),
-                   sprintf(r"($E_f(\theta)$: true 0, est. %.2f)", s$Ehat))))
+                   sprintf(r"(proposal $g$, sd $= %.2f$)", sg))))
 
         par(mar = c(4.5, 5, 0.4, 1))
         wn <- s$wn
@@ -302,13 +293,8 @@ server <- function(input, output) {
         segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
         abline(h = 1 / s$S, lty = 2, col = "grey55", lwd = 2)
         legend("bottomright", bty = "n", cex = 1.05, text.col = "navy",
-               lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA),
-               col = c("grey55", "grey25", NA, NA),
-               legend = TeX(c(
-                   r"($1/S$)",
-                   r"(normalized weight function)",
-                   sprintf(r"(observed $S_{eff}$ = %.1f%% of S)", 100 * s$ess / s$S),
-                   sprintf(r"(exact $S_{eff}$ = %.3g%% of S)", s$ess_x))))
+               lty = c(2, 1), lwd = c(2, 2), col = c("grey55", "grey25"),
+               legend = TeX(c(r"($1/S$)", r"(normalized weight function)")))
     })
 
     output$readout <- renderUI({
