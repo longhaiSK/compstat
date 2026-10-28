@@ -55,8 +55,9 @@ ui <- fluidPage(
       ),
       conditionalPanel(
         "input.model == 'pg'",
-        sliderInput("alpha", "prior alpha (shape)", value = 2, min = 0.1, max = 10, step = 0.1),
-        sliderInput("beta", "prior beta (rate)", value = 1, min = 0.1, max = 10, step = 0.1),
+        sliderInput("mean_pg", "prior mean (alpha/beta)", value = 2, min = 0.1, max = 10, step = 0.1),
+        sliderInput("disp_pg", "prior dispersion (1/alpha)", value = 0.5, min = 0.1, max = 10, step = 0.1),
+        textOutput("prior_pg"),
         sliderInput("n_pg", "n (observations)", value = 8, min = 1, max = 100, step = 1),
         sliderInput("mle_pg", "MLE S/n (mean count)", value = 3.6, min = 0, max = 15, step = 0.1),
         textOutput("data_pg")
@@ -97,6 +98,10 @@ server <- function(input, output, session) {
     y <- round(input$mle_bb * input$n_bb)
     sprintf("Data: y = %d successes in n = %d trials (y/n = %.3f)", y, input$n_bb, y / input$n_bb)
   })
+  output$prior_pg <- renderText({
+    alpha <- 1 / input$disp_pg
+    sprintf("Prior: Gamma(alpha = %.2f, beta = %.2f)", alpha, alpha / input$mean_pg)
+  })
   output$data_pg <- renderText({
     S <- round(input$mle_pg * input$n_pg)
     sprintf("Data: sum of counts S = %d over n = %d observations (S/n = %.3f)", S, input$n_pg, S / input$n_pg)
@@ -135,7 +140,7 @@ server <- function(input, output, session) {
              col = c("gray40", "steelblue", "forestgreen", "steelblue"),
              legend = c("prior", "posterior", "likelihood (right axis)", "posterior mean"))
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       hi <- 18                                  # fixed x-axis: a little beyond the largest MLE the slider allows (15)
       xs <- seq(0, hi, length.out = 500)
@@ -183,7 +188,7 @@ server <- function(input, output, session) {
       psd <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
       pci <- qbeta(c(0.025, 0.975), post_a1, post_a0)
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       p <- S / n; se <- sqrt(p / n)
       ci <- pmax(p + c(-1, 1) * qnorm(0.975) * se, 0)
@@ -225,7 +230,7 @@ server <- function(input, output, session) {
                   sprintf("Bernoulli(%.3f)", pred_mean),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       logmarg   <- alpha * log(beta) - lgamma(alpha) + lgamma(post_alpha) -
         post_alpha * log(post_beta)                                 # up to -sum(log(y_i!))
@@ -314,8 +319,9 @@ ui <- fluidPage(
       ),
       conditionalPanel(
         "input.model == 'pg'",
-        sliderInput("alpha", "prior alpha (shape)", value = 2, min = 0.1, max = 10, step = 0.1),
-        sliderInput("beta", "prior beta (rate)", value = 1, min = 0.1, max = 10, step = 0.1),
+        sliderInput("mean_pg", "prior mean (alpha/beta)", value = 2, min = 0.1, max = 10, step = 0.1),
+        sliderInput("disp_pg", "prior dispersion (1/alpha)", value = 0.5, min = 0.1, max = 10, step = 0.1),
+        textOutput("prior_pg"),
         sliderInput("n_pg", "n (observations)", value = 8, min = 1, max = 100, step = 1),
         sliderInput("mle_pg", "MLE S/n (mean count)", value = 3.6, min = 0, max = 15, step = 0.1),
         textOutput("data_pg")
@@ -356,6 +362,10 @@ server <- function(input, output, session) {
     y <- round(input$mle_bb * input$n_bb)
     sprintf("Data: y = %d successes in n = %d trials (y/n = %.3f)", y, input$n_bb, y / input$n_bb)
   })
+  output$prior_pg <- renderText({
+    alpha <- 1 / input$disp_pg
+    sprintf("Prior: Gamma(alpha = %.2f, beta = %.2f)", alpha, alpha / input$mean_pg)
+  })
   output$data_pg <- renderText({
     S <- round(input$mle_pg * input$n_pg)
     sprintf("Data: sum of counts S = %d over n = %d observations (S/n = %.3f)", S, input$n_pg, S / input$n_pg)
@@ -394,7 +404,7 @@ server <- function(input, output, session) {
              col = c("gray40", "steelblue", "forestgreen", "steelblue"),
              legend = c("prior", "posterior", "likelihood (right axis)", "posterior mean"))
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       hi <- 18                                  # fixed x-axis: a little beyond the largest MLE the slider allows (15)
       xs <- seq(0, hi, length.out = 500)
@@ -442,7 +452,7 @@ server <- function(input, output, session) {
       psd <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
       pci <- qbeta(c(0.025, 0.975), post_a1, post_a0)
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       p <- S / n; se <- sqrt(p / n)
       ci <- pmax(p + c(-1, 1) * qnorm(0.975) * se, 0)
@@ -484,7 +494,7 @@ server <- function(input, output, session) {
                   sprintf("Bernoulli(%.3f)", pred_mean),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else if (input$model == "pg") {
-      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      alpha <- 1 / input$disp_pg; beta <- alpha / input$mean_pg; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
       post_alpha <- alpha + S; post_beta <- beta + n
       logmarg   <- alpha * log(beta) - lgamma(alpha) + lgamma(post_alpha) -
         post_alpha * log(post_beta)                                 # up to -sum(log(y_i!))
