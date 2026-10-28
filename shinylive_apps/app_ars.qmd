@@ -133,32 +133,26 @@ log_pnorm_diff <- function(lb, ub) {
 tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            numericInput("n", "sample size (target)", value = 200, min = 1, step = 10),
-            numericInput("l", "lower limit l", value = -2, step = 0.1),
-            numericInput("u", "upper limit u", value = 2, step = 0.1),
-            fluidRow(
-                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
-                column(6, actionButton("next_step", "Next ↷", width = "100%"))
-            ),
-            br(),
-            actionButton("restart", "↺ Restart", width = "100%"),
-            helpText("Each step draws one candidate from the current hull. ",
-                     "Accepted points (green) join the histogram; rejected ",
-                     "points (black x) become new tangent lines, tightening ",
-                     "the hull. Changing the limits restarts the run. Every proposal, ",
-                     "accepted or not, also gets an importance weight under the hull ",
-                     "that produced it; their mean estimates P(l < X < u)."),
-            textOutput("status"),
-            br(),
-            textOutput("prob")
-        ),
-        mainPanel(
-            width = 9,
-            plotOutput("panels", height = "620px")
-        )
+    wellPanel(
+        fluidRow(
+            column(2, numericInput("n", "sample size (target)", value = 200, min = 1, step = 10)),
+            column(2, numericInput("l", "lower limit l", value = -2, step = 0.1)),
+            column(2, numericInput("u", "upper limit u", value = 2, step = 0.1)),
+            column(2, br(), actionButton("play_pause", "▶ Play", width = "100%")),
+            column(2, br(), actionButton("next_step", "Next ↷", width = "100%")),
+            column(2, br(), actionButton("restart", "↺ Restart", width = "100%"))),
+        helpText("Each step draws one candidate from the current hull. ",
+                 "Accepted points (green) join the histogram; rejected ",
+                 "points (black x) become new tangent lines, tightening ",
+                 "the hull. Changing the limits restarts the run. Every proposal, ",
+                 "accepted or not, also gets an importance weight under the hull ",
+                 "that produced it; their mean estimates P(l < X < u).")
+    ),
+    fluidRow(
+        column(9, plotOutput("panels", height = "560px")),
+        column(3,
+            h5("Run summary"),
+            tableOutput("tab"))
     )
 )
 
@@ -166,7 +160,7 @@ server <- function(input, output, session) {
 
     rv <- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
                           lb = -2, ub = 2, done = FALSE, playing = FALSE,
-                          last_x = NULL, last_accept = NA, logsumw = -Inf)
+                          last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
 
     reset_run <- function() {
         lb <- if (!is.null(input$l) && !is.na(input$l)) input$l else -2
@@ -180,7 +174,7 @@ server <- function(input, output, session) {
         rv$done <- FALSE
         rv$playing <- FALSE
         rv$last_x <- NULL; rv$last_accept <- NA
-        rv$logsumw <- -Inf
+        rv$logsumw <- -Inf; rv$logsumw2 <- -Inf
         updateActionButton(session, "play_pause", label = "▶ Play")
     }
     isolate(reset_run())
@@ -195,6 +189,8 @@ server <- function(input, output, session) {
         lw <- logf - logg + draw$logA
         mw <- max(rv$logsumw, lw)
         rv$logsumw <- mw + log(exp(rv$logsumw - mw) + exp(lw - mw))
+        mw2 <- max(rv$logsumw2, 2 * lw)                  # running sum of w^2, for the standard error
+        rv$logsumw2 <- mw2 + log(exp(rv$logsumw2 - mw2) + exp(2 * lw - mw2))
         accept <- log(runif(1)) < logf - logg
         rv$last_x <- x; rv$last_accept <- accept
         if (accept) {
@@ -240,21 +236,29 @@ server <- function(input, output, session) {
         }
     })
 
-    output$status <- renderText({
-        sprintf("%d / %d samples accepted  |  %d proposals so far  |  %d tangent points",
-                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
-    })
-
     ### P(l < X < u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l < X < u), and
-    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z
-    output$prob <- renderText({
-        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.1f)", lp)
+    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.
+    ### The standard error uses the sample variance of the weights (an approximation, since the
+    ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
+    output$tab <- renderTable({
+        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.3f)", lp)
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
-        if (rv$tries == 0) return(sprintf("P(l < X < u): true %s; no proposals yet", fmt(log_true)))
-        log_est <- rv$logsumw - log(rv$tries) - 0.5 * log(2 * pi)
-        sprintf("P(l < X < u): true %s; importance-sampling estimate from all %d proposals %s",
-                fmt(log_true), rv$tries, fmt(log_est))
-    })
+        T <- rv$tries
+        est <- ci <- "-"
+        if (T >= 2) {
+            log_m  <- rv$logsumw - log(T)                          # log of the mean weight
+            rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
+            log_est <- log_m - 0.5 * log(2 * pi)
+            est <- fmt(log_est)
+            ci  <- sprintf("(%s, %s)", fmt(log_est + log(max(1 - 1.96 * rel_se, 1e-12))),
+                                        fmt(log_est + log1p(1.96 * rel_se)))
+        }
+        data.frame(
+            Quantity = c("true P(l < X < u)", "IS estimate", "95% CI", "proposals so far",
+                         "samples accepted", "tangent points"),
+            Value = c(fmt(log_true), est, ci, T,
+                      sprintf("%d / %d", length(rv$samples), rv$target_n), length(rv$hull$x)))
+    }, striped = TRUE, align = "ll")
 
     output$panels <- renderPlot({
         hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
@@ -317,9 +321,9 @@ far against the true truncated normal density. Controls: the target sample
 size, and the truncation limits $[l, u]$ (changing the limits restarts the
 run).
 
-**Estimating a probability with the varying envelope.** Besides producing exact draws from the truncated normal, the run gives an estimate of the normal probability $P(l<X<u)$ for $X\sim N(0,1)$, shown under the status line next to the true value. Write $f(x)=e^{-x^2/2}$ on $(l,u)$, so that $Z=\int_l^u f(x)\,dx=\sqrt{2\pi}\,P(l<X<u)$. At proposal $t$ the envelope is $e_t(x)\ge f(x)$, with area $A_t=\int e_t$, and the candidate is drawn from the normalized envelope $g_t=e_t/A_t$. The envelope $g_t$ changes whenever a rejection adds a tangent point, so the proposal varies from draw to draw. Importance sampling still works if each candidate is weighted by the proposal that actually generated it:
+**Estimating a probability with the varying envelope.** Besides producing exact draws from the truncated normal, the run gives an estimate of the normal probability $P(l<X<u)$ for $X\sim N(0,1)$, shown in the run summary beside the plots next to the true value, with a 95% confidence interval. Write $f(x)=e^{-x^2/2}$ on $(l,u)$, so that $Z=\int_l^u f(x)\,dx=\sqrt{2\pi}\,P(l<X<u)$. At proposal $t$ the envelope is $e_t(x)\ge f(x)$, with area $A_t=\int e_t$, and the candidate is drawn from the normalized envelope $g_t=e_t/A_t$. The envelope $g_t$ changes whenever a rejection adds a tangent point, so the proposal varies from draw to draw. Importance sampling still works if each candidate is weighted by the proposal that actually generated it:
 $$w_t=\frac{f(X_t)}{g_t(X_t)}=A_t\,\frac{f(X_t)}{e_t(X_t)},\qquad \hat Z=\frac1T\sum_{t=1}^T w_t,\qquad \widehat{P}(l<X<u)=\frac{\hat Z}{\sqrt{2\pi}} .$$
-Conditional on the past, $g_t$ is fixed, so $E[w_t\mid \text{past}]=\int_l^u f=Z$ for every $t$: each weight is unbiased for $Z$ whatever the envelope is, and $\hat Z$ is an average of martingale differences around $Z$. It would be wrong to weight all the draws by the final envelope, because that would use information from later draws. All $T$ proposals are used, rejected ones included (a rejected candidate is still a draw from $g_t$ with a weight; it just also tightens the hull for the next step). The weights are bounded, $0\le w_t\le A_t$ since $f\le e_t$, so the variance is finite. As the hull tightens, $e_t\to f$ and $A_t\to Z$, so every weight approaches $Z$ and the estimate becomes exact, which is why it improves with the number of tangent points. The weights are accumulated on the log scale, so the estimate stays finite even for windows far out in the tail, where it is shown as $\exp(\log P)$.
+Conditional on the past, $g_t$ is fixed, so $E[w_t\mid \text{past}]=\int_l^u f=Z$ for every $t$: each weight is unbiased for $Z$ whatever the envelope is, and $\hat Z$ is an average of martingale differences around $Z$. It would be wrong to weight all the draws by the final envelope, because that would use information from later draws. All $T$ proposals are used, rejected ones included (a rejected candidate is still a draw from $g_t$ with a weight; it just also tightens the hull for the next step). The weights are bounded, $0\le w_t\le A_t$ since $f\le e_t$, so the variance is finite. As the hull tightens, $e_t\to f$ and $A_t\to Z$, so every weight approaches $Z$ and the estimate becomes exact, which is why it improves with the number of tangent points. The interval is $\hat P\,(1\pm1.96\,\widehat{\mathrm{se}}_{\rm rel})$, where $\widehat{\mathrm{se}}_{\rm rel}=\sqrt{s_w^2/T}\big/\bar w$ is computed from the sample variance $s_w^2$ of the weights. This is the usual importance-sampling standard error; because the proposals vary it is an approximation (the weights are martingale differences, not independent), but it is accurate once the hull has stopped changing much, and it shrinks quickly as the envelope tightens. The weights are accumulated on the log scale, so the estimate stays finite even for windows far out in the tail, where it is shown as $\exp(\log P)$.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -445,32 +449,26 @@ log_pnorm_diff <- function(lb, ub) {
 tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
 
 ui <- fluidPage(
-    sidebarLayout(
-        sidebarPanel(
-            width = 3,
-            numericInput("n", "sample size (target)", value = 200, min = 1, step = 10),
-            numericInput("l", "lower limit l", value = -2, step = 0.1),
-            numericInput("u", "upper limit u", value = 2, step = 0.1),
-            fluidRow(
-                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
-                column(6, actionButton("next_step", "Next ↷", width = "100%"))
-            ),
-            br(),
-            actionButton("restart", "↺ Restart", width = "100%"),
-            helpText("Each step draws one candidate from the current hull. ",
-                     "Accepted points (green) join the histogram; rejected ",
-                     "points (black x) become new tangent lines, tightening ",
-                     "the hull. Changing the limits restarts the run. Every proposal, ",
-                     "accepted or not, also gets an importance weight under the hull ",
-                     "that produced it; their mean estimates P(l < X < u)."),
-            textOutput("status"),
-            br(),
-            textOutput("prob")
-        ),
-        mainPanel(
-            width = 9,
-            plotOutput("panels", height = "620px")
-        )
+    wellPanel(
+        fluidRow(
+            column(2, numericInput("n", "sample size (target)", value = 200, min = 1, step = 10)),
+            column(2, numericInput("l", "lower limit l", value = -2, step = 0.1)),
+            column(2, numericInput("u", "upper limit u", value = 2, step = 0.1)),
+            column(2, br(), actionButton("play_pause", "▶ Play", width = "100%")),
+            column(2, br(), actionButton("next_step", "Next ↷", width = "100%")),
+            column(2, br(), actionButton("restart", "↺ Restart", width = "100%"))),
+        helpText("Each step draws one candidate from the current hull. ",
+                 "Accepted points (green) join the histogram; rejected ",
+                 "points (black x) become new tangent lines, tightening ",
+                 "the hull. Changing the limits restarts the run. Every proposal, ",
+                 "accepted or not, also gets an importance weight under the hull ",
+                 "that produced it; their mean estimates P(l < X < u).")
+    ),
+    fluidRow(
+        column(9, plotOutput("panels", height = "560px")),
+        column(3,
+            h5("Run summary"),
+            tableOutput("tab"))
     )
 )
 
@@ -478,7 +476,7 @@ server <- function(input, output, session) {
 
     rv <- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
                           lb = -2, ub = 2, done = FALSE, playing = FALSE,
-                          last_x = NULL, last_accept = NA, logsumw = -Inf)
+                          last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
 
     reset_run <- function() {
         lb <- if (!is.null(input$l) && !is.na(input$l)) input$l else -2
@@ -492,7 +490,7 @@ server <- function(input, output, session) {
         rv$done <- FALSE
         rv$playing <- FALSE
         rv$last_x <- NULL; rv$last_accept <- NA
-        rv$logsumw <- -Inf
+        rv$logsumw <- -Inf; rv$logsumw2 <- -Inf
         updateActionButton(session, "play_pause", label = "▶ Play")
     }
     isolate(reset_run())
@@ -507,6 +505,8 @@ server <- function(input, output, session) {
         lw <- logf - logg + draw$logA
         mw <- max(rv$logsumw, lw)
         rv$logsumw <- mw + log(exp(rv$logsumw - mw) + exp(lw - mw))
+        mw2 <- max(rv$logsumw2, 2 * lw)                  # running sum of w^2, for the standard error
+        rv$logsumw2 <- mw2 + log(exp(rv$logsumw2 - mw2) + exp(2 * lw - mw2))
         accept <- log(runif(1)) < logf - logg
         rv$last_x <- x; rv$last_accept <- accept
         if (accept) {
@@ -552,21 +552,29 @@ server <- function(input, output, session) {
         }
     })
 
-    output$status <- renderText({
-        sprintf("%d / %d samples accepted  |  %d proposals so far  |  %d tangent points",
-                length(rv$samples), rv$target_n, rv$tries, length(rv$hull$x))
-    })
-
     ### P(l < X < u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l < X < u), and
-    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z
-    output$prob <- renderText({
-        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.1f)", lp)
+    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.
+    ### The standard error uses the sample variance of the weights (an approximation, since the
+    ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
+    output$tab <- renderTable({
+        fmt <- function(lp) if (lp > -700) sprintf("%.5g", exp(lp)) else sprintf("exp(%.3f)", lp)
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
-        if (rv$tries == 0) return(sprintf("P(l < X < u): true %s; no proposals yet", fmt(log_true)))
-        log_est <- rv$logsumw - log(rv$tries) - 0.5 * log(2 * pi)
-        sprintf("P(l < X < u): true %s; importance-sampling estimate from all %d proposals %s",
-                fmt(log_true), rv$tries, fmt(log_est))
-    })
+        T <- rv$tries
+        est <- ci <- "-"
+        if (T >= 2) {
+            log_m  <- rv$logsumw - log(T)                          # log of the mean weight
+            rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
+            log_est <- log_m - 0.5 * log(2 * pi)
+            est <- fmt(log_est)
+            ci  <- sprintf("(%s, %s)", fmt(log_est + log(max(1 - 1.96 * rel_se, 1e-12))),
+                                        fmt(log_est + log1p(1.96 * rel_se)))
+        }
+        data.frame(
+            Quantity = c("true P(l < X < u)", "IS estimate", "95% CI", "proposals so far",
+                         "samples accepted", "tangent points"),
+            Value = c(fmt(log_true), est, ci, T,
+                      sprintf("%d / %d", length(rv$samples), rv$target_n), length(rv$hull$x)))
+    }, striped = TRUE, align = "ll")
 
     output$panels <- renderPlot({
         hull <- rv$hull; lb <- rv$lb; ub <- rv$ub
