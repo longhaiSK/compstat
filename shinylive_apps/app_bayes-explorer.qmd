@@ -82,6 +82,9 @@ ui <- fluidPage(
     mainPanel(
       width = 8,
       plotOutput("densplot", height = "380px"),
+      h4("MLE and Bayesian inference"),
+      tableOutput("cmptab"),
+      h4("Other summaries"),
       tableOutput("summtab")
     )
   )
@@ -169,6 +172,43 @@ server <- function(input, output, session) {
     }
   })
 
+  ## MLE vs Bayesian: estimate, standard error, 95% interval
+  output$cmptab <- renderTable({
+    if (input$model == "bb") {
+      a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- round(input$mle_bb * input$n_bb)
+      post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
+      p <- y / n; se <- sqrt(p * (1 - p) / n)
+      ci <- pmin(pmax(p + c(-1, 1) * qnorm(0.975) * se, 0), 1)
+      pm <- post_a1 / (post_a1 + post_a0)
+      psd <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
+      pci <- qbeta(c(0.025, 0.975), post_a1, post_a0)
+    } else if (input$model == "pg") {
+      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      post_alpha <- alpha + S; post_beta <- beta + n
+      p <- S / n; se <- sqrt(p / n)
+      ci <- pmax(p + c(-1, 1) * qnorm(0.975) * se, 0)
+      pm <- post_alpha / post_beta
+      psd <- sqrt(post_alpha) / post_beta
+      pci <- qgamma(c(0.025, 0.975), post_alpha, post_beta)
+    } else {
+      mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
+      n <- input$n_nn; ybar <- input$ybar_nn
+      post_kappa <- kappa0 + n
+      p <- ybar; se <- sigma / sqrt(n)
+      ci <- p + c(-1, 1) * qnorm(0.975) * se
+      pm <- (kappa0 * mu0 + n * ybar) / post_kappa
+      psd <- sigma / sqrt(post_kappa)
+      pci <- qnorm(c(0.025, 0.975), pm, psd)
+    }
+    data.frame(
+      Method = c("MLE (Wald interval)", "Bayesian (posterior)"),
+      Estimate = sprintf("%.3f", c(p, pm)),
+      SE = sprintf("%.3f", c(se, psd)),
+      `95% interval` = c(sprintf("(%.3f, %.3f)", ci[1], ci[2]),
+                         sprintf("(%.3f, %.3f)", pci[1], pci[2])),
+      check.names = FALSE)
+  }, striped = TRUE)
+
   output$summtab <- renderTable({
     if (input$model == "bb") {
       a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- round(input$mle_bb * input$n_bb)
@@ -177,17 +217,11 @@ server <- function(input, output, session) {
       pred_mean  <- post_a1 / (post_a1 + post_a0)
       pred_sd    <- sqrt(pred_mean * (1 - pred_mean))
       data.frame(
-        quantity = c("prior mean", "MLE (y/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", a1 / (a1 + a0)),
-                  sprintf("%.3f", y / n),
                   sprintf("%.3f", logmarg),
                   sprintf("Beta(%.2f, %.2f)", post_a1, post_a0),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))),
-                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0)),
                   sprintf("Bernoulli(%.3f)", pred_mean),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else if (input$model == "pg") {
@@ -199,17 +233,11 @@ server <- function(input, output, session) {
       pred_mean <- post_alpha / post_beta
       pred_sd   <- sqrt(pred_mean * (1 + 1 / post_beta))
       data.frame(
-        quantity = c("prior mean", "MLE (S/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", alpha / beta),
-                  sprintf("%.3f", S / n),
                   sprintf("%.3f", logmarg),
                   sprintf("Gamma(%.2f, %.2f)", post_alpha, post_beta),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_alpha) / post_beta),
-                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta)),
                   sprintf("NegBin(%.2f, %.3f)", post_alpha, nb_prob),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else {
@@ -222,17 +250,11 @@ server <- function(input, output, session) {
         kappa0 * n * (mu0 - ybar)^2 / (2 * sigma^2 * post_kappa)     # up to -SS/(2 sigma^2)
       pred_sd <- sqrt(post_sd^2 + sigma^2)
       data.frame(
-        quantity = c("prior mean", "MLE (y-bar)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", mu0),
-                  sprintf("%.3f", ybar),
                   sprintf("%.3f", logmarg),
                   sprintf("N(%.3f, %.3f^2)", post_mu, post_sd),
-                  sprintf("%.3f", post_mu),
-                  sprintf("%.3f", post_sd),
-                  sprintf("(%.3f, %.3f)", qnorm(0.025, post_mu, post_sd), qnorm(0.975, post_mu, post_sd)),
                   sprintf("N(%.3f, %.3f^2)", post_mu, pred_sd),
                   sprintf("%.3f", post_mu), sprintf("%.3f", pred_sd)))
     }
@@ -319,6 +341,9 @@ ui <- fluidPage(
     mainPanel(
       width = 8,
       plotOutput("densplot", height = "380px"),
+      h4("MLE and Bayesian inference"),
+      tableOutput("cmptab"),
+      h4("Other summaries"),
       tableOutput("summtab")
     )
   )
@@ -406,6 +431,43 @@ server <- function(input, output, session) {
     }
   })
 
+  ## MLE vs Bayesian: estimate, standard error, 95% interval
+  output$cmptab <- renderTable({
+    if (input$model == "bb") {
+      a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- round(input$mle_bb * input$n_bb)
+      post_a1 <- a1 + y; post_a0 <- a0 + (n - y)
+      p <- y / n; se <- sqrt(p * (1 - p) / n)
+      ci <- pmin(pmax(p + c(-1, 1) * qnorm(0.975) * se, 0), 1)
+      pm <- post_a1 / (post_a1 + post_a0)
+      psd <- sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))
+      pci <- qbeta(c(0.025, 0.975), post_a1, post_a0)
+    } else if (input$model == "pg") {
+      alpha <- input$alpha; beta <- input$beta; n <- input$n_pg; S <- round(input$mle_pg * input$n_pg)
+      post_alpha <- alpha + S; post_beta <- beta + n
+      p <- S / n; se <- sqrt(p / n)
+      ci <- pmax(p + c(-1, 1) * qnorm(0.975) * se, 0)
+      pm <- post_alpha / post_beta
+      psd <- sqrt(post_alpha) / post_beta
+      pci <- qgamma(c(0.025, 0.975), post_alpha, post_beta)
+    } else {
+      mu0 <- input$mu0; kappa0 <- input$kappa0; sigma <- input$sigma_nn
+      n <- input$n_nn; ybar <- input$ybar_nn
+      post_kappa <- kappa0 + n
+      p <- ybar; se <- sigma / sqrt(n)
+      ci <- p + c(-1, 1) * qnorm(0.975) * se
+      pm <- (kappa0 * mu0 + n * ybar) / post_kappa
+      psd <- sigma / sqrt(post_kappa)
+      pci <- qnorm(c(0.025, 0.975), pm, psd)
+    }
+    data.frame(
+      Method = c("MLE (Wald interval)", "Bayesian (posterior)"),
+      Estimate = sprintf("%.3f", c(p, pm)),
+      SE = sprintf("%.3f", c(se, psd)),
+      `95% interval` = c(sprintf("(%.3f, %.3f)", ci[1], ci[2]),
+                         sprintf("(%.3f, %.3f)", pci[1], pci[2])),
+      check.names = FALSE)
+  }, striped = TRUE)
+
   output$summtab <- renderTable({
     if (input$model == "bb") {
       a1 <- input$a1; a0 <- input$a0; n <- input$n_bb; y <- round(input$mle_bb * input$n_bb)
@@ -414,17 +476,11 @@ server <- function(input, output, session) {
       pred_mean  <- post_a1 / (post_a1 + post_a0)
       pred_sd    <- sqrt(pred_mean * (1 - pred_mean))
       data.frame(
-        quantity = c("prior mean", "MLE (y/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", a1 / (a1 + a0)),
-                  sprintf("%.3f", y / n),
                   sprintf("%.3f", logmarg),
                   sprintf("Beta(%.2f, %.2f)", post_a1, post_a0),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_a1 * post_a0 / ((post_a1 + post_a0)^2 * (post_a1 + post_a0 + 1)))),
-                  sprintf("(%.3f, %.3f)", qbeta(0.025, post_a1, post_a0), qbeta(0.975, post_a1, post_a0)),
                   sprintf("Bernoulli(%.3f)", pred_mean),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else if (input$model == "pg") {
@@ -436,17 +492,11 @@ server <- function(input, output, session) {
       pred_mean <- post_alpha / post_beta
       pred_sd   <- sqrt(pred_mean * (1 + 1 / post_beta))
       data.frame(
-        quantity = c("prior mean", "MLE (S/n)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", alpha / beta),
-                  sprintf("%.3f", S / n),
                   sprintf("%.3f", logmarg),
                   sprintf("Gamma(%.2f, %.2f)", post_alpha, post_beta),
-                  sprintf("%.3f", pred_mean),
-                  sprintf("%.3f", sqrt(post_alpha) / post_beta),
-                  sprintf("(%.3f, %.3f)", qgamma(0.025, post_alpha, post_beta), qgamma(0.975, post_alpha, post_beta)),
                   sprintf("NegBin(%.2f, %.3f)", post_alpha, nb_prob),
                   sprintf("%.3f", pred_mean), sprintf("%.3f", pred_sd)))
     } else {
@@ -459,17 +509,11 @@ server <- function(input, output, session) {
         kappa0 * n * (mu0 - ybar)^2 / (2 * sigma^2 * post_kappa)     # up to -SS/(2 sigma^2)
       pred_sd <- sqrt(post_sd^2 + sigma^2)
       data.frame(
-        quantity = c("prior mean", "MLE (y-bar)", "log marginal likelihood*",
-                     "posterior distribution", "posterior mean", "posterior sd",
-                     "95% credible interval", "predictive distribution",
-                     "predictive mean", "predictive sd"),
+        quantity = c("prior mean", "log marginal likelihood*", "posterior distribution",
+                     "predictive distribution", "predictive mean", "predictive sd"),
         value = c(sprintf("%.3f", mu0),
-                  sprintf("%.3f", ybar),
                   sprintf("%.3f", logmarg),
                   sprintf("N(%.3f, %.3f^2)", post_mu, post_sd),
-                  sprintf("%.3f", post_mu),
-                  sprintf("%.3f", post_sd),
-                  sprintf("(%.3f, %.3f)", qnorm(0.025, post_mu, post_sd), qnorm(0.975, post_mu, post_sd)),
                   sprintf("N(%.3f, %.3f^2)", post_mu, pred_sd),
                   sprintf("%.3f", post_mu), sprintf("%.3f", pred_sd)))
     }
