@@ -6,7 +6,7 @@ pagetitle: "marlik-2d-quadrature-shinylive"
 
 ```{shinylive-r}
 #| standalone: true
-#| viewerHeight: 1150
+#| viewerHeight: 900
 library(shiny)
 
 ### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
@@ -65,16 +65,19 @@ ui <- fluidPage(
             column(3, actionButton("new", "New sample")),
             column(3, checkboxInput("zoom", "zoom to the posterior", FALSE)))
     ),
+    tags$style("#tab table { font-size: 85%; }"),
     fluidRow(
-        column(6, plotOutput("nat",  height = "380px")),
-        column(6, plotOutput("unit", height = "380px"))
-    ),
-    fluidRow(
-        column(6, plotOutput("nat_gh", height = "380px")),
-        column(6, plotOutput("z_gh",   height = "380px"))
-    ),
-    h4("log P(y) computed by each method"),
-    tableOutput("tab")
+        column(8,
+            fluidRow(
+                column(6, plotOutput("nat",  height = "340px")),
+                column(6, plotOutput("unit", height = "340px"))),
+            fluidRow(
+                column(6, plotOutput("nat_gh", height = "340px")),
+                column(6, plotOutput("z_gh",   height = "340px")))),
+        column(4,
+            h5("log P(y) by each method"),
+            tableOutput("tab"))
+    )
 )
 
 server <- function(input, output, session) {
@@ -206,14 +209,12 @@ server <- function(input, output, session) {
         s <- st()
         est <- c(s$log_true, s$log_lap, s$log_mid, s$log_gh)
         data.frame(
-            Method = c("reference (fine grid centred on the posterior mode)",
-                       "Laplace approximation",
-                       sprintf("product midpoint rule, logistic grid, %d x %d", s$n, s$n),
-                       sprintf("Gauss-Hermite rule, Laplace-standardized, %d x %d", s$k, s$k)),
-            `Function evaluations` = c(400^2, 1, s$n^2, s$k^2),
+            Method = c("Reference", "Laplace", sprintf("Midpoint %dx%d", s$n, s$n),
+                       sprintf("Gauss-Hermite %dx%d", s$k, s$k)),
+            Evals = c(400^2, 1, s$n^2, s$k^2),
             `log P(y)` = sprintf("%.3f", est),
-            `error` = c("", sprintf("%.3f", est[-1] - est[1])),
-            `effective grid points` = c("", "", sprintf("%.1f", s$ess), ""),
+            Error = c("", sprintf("%.3f", est[-1] - est[1])),
+            `Eff. pts` = c("", "", sprintf("%.1f", s$ess), ""),
             check.names = FALSE)
     }, striped = TRUE, align = "lrrrr")
 }
@@ -245,7 +246,7 @@ where $z_j$ and $\omega_j$ are the nodes and weights of the $k$-point Gauss–He
 * *Row 2, left:* the same natural-scale surface with the Gauss–Hermite nodes $\hat\theta+Cz_{jl}$, which sit on and around the posterior wherever it is.
 * *Row 2, right:* the posterior in the standardized coordinates $z$, with the Gauss–Hermite nodes and dashed circles at 1, 2 and 3 standard deviations of the standard normal that the rule assumes. The closer the posterior is to the circles, the better the rule works.
 
-**The table** lists the value of $\log P(y)$ from each method, the number of function evaluations, the error against the reference (a fine product grid centred on the posterior mode), and, for the midpoint rule, the effective number of grid points $1/\sum_i\tilde g_i^2$ ($\tilde g_i$ the normalized values of $g$ at the grid points), a measure of how many points carry the mass.
+**The table** (to the right of the plots) lists the value of $\log P(y)$ from each method (Reference: a fine product grid centred on the posterior mode; Laplace; Midpoint $n\times n$; Gauss–Hermite $k\times k$), the number of function evaluations (Evals), the error against the reference, and, for the midpoint rule, the effective number of grid points (Eff. pts) $1/\sum_i\tilde g_i^2$ ($\tilde g_i$ the normalized values of $g$ at the grid points), a measure of how many points carry the mass.
 
 **What to try.** With the data location near 0 and a vague prior, all the rules are close to the reference. Move the data location to $-5$ and then $-10$: the posterior moves out into the tail of the logistic grid, $g$ becomes a thin spike near the boundary of the square, the effective number of grid points collapses, and the midpoint error becomes large however many points per axis you add (a larger sample makes the posterior narrower and the failure worse). The Laplace-centred Gauss–Hermite rule is unaffected by the location of the data and is accurate with 5 to 10 nodes per axis. The Laplace approximation alone is already close for normal data with a moderate $n$, and the Gauss–Hermite rule improves on it as the number of nodes grows. Reduce the number of observations to see the posterior depart from normality and the Laplace error grow.
 
@@ -310,16 +311,19 @@ ui <- fluidPage(
             column(3, actionButton("new", "New sample")),
             column(3, checkboxInput("zoom", "zoom to the posterior", FALSE)))
     ),
+    tags$style("#tab table { font-size: 85%; }"),
     fluidRow(
-        column(6, plotOutput("nat",  height = "380px")),
-        column(6, plotOutput("unit", height = "380px"))
-    ),
-    fluidRow(
-        column(6, plotOutput("nat_gh", height = "380px")),
-        column(6, plotOutput("z_gh",   height = "380px"))
-    ),
-    h4("log P(y) computed by each method"),
-    tableOutput("tab")
+        column(8,
+            fluidRow(
+                column(6, plotOutput("nat",  height = "340px")),
+                column(6, plotOutput("unit", height = "340px"))),
+            fluidRow(
+                column(6, plotOutput("nat_gh", height = "340px")),
+                column(6, plotOutput("z_gh",   height = "340px")))),
+        column(4,
+            h5("log P(y) by each method"),
+            tableOutput("tab"))
+    )
 )
 
 server <- function(input, output, session) {
@@ -451,14 +455,12 @@ server <- function(input, output, session) {
         s <- st()
         est <- c(s$log_true, s$log_lap, s$log_mid, s$log_gh)
         data.frame(
-            Method = c("reference (fine grid centred on the posterior mode)",
-                       "Laplace approximation",
-                       sprintf("product midpoint rule, logistic grid, %d x %d", s$n, s$n),
-                       sprintf("Gauss-Hermite rule, Laplace-standardized, %d x %d", s$k, s$k)),
-            `Function evaluations` = c(400^2, 1, s$n^2, s$k^2),
+            Method = c("Reference", "Laplace", sprintf("Midpoint %dx%d", s$n, s$n),
+                       sprintf("Gauss-Hermite %dx%d", s$k, s$k)),
+            Evals = c(400^2, 1, s$n^2, s$k^2),
             `log P(y)` = sprintf("%.3f", est),
-            `error` = c("", sprintf("%.3f", est[-1] - est[1])),
-            `effective grid points` = c("", "", sprintf("%.1f", s$ess), ""),
+            Error = c("", sprintf("%.3f", est[-1] - est[1])),
+            `Eff. pts` = c("", "", sprintf("%.1f", s$ess), ""),
             check.names = FALSE)
     }, striped = TRUE, align = "lrrrr")
 }
