@@ -136,8 +136,8 @@ ui <- fluidPage(
     wellPanel(
         fluidRow(
             column(2, numericInput("n", "sample size (target)", value = 200, min = 1, step = 10)),
-            column(2, numericInput("l", "lower limit l", value = -2, step = 0.1)),
-            column(2, numericInput("u", "upper limit u", value = 2, step = 0.1)),
+            column(4, sliderInput("lim", "truncation interval (l, u)", min = -10, max = 10,
+                                  value = c(-2, 2), step = 0.1)),
             column(2, br(), actionButton("play_pause", "▶ Play", width = "100%")),
             column(2, br(), actionButton("next_step", "Next ↷", width = "100%")),
             column(2, br(), actionButton("restart", "↺ Restart", width = "100%"))),
@@ -163,8 +163,8 @@ server <- function(input, output, session) {
                           last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
 
     reset_run <- function() {
-        lb <- if (!is.null(input$l) && !is.na(input$l)) input$l else -2
-        ub <- if (!is.null(input$u) && !is.na(input$u)) input$u else 2
+        lb <- if (!is.null(input$lim)) input$lim[1] else -2
+        ub <- if (!is.null(input$lim)) input$lim[2] else 2
         if (ub - lb < 0.05) ub <- lb + 0.05      # guard against a degenerate window
         rv$hull <- init_hull(lb, ub)
         rv$samples <- numeric(0)
@@ -205,8 +205,7 @@ server <- function(input, output, session) {
         }
     }
 
-    observeEvent(input$l, { reset_run() }, ignoreInit = TRUE)
-    observeEvent(input$u, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$lim, { reset_run() }, ignoreInit = TRUE)
     observeEvent(input$restart, { reset_run() })
 
     observeEvent(input$n, {
@@ -318,8 +317,8 @@ piecewise-*linear*, since it is built from tangent lines), marking the most
 recent candidate as accepted (green dot) or rejected (black x, becoming a
 new tangent point). The bottom panel is a histogram of the accepted draws so
 far against the true truncated normal density. Controls: the target sample
-size, and the truncation limits $[l, u]$ (changing the limits restarts the
-run).
+size, and the truncation interval $[l, u]$, set with a two-handled slider
+from $-10$ to $10$ (changing the interval restarts the run).
 
 **Estimating a probability with the varying envelope.** Besides producing exact draws from the truncated normal, the run gives an estimate of the normal probability $P(l<X<u)$ for $X\sim N(0,1)$, shown in the run summary beside the plots next to the true value, with a 95% confidence interval. Write $f(x)=e^{-x^2/2}$ on $(l,u)$, so that $Z=\int_l^u f(x)\,dx=\sqrt{2\pi}\,P(l<X<u)$. At proposal $t$ the envelope is $e_t(x)\ge f(x)$, with area $A_t=\int e_t$, and the candidate is drawn from the normalized envelope $g_t=e_t/A_t$. The envelope $g_t$ changes whenever a rejection adds a tangent point, so the proposal varies from draw to draw. Importance sampling still works if each candidate is weighted by the proposal that actually generated it:
 $$w_t=\frac{f(X_t)}{g_t(X_t)}=A_t\,\frac{f(X_t)}{e_t(X_t)},\qquad \hat Z=\frac1T\sum_{t=1}^T w_t,\qquad \widehat{P}(l<X<u)=\frac{\hat Z}{\sqrt{2\pi}} .$$
@@ -452,8 +451,8 @@ ui <- fluidPage(
     wellPanel(
         fluidRow(
             column(2, numericInput("n", "sample size (target)", value = 200, min = 1, step = 10)),
-            column(2, numericInput("l", "lower limit l", value = -2, step = 0.1)),
-            column(2, numericInput("u", "upper limit u", value = 2, step = 0.1)),
+            column(4, sliderInput("lim", "truncation interval (l, u)", min = -10, max = 10,
+                                  value = c(-2, 2), step = 0.1)),
             column(2, br(), actionButton("play_pause", "▶ Play", width = "100%")),
             column(2, br(), actionButton("next_step", "Next ↷", width = "100%")),
             column(2, br(), actionButton("restart", "↺ Restart", width = "100%"))),
@@ -479,8 +478,8 @@ server <- function(input, output, session) {
                           last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
 
     reset_run <- function() {
-        lb <- if (!is.null(input$l) && !is.na(input$l)) input$l else -2
-        ub <- if (!is.null(input$u) && !is.na(input$u)) input$u else 2
+        lb <- if (!is.null(input$lim)) input$lim[1] else -2
+        ub <- if (!is.null(input$lim)) input$lim[2] else 2
         if (ub - lb < 0.05) ub <- lb + 0.05      # guard against a degenerate window
         rv$hull <- init_hull(lb, ub)
         rv$samples <- numeric(0)
@@ -521,8 +520,7 @@ server <- function(input, output, session) {
         }
     }
 
-    observeEvent(input$l, { reset_run() }, ignoreInit = TRUE)
-    observeEvent(input$u, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$lim, { reset_run() }, ignoreInit = TRUE)
     observeEvent(input$restart, { reset_run() })
 
     observeEvent(input$n, {
