@@ -115,293 +115,9 @@ legend("bottomright", bty = "n", lwd = c(1, 3, 3), lty = c(1, 1, 2),
                   expression(Q(theta*"|"*hat(theta)^(t)) ~ "(exact expectation)")))
 ```
 
-### Cross-entropy and Kullback-Leibler distance {#sec-cross-entropy}
-
-For distributions $P$ and $q$ of $Z$, the **cross-entropy** of $q$ relative to $P$ is
-
-$$
-H(P, q) = -\int P(z) \log q(z) \, dz = -E_P\!\left[\log q(Z)\right],
-$$
-
-so $H(P, P)$ is the entropy of $P$, and the Kullback-Leibler distance is
-
-$$
-\mathrm{KL}(P \,\|\, q)
-= \int P(z) \log \frac{P(z)}{q(z)} \, dz
-= H(P, q) - H(P, P) .
-$$
-
-**Gibbs' inequality.** $\mathrm{KL}(P \| q) \ge 0$, with equality if and only if
-$q = P$. Equivalently, $H(P, q) \ge H(P, P)$: the cross-entropy is smallest at
-$q = P$. It follows from $\log x \le x - 1$:
-
-$$
-\mathrm{KL}(P \| q) = -\int P(z) \log \frac{q(z)}{P(z)} \, dz
-\;\ge\; -\int P(z) \left(\frac{q(z)}{P(z)} - 1\right) dz
-= -\int \left[q(z) - P(z)\right] dz = 0 .
-$$
-
-### The key identity {#sec-key-identity}
-
-For every $z$,
-$\log P(Y \mid \theta) = \log P(Y, z \mid \theta) - \log P(z \mid Y, \theta)$,
-because $P(Y, z \mid \theta) = P(Y \mid \theta) \, P(z \mid Y, \theta)$.
-Averaging both sides over an *arbitrary* distribution $\tilde P$ of $Z$ (the left
-side does not depend on $z$, so the average leaves it unchanged) gives, for any
-$\tilde P$,
-
-$$
-\ell_{\text{obs}}(\theta)
-= \int \tilde P(z) \log P(Y, z \mid \theta) \, dz
-+ H\!\left(\tilde P,\, P(\cdot \mid Y, \theta)\right) .
-$$ {#eq-key-identity}
-
-The first term is the average complete log-likelihood under $\tilde P$ and the
-second is a cross-entropy. For a fixed $\tilde P$ the two terms, as functions
-of $\theta$, add up to $\ell_{\text{obs}}$; the figure shows one such split.
-The identity is used twice below: for the ascending property of EM and for the
-alternating-optimization view of EM.
-
-```{r}
-#| label: fig-key-identity
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-width: 9
-#| fig-height: 4.4
-#| fig-cap: "Illustrates the key identity: the average complete log-likelihood under a fixed distribution of the hidden data differs from the observed log-likelihood by a cross-entropy.
-#|   The gap at each $\\theta$ is the cross-entropy $H(\\tilde P, P_Z(\\cdot \\mid Y, \\theta))$, which can have either sign."
-local({
-par(mar = c(3.5, 1, 1, 1))
-th <- seq(0, 10, length.out = 300)
-lo <- function(t) 3.2 - 0.045 * (t - 5.2)^2 + 0.5 * sin(t / 2.2)   # observed log-likelihood
-av <- function(t) lo(t) - (1.4 - 0.45 * (t - 3))                    # an arbitrary average complete log-likelihood
-plot(th, lo(th), type = "n", ylim = c(-1.5, 4.2), axes = FALSE, xlab = "", ylab = "")
-mtext(expression(theta), side = 1, line = 1.5, cex = 1.3)
-lines(th, lo(th), lwd = 3, col = "steelblue")
-lines(th, av(th), lwd = 3, col = "firebrick")
-text(0, lo(0) + 0.9, expression(l[obs](theta)), col = "steelblue", adj = 0, cex = 1.3)
-text(9.9, av(9.9) + 0.5, expression(integral(tilde(P)(z)*log*P(Y*","*z*"|"*theta)*dz)),
-     col = "firebrick", adj = 1, cex = 1.1)
-for (t0 in c(3, 7.5)) {
-    arrows(t0, av(t0), t0, lo(t0), code = 3, length = 0.08, lwd = 2)
-    text(if (t0 == 3) t0 - 0.15 else t0 + 0.15, (av(t0) + lo(t0)) / 2 - if (t0 == 3) 0.4 else 0, expression(H(tilde(P), P[Z](.*"|"*Y*","*theta))), adj = if (t0 == 3) 1 else 0, cex = 1.2)
-    segments(t0, -1.5, t0, min(av(t0), lo(t0)), lty = 3, col = "gray50")
-}
-axis(1, at = c(3, 7.5), labels = c(expression(theta[1]), expression(theta[2])), tick = TRUE)
-})
-```
-
-### The ascending property {#sec-ascending}
-
-::: {.callout-note}
-### Theorem
-$\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) \ \ge\ \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)$
-at every iteration.
-:::
-
-Plug $\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$ into @eq-key-identity. The
-first term becomes $Q(\theta \mid \hat\theta^{(t)})$:
-
-$$
-\ell_{\text{obs}}(\theta)
-= \underbrace{\int P(z \mid Y, \hat\theta^{(t)}) \log P(Y, z \mid \theta) \, dz}_{Q(\theta \mid \hat\theta^{(t)})}
-+ H\!\left(P(\cdot \mid Y, \hat\theta^{(t)}),\, P(\cdot \mid Y, \theta)\right) .
-$$
-
-The M-step makes $Q$ larger, and the cross-entropy is smallest at
-$\theta = \hat\theta^{(t)}$ (Gibbs' inequality), so it can only grow when
-$\theta$ moves. Both terms increase, hence so does $\ell_{\text{obs}}$.
-
-```{r}
-#| label: fig-ascending
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-width: 9
-#| fig-height: 3.9
-#| fig-cap: "Illustrates the ascending property: moving from the current estimate to the next one raises $Q$ and also raises the cross-entropy gap, so the observed log-likelihood rises by at least the gain in $Q$.
-#|   The gap between $\\ell_{\\text{obs}}$ and $Q(\\theta \\mid \\hat\\theta^{(t)})$ is the cross-entropy $H$, smallest at $\\hat\\theta^{(t)}$."
-local({
-par(mar = c(3.5, 1, 0.5, 1))
-th <- seq(0, 10, length.out = 300)
-t0 <- 3; t1 <- 6                                         # theta^(t), theta^(t+1)
-Q  <- function(t) 2.6 - 0.07 * (t - t1)^2                # Q(theta | theta^(t)), maximised at theta^(t+1)
-H  <- function(t) 0.8 + 0.04 * (t - t0)^2                # cross-entropy, smallest at theta^(t) (Gibbs)
-lo <- function(t) Q(t) + H(t)                            # l_obs
-plot(th, lo(th), type = "n", ylim = c(-0.5, 5), axes = FALSE, xlab = "", ylab = "")
-mtext(expression(theta), side = 1, line = 1.8, cex = 1.3)
-lines(th, lo(th), lwd = 3, col = "steelblue")
-lines(th, Q(th),  lwd = 3, col = "firebrick")
-text(9.9, lo(9.9) + 0.35, expression(l[obs](theta)), col = "steelblue", adj = 1, cex = 1.3)
-text(9.9, Q(9.9) - 0.35, expression(Q(theta*"|"*hat(theta)^(t))), col = "firebrick", adj = 1, cex = 1.3)
-segments(c(t0, t1), -0.5, c(t0, t1), c(lo(t0), lo(t1)), lty = 3, col = "gray50")
-segments(0.1, c(Q(t0), lo(t0)), t1, c(Q(t0), lo(t0)), lty = 3, col = "gray50")
-segments(0.1, c(Q(t1), lo(t1)), t1, c(Q(t1), lo(t1)), lty = 3, col = "gray50")
-for (x in c(t0, t1)) arrows(x, Q(x), x, lo(x), code = 3, length = 0.07, lwd = 2)
-text(t0 + 0.15, (Q(t0) + lo(t0)) / 2, "H", adj = 0, cex = 1.3)
-text(t1 + 0.15, (Q(t1) + lo(t1)) / 2, "H (larger)", adj = 0, cex = 1.3)
-arrows(0.3, Q(t0), 0.3, Q(t1), length = 0.07, lwd = 2, col = "firebrick")
-text(0.45, (Q(t0) + Q(t1)) / 2, expression(Delta*Q >= 0), adj = 0, col = "firebrick", cex = 1.1)
-arrows(0.3, lo(t0), 0.3, lo(t1), length = 0.07, lwd = 2, col = "steelblue")
-text(0.45, (lo(t0) + lo(t1)) / 2, expression(Delta*l[obs] >= 0), adj = 0, col = "steelblue", cex = 1.2)
-axis(1, at = c(0, 10), labels = FALSE, lwd.ticks = 0)                       # the theta axis
-arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
-axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
-mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
-})
-```
-
-**Proof: comparing two successive points.** Write
-$\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$ and
-$P_\theta = P(\cdot \mid Y, \theta)$, so $\tilde P = P_{\hat\theta^{(t)}}$.
-Subtract the identity at $\theta = \hat\theta^{(t)}$ from the identity at
-$\theta = \hat\theta^{(t+1)}$:
-
-$$
-\begin{aligned}
-\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) - \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)
-&= \left[Q\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - Q\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]
-+ \left[H\!\left(\tilde P, P_{\hat\theta^{(t+1)}}\right) - H\!\left(\tilde P, \tilde P\right)\right] \\
-&= \underbrace{\left[Q\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - Q\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]}_{\ge\, 0 \text{ by the M-step}}
-+ \underbrace{\mathrm{KL}\!\left(\tilde P \,\|\, P_{\hat\theta^{(t+1)}}\right)}_{\ge\, 0 \text{ by Gibbs' inequality}} \;\ge\; 0 .
-\end{aligned}
-$$
-
-The second line uses $H(\tilde P, P_{\hat\theta^{(t)}}) = H(\tilde P, \tilde P)$ and
-$H(P, q) - H(P, P) = \mathrm{KL}(P \| q)$. $\blacksquare$
-
-Note carefully what the theorem does and does not say: the observed likelihood
-never decreases, but that guarantees convergence only to a stationary point,
-which may be a local maximum or even a saddle point.
-
-The ascending property was proved by [Dempster, Laird and Rubin (1977)](#dlr1977),
-who named the algorithm and gave it in this generality; their proof writes the
-cross-entropy term as $H(\theta \mid \theta_0)$ and bounds it with Jensen's
-inequality. Special cases of the iteration were in use earlier, for example
-[Hartley (1958)](#hartley1958) for incomplete count data,
-[Baum et al. (1970)](#baum1970) for hidden Markov models (the Baum-Welch
-algorithm, with its own proof of monotone increase), and
-[Sundberg (1974)](#sundberg1974) for exponential families. The convergence
-argument of Dempster, Laird and Rubin had a gap, which
-[Wu (1983)](#wu1983) corrected: he gave conditions under which the iterates
-converge to a stationary point of $\ell_{\text{obs}}$, and the example of a
-saddle point in the remark above shows why some conditions are needed.
-
-### The function $F(\tilde P, \theta)$ {#sec-F}
-
-For any distribution $\tilde P$ of the hidden data $Z$, define
-
-$$
-F(\tilde P, \theta)
-= \int \tilde P(z) \log P(Y, z \mid \theta) \, dz + H(\tilde P, \tilde P) ,
-$$
-
-the average complete log-likelihood plus the entropy
-$H(\tilde P, \tilde P) = -\int \tilde P \log \tilde P$ of $\tilde P$. It has a
-second expression:
-
-$$
-F(\tilde P, \theta)
-= \ell_{\text{obs}}(\theta) - \mathrm{KL}\!\left(\tilde P \,\|\, P(\cdot \mid Y, \theta)\right) .
-$$
-
-**Why they agree.** Rearrange @eq-key-identity by moving the cross-entropy to
-the right-hand side and adding $H(\tilde P, \tilde P)$ to both sides:
-
-$$
-\begin{aligned}
-\int \tilde P(z) \log P(Y, z \mid \theta) \, dz + H(\tilde P, \tilde P)
-&= \ell_{\text{obs}}(\theta) - \left[H\!\left(\tilde P, P(\cdot \mid Y, \theta)\right) - H(\tilde P, \tilde P)\right] \\
-&= \ell_{\text{obs}}(\theta) - \mathrm{KL}\!\left(\tilde P \,\|\, P(\cdot \mid Y, \theta)\right) .
-\end{aligned}
-$$
-
-Since $\mathrm{KL} \ge 0$, $F(\tilde P, \theta) \le \ell_{\text{obs}}(\theta)$ for every
-$\tilde P$ and $\theta$, and equality holds exactly when
-$\tilde P = P(\cdot \mid Y, \theta)$.
-
-### EM as alternating optimization {#sec-alternating}
-
-Both steps of EM are coordinate ascent on the single function $F$:
-
-- **E-step** maximizes $F$ over $\tilde P$ with $\theta = \hat\theta^{(t)}$
-  fixed. Since $\mathrm{KL} \ge 0$ with equality if and only if
-  $\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$, the E-step sets $\tilde P_t$ to
-  the conditional distribution of $Z$.
-- **M-step** maximizes $F$ over $\theta$ with $\tilde P_t$ fixed. The entropy
-  term does not involve $\theta$, so this is
-  $\arg\max_\theta Q(\theta \mid \hat\theta^{(t)})$.
-- **Tight bound.** After the E-step, $\mathrm{KL} = 0$ at
-  $\theta = \hat\theta^{(t)}$, so the lower bound equals the observed
-  log-likelihood there:
-  $F(\tilde P_t, \hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$.
-
-The figure shows one full cycle. For a fixed $\tilde P_t$, the curve
-$F(\tilde P_t, \cdot)$ is a lower bound of $\ell_{\text{obs}}$. The E-step at
-$\hat\theta^{(t)}$ replaces the previous distribution by $\tilde P_t$ and lifts
-the bound up to $\ell_{\text{obs}}$ at that point (the green arrows; the dotted
-gray curve is the bound before such a lift). The M-step then moves along the new
-bound to its maximum $\hat\theta^{(t+1)}$. There $\ell_{\text{obs}}$ lies at
-least as high as the bound, which lies at least as high as the old value of
-$\ell_{\text{obs}}$:
-
-$$
-\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right)
-\;\ge\; F\!\left(\tilde P_t, \hat\theta^{(t+1)}\right)
-\;\ge\; F\!\left(\tilde P_t, \hat\theta^{(t)}\right)
-= \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right).
-$$
-
-This is the ascending property again, now as a statement about alternating
-maximization of a single objective, which cannot decrease it. The $F$ formulation is due to
-[Neal and Hinton (1998)](#neal1998); related alternating-minimization results
-for KL divergences were given by [Csiszár and Tusnády (1984)](#csiszar1984). The view also
-explains the variational methods used when the E-step is intractable: restrict
-$\tilde P$ to a manageable family and accept a bound rather than an equality.
-
-```{r}
-#| label: fig-em-steps
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-width: 9
-#| fig-height: 4.6
-#| fig-cap: "Illustrates EM as alternating maximization of $F$: the E-step lifts the lower bound until it touches the observed log-likelihood at the current estimate, and the M-step moves to the maximum of that bound.
-#|   Solid blue: $\\ell_{\\text{obs}}(\\theta)$. Light-blue dashed: the bounds $F(\\tilde P_t, \\theta)$ and $F(\\tilde P_{t-1}, \\theta)$. Dotted gray: $F$ for another distribution $\\tilde P$."
-local({
-par(mar = c(3.5, 1, 0.5, 1))
-fcol <- "#6CA6E0"                                                  # light blue: the F curves
-th <- seq(0, 10, length.out = 300); t0 <- 3
-lo <- function(t) 3.5 - 0.15 * (t - 6.5)^2                      # l_obs
-B0 <- function(t) lo(t) - 0.2625 * (t - 1)^2              # F(P~_{t-1}, theta): touches l_obs at theta^(t-1), maximised at theta^(t)
-B2 <- function(t) lo(t) - 1.2 - 0.2625 * (t - 1.9)^2                       # F(P~, theta) for another P~ close to P~_{t-1}: below l_obs everywhere, below F(P~_{t-1}) at theta^(t-1)
-B1 <- function(t) lo(t) - 0.1 * (t - t0)^2                     # F(P~_t, theta): touches l_obs at theta^(t)
-t1 <- optimize(B1, c(0, 10), maximum = TRUE)$maximum             # M-step
-plot(th, lo(th), type = "n", ylim = c(-5.8, 5.0), axes = FALSE, xlab = "", ylab = "")
-lines(th, lo(th), lwd = 3, col = "steelblue")
-lines(th, ifelse(B0(th) > -3.0, B0(th), NA), lwd = 3, lty = 2, col = fcol)
-lines(th, ifelse(B2(th) > -3.0, B2(th), NA), lwd = 3, lty = 3, col = "gray45")
-lines(th, ifelse(B1(th) > -3.0, B1(th), NA), lwd = 3, lty = 2, col = fcol)
-points(1, lo(1), pch = 19, col = fcol, cex = 1.3)
-text(0, 4.8, expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t])), col = fcol, adj = 0, cex = 1.2)
-text(0, 3.85, expression(phantom(F(tilde(P)[t], theta)) == l[obs](theta) - KL(tilde(P)[t]*"||"*P(.*"|"*Y*","*theta))), col = fcol, adj = 0, cex = 1.2)
-segments(c(t0, t1), -5.8, c(t0, t1), c(B0(t0), lo(t1)), lty = 3, col = "gray50")
-arrows(t0, B0(t0), t0, lo(t0), length = 0.08, lwd = 3, col = "forestgreen")
-arrows(1, B2(1), 1, lo(1) - 0.06, length = 0.08, lwd = 3, col = "forestgreen")   # the E-step before: raises F to l_obs at theta^(t-1)
-text(t0 + 0.2, 1.05, expression(bold("E-step:")~tilde(P)[t]~"="~P(.*"|"*Y*","*hat(theta)^(t))), adj = 0, col = "forestgreen", cex = 1.0)
-text(1.2, B2(1) + 0.3, expression(bold("E-step")), adj = 0, col = "forestgreen", cex = 1.0)
-points(t0, lo(t0), pch = 19, col = fcol, cex = 1.3)
-arrows(t0 + 0.1, B1(t0) + 0.04, t1, B1(t1), length = 0.08, lwd = 3, col = "darkorange")
-text((t0 + t1) / 2 + 0.2, B1((t0 + t1) / 2) - 0.45, expression(bold("M-step")), col = "darkorange", adj = 0, cex = 1.1)
-arrows(t1, B1(t1), t1, lo(t1), length = 0.06, lwd = 2, code = 3)
-text(t1 + 0.15, (B1(t1) + lo(t1)) / 2 - 0.1, expression(l[obs]~"is even higher"), adj = 0, cex = 1.0)
-legend("bottomright", bty = "n", lwd = 3, lty = c(1, 2, 2, 3), cex = 1.0, y.intersp = 1.3,
-       col = c("steelblue", fcol, fcol, "gray45"),
-       legend = c(expression(l[obs](theta)),
-                  expression(F(tilde(P)[t], theta)),
-                  expression(F(tilde(P)[t-1], theta)),
-                  expression(F(tilde(P), theta)~"for another"~tilde(P))))
-axis(1, at = c(0, 10), labels = FALSE, lwd.ticks = 0)                       # the theta axis
-arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
-axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
-mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
-})
-```
+Why each iteration cannot decrease $\ell_{\text{obs}}$, and the view of EM as
+alternating maximization of a single function, are developed in
+@sec-justification at the end of the chapter.
 
 ## Example 1: Two-Component Normal Mixture {#sec-mixture}
 
@@ -897,7 +613,7 @@ behaviour seen in the mixture app.
 
 ### Tangent lower bounds
 
-The bound picture of the overview, for this model. Here $\tilde P_t$ is the
+The bound picture of @sec-alternating, for this model. Here $\tilde P_t$ is the
 conditional distribution of the $n - m$ censored counts, independent Bernoulli
 variables with success probability $p_t = \lambda^{(t)}/(1 + \lambda^{(t)})$, so
 its entropy is
@@ -1992,6 +1708,300 @@ choices of $Z$, and they lead to EM algorithms with quite different convergence
 rates — faster when the augmentation adds little information, slower when the
 missing information is a large fraction of the total.
 
+## Justification of the EM Algorithm {#sec-justification}
+
+This section shows why EM works: the observed log-likelihood never decreases,
+and EM is coordinate ascent on a single function of $\theta$ and a distribution
+of the hidden data.
+
+### Cross-entropy and Kullback-Leibler distance {#sec-cross-entropy}
+
+For distributions $P$ and $q$ of $Z$, the **cross-entropy** of $q$ relative to $P$ is
+
+$$
+H(P, q) = -\int P(z) \log q(z) \, dz = -E_P\!\left[\log q(Z)\right],
+$$
+
+so $H(P, P)$ is the entropy of $P$, and the Kullback-Leibler distance is
+
+$$
+\mathrm{KL}(P \,\|\, q)
+= \int P(z) \log \frac{P(z)}{q(z)} \, dz
+= H(P, q) - H(P, P) .
+$$
+
+**Gibbs' inequality.** $\mathrm{KL}(P \| q) \ge 0$, with equality if and only if
+$q = P$. Equivalently, $H(P, q) \ge H(P, P)$: the cross-entropy is smallest at
+$q = P$. It follows from $\log x \le x - 1$:
+
+$$
+\mathrm{KL}(P \| q) = -\int P(z) \log \frac{q(z)}{P(z)} \, dz
+\;\ge\; -\int P(z) \left(\frac{q(z)}{P(z)} - 1\right) dz
+= -\int \left[q(z) - P(z)\right] dz = 0 .
+$$
+
+### The key identity {#sec-key-identity}
+
+For every $z$,
+$\log P(Y \mid \theta) = \log P(Y, z \mid \theta) - \log P(z \mid Y, \theta)$,
+because $P(Y, z \mid \theta) = P(Y \mid \theta) \, P(z \mid Y, \theta)$.
+Averaging both sides over an *arbitrary* distribution $\tilde P$ of $Z$ (the left
+side does not depend on $z$, so the average leaves it unchanged) gives, for any
+$\tilde P$,
+
+$$
+\ell_{\text{obs}}(\theta)
+= \int \tilde P(z) \log P(Y, z \mid \theta) \, dz
++ H\!\left(\tilde P,\, P(\cdot \mid Y, \theta)\right) .
+$$ {#eq-key-identity}
+
+The first term is the average complete log-likelihood under $\tilde P$ and the
+second is a cross-entropy. For a fixed $\tilde P$ the two terms, as functions
+of $\theta$, add up to $\ell_{\text{obs}}$; the figure shows one such split.
+The identity is used twice below: for the ascending property of EM and for the
+alternating-optimization view of EM.
+
+```{r}
+#| label: fig-key-identity
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 9
+#| fig-height: 4.4
+#| fig-cap: "Illustrates the key identity: the average complete log-likelihood under a fixed distribution of the hidden data differs from the observed log-likelihood by a cross-entropy.
+#|   The gap at each $\\theta$ is the cross-entropy $H(\\tilde P, P_Z(\\cdot \\mid Y, \\theta))$, which can have either sign."
+local({
+par(mar = c(3.5, 1, 1, 1))
+th <- seq(0, 10, length.out = 300)
+lo <- function(t) 3.2 - 0.045 * (t - 5.2)^2 + 0.5 * sin(t / 2.2)   # observed log-likelihood
+av <- function(t) lo(t) - (1.4 - 0.45 * (t - 3))                    # an arbitrary average complete log-likelihood
+plot(th, lo(th), type = "n", ylim = c(-1.5, 4.2), axes = FALSE, xlab = "", ylab = "")
+mtext(expression(theta), side = 1, line = 1.5, cex = 1.3)
+lines(th, lo(th), lwd = 3, col = "steelblue")
+lines(th, av(th), lwd = 3, col = "firebrick")
+text(0, lo(0) + 0.9, expression(l[obs](theta)), col = "steelblue", adj = 0, cex = 1.3)
+text(9.9, av(9.9) + 0.5, expression(integral(tilde(P)(z)*log*P(Y*","*z*"|"*theta)*dz)),
+     col = "firebrick", adj = 1, cex = 1.1)
+for (t0 in c(3, 7.5)) {
+    arrows(t0, av(t0), t0, lo(t0), code = 3, length = 0.08, lwd = 2)
+    text(if (t0 == 3) t0 - 0.15 else t0 + 0.15, (av(t0) + lo(t0)) / 2 - if (t0 == 3) 0.4 else 0, expression(H(tilde(P), P[Z](.*"|"*Y*","*theta))), adj = if (t0 == 3) 1 else 0, cex = 1.2)
+    segments(t0, -1.5, t0, min(av(t0), lo(t0)), lty = 3, col = "gray50")
+}
+axis(1, at = c(3, 7.5), labels = c(expression(theta[1]), expression(theta[2])), tick = TRUE)
+})
+```
+
+### The ascending property {#sec-ascending}
+
+::: {.callout-note}
+### Theorem
+$\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) \ \ge\ \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)$
+at every iteration.
+:::
+
+Plug $\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$ into @eq-key-identity. The
+first term becomes $Q(\theta \mid \hat\theta^{(t)})$:
+
+$$
+\ell_{\text{obs}}(\theta)
+= \underbrace{\int P(z \mid Y, \hat\theta^{(t)}) \log P(Y, z \mid \theta) \, dz}_{Q(\theta \mid \hat\theta^{(t)})}
++ H\!\left(P(\cdot \mid Y, \hat\theta^{(t)}),\, P(\cdot \mid Y, \theta)\right) .
+$$
+
+The M-step makes $Q$ larger, and the cross-entropy is smallest at
+$\theta = \hat\theta^{(t)}$ (Gibbs' inequality), so it can only grow when
+$\theta$ moves. Both terms increase, hence so does $\ell_{\text{obs}}$.
+
+```{r}
+#| label: fig-ascending
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 9
+#| fig-height: 3.9
+#| fig-cap: "Illustrates the ascending property: moving from the current estimate to the next one raises $Q$ and also raises the cross-entropy gap, so the observed log-likelihood rises by at least the gain in $Q$.
+#|   The gap between $\\ell_{\\text{obs}}$ and $Q(\\theta \\mid \\hat\\theta^{(t)})$ is the cross-entropy $H$, smallest at $\\hat\\theta^{(t)}$."
+local({
+par(mar = c(3.5, 1, 0.5, 1))
+th <- seq(0, 10, length.out = 300)
+t0 <- 3; t1 <- 6                                         # theta^(t), theta^(t+1)
+Q  <- function(t) 2.6 - 0.07 * (t - t1)^2                # Q(theta | theta^(t)), maximised at theta^(t+1)
+H  <- function(t) 0.8 + 0.04 * (t - t0)^2                # cross-entropy, smallest at theta^(t) (Gibbs)
+lo <- function(t) Q(t) + H(t)                            # l_obs
+plot(th, lo(th), type = "n", ylim = c(-0.5, 5), axes = FALSE, xlab = "", ylab = "")
+mtext(expression(theta), side = 1, line = 1.8, cex = 1.3)
+lines(th, lo(th), lwd = 3, col = "steelblue")
+lines(th, Q(th),  lwd = 3, col = "firebrick")
+text(9.9, lo(9.9) + 0.35, expression(l[obs](theta)), col = "steelblue", adj = 1, cex = 1.3)
+text(9.9, Q(9.9) - 0.35, expression(Q(theta*"|"*hat(theta)^(t))), col = "firebrick", adj = 1, cex = 1.3)
+segments(c(t0, t1), -0.5, c(t0, t1), c(lo(t0), lo(t1)), lty = 3, col = "gray50")
+segments(0.1, c(Q(t0), lo(t0)), t1, c(Q(t0), lo(t0)), lty = 3, col = "gray50")
+segments(0.1, c(Q(t1), lo(t1)), t1, c(Q(t1), lo(t1)), lty = 3, col = "gray50")
+for (x in c(t0, t1)) arrows(x, Q(x), x, lo(x), code = 3, length = 0.07, lwd = 2)
+text(t0 + 0.15, (Q(t0) + lo(t0)) / 2, "H", adj = 0, cex = 1.3)
+text(t1 + 0.15, (Q(t1) + lo(t1)) / 2, "H (larger)", adj = 0, cex = 1.3)
+arrows(0.3, Q(t0), 0.3, Q(t1), length = 0.07, lwd = 2, col = "firebrick")
+text(0.45, (Q(t0) + Q(t1)) / 2, expression(Delta*Q >= 0), adj = 0, col = "firebrick", cex = 1.1)
+arrows(0.3, lo(t0), 0.3, lo(t1), length = 0.07, lwd = 2, col = "steelblue")
+text(0.45, (lo(t0) + lo(t1)) / 2, expression(Delta*l[obs] >= 0), adj = 0, col = "steelblue", cex = 1.2)
+axis(1, at = c(0, 10), labels = FALSE, lwd.ticks = 0)                       # the theta axis
+arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
+axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
+mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
+})
+```
+
+**Proof: comparing two successive points.** Write
+$\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$ and
+$P_\theta = P(\cdot \mid Y, \theta)$, so $\tilde P = P_{\hat\theta^{(t)}}$.
+Subtract the identity at $\theta = \hat\theta^{(t)}$ from the identity at
+$\theta = \hat\theta^{(t+1)}$:
+
+$$
+\begin{aligned}
+\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right) - \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right)
+&= \left[Q\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - Q\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]
++ \left[H\!\left(\tilde P, P_{\hat\theta^{(t+1)}}\right) - H\!\left(\tilde P, \tilde P\right)\right] \\
+&= \underbrace{\left[Q\!\left(\hat\theta^{(t+1)} \mid \hat\theta^{(t)}\right) - Q\!\left(\hat\theta^{(t)} \mid \hat\theta^{(t)}\right)\right]}_{\ge\, 0 \text{ by the M-step}}
++ \underbrace{\mathrm{KL}\!\left(\tilde P \,\|\, P_{\hat\theta^{(t+1)}}\right)}_{\ge\, 0 \text{ by Gibbs' inequality}} \;\ge\; 0 .
+\end{aligned}
+$$
+
+The second line uses $H(\tilde P, P_{\hat\theta^{(t)}}) = H(\tilde P, \tilde P)$ and
+$H(P, q) - H(P, P) = \mathrm{KL}(P \| q)$. $\blacksquare$
+
+Note carefully what the theorem does and does not say: the observed likelihood
+never decreases, but that guarantees convergence only to a stationary point,
+which may be a local maximum or even a saddle point.
+
+The ascending property was proved by [Dempster, Laird and Rubin (1977)](#dlr1977),
+who named the algorithm and gave it in this generality; their proof writes the
+cross-entropy term as $H(\theta \mid \theta_0)$ and bounds it with Jensen's
+inequality. Special cases of the iteration were in use earlier, for example
+[Hartley (1958)](#hartley1958) for incomplete count data,
+[Baum et al. (1970)](#baum1970) for hidden Markov models (the Baum-Welch
+algorithm, with its own proof of monotone increase), and
+[Sundberg (1974)](#sundberg1974) for exponential families. The convergence
+argument of Dempster, Laird and Rubin had a gap, which
+[Wu (1983)](#wu1983) corrected: he gave conditions under which the iterates
+converge to a stationary point of $\ell_{\text{obs}}$, and the example of a
+saddle point in the remark above shows why some conditions are needed.
+
+### The function $F(\tilde P, \theta)$ {#sec-F}
+
+For any distribution $\tilde P$ of the hidden data $Z$, define
+
+$$
+F(\tilde P, \theta)
+= \int \tilde P(z) \log P(Y, z \mid \theta) \, dz + H(\tilde P, \tilde P) ,
+$$
+
+the average complete log-likelihood plus the entropy
+$H(\tilde P, \tilde P) = -\int \tilde P \log \tilde P$ of $\tilde P$. It has a
+second expression:
+
+$$
+F(\tilde P, \theta)
+= \ell_{\text{obs}}(\theta) - \mathrm{KL}\!\left(\tilde P \,\|\, P(\cdot \mid Y, \theta)\right) .
+$$
+
+**Why they agree.** Rearrange @eq-key-identity by moving the cross-entropy to
+the right-hand side and adding $H(\tilde P, \tilde P)$ to both sides:
+
+$$
+\begin{aligned}
+\int \tilde P(z) \log P(Y, z \mid \theta) \, dz + H(\tilde P, \tilde P)
+&= \ell_{\text{obs}}(\theta) - \left[H\!\left(\tilde P, P(\cdot \mid Y, \theta)\right) - H(\tilde P, \tilde P)\right] \\
+&= \ell_{\text{obs}}(\theta) - \mathrm{KL}\!\left(\tilde P \,\|\, P(\cdot \mid Y, \theta)\right) .
+\end{aligned}
+$$
+
+Since $\mathrm{KL} \ge 0$, $F(\tilde P, \theta) \le \ell_{\text{obs}}(\theta)$ for every
+$\tilde P$ and $\theta$, and equality holds exactly when
+$\tilde P = P(\cdot \mid Y, \theta)$.
+
+### EM as alternating optimization {#sec-alternating}
+
+Both steps of EM are coordinate ascent on the single function $F$:
+
+- **E-step** maximizes $F$ over $\tilde P$ with $\theta = \hat\theta^{(t)}$
+  fixed. Since $\mathrm{KL} \ge 0$ with equality if and only if
+  $\tilde P = P(\cdot \mid Y, \hat\theta^{(t)})$, the E-step sets $\tilde P_t$ to
+  the conditional distribution of $Z$.
+- **M-step** maximizes $F$ over $\theta$ with $\tilde P_t$ fixed. The entropy
+  term does not involve $\theta$, so this is
+  $\arg\max_\theta Q(\theta \mid \hat\theta^{(t)})$.
+- **Tight bound.** After the E-step, $\mathrm{KL} = 0$ at
+  $\theta = \hat\theta^{(t)}$, so the lower bound equals the observed
+  log-likelihood there:
+  $F(\tilde P_t, \hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$.
+
+The figure shows one full cycle. For a fixed $\tilde P_t$, the curve
+$F(\tilde P_t, \cdot)$ is a lower bound of $\ell_{\text{obs}}$. The E-step at
+$\hat\theta^{(t)}$ replaces the previous distribution by $\tilde P_t$ and lifts
+the bound up to $\ell_{\text{obs}}$ at that point (the green arrows; the dotted
+gray curve is the bound before such a lift). The M-step then moves along the new
+bound to its maximum $\hat\theta^{(t+1)}$. There $\ell_{\text{obs}}$ lies at
+least as high as the bound, which lies at least as high as the old value of
+$\ell_{\text{obs}}$:
+
+$$
+\ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right)
+\;\ge\; F\!\left(\tilde P_t, \hat\theta^{(t+1)}\right)
+\;\ge\; F\!\left(\tilde P_t, \hat\theta^{(t)}\right)
+= \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right).
+$$
+
+This is the ascending property again, now as a statement about alternating
+maximization of a single objective, which cannot decrease it. The $F$ formulation is due to
+[Neal and Hinton (1998)](#neal1998); related alternating-minimization results
+for KL divergences were given by [Csiszár and Tusnády (1984)](#csiszar1984). The view also
+explains the variational methods used when the E-step is intractable: restrict
+$\tilde P$ to a manageable family and accept a bound rather than an equality.
+
+```{r}
+#| label: fig-em-steps
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 9
+#| fig-height: 4.6
+#| fig-cap: "Illustrates EM as alternating maximization of $F$: the E-step lifts the lower bound until it touches the observed log-likelihood at the current estimate, and the M-step moves to the maximum of that bound.
+#|   Solid blue: $\\ell_{\\text{obs}}(\\theta)$. Light-blue dashed: the bounds $F(\\tilde P_t, \\theta)$ and $F(\\tilde P_{t-1}, \\theta)$. Dotted gray: $F$ for another distribution $\\tilde P$."
+local({
+par(mar = c(3.5, 1, 0.5, 1))
+fcol <- "#6CA6E0"                                                  # light blue: the F curves
+th <- seq(0, 10, length.out = 300); t0 <- 3
+lo <- function(t) 3.5 - 0.15 * (t - 6.5)^2                      # l_obs
+B0 <- function(t) lo(t) - 0.2625 * (t - 1)^2              # F(P~_{t-1}, theta): touches l_obs at theta^(t-1), maximised at theta^(t)
+B2 <- function(t) lo(t) - 1.2 - 0.2625 * (t - 1.9)^2                       # F(P~, theta) for another P~ close to P~_{t-1}: below l_obs everywhere, below F(P~_{t-1}) at theta^(t-1)
+B1 <- function(t) lo(t) - 0.1 * (t - t0)^2                     # F(P~_t, theta): touches l_obs at theta^(t)
+t1 <- optimize(B1, c(0, 10), maximum = TRUE)$maximum             # M-step
+plot(th, lo(th), type = "n", ylim = c(-5.8, 5.0), axes = FALSE, xlab = "", ylab = "")
+lines(th, lo(th), lwd = 3, col = "steelblue")
+lines(th, ifelse(B0(th) > -3.0, B0(th), NA), lwd = 3, lty = 2, col = fcol)
+lines(th, ifelse(B2(th) > -3.0, B2(th), NA), lwd = 3, lty = 3, col = "gray45")
+lines(th, ifelse(B1(th) > -3.0, B1(th), NA), lwd = 3, lty = 2, col = fcol)
+points(1, lo(1), pch = 19, col = fcol, cex = 1.3)
+text(0, 4.8, expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t])), col = fcol, adj = 0, cex = 1.2)
+text(0, 3.85, expression(phantom(F(tilde(P)[t], theta)) == l[obs](theta) - KL(tilde(P)[t]*"||"*P(.*"|"*Y*","*theta))), col = fcol, adj = 0, cex = 1.2)
+segments(c(t0, t1), -5.8, c(t0, t1), c(B0(t0), lo(t1)), lty = 3, col = "gray50")
+arrows(t0, B0(t0), t0, lo(t0), length = 0.08, lwd = 3, col = "forestgreen")
+arrows(1, B2(1), 1, lo(1) - 0.06, length = 0.08, lwd = 3, col = "forestgreen")   # the E-step before: raises F to l_obs at theta^(t-1)
+text(t0 + 0.2, 1.05, expression(bold("E-step:")~tilde(P)[t]~"="~P(.*"|"*Y*","*hat(theta)^(t))), adj = 0, col = "forestgreen", cex = 1.0)
+text(1.2, B2(1) + 0.3, expression(bold("E-step")), adj = 0, col = "forestgreen", cex = 1.0)
+points(t0, lo(t0), pch = 19, col = fcol, cex = 1.3)
+arrows(t0 + 0.1, B1(t0) + 0.04, t1, B1(t1), length = 0.08, lwd = 3, col = "darkorange")
+text((t0 + t1) / 2 + 0.2, B1((t0 + t1) / 2) - 0.45, expression(bold("M-step")), col = "darkorange", adj = 0, cex = 1.1)
+arrows(t1, B1(t1), t1, lo(t1), length = 0.06, lwd = 2, code = 3)
+text(t1 + 0.15, (B1(t1) + lo(t1)) / 2 - 0.1, expression(l[obs]~"is even higher"), adj = 0, cex = 1.0)
+legend("bottomright", bty = "n", lwd = 3, lty = c(1, 2, 2, 3), cex = 1.0, y.intersp = 1.3,
+       col = c("steelblue", fcol, fcol, "gray45"),
+       legend = c(expression(l[obs](theta)),
+                  expression(F(tilde(P)[t], theta)),
+                  expression(F(tilde(P)[t-1], theta)),
+                  expression(F(tilde(P), theta)~"for another"~tilde(P))))
+axis(1, at = c(0, 10), labels = FALSE, lwd.ticks = 0)                       # the theta axis
+arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
+axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
+mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
+})
+```
+
 ## Summary
 
 - EM maximizes $\ell_{\text{obs}}$ by alternating between forming
@@ -2008,7 +2018,7 @@ missing information is a large fraction of the total.
 - Standard errors are not a by-product. Use Louis' identity, the SEM algorithm,
   a bootstrap, or a final Newton step.
 
-## References {.unnumbered}
+## References
 
 ::: {#refs-em}
 - []{#baum1970}Baum, L. E., Petrie, T., Soules, G. and Weiss, N. (1970). A maximization technique occurring in the statistical analysis of probabilistic functions of Markov chains. *Annals of Mathematical Statistics*, 41(1), 164–171.
