@@ -1705,6 +1705,38 @@ $$
 For every $z$,
 $\log P(Y \mid \theta) = \log P(Y, z \mid \theta) - \log P(z \mid Y, \theta)$,
 because $P(Y, z \mid \theta) = P(Y \mid \theta) \, P(z \mid Y, \theta)$.
+For a fixed $\theta$, the two curves $\log P(Y, z \mid \theta)$ and
+$\log P(z \mid Y, \theta)$, as functions of $z$, differ by the same vertical gap
+$\ell(Y \mid \theta) = \log P(Y \mid \theta)$ everywhere.
+
+```{r}
+#| label: fig-key-identity-z
+#| echo: false
+#| fig-width: 9
+#| fig-height: 4.4
+#| dev: !expr if (knitr::is_latex_output()) "cairo_pdf" else "png"
+#| fig-cap: "Illustrates the key identity for a single value of the hidden data: the complete log-likelihood and the conditional log-density of the hidden data differ by the observed log-likelihood.
+#|   For a fixed $\\theta$, $\\log P(Y, z \\mid \\theta)$ and $\\log P(z \\mid Y, \\theta)$ as functions of $z$ are separated by the constant gap $\\ell(Y \\mid \\theta)$."
+local({
+par(mar = c(3.5, 1, 1, 1))
+z   <- seq(0, 10, length.out = 300)
+lc  <- function(z) -0.06 * (z - 4.5)^2 + 0.6 * sin(z / 1.3)   # log P(z | Y, theta)
+ell <- 2.2                                                    # l(Y | theta), constant in z
+lj  <- function(z) lc(z) + ell                                # log P(Y, z | theta)
+plot(z, lj(z), type = "n", ylim = range(lc(z), lj(z)) + c(-0.7, 0.5), axes = FALSE, xlab = "", ylab = "")
+mtext(expression(z), side = 1, line = 1.5, cex = 1.3)
+axis(1, labels = FALSE, tick = FALSE)
+lines(z, lj(z), lwd = 3, col = "firebrick")
+lines(z, lc(z), lwd = 3, col = "darkgreen")
+text(9.9, lj(9.9) + 0.75, expression(log~P(Y*","*z*"|"*theta)), col = "firebrick", adj = 1, cex = 1.3)
+text(9.9, lc(9.9) - 0.45, expression(log~P(z*"|"*Y*","*theta)), col = "darkgreen", adj = 1, cex = 1.3)
+for (z0 in c(1.5, 4.5, 7.5)) {
+    arrows(z0, lc(z0), z0, lj(z0), code = 3, length = 0.08, lwd = 2)
+    text(z0 + 0.15, lc(z0) + ell / 2, expression("\u2113"(Y*"|"*theta)), adj = 0, cex = 1.3)
+}
+})
+```
+
 Averaging both sides over an *arbitrary* distribution $\tilde P$ of $Z$ (the left
 side does not depend on $z$, so the average leaves it unchanged) gives, for any
 $\tilde P$,
@@ -1717,7 +1749,10 @@ $$ {#eq-key-identity}
 
 The first term is the average complete log-likelihood under $\tilde P$ and the
 second is a cross-entropy. For a fixed $\tilde P$ the two terms, as functions
-of $\theta$, add up to $\ell_{\text{obs}}$; the figure shows one such split.
+of $\theta$, add up to $\ell_{\text{obs}}$; @fig-key-identity shows one such split.
+When $Z$ is discrete, $\log P(z \mid Y, \theta) \le 0$, so the cross-entropy
+is positive and the average complete log-likelihood lies below
+$\ell_{\text{obs}}$; the gap is not constant in $\theta$.
 The identity is used twice below: for the ascending property of EM and for the
 alternating-optimization view of EM.
 
@@ -1727,23 +1762,23 @@ alternating-optimization view of EM.
 #| fig-width: 9
 #| fig-height: 4.4
 #| fig-cap: "Illustrates the key identity: the average complete log-likelihood under a fixed distribution of the hidden data differs from the observed log-likelihood by a cross-entropy.
-#|   The gap at each $\\theta$ is the cross-entropy $H(\\tilde P, P_Z(\\cdot \\mid Y, \\theta))$, which can have either sign."
+#|   The gap at each $\\theta$ is the cross-entropy $H(\\tilde P, P_Z(\\cdot \\mid Y, \\theta))$, which varies with $\\theta$ and is positive when $Z$ is discrete."
 local({
 par(mar = c(3.5, 1, 1, 1))
 th <- seq(0, 10, length.out = 300)
 lo <- function(t) 3.2 - 0.045 * (t - 5.2)^2 + 0.5 * sin(t / 2.2)   # observed log-likelihood
-av <- function(t) lo(t) - (1.4 - 0.45 * (t - 3))                    # an arbitrary average complete log-likelihood
-plot(th, lo(th), type = "n", ylim = c(-1.5, 4.2), axes = FALSE, xlab = "", ylab = "")
+av <- function(t) lo(t) - (1.3 + 0.25 * (t - 1))                    # average complete log-likelihood; gap = cross-entropy > 0 (discrete Z)
+plot(th, lo(th), type = "n", ylim = c(-3.4, 4.2), axes = FALSE, xlab = "", ylab = "")
 mtext(expression(theta), side = 1, line = 1.5, cex = 1.3)
 lines(th, lo(th), lwd = 3, col = "steelblue")
 lines(th, av(th), lwd = 3, col = "firebrick")
 text(0, lo(0) + 0.9, expression(l[obs](theta)), col = "steelblue", adj = 0, cex = 1.3)
-text(9.9, av(9.9) + 0.5, expression(integral(tilde(P)(z)*log*P(Y*","*z*"|"*theta)*dz)),
+text(9.9, av(9.9) - 0.55, expression(integral(tilde(P)(z)*log*P(Y*","*z*"|"*theta)*dz)),
      col = "firebrick", adj = 1, cex = 1.1)
 for (t0 in c(3, 7.5)) {
     arrows(t0, av(t0), t0, lo(t0), code = 3, length = 0.08, lwd = 2)
-    text(if (t0 == 3) t0 - 0.15 else t0 + 0.15, (av(t0) + lo(t0)) / 2 - if (t0 == 3) 0.4 else 0, if (t0 == 3) expression(H(tilde(P), P[Z](.*"|"*Y*","*theta[1]))) else expression(H(tilde(P), P[Z](.*"|"*Y*","*theta[2]))), adj = if (t0 == 3) 1 else 0, cex = 1.2)
-    segments(t0, -1.5, t0, min(av(t0), lo(t0)), lty = 3, col = "gray50")
+    text(if (t0 == 3) t0 - 0.15 else t0 + 0.15, (av(t0) + lo(t0)) / 2 - if (t0 == 3) 0.3 else 0, if (t0 == 3) expression(H(tilde(P), P[Z](.*"|"*Y*","*theta[1]))) else expression(H(tilde(P), P[Z](.*"|"*Y*","*theta[2]))), adj = if (t0 == 3) 1 else 0, cex = 1.2)
+    segments(t0, -3.4, t0, min(av(t0), lo(t0)), lty = 3, col = "gray50")
 }
 axis(1, at = c(3, 7.5), labels = c(expression(theta[1]), expression(theta[2])), tick = TRUE)
 })
@@ -1892,14 +1927,29 @@ Both steps of EM are coordinate ascent on the single function $F$:
   log-likelihood there:
   $F(\tilde P_t, \hat\theta^{(t)}) = \ell_{\text{obs}}(\hat\theta^{(t)})$.
 
-The figure shows one full cycle. For a fixed $\tilde P_t$, the curve
-$F(\tilde P_t, \cdot)$ is a lower bound of $\ell_{\text{obs}}$. The E-step at
-$\hat\theta^{(t)}$ replaces the previous distribution by $\tilde P_t$ and lifts
-the bound up to $\ell_{\text{obs}}$ at that point (the green arrows; the dotted
-gray curve is the bound before such a lift). The M-step then moves along the new
-bound to its maximum $\hat\theta^{(t+1)}$. There $\ell_{\text{obs}}$ lies at
-least as high as the bound, which lies at least as high as the old value of
-$\ell_{\text{obs}}$:
+@fig-em-steps shows one full cycle on the censored Poisson model of
+@sec-poisson, with $\theta = \lambda$, the Poisson mean. The hidden data are the
+$n - m$ censored counts, each 0 or 1, so a distribution $\tilde P$ of $Z$ is
+specified by success probabilities $p_i$ (taking the counts independent), and
+$F(\tilde P, \theta) = \ell_{\text{obs}}(\theta) - \sum_{i>m} \mathrm{KL}\big(\text{Bern}(p_i) \,\|\, \text{Bern}(\theta/(1+\theta))\big)$
+can be computed exactly. The E-step sets every $p_i$ to
+$p_t = \hat\theta^{(t)}/(1 + \hat\theta^{(t)})$, so $\tilde P_t$ has entropy
+$H(\tilde P_t, \tilde P_t) = -(n - m)\left[p_t \log p_t + (1 - p_t)\log(1 - p_t)\right]$
+and the bound
+$$
+F(\tilde P_t, \theta) = Q\!\left(\theta \mid \hat\theta^{(t)}\right) + H(\tilde P_t, \tilde P_t)
+$$
+is the curve $Q(\cdot \mid \hat\theta^{(t)})$ shifted vertically by this number.
+
+For a fixed $\tilde P_t$, the curve $F(\tilde P_t, \cdot)$ is a lower bound of
+$\ell_{\text{obs}}$. The E-step at $\hat\theta^{(t)}$ replaces the previous
+distribution by $\tilde P_t$ and lifts the bound up to $\ell_{\text{obs}}$ at that
+point (the green arrows; the dotted gray curve is $F$ for a $\tilde P$ whose $p_i$
+alternate around $p_{t-1}$, which is not $P(\cdot \mid Y, \theta)$ for any
+$\theta$ and so lies strictly below $\ell_{\text{obs}}$). The M-step then moves
+along the new bound to its maximum $\hat\theta^{(t+1)}$. There $\ell_{\text{obs}}$
+lies at least as high as the bound, which lies at least as high as the old value
+of $\ell_{\text{obs}}$:
 
 $$
 \ell_{\text{obs}}\!\left(\hat\theta^{(t+1)}\right)
@@ -1908,105 +1958,66 @@ $$
 = \ell_{\text{obs}}\!\left(\hat\theta^{(t)}\right).
 $$
 
-This is the ascending property again, now as a statement about alternating
-maximization of a single objective, which cannot decrease it. The $F$ formulation is due to
-[Neal and Hinton (1998)](#neal1998); related alternating-minimization results
-for KL divergences were given by [Csiszár and Tusnády (1984)](#csiszar1984). The view also
-explains the variational methods used when the E-step is intractable: restrict
-$\tilde P$ to a manageable family and accept a bound rather than an equality.
+In this example the first inequality is nearly an equality: after one step from
+$\hat\theta^{(t-1)} = 0.5$ the iterate is already close to the MLE, and the bound
+$F(\tilde P_t, \cdot)$ is almost indistinguishable from $\ell_{\text{obs}}$ near
+its maximum.
 
 ```{r}
 #| label: fig-em-steps
 #| echo: false
 #| fig-width: 9
 #| fig-height: 4.6
-#| fig-cap: "Illustrates EM as alternating maximization of $F$: the E-step lifts the lower bound until it touches the observed log-likelihood at the current estimate, and the M-step moves to the maximum of that bound.
-#|   Solid blue: $\\ell_{\\text{obs}}(\\theta)$. Light-blue dashed: the bounds $F(\\tilde P_t, \\theta)$ and $F(\\tilde P_{t-1}, \\theta)$. Dotted gray: $F$ for another distribution $\\tilde P$."
+#| fig-cap: "Illustrates EM as alternating maximization of $F$ on the censored Poisson example: the E-step lifts the lower bound until it touches the observed log-likelihood at the current estimate, and the M-step moves to the maximum of that bound.
+#|   The actual $F(\\tilde P, \\theta)$ for the censored Poisson data of @sec-poisson ($\\theta = \\lambda$), from $\\hat\\theta^{(t-1)} = 0.5$ through two EM steps. Solid blue: $\\ell_{\\text{obs}}(\\theta)$. Light-blue dashed: the bounds $F(\\tilde P_t, \\theta)$ and $F(\\tilde P_{t-1}, \\theta)$. Dotted gray: $F$ for another distribution $\\tilde P$."
 local({
+### Z = censored counts in {0, 1}; P~ = independent Bernoulli(p_i)
 par(mar = c(3.5, 1, 0.5, 1))
 fcol <- "#6CA6E0"                                                  # light blue: the F curves
-th <- seq(0, 10, length.out = 300); t0 <- 3
-lo <- function(t) 3.5 - 0.15 * (t - 6.5)^2                      # l_obs
-B0 <- function(t) lo(t) - 0.2625 * (t - 1)^2              # F(P~_{t-1}, theta): touches l_obs at theta^(t-1), maximised at theta^(t)
-B2 <- function(t) lo(t) - 1.2 - 0.2625 * (t - 1.9)^2                       # F(P~, theta) for another P~ close to P~_{t-1}: below l_obs everywhere, below F(P~_{t-1}) at theta^(t-1)
-B1 <- function(t) lo(t) - 0.1 * (t - t0)^2                     # F(P~_t, theta): touches l_obs at theta^(t)
-t1 <- optimize(B1, c(0, 10), maximum = TRUE)$maximum             # M-step
-plot(th, lo(th), type = "n", ylim = c(-5.8, 5.0), axes = FALSE, xlab = "", ylab = "")
+kl  <- function(p, q) p * log(p / q) + (1 - p) * log((1 - p) / (1 - q))
+lo  <- function(l) sapply(l, lobs)                                 # l_obs(theta)
+Ff  <- function(l, p) lo(l) - sapply(l, function(li) sum(kl(p, li / (1 + li))))   # F(P~, theta) = l_obs - KL
+em  <- function(l) (sum(yobs_d) + ncen_d * l / (1 + l)) / n_d      # EM update
+l0 <- 0.5; t0 <- em(l0); t1 <- em(t0)                              # theta^(t-1), theta^(t), theta^(t+1)
+pp <- function(l) rep(l / (1 + l), ncen_d)                         # P~ = P(.|Y, theta): Bernoulli(theta/(1+theta))
+p2 <- pp(l0) + c(-0.25, 0.25)                                      # another P~ near P~_{t-1}, not of the form P(.|Y, theta)
+th <- seq(0.4, 2.6, length.out = 400); yl <- c(-40.5, -22.3); cut <- -38.5
+cl <- function(v) ifelse(v > cut, v, NA)
+plot(th, lo(th), type = "n", ylim = yl, axes = FALSE, xlab = "", ylab = "")
 lines(th, lo(th), lwd = 3, col = "steelblue")
-lines(th, ifelse(B0(th) > -3.0, B0(th), NA), lwd = 3, lty = 2, col = fcol)
-lines(th, ifelse(B2(th) > -3.0, B2(th), NA), lwd = 3, lty = 3, col = "gray45")
-lines(th, ifelse(B1(th) > -3.0, B1(th), NA), lwd = 3, lty = 2, col = fcol)
-points(1, lo(1), pch = 19, col = fcol, cex = 1.3)
-text(0, 4.8, expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t])), col = fcol, adj = 0, cex = 1.2)
-text(0, 3.85, expression(phantom(F(tilde(P)[t], theta)) == l[obs](theta) - KL(tilde(P)[t]*"||"*P(.*"|"*Y*","*theta))), col = fcol, adj = 0, cex = 1.2)
-segments(c(t0, t1), -5.8, c(t0, t1), c(B0(t0), lo(t1)), lty = 3, col = "gray50")
-arrows(t0, B0(t0), t0, lo(t0), length = 0.08, lwd = 3, col = "forestgreen")
-arrows(1, B2(1), 1, lo(1) - 0.06, length = 0.08, lwd = 3, col = "forestgreen")   # the E-step before: raises F to l_obs at theta^(t-1)
-text(t0 + 0.2, 1.05, expression(bold("E-step:")~tilde(P)[t]~"="~P(.*"|"*Y*","*hat(theta)^(t))), adj = 0, col = "forestgreen", cex = 1.0)
-text(1.2, B2(1) + 0.3, expression(bold("E-step")), adj = 0, col = "forestgreen", cex = 1.0)
+lines(th, cl(Ff(th, pp(l0))), lwd = 3, lty = 2, col = fcol)
+lines(th, cl(Ff(th, p2)),     lwd = 3, lty = 3, col = "gray45")
+lines(th, cl(Ff(th, pp(t0))), lwd = 3, lty = 2, col = fcol)
+text(0.4, -22.8, expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t])), col = fcol, adj = 0, cex = 1.2)
+text(0.4, -24.3, expression(phantom(F(tilde(P)[t], theta)) == l[obs](theta) - KL(tilde(P)[t]*"||"*P(.*"|"*Y*","*theta))), col = fcol, adj = 0, cex = 1.2)
+segments(c(l0, t0, t1), yl[1], c(l0, t0, t1), c(Ff(l0, p2), Ff(t0, pp(l0)), lo(t1)), lty = 3, col = "gray50")
+arrows(l0, Ff(l0, p2), l0, lo(l0) - 0.1, length = 0.08, lwd = 3, col = "forestgreen")    # the E-step before
+text(l0 + 0.05, Ff(l0, p2) + 0.4, expression(bold("E-step")), adj = 0, col = "forestgreen", cex = 1.0)
+points(l0, lo(l0), pch = 19, col = fcol, cex = 1.3)
+arrows(t0, Ff(t0, pp(l0)), t0, lo(t0) - 0.1, length = 0.08, lwd = 3, col = "forestgreen")
+text(t1 + 0.03, -33, adj = 0, expression(bold("E-step:")~tilde(P)[t]~"="~P(.*"|"*Y*","*hat(theta)^(t))), col = "forestgreen", cex = 1.0)
 points(t0, lo(t0), pch = 19, col = fcol, cex = 1.3)
-arrows(t0 + 0.1, B1(t0) + 0.04, t1, B1(t1), length = 0.08, lwd = 3, col = "darkorange")
-text((t0 + t1) / 2 + 0.2, B1((t0 + t1) / 2) - 0.45, expression(bold("M-step")), col = "darkorange", adj = 0, cex = 1.1)
-arrows(t1, B1(t1), t1, lo(t1), length = 0.06, lwd = 2, code = 3)
-text(t1 + 0.15, (B1(t1) + lo(t1)) / 2 - 0.1, expression(l[obs]~"is even higher"), adj = 0, cex = 1.0)
+arrows(t0 + 0.01, Ff(t0, pp(t0)) + 0.25, t1, Ff(t1, pp(t0)) + 0.25, length = 0.08, lwd = 3, col = "darkorange")
+text(t1 + 0.05, Ff(t1, pp(t0)) + 0.6, expression(bold("M-step")), col = "darkorange", adj = 0, cex = 1.1)
 legend("bottomright", bty = "n", lwd = 3, lty = c(1, 2, 2, 3), cex = 1.0, y.intersp = 1.3,
        col = c("steelblue", fcol, fcol, "gray45"),
        legend = c(expression(l[obs](theta)),
                   expression(F(tilde(P)[t], theta)),
                   expression(F(tilde(P)[t-1], theta)),
                   expression(F(tilde(P), theta)~"for another"~tilde(P))))
-axis(1, at = c(0, 10), labels = FALSE, lwd.ticks = 0)                       # the theta axis
-arrows(9.6, par("usr")[3], 10.1, par("usr")[3], length = 0.1, xpd = NA)
-axis(1, at = c(1, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
-mtext(expression(theta), side = 1, line = 1.8, at = 10.1, cex = 1.3)
+axis(1, at = range(th), labels = FALSE, lwd.ticks = 0)
+arrows(2.5, par("usr")[3], 2.65, par("usr")[3], length = 0.1, xpd = NA)
+axis(1, at = c(l0, t0, t1), labels = c(expression(hat(theta)^(t-1)), expression(hat(theta)^(t)), expression(hat(theta)^(t+1))), tick = TRUE)
+mtext(expression(theta), side = 1, line = 1.8, at = 2.65, cex = 1.3)
 })
 ```
 
-### Example: tangent lower bounds for censored Poisson data
-
-An example of @fig-em-steps for the censored Poisson model of @sec-poisson. Here $\tilde P_t$ is the
-conditional distribution of the $n - m$ censored counts, independent Bernoulli
-variables with success probability $p_t = \lambda^{(t)}/(1 + \lambda^{(t)})$, so
-its entropy is
-$H(\tilde P_t, \tilde P_t) = -(n - m)\left[p_t \log p_t + (1 - p_t)\log(1 - p_t)\right]$.
-Each bound
-
-$$
-F(\tilde P_t, \lambda)
-= Q\!\left(\lambda \mid \lambda^{(t)}\right) + H(\tilde P_t, \tilde P_t)
-$$
-
-is the curve $Q(\cdot \mid \lambda^{(t)})$ shifted vertically by this number,
-which differs from one iteration to the next but not with $\lambda$. It lies
-below $\ell_{\text{obs}}$ and touches it at $\lambda^{(t)}$; maximizing it moves
-uphill on $\ell_{\text{obs}}$ itself.
-
-```{r}
-#| label: fig-tangent-bound
-#| echo: false
-#| fig-width: 9
-#| fig-height: 5
-#| fig-cap: "Illustrates why EM increases the likelihood: each iteration maximizes a lower bound, the Q function plus the entropy of the current conditional distribution, that touches the observed log-likelihood at the current estimate.
-#|   Three EM iterations viewed as successive tangent lower bounds of the observed log-likelihood."
-lo <- sapply(lam, lobs); top <- max(lo)
-par(mar = c(4, 4, 1, 1))
-plot(lam, lo, type = "l", lwd = 3, xlab = expression(theta),
-     ylab = "log-likelihood", ylim = c(top - 16, top + 2.5))
-lt <- 0.5; cols <- c("firebrick", "darkorange", "forestgreen")
-for (k in 1:3) {
-  p_t <- lt / (1 + lt)
-  H_t <- -ncen_d * (p_t * log(p_t) + (1 - p_t) * log(1 - p_t))   # H(P_t, P_t)
-  lines(lam, sapply(lam, Qfun, lt = lt) + H_t, col = cols[k], lwd = 2, lty = 2)
-  points(lt, lobs(lt), pch = 19, col = cols[k])               # = Q(lt | lt) + H_t
-  lt_new <- (sum(yobs_d) + ncen_d * lt / (1 + lt)) / n_d     # M-step
-  segments(lt_new, top - 16, lt_new, lobs(lt_new), col = cols[k], lty = 3)
-  text(lt, lobs(lt), bquote(hat(theta)^(.(k - 1))), pos = 3, col = cols[k], xpd = NA)
-  lt <- lt_new
-}
-legend("bottomright", bty = "n", lwd = c(3, 2), lty = c(1, 2),
-       legend = c(expression(l[obs](theta)),
-                  expression(F(tilde(P)[t], theta) == Q(theta*"|"*hat(theta)^(t)) + H(tilde(P)[t], tilde(P)[t]))))
-```
+This is the ascending property again, now as a statement about alternating
+maximization of a single objective, which cannot decrease it. The $F$ formulation is due to
+[Neal and Hinton (1998)](#neal1998); related alternating-minimization results
+for KL divergences were given by [Csiszár and Tusnády (1984)](#csiszar1984). The view also
+explains the variational methods used when the E-step is intractable: restrict
+$\tilde P$ to a manageable family and accept a bound rather than an equality.
 
 ## Summary
 
