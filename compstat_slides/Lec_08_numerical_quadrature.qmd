@@ -99,7 +99,7 @@ $$\tilde A_n = h_n\sum_{i=1}^n f\!\Big(a + \big(i-\tfrac12\big)h_n\Big)$$
 - Error for smooth $f$: $\;A - \tilde A_n = \dfrac{(b-a)h_n^2}{24}\,f''(\xi) = O(h_n^2) = O(1/n^2)$
 - Does not evaluate $f$ at the endpoints, which is convenient when $f$ is singular or undefined there (e.g. $g(y)$ at $y = 0, 1$ after a logistic transform)
 
-## Trapezoidal Rule
+## Trapezoidal Rule {.smaller}
 
 Approximate $f$ on each panel $[x_{i-1},x_i]$ by the straight line through $\big(x_{i-1},f(x_{i-1})\big)$ and $\big(x_i,f(x_i)\big)$; the panel area is a trapezoid:
 $$\int_{x_0}^{x_1} f(x)\,dx \approx \tfrac12\big[f(x_0)+f(x_1)\big](x_1-x_0)$$
@@ -115,7 +115,7 @@ $$
 - Error: $\;A - \tilde A_n = -\dfrac{(b-a)h_n^2}{12}\,f''(\xi) = O(1/n^2)$, twice the midpoint error and of opposite sign
 - Exact for linear $f$
 
-## Simpson's Rule
+## Simpson's Rule {.smaller}
 
 Take $n = 2m$ (even) and $h_n = (b-a)/n$. On each **pair** of panels $[x_0,x_1]$ with $x_1 - x_0 = 2h_n$, replace $f$ by the quadratic $\tilde f$ through $f(x_0)$, $f\big(\tfrac{x_0+x_1}{2}\big)$, $f(x_1)$. Integrating the quadratic exactly gives
 $$\int_{x_0}^{x_1}\tilde f(x)\,dx = \frac{x_1-x_0}{6}\Big[f(x_0) + 4f\big(\tfrac{x_0+x_1}{2}\big) + f(x_1)\Big]$$
@@ -131,31 +131,39 @@ $$
 - Error: $\;A - \tilde A_{2m} = -\dfrac{(b-a)h_n^4}{180}\,f^{(4)}(\xi) = O(1/n^4)$; exact for cubics
 - Simpson $= \tfrac23\,\text{Midpoint} + \tfrac13\,\text{Trapezoid}$ on the same pair of panels
 
-## The Three Rules on One Panel Pair
+## The Three Rules with Seven Function Evaluations
 
 ```{r}
 #| fig-width: 10
 #| fig-height: 4.6
 par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
 f <- function(x) 1.2 * exp(-(x - 1.1)^2 / 0.9) + 0.3
-x0 <- 0; x1 <- 2; xm <- 1
-base <- function(main) { curve(f, -0.3, 2.3, lwd = 3, ylim = c(0, 1.7), xlab = "x", ylab = "f(x)", main = main)
-  abline(v = c(x0, xm, x1), lty = 3, col = "gray50") }
-base("Midpoint: rectangles")
-rect(c(x0, xm), 0, c(xm, x1), f(c(0.5, 1.5)), col = adjustcolor("steelblue", 0.3), border = "steelblue", lwd = 2)
-points(c(0.5, 1.5), f(c(0.5, 1.5)), pch = 19, col = "steelblue")
-base("Trapezoid: straight lines")
-for (i in 1:2) { xs <- c(x0, xm, x1)[i:(i + 1)]
+panel <- function(k) seq(0, 2, length.out = k + 1)                  # k equal panels on [0, 2]
+base <- function(main, v) { curve(f, -0.3, 2.3, lwd = 3, ylim = c(0, 1.7), xlab = "x", ylab = "f(x)", main = main)
+  abline(v = v, lty = 3, col = "gray50") }
+# midpoint: 7 panels, 7 evaluations
+xb <- panel(7); xc <- (xb[-1] + xb[-8]) / 2
+base("Midpoint: 7 rectangles", xb)
+rect(xb[-8], 0, xb[-1], f(xc), col = adjustcolor("steelblue", 0.3), border = "steelblue", lwd = 2)
+points(xc, f(xc), pch = 19, col = "steelblue")
+# trapezoid: 6 panels, 7 evaluations
+xb <- panel(6)
+base("Trapezoid: 6 straight lines", xb)
+for (i in 1:6) { xs <- xb[i:(i + 1)]
   polygon(c(xs, rev(xs)), c(f(xs), 0, 0), col = adjustcolor("firebrick", 0.3), border = "firebrick", lwd = 2) }
-points(c(x0, xm, x1), f(c(x0, xm, x1)), pch = 19, col = "firebrick")
-base("Simpson: one quadratic")
-q <- lm(y ~ poly(x, 2, raw = TRUE), data.frame(x = c(x0, xm, x1), y = f(c(x0, xm, x1))))
-xs <- seq(x0, x1, length.out = 100); yq <- predict(q, data.frame(x = xs))
-polygon(c(xs, rev(xs)), c(yq, rep(0, 100)), col = adjustcolor("forestgreen", 0.3), border = NA)
-lines(xs, yq, col = "forestgreen", lwd = 3); points(c(x0, xm, x1), f(c(x0, xm, x1)), pch = 19, col = "forestgreen")
+points(xb, f(xb), pch = 19, col = "firebrick")
+# Simpson: 3 pairs of panels (6 panels), 7 evaluations
+xb <- panel(3); xc <- (xb[-1] + xb[-4]) / 2
+base("Simpson: 3 quadratics", xb)
+for (i in 1:3) { x3 <- c(xb[i], xc[i], xb[i + 1])
+  q <- lm(y ~ poly(x, 2, raw = TRUE), data.frame(x = x3, y = f(x3)))
+  xs <- seq(xb[i], xb[i + 1], length.out = 50); yq <- predict(q, data.frame(x = xs))
+  polygon(c(xs, rev(xs)), c(yq, rep(0, 50)), col = adjustcolor("forestgreen", 0.3), border = "forestgreen", lwd = 1)
+  lines(xs, yq, col = "forestgreen", lwd = 3) }
+points(c(xb, xc), f(c(xb, xc)), pch = 19, col = "forestgreen")
 ```
 
-Simpson uses the same three points as the trapezoid rule on two panels, but fits a parabola instead of two line segments.
+Each rule evaluates $f$ at 7 points: midpoint with $n=7$, trapezoid with $n=6$, and Simpson with $n=6$ panels (3 pairs, one parabola per pair, through the same 7 points as the trapezoid). For the same cost, Simpson's parabolas follow $f$ much more closely.
 
 ## Implementation in R
 
