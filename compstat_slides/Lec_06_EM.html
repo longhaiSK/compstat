@@ -516,7 +516,7 @@ KL(P\|q) &amp;= -\int P(z)\log\frac{q(z)}{P(z)}\,dz \ \ge\ -\int P(z)\Big(\frac{
 'autoAnimateUnmatched': true,
 'jumpToSlide': true,
 'menu': {"side":"left","useTextContentForMissingTitles":true,"markers":false,"loadIcons":false,"custom":[{"title":"Tools","icon":"<i class=\"fas fa-gear\"></i>","content":"<ul class=\"slide-menu-items\">\n<li class=\"slide-tool-item active\" data-item=\"0\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.fullscreen(event)\"><kbd>f</kbd> Fullscreen</a></li>\n<li class=\"slide-tool-item\" data-item=\"1\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.speakerMode(event)\"><kbd>s</kbd> Speaker View</a></li>\n<li class=\"slide-tool-item\" data-item=\"2\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.overview(event)\"><kbd>o</kbd> Slide Overview</a></li>\n<li class=\"slide-tool-item\" data-item=\"3\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.togglePdfExport(event)\"><kbd>e</kbd> PDF Export Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"4\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleScrollView(event)\"><kbd>r</kbd> Scroll View Mode</a></li>\n<li class=\"slide-tool-item\" data-item=\"5\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleChalkboard(event)\"><kbd>b</kbd> Toggle Chalkboard</a></li>\n<li class=\"slide-tool-item\" data-item=\"6\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.toggleNotesCanvas(event)\"><kbd>c</kbd> Toggle Notes Canvas</a></li>\n<li class=\"slide-tool-item\" data-item=\"7\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.downloadDrawings(event)\"><kbd>d</kbd> Download Drawings</a></li>\n<li class=\"slide-tool-item\" data-item=\"8\"><a href=\"#\" onclick=\"RevealMenuToolHandlers.keyboardHelp(event)\"><kbd>?</kbd> Keyboard Help</a></li>\n</ul>"},{"title":"Display","icon":"<i class=\"fa fa-desktop\"></i>","content":"<div style=\"display: block;\">\n  <h1 class=\"slide-menu-title\">Display Ratio</h1>\n  <ul class=\"slide-menu-items\">\n    <li class=\"slide-menu-item\"><a onclick=\"Reveal.configure({ width: 1600, height: 900 });\">Widescreen (16:9)</a></li>\n    <li class=\"slide-menu-item\"><a onclick=\"Reveal.configure({ width: 1200, height: 900 });\">Standard (4:3)</a></li>\n    <li class=\"slide-menu-item\"><a onclick=\"Reveal.configure({ width: 1440, height: 900 });\">Tall (16:10)</a></li>\n  </ul>\n  <h1 class=\"slide-menu-title\" style=\"margin-top: 25px;\">Continuous Font Size (px)</h1>\n  <div style=\"padding: 10px 20px; font-family: sans-serif;\">\n    <input type=\"range\" class=\"reveal-font-slider\" min=\"16\" max=\"72\" step=\"2\" value=\"32\"\n           oninput=\"document.querySelector('.reveal').style.fontSize = this.value + 'px'; Reveal.layout();\"\n           style=\"width: 100%; cursor: pointer;\">\n    <div style=\"display: flex; justify-content: space-between; align-items: center; font-size: 14px; margin-top: 10px; color: #ccc;\">\n      <span>Smaller</span>\n      <span onclick=\"document.querySelector('.reveal').style.fontSize = ''; document.querySelector('.reveal-font-slider').value = 32; Reveal.layout();\"\n            style=\"cursor: pointer; color: #fff; font-weight: bold; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 4px;\">\n        Reset\n      </span>\n      <span>Larger</span>\n    </div>\n  </div>\n  <h1 class=\"slide-menu-title\" style=\"margin-top: 25px;\">Debug Tools</h1>\n  <div style=\"padding: 10px 20px; font-family: sans-serif;\">\n    <label style=\"display: flex; justify-content: space-between; align-items: center; font-size: 16px; color: #ccc; cursor: pointer;\">\n      <span>Show Section Frames</span>\n      <input type=\"checkbox\" checked onchange=\"document.body.classList.toggle('hide-debug');\" style=\"width: 18px; height: 18px; cursor: pointer;\">\n    </label>\n  </div>\n</div>\n"}],"openButton":true,"width":"wide","numbers":true},
-'chalkboard': {"buttons":false},
+'chalkboard': {"buttons":false,"theme":"whiteboard"},
 'smaller': false,
  
         // Display controls in the bottom right corner
@@ -776,6 +776,203 @@ KL(P\|q) &amp;= -\int P(z)\log\frac{q(z)}{P(z)}\,dz \ \ge\ -\int P(z)\Big(\frac{
           }
         });
         menuObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      });
+    </script>
+
+    <!-- --- STROKE ERASER (object eraser for the chalkboard plugin) ---
+         The plugin only has a sponge (area eraser) and keeps each pen stroke as a
+         run of 'draw' segment events per slide. While this tool is on we swallow
+         the pointer events aimed at the plugin's canvases, find the stroke under
+         the pointer, delete its events from the plugin's storage, and hand the
+         edited storage back through the plugin's own 'received'/'init' message
+         (the same path used for remote synchronisation), which replays the slide. -->
+    <script>
+      window.addEventListener('load', () => {
+        const svg = (inner) => '<svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" ' +
+          'fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-top:10px">' + inner + '</svg>';
+        // broom = stroke eraser; rubber = area ("pixel") eraser replacing the plugin's sponge picture
+        const BROOM = svg('<line x1="20" y1="4" x2="12" y2="12"/><path d="M9.5 9.5l5 5-3.5 3.5c-2 2-6 2.5-8 1.5 1-2 .5-6 2.5-8z"/>' +
+          '<line x1="8" y1="14" x2="10" y2="16"/><line x1="6" y1="16" x2="8" y2="18"/>');
+        const TRASH = svg('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V3h6v3"/>');
+        const RUBBER = svg('<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/>' +
+          '<path d="M22 21H7"/><path d="m5 11 9 9"/>');
+        const btns = [];
+        const plugin = () => window.RevealChalkboard || Reveal.getPlugin('chalkboard');
+
+        const HIT = 12;           // pick radius, in slide units (1600-wide coordinates)
+        let active = false;       // tool switched on
+        let down = false;         // pointer is down (dragging)
+        let pending = null;       // throttled replay timer
+        let work = null;          // parsed storage being edited during a drag
+        let curBoard = 0;         // board of the chalkboard when the stroke was picked
+        let duration = 0;         // recorded length of the slide being edited (keeps event times ordered)
+
+        const setActive = (on) => {
+          active = on;
+          btns.forEach(b => { b.style.color = on ? 'rgb(255, 90, 90)' : '#fff'; });
+          document.body.classList.toggle('stroke-eraser-on', on);
+        };
+        // Add the tool to the end of each pen palette (notes canvas and chalkboard).
+        const install = () => {
+          const lists = document.querySelectorAll('.palette > ul');
+          if (!lists.length) return setTimeout(install, 300);
+          lists.forEach(ul => {
+            if (ul.querySelector('[data-stroke-eraser]')) return;
+            const li = document.createElement('li');
+            li.setAttribute('data-stroke-eraser', 'true');
+            li.title = 'Broom (stroke eraser): click or drag over a pen stroke to delete it';
+            li.style.cursor = 'pointer';
+            li.innerHTML = BROOM;
+            li.style.color = '#fff';
+            const toggle = (e) => {
+              e.preventDefault(); e.stopPropagation();
+              setActive(!active);
+              // make the plugin refresh its canvas scale/offsets so picking matches drawing
+              if (active) window.dispatchEvent(new Event('resize'));
+            };
+            li.addEventListener('click', toggle);
+            li.addEventListener('touchstart', toggle, { passive: false });
+            ul.appendChild(li);
+            btns.push(li);
+            // clear every stroke on the current slide (this canvas)
+            const clr = document.createElement('li');
+            clr.setAttribute('data-clear-strokes', 'true');
+            clr.title = 'Clear all strokes on this slide';
+            clr.style.cursor = 'pointer';
+            clr.style.color = '#fff';
+            clr.innerHTML = TRASH;
+            const doClear = (e) => {
+              e.preventDefault(); e.stopPropagation();
+              setActive(false);
+              plugin().clear();
+            };
+            clr.addEventListener('click', doClear);
+            clr.addEventListener('touchstart', doClear, { passive: false });
+            ul.appendChild(clr);
+            const sponge = ul.querySelector('[data-eraser]');
+            if (sponge) {
+              sponge.title = 'Eraser (wipes an area)';
+              sponge.style.color = '#fff';
+              sponge.innerHTML = RUBBER;
+            }
+          });
+        };
+        install();
+        // The plugin leaves the notes canvas scale at 1 until the first window resize, so
+        // pen strokes would be stored in screen pixels and later "shrink" on replay. Make it
+        // compute the proper scale right away.
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 600);
+        // picking a pen or the sponge from the palette ends eraser mode
+        const leave = (e) => {
+          if (active && e.target.closest && e.target.closest('.palette') && !e.target.closest('[data-stroke-eraser]') && !e.target.closest('[data-clear-strokes]')) setActive(false);
+        };
+        document.addEventListener('click', leave, true);
+        document.addEventListener('touchstart', leave, true);
+
+        const distToSeg = (px, py, x1, y1, x2, y2) => {
+          const dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+          let t = l2 ? ((px - x1) * dx + (py - y1) * dy) / l2 : 0;
+          t = Math.max(0, Math.min(1, t));
+          return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+        };
+
+        // Group the slide's 'draw' events into strokes (consecutive segments that
+        // share an end point and colour). A 'clear' or sponge 'erase' ends a run;
+        // everything before a 'clear' is gone and cannot be picked.
+        // The board currently shown is the one named by the slide's last 'selectboard' event.
+        const boardOf = (events) => {
+          let b = 0;
+          for (const ev of events) if (ev.type === 'selectboard') b = ev.board;
+          return b;
+        };
+        const strokesOf = (events, mode, board) => {
+          let list = [], cur = null;
+          for (const ev of events) {
+            if (mode === 1 && ev.board !== undefined && ev.board !== board) continue;
+            if (ev.type === 'draw') {
+              const last = cur && cur[cur.length - 1];
+              if (last && last.color === ev.color &&
+                  Math.abs(last.x2 - ev.x1) < 1e-6 && Math.abs(last.y2 - ev.y1) < 1e-6) {
+                cur.push(ev);
+              } else {
+                cur = [ev];
+                list.push(cur);
+              }
+            } else if (ev.type === 'clear') {
+              list = []; cur = null;
+            } else if (ev.type === 'erase') {
+              cur = null;
+            }
+          }
+          return list;
+        };
+
+        const slideEntry = (data, id) => {
+          const idx = Reveal.getIndices();
+          return data[id].data.find(d => d.slide.h === idx.h && d.slide.v === idx.v && d.slide.f === idx.f);
+        };
+
+        const toBase = (data, id, pageX, pageY) => {
+          const W = data[id].width, H = data[id].height;
+          const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+          return [(pageX - (window.innerWidth - W * s) / 2) / s,
+                  (pageY - (window.innerHeight - H * s) / 2) / s];
+        };
+
+        // Delete the topmost stroke within HIT of the point. Returns true if one was removed.
+        const eraseAt = (id, pageX, pageY) => {
+          // re-read the plugin's storage unless a replay is pending (its edits are not committed yet)
+          if (!pending || !work) work = JSON.parse(plugin().getData());
+          const entry = slideEntry(work, id);
+          if (!entry) return false;
+          duration = entry.duration || 0;
+          const [x, y] = toBase(work, id, pageX, pageY);
+          curBoard = id === 1 ? boardOf(entry.events) : 0;
+          const strokes = strokesOf(entry.events, id, curBoard);
+          for (let i = strokes.length - 1; i >= 0; i--) {
+            if (strokes[i].some(s => distToSeg(x, y, s.x1, s.y1, s.x2, s.y2) <= HIT)) {
+              const gone = new Set(strokes[i]);
+              entry.events = entry.events.filter(ev => !gone.has(ev));
+              return true;
+            }
+          }
+          return false;
+        };
+
+        // Push the edited storage back into the plugin and replay the slide.
+        const commit = (id) => {
+          if (!work) return;
+          const stored = (Reveal.getConfig().chalkboard || {}).transition;
+          plugin().configure({ transition: 1 });              // replay at once, not after the slide transition
+          const msg = new CustomEvent('received');
+          msg.content = { sender: 'chalkboard-plugin', type: 'init', storage: work,
+                          timestamp: duration, mode: id, board: curBoard };
+          document.dispatchEvent(msg);
+          plugin().configure({ transition: stored || 800 });
+          work = null;
+          // the replay closes the chalkboard (as when returning to a slide); reopen it
+          if (id === 1) setTimeout(() => plugin().toggleChalkboard(), 40);
+        };
+        const schedule = (id) => {
+          if (pending) return;
+          pending = setTimeout(() => { pending = null; commit(id); }, 40);
+        };
+
+        const handle = (e, kind) => {
+          if (!active || !e.target || !e.target.getAttribute) return;
+          const attr = e.target.getAttribute('data-chalkboard');
+          if (attr === null) return;                         // not one of the plugin's canvases
+          const id = parseInt(attr);
+          e.stopPropagation(); e.preventDefault();           // keep the plugin from drawing
+          const pt = e.touches ? (e.touches[0] || e.changedTouches[0]) : e;
+          if (kind === 'down') down = true;
+          if (kind === 'up') { down = false; return; }
+          if (kind === 'move' && !down) return;
+          if (eraseAt(id, pt.pageX, pt.pageY)) schedule(id);
+        };
+        [['mousedown', 'down'], ['mousemove', 'move'], ['mouseup', 'up'],
+         ['touchstart', 'down'], ['touchmove', 'move'], ['touchend', 'up']]
+          .forEach(([t, k]) => document.addEventListener(t, (e) => handle(e, k), { capture: true, passive: false }));
       });
     </script>
     <!-- Sets the slides favicon, and adds a way back to the slides index (index.html) to the reveal.js
