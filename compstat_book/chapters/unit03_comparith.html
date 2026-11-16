@@ -1944,44 +1944,64 @@ probabilities  0.97555875494443089479546</code></pre>
 </section>
 <section id="computing-log1-e-u-large-small-and-large-large-together" class="level3" data-number="3.3.6">
 <h3 data-number="3.3.6" class="anchored" data-anchor-id="computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.3.6</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</h3>
-<p>This kernel appears whenever a difference is taken on the log scale: for <span class="math inline">\(a&gt;b\)</span>, <span class="math display">\[
-\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b&gt;0,
-\]</span> where, with two Taylor terms,</p>
-<ul>
-<li>for small <span class="math inline">\(u\)</span>: <span class="math inline">\(1-e^{-u} = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u\)</span> as <span class="math inline">\(u\to 0\)</span>;</li>
-<li>for large <span class="math inline">\(u\)</span>: <span class="math inline">\(\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx -e^{-u}\)</span> as <span class="math inline">\(u\to\infty\)</span>.</li>
-</ul>
-<p>Hence evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately is the key step in computing the log of a difference. Written literally as <code>log(1 - exp(-u))</code>, it fails at <strong>both</strong> ends of the range, from the two failure modes introduced above:</p>
-<ul>
-<li><strong><span class="math inline">\(u\)</span> small.</strong> <span class="math inline">\(e^{-u}\approx 1\)</span>, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large − large</strong> subtraction: the true value is <span class="math inline">\(\approx u\)</span>, far below the roundoff already present in <span class="math inline">\(e^{-u}\)</span>, so the leading digits cancel and little survives. For <span class="math inline">\(u&lt;2^{-53}\)</span>, <code>exp(-u)</code> itself rounds to exactly <span class="math inline">\(1\)</span> and the result is <span class="math inline">\(-\infty\)</span>.</li>
-<li><strong><span class="math inline">\(u\)</span> large.</strong> <span class="math inline">\(e^{-u}\)</span> is tiny, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large + small</strong> addition: the small term is absorbed, <code>1 - exp(-u)</code> rounds to exactly <span class="math inline">\(1\)</span>, and <code>log</code> returns <span class="math inline">\(0\)</span> instead of the true value <span class="math inline">\(\approx -e^{-u}\)</span>.</li>
-</ul>
-<p>R provides two functions built precisely for arguments near the landmark <span class="math inline">\(1\)</span>, each evaluating its series directly instead of forming the offending sum or difference: <code>expm1(x)</code> computes <span class="math inline">\(e^{x}-1\)</span> with full relative precision for small <span class="math inline">\(x\)</span>, and <code>log1p(x)</code> computes <span class="math inline">\(\log(1+x)\)</span> with full relative precision for small <span class="math inline">\(x\)</span> (Section on avoiding large − large, above). Applied to <span class="math inline">\(\log(1-e^{-u})\)</span>, each removes only <strong>one</strong> of the two failures, and neither removes the other:</p>
+<p><strong>The log of a difference.</strong> As in the log-sum-exp trick, factor out the larger term; a difference taken on the log scale then reduces to a single kernel: for <span class="math inline">\(a&gt;b\)</span>, <span class="math display">\[
+\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b&gt;0.
+\]</span> The term <span class="math inline">\(a\)</span> is exact, so computing the log of a difference accurately comes down to evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately for every <span class="math inline">\(u&gt;0\)</span>.</p>
+<p><strong>Where the literal formula fails, and the remedy for each case.</strong> Written literally as <code>log(1 - exp(-u))</code>, the kernel fails at <strong>both</strong> ends of the range, from the two failure modes introduced above. Each failure has its own remedy among R’s functions for arguments near the landmark <span class="math inline">\(1\)</span>: <code>expm1(x)</code> computes <span class="math inline">\(e^{x}-1\)</span>, and <code>log1p(x)</code> computes <span class="math inline">\(\log(1+x)\)</span>, both with full relative precision for small <span class="math inline">\(x\)</span> (Section on avoiding large − large, above).</p>
+<ol type="1">
+<li><p><strong><span class="math inline">\(u\)</span> small: large − large.</strong> Here <span class="math inline">\(e^{-u}\approx 1\)</span>, so <span class="math inline">\(1-e^{-u}\)</span> subtracts two nearly equal numbers. The true value is <span class="math inline">\(\approx u\)</span>, far below the roundoff already present in <span class="math inline">\(e^{-u}\)</span>, so the leading digits cancel and little survives; for <span class="math inline">\(u&lt;2^{-53}\)</span>, <code>exp(-u)</code> itself rounds to exactly <span class="math inline">\(1\)</span> and the result is <span class="math inline">\(-\infty\)</span>.</p>
+<p><em>Remedy:</em> compute the difference with <code>expm1</code>, as <code>log(-expm1(-u))</code>. The function <code>expm1</code> never forms <span class="math inline">\(1-e^{-u}\)</span>; it evaluates the series directly, <span class="math display">\[
+-\operatorname{expm1}(-u) = 1-e^{-u} = u - \frac{u^2}{2} + O(u^3), \qquad\text{so}\qquad \log(1-e^{-u}) \approx \log u \quad (u\to 0),
+\]</span> and the outer <code>log</code> then receives a value near <span class="math inline">\(u\)</span>, far from the landmark <span class="math inline">\(1\)</span>, which is safe.</p></li>
+<li><p><strong><span class="math inline">\(u\)</span> large: large + small.</strong> Here <span class="math inline">\(e^{-u}\)</span> is tiny, so in <span class="math inline">\(1-e^{-u}\)</span> the small term is absorbed: <code>1 - exp(-u)</code> rounds to exactly <span class="math inline">\(1\)</span>, and <code>log</code> returns <span class="math inline">\(0\)</span> instead of the true value <span class="math inline">\(\approx -e^{-u}\)</span>.</p>
+<p><em>Remedy:</em> compute the log with <code>log1p</code>, as <code>log1p(-exp(-u))</code>. The function <code>log1p</code> never forms <span class="math inline">\(1+x\)</span> at <span class="math inline">\(x=-e^{-u}\)</span>; it evaluates the series directly, <span class="math display">\[
+\operatorname{log1p}(-e^{-u}) = \log(1-e^{-u}) = -e^{-u} - \frac{e^{-2u}}{2} + O(e^{-3u}) \approx -e^{-u} \quad (u\to\infty).
+\]</span></p></li>
+</ol>
+<p>Each remedy removes only <strong>its own</strong> failure, and neither removes the other:</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb146"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb146-1"><a href="#cb146-1" aria-hidden="true" tabindex="-1"></a>f_naive <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(<span class="sc">-</span>u))     <span class="co"># both failures</span></span>
 <span id="cb146-2"><a href="#cb146-2" aria-hidden="true" tabindex="-1"></a>f_expm1 <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u))      <span class="co"># never forms the difference 1 - exp(-u)</span></span>
 <span id="cb146-3"><a href="#cb146-3" aria-hidden="true" tabindex="-1"></a>f_log1p <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u))      <span class="co"># never forms the sum exp(-u)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p><code>f_expm1</code> evaluates <span class="math inline">\(-\operatorname{expm1}(-u)=1-e^{-u}\)</span> without ever subtracting two numbers near <span class="math inline">\(1\)</span>, which fixes <strong>small</strong> <span class="math inline">\(u\)</span>; its outer <code>log</code> then receives a value near <span class="math inline">\(u\)</span>, far from the landmark <span class="math inline">\(1\)</span>, and is safe. <code>f_log1p</code> passes <span class="math inline">\(-e^{-u}\)</span> straight into <code>log1p</code>, which fixes <strong>large</strong> <span class="math inline">\(u\)</span>; but for small <span class="math inline">\(u\)</span> that argument has already rounded to <span class="math inline">\(-1\)</span> before <code>log1p</code> ever sees it, so <code>f_log1p</code> fails exactly where <code>f_naive</code> does.</p>
+<p>Neither remedy carries over to the other side. For large <span class="math inline">\(u\)</span>, <code>f_expm1</code> returns <span class="math inline">\(-\operatorname{expm1}(-u)=1\)</span> exactly and its outer <code>log</code> gives <span class="math inline">\(0\)</span>, just as <code>f_naive</code> does. For small <span class="math inline">\(u\)</span>, the argument <span class="math inline">\(-e^{-u}\)</span> of <code>f_log1p</code> has already rounded to <span class="math inline">\(-1\)</span> before <code>log1p</code> ever sees it, so <code>f_log1p</code> fails exactly where <code>f_naive</code> does.</p>
 <p><a href="#tbl-log1mexp" class="quarto-xref">Table&nbsp;<span>3.5</span></a> compares the three formulas with the branched solution <code>correct</code> derived below. Numbers below <span class="math inline">\(0.01\)</span> in absolute value are written as <span class="math inline">\(\pm e^{x}\)</span>, meaning <span class="math inline">\(\pm\exp(x)\)</span>, so that for example <span class="math inline">\(\log u\)</span> and <span class="math inline">\(-e^{-u}\)</span> can be read off directly from the entries.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb147"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb147-1"><a href="#cb147-1" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">1e-100</span>, <span class="fl">1e-18</span>, <span class="fl">1e-15</span>, <span class="fl">1e-8</span>, <span class="dv">1</span>, <span class="dv">20</span>, <span class="dv">50</span>, <span class="dv">500</span>)</span>
-<span id="cb147-2"><a href="#cb147-2" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span>
-<span id="cb147-3"><a href="#cb147-3" aria-hidden="true" tabindex="-1"></a><span class="do">## plain decimals, except that numbers below 0.01 in absolute value are written +/- e^{x}, x = log|value|</span></span>
-<span id="cb147-4"><a href="#cb147-4" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(v) <span class="fu">vapply</span>(v, <span class="cf">function</span>(v) {</span>
-<span id="cb147-5"><a href="#cb147-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.nan</span>(v)) <span class="fu">return</span>(<span class="st">"NaN"</span>)</span>
-<span id="cb147-6"><a href="#cb147-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.infinite</span>(v)) <span class="fu">return</span>(<span class="cf">if</span> (v <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"$-</span><span class="sc">\\</span><span class="st">infty$"</span> <span class="cf">else</span> <span class="st">"$</span><span class="sc">\\</span><span class="st">infty$"</span>)</span>
-<span id="cb147-7"><a href="#cb147-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (v <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="st">"$0$"</span>)</span>
-<span id="cb147-8"><a href="#cb147-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">abs</span>(v) <span class="sc">&lt;</span> <span class="fl">0.01</span>) <span class="fu">return</span>(<span class="fu">paste0</span>(<span class="st">"$"</span>, <span class="cf">if</span> (v <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"-"</span>, <span class="st">"e^{"</span>, <span class="fu">signif</span>(<span class="fu">log</span>(<span class="fu">abs</span>(v)), <span class="dv">6</span>), <span class="st">"}$"</span>))</span>
-<span id="cb147-9"><a href="#cb147-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">paste0</span>(<span class="st">"$"</span>, <span class="fu">signif</span>(v, <span class="dv">6</span>), <span class="st">"$"</span>)</span>
-<span id="cb147-10"><a href="#cb147-10" aria-hidden="true" tabindex="-1"></a>}, <span class="st">""</span>)</span>
-<span id="cb147-11"><a href="#cb147-11" aria-hidden="true" tabindex="-1"></a>tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="fu">g</span>(u), <span class="fu">g</span>(<span class="fu">f_naive</span>(u)), <span class="fu">g</span>(<span class="fu">f_expm1</span>(u)), <span class="fu">g</span>(<span class="fu">f_log1p</span>(u)), <span class="fu">g</span>(<span class="fu">log1mexp</span>(u)))</span>
-<span id="cb147-12"><a href="#cb147-12" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(tab) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"$u$"</span>, <span class="st">"naive"</span>,</span>
-<span id="cb147-13"><a href="#cb147-13" aria-hidden="true" tabindex="-1"></a>                <span class="st">"expm1: $</span><span class="sc">\\</span><span class="st">log(-(e^{-u}-1))$"</span>,</span>
-<span id="cb147-14"><a href="#cb147-14" aria-hidden="true" tabindex="-1"></a>                <span class="st">"log1p: $</span><span class="sc">\\</span><span class="st">log(1-e^{-u})$"</span>,</span>
-<span id="cb147-15"><a href="#cb147-15" aria-hidden="true" tabindex="-1"></a>                <span class="st">"correct: log1mexp$(u)$"</span>)</span>
-<span id="cb147-16"><a href="#cb147-16" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(tab, <span class="at">align =</span> <span class="fu">rep</span>(<span class="st">"r"</span>, <span class="dv">5</span>),</span>
-<span id="cb147-17"><a href="#cb147-17" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb147"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb147-1"><a href="#cb147-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gt)</span>
+<span id="cb147-2"><a href="#cb147-2" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">500</span>, <span class="dv">50</span>, <span class="dv">20</span>, <span class="dv">1</span>, <span class="fl">1e-8</span>, <span class="fl">1e-15</span>, <span class="fl">1e-18</span>, <span class="fl">1e-100</span>)   <span class="co"># large u at the top, small u at the bottom</span></span>
+<span id="cb147-3"><a href="#cb147-3" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span>
+<span id="cb147-4"><a href="#cb147-4" aria-hidden="true" tabindex="-1"></a>m <span class="ot">&lt;-</span> <span class="cf">function</span>(tex) <span class="fu">paste0</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">("</span>, tex, <span class="st">"</span><span class="sc">\\</span><span class="st">)"</span>)   <span class="co"># inline math, typeset by MathJax</span></span>
+<span id="cb147-5"><a href="#cb147-5" aria-hidden="true" tabindex="-1"></a><span class="do">## plain decimals, except that numbers below 0.01 in absolute value are written +/- e^{x}, x = log|value|</span></span>
+<span id="cb147-6"><a href="#cb147-6" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(v) <span class="fu">vapply</span>(v, <span class="cf">function</span>(v) {</span>
+<span id="cb147-7"><a href="#cb147-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.nan</span>(v)) <span class="fu">return</span>(<span class="st">"NaN"</span>)</span>
+<span id="cb147-8"><a href="#cb147-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.infinite</span>(v)) <span class="fu">return</span>(<span class="fu">m</span>(<span class="cf">if</span> (v <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"-</span><span class="sc">\\</span><span class="st">infty"</span> <span class="cf">else</span> <span class="st">"</span><span class="sc">\\</span><span class="st">infty"</span>))</span>
+<span id="cb147-9"><a href="#cb147-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (v <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="fu">m</span>(<span class="st">"0"</span>))</span>
+<span id="cb147-10"><a href="#cb147-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">abs</span>(v) <span class="sc">&lt;</span> <span class="fl">0.01</span>) <span class="fu">return</span>(<span class="fu">m</span>(<span class="fu">paste0</span>(<span class="cf">if</span> (v <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"-"</span>, <span class="st">"e^{"</span>, <span class="fu">signif</span>(<span class="fu">log</span>(<span class="fu">abs</span>(v)), <span class="dv">6</span>), <span class="st">"}"</span>)))</span>
+<span id="cb147-11"><a href="#cb147-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">m</span>(<span class="fu">signif</span>(v, <span class="dv">6</span>))</span>
+<span id="cb147-12"><a href="#cb147-12" aria-hidden="true" tabindex="-1"></a>}, <span class="st">""</span>)</span>
+<span id="cb147-13"><a href="#cb147-13" aria-hidden="true" tabindex="-1"></a>tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">u =</span> <span class="fu">g</span>(u), <span class="at">naive =</span> <span class="fu">g</span>(<span class="fu">f_naive</span>(u)), <span class="at">expm1 =</span> <span class="fu">g</span>(<span class="fu">f_expm1</span>(u)),</span>
+<span id="cb147-14"><a href="#cb147-14" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log1p =</span> <span class="fu">g</span>(<span class="fu">f_log1p</span>(u)), <span class="at">correct =</span> <span class="fu">g</span>(<span class="fu">log1mexp</span>(u)))</span>
+<span id="cb147-15"><a href="#cb147-15" aria-hidden="true" tabindex="-1"></a><span class="fu">gt</span>(tab) <span class="sc">|&gt;</span></span>
+<span id="cb147-16"><a href="#cb147-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_passthrough</span>(<span class="fu">everything</span>(), <span class="at">escape =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb147-17"><a href="#cb147-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">u       =</span> <span class="fu">html</span>(<span class="fu">m</span>(<span class="st">"u"</span>)),</span>
+<span id="cb147-18"><a href="#cb147-18" aria-hidden="true" tabindex="-1"></a>             <span class="at">naive   =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"naive:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(1-e^{-u})"</span>))),</span>
+<span id="cb147-19"><a href="#cb147-19" aria-hidden="true" tabindex="-1"></a>             <span class="at">expm1   =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"expm1:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(-</span><span class="sc">\\</span><span class="st">mathrm{expm1}(-u))"</span>))),</span>
+<span id="cb147-20"><a href="#cb147-20" aria-hidden="true" tabindex="-1"></a>             <span class="at">log1p   =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"log1p:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">mathrm{log1p}(-e^{-u})"</span>))),</span>
+<span id="cb147-21"><a href="#cb147-21" aria-hidden="true" tabindex="-1"></a>             <span class="at">correct =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"correct:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">mathrm{log1mexp}(u)"</span>)))) <span class="sc">|&gt;</span></span>
+<span id="cb147-22"><a href="#cb147-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_align</span>(<span class="st">"right"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb147-23"><a href="#cb147-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_footnote</span>(</span>
+<span id="cb147-24"><a href="#cb147-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">footnote =</span> <span class="fu">html</span>(<span class="fu">paste0</span>(<span class="st">"For small "</span>, <span class="fu">m</span>(<span class="st">"u"</span>), <span class="st">": "</span>,</span>
+<span id="cb147-25"><a href="#cb147-25" aria-hidden="true" tabindex="-1"></a>      <span class="fu">m</span>(<span class="st">"-</span><span class="sc">\\</span><span class="st">mathrm{expm1}(-u) = u - </span><span class="sc">\\</span><span class="st">frac{u^2}{2} + O(u^3)"</span>), <span class="st">", so "</span>,</span>
+<span id="cb147-26"><a href="#cb147-26" aria-hidden="true" tabindex="-1"></a>      <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(1-e^{-u}) </span><span class="sc">\\</span><span class="st">approx </span><span class="sc">\\</span><span class="st">log</span><span class="sc">\\</span><span class="st">big(u - </span><span class="sc">\\</span><span class="st">frac{u^2}{2}</span><span class="sc">\\</span><span class="st">big) </span><span class="sc">\\</span><span class="st">approx </span><span class="sc">\\</span><span class="st">log u"</span>),</span>
+<span id="cb147-27"><a href="#cb147-27" aria-hidden="true" tabindex="-1"></a>      <span class="st">" as "</span>, <span class="fu">m</span>(<span class="st">"u </span><span class="sc">\\</span><span class="st">to 0"</span>), <span class="st">"."</span>)),</span>
+<span id="cb147-28"><a href="#cb147-28" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_column_labels</span>(expm1)) <span class="sc">|&gt;</span></span>
+<span id="cb147-29"><a href="#cb147-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tab_footnote</span>(</span>
+<span id="cb147-30"><a href="#cb147-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">footnote =</span> <span class="fu">html</span>(<span class="fu">paste0</span>(<span class="st">"For large "</span>, <span class="fu">m</span>(<span class="st">"u"</span>), <span class="st">": "</span>,</span>
+<span id="cb147-31"><a href="#cb147-31" aria-hidden="true" tabindex="-1"></a>      <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">mathrm{log1p}(-e^{-u}) = -e^{-u} - </span><span class="sc">\\</span><span class="st">frac{e^{-2u}}{2} + O(e^{-3u})"</span>), <span class="st">", so "</span>,</span>
+<span id="cb147-32"><a href="#cb147-32" aria-hidden="true" tabindex="-1"></a>      <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(1-e^{-u}) </span><span class="sc">\\</span><span class="st">approx -e^{-u}"</span>), <span class="st">" as "</span>, <span class="fu">m</span>(<span class="st">"u </span><span class="sc">\\</span><span class="st">to </span><span class="sc">\\</span><span class="st">infty"</span>), <span class="st">"."</span>)),</span>
+<span id="cb147-33"><a href="#cb147-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">locations =</span> <span class="fu">cells_column_labels</span>(log1p)) <span class="sc">|&gt;</span></span>
+<span id="cb147-34"><a href="#cb147-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">opt_footnote_marks</span>(<span class="st">"standard"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb147-35"><a href="#cb147-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">opt_row_striping</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div id="tbl-log1mexp" class="cell quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-tbl figure">
 <figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
@@ -1989,82 +2009,535 @@ Table&nbsp;3.5: Computing log(1 - exp(-u)) four ways, across eighteen orders of 
 </figcaption>
 <div aria-describedby="tbl-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
-<table class="cell caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 14%">
-<col style="width: 11%">
-<col style="width: 26%">
-<col style="width: 23%">
-<col style="width: 22%">
-</colgroup>
+<div id="dygtsvsode" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#dygtsvsode table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#dygtsvsode thead, #dygtsvsode tbody, #dygtsvsode tfoot, #dygtsvsode tr, #dygtsvsode td, #dygtsvsode th {
+  border-style: none;
+}
+
+#dygtsvsode p {
+  margin: 0;
+  padding: 0;
+}
+
+#dygtsvsode .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#dygtsvsode .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#dygtsvsode .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#dygtsvsode .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#dygtsvsode .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#dygtsvsode .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#dygtsvsode .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#dygtsvsode .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#dygtsvsode .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#dygtsvsode .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#dygtsvsode .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#dygtsvsode .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#dygtsvsode .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#dygtsvsode .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#dygtsvsode .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#dygtsvsode .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#dygtsvsode .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_left {
+  text-align: left;
+}
+
+#dygtsvsode .gt_center {
+  text-align: center;
+}
+
+#dygtsvsode .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#dygtsvsode .gt_font_normal {
+  font-weight: normal;
+}
+
+#dygtsvsode .gt_font_bold {
+  font-weight: bold;
+}
+
+#dygtsvsode .gt_font_italic {
+  font-style: italic;
+}
+
+#dygtsvsode .gt_super {
+  font-size: 65%;
+}
+
+#dygtsvsode .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#dygtsvsode .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#dygtsvsode .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#dygtsvsode .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#dygtsvsode .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#dygtsvsode .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#dygtsvsode .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#dygtsvsode .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#dygtsvsode div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table cell caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
 <thead>
-<tr class="header">
-<th style="text-align: right;"><span class="math inline">\(u\)</span></th>
-<th style="text-align: right;">naive</th>
-<th style="text-align: right;">expm1: <span class="math inline">\(\log(-(e^{-u}-1))\)</span></th>
-<th style="text-align: right;">log1p: <span class="math inline">\(\log(1-e^{-u})\)</span></th>
-<th style="text-align: right;">correct: log1mexp<span class="math inline">\((u)\)</span></th>
+<tr class="gt_col_headings header">
+<th id="u" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(u\)</th>
+<th id="naive" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">naive: \(\log(1-e^{-u})\)</th>
+<th id="expm1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">expm1: \(\log(-\mathrm{expm1}(-u))\)<span class="gt_footnote_marks gt_asterisk" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>*</sup></span></th>
+<th id="log1p" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">log1p: \(\mathrm{log1p}(-e^{-u})\)<span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>†</sup></span></th>
+<th id="correct" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">correct: \(\mathrm{log1mexp}(u)\)</th>
 </tr>
 </thead>
-<tbody>
+<tbody class="gt_table_body">
 <tr class="odd">
-<td style="text-align: right;"><span class="math inline">\(e^{-230.259}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-230.259\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-230.259\)</span></td>
+<td class="gt_row gt_right" headers="u">\(500\)</td>
+<td class="gt_row gt_right" headers="naive">\(0\)</td>
+<td class="gt_row gt_right" headers="expm1">\(0\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-e^{-500}\)</td>
+<td class="gt_row gt_right" headers="correct">\(-e^{-500}\)</td>
 </tr>
 <tr class="even">
-<td style="text-align: right;"><span class="math inline">\(e^{-41.4465}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-41.4465\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-41.4465\)</span></td>
+<td class="gt_row gt_right gt_striped" headers="u">\(50\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(0\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(0\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-e^{-50}\)</td>
+<td class="gt_row gt_right gt_striped" headers="correct">\(-e^{-50}\)</td>
 </tr>
 <tr class="odd">
-<td style="text-align: right;"><span class="math inline">\(e^{-34.5388}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-34.5396\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-34.5388\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-34.5396\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-34.5388\)</span></td>
+<td class="gt_row gt_right" headers="u">\(20\)</td>
+<td class="gt_row gt_right" headers="naive">\(-e^{-20}\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-e^{-20}\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-e^{-20}\)</td>
+<td class="gt_row gt_right" headers="correct">\(-e^{-20}\)</td>
 </tr>
 <tr class="even">
-<td style="text-align: right;"><span class="math inline">\(e^{-18.4207}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+<td class="gt_row gt_right gt_striped" headers="u">\(1\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-0.458675\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-0.458675\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-0.458675\)</td>
+<td class="gt_row gt_right gt_striped" headers="correct">\(-0.458675\)</td>
 </tr>
 <tr class="odd">
-<td style="text-align: right;"><span class="math inline">\(1\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
+<td class="gt_row gt_right" headers="u">\(e^{-18.4207}\)</td>
+<td class="gt_row gt_right" headers="naive">\(-18.4207\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-18.4207\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-18.4207\)</td>
+<td class="gt_row gt_right" headers="correct">\(-18.4207\)</td>
 </tr>
 <tr class="even">
-<td style="text-align: right;"><span class="math inline">\(20\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-20}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-20}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-20}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-20}\)</span></td>
+<td class="gt_row gt_right gt_striped" headers="u">\(e^{-34.5388}\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-34.5396\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-34.5388\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-34.5396\)</td>
+<td class="gt_row gt_right gt_striped" headers="correct">\(-34.5388\)</td>
 </tr>
 <tr class="odd">
-<td style="text-align: right;"><span class="math inline">\(50\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-50}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-50}\)</span></td>
+<td class="gt_row gt_right" headers="u">\(e^{-41.4465}\)</td>
+<td class="gt_row gt_right" headers="naive">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-41.4465\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="correct">\(-41.4465\)</td>
 </tr>
 <tr class="even">
-<td style="text-align: right;"><span class="math inline">\(500\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-500}\)</span></td>
-<td style="text-align: right;"><span class="math inline">\(-e^{-500}\)</span></td>
+<td class="gt_row gt_right gt_striped" headers="u">\(e^{-230.259}\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-\infty\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-230.259\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-\infty\)</td>
+<td class="gt_row gt_right gt_striped" headers="correct">\(-230.259\)</td>
 </tr>
-</tbody>
+</tbody><tfoot>
+<tr class="gt_footnotes odd">
+<td colspan="5" class="gt_footnote"><span class="gt_footnote_marks gt_asterisk" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>*</sup></span> For small \(u\): \(-\mathrm{expm1}(-u) = u - \frac{u^2}{2} + O(u^3)\), so \(\log(1-e^{-u}) \approx \log\big(u - \frac{u^2}{2}\big) \approx \log u\) as \(u \to 0\).</td>
+</tr>
+<tr class="gt_footnotes even">
+<td colspan="5" class="gt_footnote"><span class="gt_footnote_marks" style="white-space:nowrap;font-style:italic;font-weight:normal;line-height:0;"><sup>†</sup></span> For large \(u\): \(\mathrm{log1p}(-e^{-u}) = -e^{-u} - \frac{e^{-2u}}{2} + O(e^{-3u})\), so \(\log(1-e^{-u}) \approx -e^{-u}\) as \(u \to \infty\).</td>
+</tr>
+</tfoot>
+
 </table>
+
+</div>
 </div>
 </div>
 </figure>
@@ -2080,98 +2553,618 @@ Table&nbsp;3.5: Computing log(1 - exp(-u)) four ways, across eighteen orders of 
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb148"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb148-1"><a href="#cb148-1" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 <p>The same construction, named <code>log1mexp</code>, is shipped by several CRAN packages (including <strong>copula</strong> and <strong>VGAM</strong>), all tracing to Mächler (2012); <code>DPQ::logspace.sub(0, -u)</code> computes the same quantity by an equivalent route. Prefer a package function in production code, and write your own only to understand <em>why</em> it works.</p>
-<p><a href="#fig-log1mexp" class="quarto-xref">Figure&nbsp;<span>3.2</span></a> shows the three implementations against <code>log1mexp</code> (grey reference), on a log scale for <span class="math inline">\(u\)</span>: small <span class="math inline">\(u\)</span> on the left, where only <code>expm1</code> survives, and large <span class="math inline">\(u\)</span> on the right, where only <code>log1p</code> survives.</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb149"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb149-1"><a href="#cb149-1" aria-hidden="true" tabindex="-1"></a>fin <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">replace</span>(y, <span class="sc">!</span><span class="fu">is.finite</span>(y), <span class="cn">NA</span>)   <span class="co"># -Inf: the curve simply stops</span></span>
-<span id="cb149-2"><a href="#cb149-2" aria-hidden="true" tabindex="-1"></a><span class="do">## for the right panel: place y &lt; 0 on a log axis without changing its sign,</span></span>
-<span id="cb149-3"><a href="#cb149-3" aria-hidden="true" tabindex="-1"></a><span class="do">## by plotting log10(-y) against a reversed axis labelled -10^k</span></span>
-<span id="cb149-4"><a href="#cb149-4" aria-hidden="true" tabindex="-1"></a>negpow <span class="ot">&lt;-</span> <span class="cf">function</span>(y) {</span>
-<span id="cb149-5"><a href="#cb149-5" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, <span class="fu">length</span>(y)); ok <span class="ot">&lt;-</span> <span class="fu">is.finite</span>(y) <span class="sc">&amp;</span> y <span class="sc">&lt;</span> <span class="dv">0</span></span>
-<span id="cb149-6"><a href="#cb149-6" aria-hidden="true" tabindex="-1"></a>  out[ok] <span class="ot">&lt;-</span> <span class="fu">log10</span>(<span class="sc">-</span>y[ok]); out</span>
-<span id="cb149-7"><a href="#cb149-7" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb149-8"><a href="#cb149-8" aria-hidden="true" tabindex="-1"></a>cols <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">naive =</span> <span class="st">"#D62728"</span>, <span class="at">expm1 =</span> <span class="st">"#1F5FBF"</span>, <span class="at">log1p =</span> <span class="st">"#D9A400"</span>)</span>
-<span id="cb149-9"><a href="#cb149-9" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">4.2</span>, <span class="fl">5.2</span>, <span class="fl">2.6</span>, <span class="dv">1</span>), <span class="at">cex =</span> <span class="fl">1.05</span>)</span>
-<span id="cb149-10"><a href="#cb149-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb149-11"><a href="#cb149-11" aria-hidden="true" tabindex="-1"></a><span class="do">## left: small u, value plotted directly; jitter in units of the response</span></span>
-<span id="cb149-12"><a href="#cb149-12" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="at">length.out =</span> <span class="dv">400</span>)</span>
-<span id="cb149-13"><a href="#cb149-13" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.9</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="fl">0.9</span>)</span>
-<span id="cb149-14"><a href="#cb149-14" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">52</span>, <span class="dv">2</span>),</span>
-<span id="cb149-15"><a href="#cb149-15" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
-<span id="cb149-16"><a href="#cb149-16" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Small"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only expm1 survives"</span>))</span>
-<span id="cb149-17"><a href="#cb149-17" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">max</span>(u[<span class="sc">!</span><span class="fu">is.finite</span>(<span class="fu">f_naive</span>(u))])</span>
-<span id="cb149-18"><a href="#cb149-18" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(<span class="fu">min</span>(u), <span class="sc">-</span><span class="dv">60</span>, u_dead, <span class="dv">10</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb149-19"><a href="#cb149-19" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="fu">sqrt</span>(<span class="fu">min</span>(u) <span class="sc">*</span> u_dead), <span class="sc">-</span><span class="dv">24</span>, <span class="st">"naive, log1p</span><span class="sc">\n</span><span class="st">return -Inf"</span>, <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
-<span id="cb149-20"><a href="#cb149-20" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
-<span id="cb149-21"><a href="#cb149-21" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
-<span id="cb149-22"><a href="#cb149-22" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
-<span id="cb149-23"><a href="#cb149-23" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
-<span id="cb149-24"><a href="#cb149-24" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
-<span id="cb149-25"><a href="#cb149-25" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span>
-<span id="cb149-26"><a href="#cb149-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb149-27"><a href="#cb149-27" aria-hidden="true" tabindex="-1"></a><span class="do">## right: large u, same quantity on a log-magnitude axis (note the reversed ylim);</span></span>
-<span id="cb149-28"><a href="#cb149-28" aria-hidden="true" tabindex="-1"></a><span class="do">## jitter is now in powers of ten, so it must be applied after negpow()</span></span>
-<span id="cb149-29"><a href="#cb149-29" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="dv">0</span>, <span class="fu">log10</span>(<span class="dv">700</span>), <span class="at">length.out =</span> <span class="dv">400</span>)</span>
-<span id="cb149-30"><a href="#cb149-30" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="dv">7</span>)</span>
-<span id="cb149-31"><a href="#cb149-31" aria-hidden="true" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">300</span>, <span class="at">by =</span> <span class="sc">-</span><span class="dv">60</span>)</span>
-<span id="cb149-32"><a href="#cb149-32" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="sc">-</span><span class="dv">320</span>), <span class="at">yaxt =</span> <span class="st">"n"</span>,</span>
-<span id="cb149-33"><a href="#cb149-33" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
-<span id="cb149-34"><a href="#cb149-34" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Large"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only log1p survives"</span>))</span>
-<span id="cb149-35"><a href="#cb149-35" aria-hidden="true" tabindex="-1"></a><span class="fu">axis</span>(<span class="dv">2</span>, <span class="at">at =</span> k, <span class="at">labels =</span> <span class="fu">parse</span>(<span class="at">text =</span> <span class="fu">paste0</span>(<span class="st">"-10^"</span>, k)), <span class="at">las =</span> <span class="dv">1</span>, <span class="at">cex.axis =</span> <span class="fl">0.8</span>)</span>
-<span id="cb149-36"><a href="#cb149-36" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">min</span>(u[<span class="fu">f_naive</span>(u) <span class="sc">&gt;=</span> <span class="dv">0</span>])</span>
-<span id="cb149-37"><a href="#cb149-37" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(u_dead, <span class="dv">10</span>, <span class="fu">max</span>(u), <span class="sc">-</span><span class="dv">330</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb149-38"><a href="#cb149-38" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(u_dead <span class="sc">*</span> <span class="fl">1.3</span>, <span class="sc">-</span><span class="dv">150</span>, <span class="st">"naive, expm1</span><span class="sc">\n</span><span class="st">return 0"</span>, <span class="at">adj =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.5</span>), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
-<span id="cb149-39"><a href="#cb149-39" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
-<span id="cb149-40"><a href="#cb149-40" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
-<span id="cb149-41"><a href="#cb149-41" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
-<span id="cb149-42"><a href="#cb149-42" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
-<span id="cb149-43"><a href="#cb149-43" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
-<span id="cb149-44"><a href="#cb149-44" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div id="fig-log1mexp" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit03_comparith_files/figure-html/fig-log1mexp-1.png" class="img-fluid figure-img" width="960">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3.2: Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u. The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
 </section>
 <section id="a-combined-example-log1-phix-at-both-tails" class="level3" data-number="3.3.7">
 <h3 data-number="3.3.7" class="anchored" data-anchor-id="a-combined-example-log1-phix-at-both-tails"><span class="header-section-number">3.3.7</span> A combined example: <span class="math inline">\(\log\{1-\Phi(x)\}\)</span> at both tails</h3>
-<p>The rounding fix <code>log1mexp</code>, developed earlier for <span class="math inline">\(\log(1-e^{-u})\)</span>, and the underflow fix of working on the log scale are often needed <strong>together</strong>. Consider <span class="math inline">\(\log\{1-\Phi(10)\}\)</span> and <span class="math inline">\(\log\{1-\Phi(-10)\}\)</span>, where <span class="math inline">\(\Phi\)</span> is the standard normal CDF (<code>pnorm</code>):</p>
+<p>The rounding fix <code>log1mexp</code> and the underflow fix of working on the log scale are often needed <strong>together</strong>. Consider <span class="math inline">\(\log\{1-\Phi(x)\}\)</span>, where <span class="math inline">\(\Phi\)</span> is the standard normal CDF (<code>pnorm</code>), over a range of <span class="math inline">\(x\)</span> from the far left tail to the far right tail. Computing <span class="math inline">\(\Phi(x)\)</span> itself and then <span class="math inline">\(1-\Phi(x)\)</span> fails immediately for large <span class="math inline">\(x\)</span>: <code>pnorm(10)</code> already rounds to exactly <span class="math inline">\(1\)</span>, and no reformulation of the outer expression can recover digits lost inside <code>pnorm</code>. So we ask R for the log, <span class="math inline">\(\ell = \log\Phi(x)\)</span> = <code>pnorm(x, log.p = TRUE)</code>, which R returns accurately for every <span class="math inline">\(x\)</span>, and then take the complement on the log scale: <span class="math display">\[
+\log\{1-\Phi(x)\} = \log(1-e^{\ell}) = \log(1-e^{-u}), \qquad u = -\ell &gt; 0.
+\]</span> This is exactly the kernel of the previous section, so the same four formulas apply, with <span class="math inline">\(e^{-u}=e^{\ell}\)</span>:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb150"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb150-1"><a href="#cb150-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive    =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)),                          <span class="co"># pnorm(10) rounds to 1, so log(0) = -Inf</span></span>
-<span id="cb150-2"><a href="#cb150-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">log1p    =</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">pnorm</span>(<span class="dv">10</span>)),                            <span class="co"># log1p cannot recover digits already lost</span></span>
-<span id="cb150-3"><a href="#cb150-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">log1mexp =</span> <span class="fu">log1mexp</span>(<span class="sc">-</span><span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)),           <span class="co"># complement taken in log space</span></span>
-<span id="cb150-4"><a href="#cb150-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">stable   =</span> <span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))  <span class="co"># direct upper tail</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>                   naive                    log1p                 log1mexp 
-                    -Inf                     -Inf -53.23128515051246978373 
-                  stable 
--53.23128515051246978373 </code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb149"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb149-1"><a href="#cb149-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">38</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="sc">-</span><span class="dv">10</span>, <span class="sc">-</span><span class="dv">5</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">5</span>, <span class="dv">10</span>, <span class="dv">20</span>, <span class="dv">38</span>)</span>
+<span id="cb149-2"><a href="#cb149-2" aria-hidden="true" tabindex="-1"></a>l <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(x, <span class="at">log.p =</span> <span class="cn">TRUE</span>)                                <span class="co"># log Phi(x), accurate for all x</span></span>
+<span id="cb149-3"><a href="#cb149-3" aria-hidden="true" tabindex="-1"></a>tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x        =</span> <span class="fu">g</span>(x),</span>
+<span id="cb149-4"><a href="#cb149-4" aria-hidden="true" tabindex="-1"></a>                  <span class="at">l        =</span> <span class="fu">g</span>(l),</span>
+<span id="cb149-5"><a href="#cb149-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">naive    =</span> <span class="fu">g</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(l))),</span>
+<span id="cb149-6"><a href="#cb149-6" aria-hidden="true" tabindex="-1"></a>                  <span class="at">expm1    =</span> <span class="fu">g</span>(<span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(l))),</span>
+<span id="cb149-7"><a href="#cb149-7" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log1p    =</span> <span class="fu">g</span>(<span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(l))),</span>
+<span id="cb149-8"><a href="#cb149-8" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log1mexp =</span> <span class="fu">g</span>(<span class="fu">log1mexp</span>(<span class="sc">-</span>l)),</span>
+<span id="cb149-9"><a href="#cb149-9" aria-hidden="true" tabindex="-1"></a>                  <span class="at">pnorm    =</span> <span class="fu">g</span>(<span class="fu">pnorm</span>(x, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)))  <span class="co"># R's direct upper tail</span></span>
+<span id="cb149-10"><a href="#cb149-10" aria-hidden="true" tabindex="-1"></a><span class="fu">gt</span>(tab) <span class="sc">|&gt;</span></span>
+<span id="cb149-11"><a href="#cb149-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">fmt_passthrough</span>(<span class="fu">everything</span>(), <span class="at">escape =</span> <span class="cn">FALSE</span>) <span class="sc">|&gt;</span></span>
+<span id="cb149-12"><a href="#cb149-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_label</span>(<span class="at">x        =</span> <span class="fu">html</span>(<span class="fu">m</span>(<span class="st">"x"</span>)),</span>
+<span id="cb149-13"><a href="#cb149-13" aria-hidden="true" tabindex="-1"></a>             <span class="at">l        =</span> <span class="fu">html</span>(<span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">ell = </span><span class="sc">\\</span><span class="st">log</span><span class="sc">\\</span><span class="st">Phi(x)"</span>)),</span>
+<span id="cb149-14"><a href="#cb149-14" aria-hidden="true" tabindex="-1"></a>             <span class="at">naive    =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"naive:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(1-e^{</span><span class="sc">\\</span><span class="st">ell})"</span>))),</span>
+<span id="cb149-15"><a href="#cb149-15" aria-hidden="true" tabindex="-1"></a>             <span class="at">expm1    =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"expm1:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">log(-</span><span class="sc">\\</span><span class="st">mathrm{expm1}(</span><span class="sc">\\</span><span class="st">ell))"</span>))),</span>
+<span id="cb149-16"><a href="#cb149-16" aria-hidden="true" tabindex="-1"></a>             <span class="at">log1p    =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"log1p:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">mathrm{log1p}(-e^{</span><span class="sc">\\</span><span class="st">ell})"</span>))),</span>
+<span id="cb149-17"><a href="#cb149-17" aria-hidden="true" tabindex="-1"></a>             <span class="at">log1mexp =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"log1mexp:"</span>, <span class="fu">m</span>(<span class="st">"</span><span class="sc">\\</span><span class="st">mathrm{log1mexp}(-</span><span class="sc">\\</span><span class="st">ell)"</span>))),</span>
+<span id="cb149-18"><a href="#cb149-18" aria-hidden="true" tabindex="-1"></a>             <span class="at">pnorm    =</span> <span class="fu">html</span>(<span class="fu">paste</span>(<span class="st">"pnorm:"</span>, <span class="st">"&lt;code&gt;lower.tail = FALSE&lt;/code&gt;"</span>))) <span class="sc">|&gt;</span></span>
+<span id="cb149-19"><a href="#cb149-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">cols_align</span>(<span class="st">"right"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb149-20"><a href="#cb149-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">opt_row_striping</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="tbl-phi-tails" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-phi-tails-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;3.6: Computing log(1 - Phi(x)) from l = log Phi(x) = pnorm(x, log.p = TRUE); numbers below 0.01 in absolute value are written as powers of e.
+</figcaption>
+<div aria-describedby="tbl-phi-tails-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<div id="dygtsvsode" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#dygtsvsode table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#dygtsvsode thead, #dygtsvsode tbody, #dygtsvsode tfoot, #dygtsvsode tr, #dygtsvsode td, #dygtsvsode th {
+  border-style: none;
+}
+
+#dygtsvsode p {
+  margin: 0;
+  padding: 0;
+}
+
+#dygtsvsode .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#dygtsvsode .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#dygtsvsode .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#dygtsvsode .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#dygtsvsode .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#dygtsvsode .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#dygtsvsode .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#dygtsvsode .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#dygtsvsode .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#dygtsvsode .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#dygtsvsode .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#dygtsvsode .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#dygtsvsode .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#dygtsvsode .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#dygtsvsode .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#dygtsvsode .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#dygtsvsode .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#dygtsvsode .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#dygtsvsode .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#dygtsvsode .gt_left {
+  text-align: left;
+}
+
+#dygtsvsode .gt_center {
+  text-align: center;
+}
+
+#dygtsvsode .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#dygtsvsode .gt_font_normal {
+  font-weight: normal;
+}
+
+#dygtsvsode .gt_font_bold {
+  font-weight: bold;
+}
+
+#dygtsvsode .gt_font_italic {
+  font-style: italic;
+}
+
+#dygtsvsode .gt_super {
+  font-size: 65%;
+}
+
+#dygtsvsode .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#dygtsvsode .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#dygtsvsode .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#dygtsvsode .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#dygtsvsode .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#dygtsvsode .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#dygtsvsode .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#dygtsvsode .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#dygtsvsode div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table cell caption-top table table-sm table-striped small" data-quarto-bootstrap="false">
+<thead>
+<tr class="gt_col_headings header">
+<th id="x" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(x\)</th>
+<th id="l" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">\(\ell = \log\Phi(x)\)</th>
+<th id="naive" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">naive: \(\log(1-e^{\ell})\)</th>
+<th id="expm1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">expm1: \(\log(-\mathrm{expm1}(\ell))\)</th>
+<th id="log1p" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">log1p: \(\mathrm{log1p}(-e^{\ell})\)</th>
+<th id="log1mexp" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">log1mexp: \(\mathrm{log1mexp}(-\ell)\)</th>
+<th id="pnorm" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">pnorm: <code>lower.tail = FALSE</code></th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(-38\)</td>
+<td class="gt_row gt_right" headers="l">\(-726.557\)</td>
+<td class="gt_row gt_right" headers="naive">\(0\)</td>
+<td class="gt_row gt_right" headers="expm1">\(0\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-e^{-726.557}\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-e^{-726.557}\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-e^{-726.557}\)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right gt_striped" headers="x">\(-20\)</td>
+<td class="gt_row gt_right gt_striped" headers="l">\(-203.917\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(0\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(0\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-e^{-203.917}\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1mexp">\(-e^{-203.917}\)</td>
+<td class="gt_row gt_right gt_striped" headers="pnorm">\(-e^{-203.917}\)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(-10\)</td>
+<td class="gt_row gt_right" headers="l">\(-53.2313\)</td>
+<td class="gt_row gt_right" headers="naive">\(0\)</td>
+<td class="gt_row gt_right" headers="expm1">\(0\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-e^{-53.2313}\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-e^{-53.2313}\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-e^{-53.2313}\)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right gt_striped" headers="x">\(-5\)</td>
+<td class="gt_row gt_right gt_striped" headers="l">\(-15.065\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-e^{-15.065}\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-e^{-15.065}\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-e^{-15.065}\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1mexp">\(-e^{-15.065}\)</td>
+<td class="gt_row gt_right gt_striped" headers="pnorm">\(-e^{-15.065}\)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(-1\)</td>
+<td class="gt_row gt_right" headers="l">\(-1.84102\)</td>
+<td class="gt_row gt_right" headers="naive">\(-0.172754\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-0.172754\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-0.172754\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-0.172754\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-0.172754\)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right gt_striped" headers="x">\(0\)</td>
+<td class="gt_row gt_right gt_striped" headers="l">\(-0.693147\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-0.693147\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-0.693147\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-0.693147\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1mexp">\(-0.693147\)</td>
+<td class="gt_row gt_right gt_striped" headers="pnorm">\(-0.693147\)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(1\)</td>
+<td class="gt_row gt_right" headers="l">\(-0.172754\)</td>
+<td class="gt_row gt_right" headers="naive">\(-1.84102\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-1.84102\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-1.84102\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-1.84102\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-1.84102\)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right gt_striped" headers="x">\(5\)</td>
+<td class="gt_row gt_right gt_striped" headers="l">\(-e^{-15.065}\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-15.065\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-15.065\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-15.065\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1mexp">\(-15.065\)</td>
+<td class="gt_row gt_right gt_striped" headers="pnorm">\(-15.065\)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(10\)</td>
+<td class="gt_row gt_right" headers="l">\(-e^{-53.2313}\)</td>
+<td class="gt_row gt_right" headers="naive">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-53.2313\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-53.2313\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-53.2313\)</td>
+</tr>
+<tr class="even">
+<td class="gt_row gt_right gt_striped" headers="x">\(20\)</td>
+<td class="gt_row gt_right gt_striped" headers="l">\(-e^{-203.917}\)</td>
+<td class="gt_row gt_right gt_striped" headers="naive">\(-\infty\)</td>
+<td class="gt_row gt_right gt_striped" headers="expm1">\(-203.917\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1p">\(-\infty\)</td>
+<td class="gt_row gt_right gt_striped" headers="log1mexp">\(-203.917\)</td>
+<td class="gt_row gt_right gt_striped" headers="pnorm">\(-203.917\)</td>
+</tr>
+<tr class="odd">
+<td class="gt_row gt_right" headers="x">\(38\)</td>
+<td class="gt_row gt_right" headers="l">\(-e^{-726.557}\)</td>
+<td class="gt_row gt_right" headers="naive">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="expm1">\(-726.557\)</td>
+<td class="gt_row gt_right" headers="log1p">\(-\infty\)</td>
+<td class="gt_row gt_right" headers="log1mexp">\(-726.557\)</td>
+<td class="gt_row gt_right" headers="pnorm">\(-726.557\)</td>
+</tr>
+</tbody>
+</table>
+
 </div>
 </div>
-<p>The target is <span class="math inline">\(\log\{1-\Phi(10)\}\approx-53.23\)</span>, since <span class="math inline">\(1-\Phi(10)\approx7.6\times10^{-24}\)</span> is far below machine epsilon. <code>naive</code> and <code>log1p</code> both start from <code>pnorm(10)</code>, which has already rounded to exactly <span class="math inline">\(1\)</span> before either function is called, so no reformulation of the <em>outer</em> expression can recover digits lost by <strong>underflow</strong> inside <code>pnorm</code> itself. <code>log1mexp</code> instead starts from <span class="math inline">\(\ell=\log\Phi(10)\approx-7.6\times10^{-24}\)</span>, which R returns accurately, and computes <span class="math display">\[
-\log\{1-\Phi(10)\} = \log(1-e^{\ell}) = \log(1-e^{-u}) = \texttt{log1mexp}(u), \qquad u=-\ell,
-\]</span> where the tiny <span class="math inline">\(u\)</span> correctly selects the <code>expm1</code> branch derived above. <code>stable</code> computes <span class="math inline">\(1-\Phi(10)\)</span> directly with <code>lower.tail = FALSE</code> and returns its log without ever forming <span class="math inline">\(\Phi(10)\)</span>.</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb152"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb152-1"><a href="#cb152-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive    =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="sc">-</span><span class="dv">10</span>)),                           <span class="co"># 1 - 7.6e-24 rounds to 1, so log gives 0</span></span>
-<span id="cb152-2"><a href="#cb152-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">log1p    =</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">pnorm</span>(<span class="sc">-</span><span class="dv">10</span>)),                             <span class="co"># pnorm(-10) is itself accurate</span></span>
-<span id="cb152-3"><a href="#cb152-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">log1mexp =</span> <span class="fu">log1mexp</span>(<span class="sc">-</span><span class="fu">pnorm</span>(<span class="sc">-</span><span class="dv">10</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)),</span>
-<span id="cb152-4"><a href="#cb152-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">stable   =</span> <span class="fu">pnorm</span>(<span class="sc">-</span><span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>                       naive                        log1p 
- 0.000000000000000000000e+00 -7.619853024160526919908e-24 
-                    log1mexp                       stable 
--7.619853024160532797379e-24 -7.619853024160526919908e-24 </code></pre>
+</div>
+</figure>
 </div>
 </div>
-<p>Here <span class="math inline">\(\Phi(-10)\approx7.6\times10^{-24}\)</span> and the target <span class="math inline">\(\log\{1-\Phi(-10)\}\approx-7.6\times10^{-24}\)</span> is a tiny negative number rather than a large one. <code>naive</code> now fails for the opposite reason: the <strong>subtraction</strong> <span class="math inline">\(1-7.6\times10^{-24}\)</span> itself rounds to exactly <span class="math inline">\(1\)</span>, destroying every significant digit — cancellation, not underflow. <code>log1p</code> succeeds here because its argument <code>pnorm(-10)</code> is accurate (a number near <span class="math inline">\(0\)</span> keeps full relative precision) and <code>log1p</code> evaluates <span class="math inline">\(\log(1+x)\)</span> by series without ever forming <span class="math inline">\(1+x\)</span>. <code>log1mexp</code> is again correct, but now via its <code>log1p</code> branch: <span class="math inline">\(\ell=\log\Phi(-10)\approx-53.23\)</span>, so <span class="math inline">\(u=-\ell=53.23\)</span> is large.</p>
-<p>The contrast between the two examples is the <em>location</em> of the loss: at <span class="math inline">\(x=10\)</span> the damage occurs inside <code>pnorm(10)</code> before <code>log1p</code> is ever reached; at <span class="math inline">\(x=-10\)</span> only the outer subtraction is unstable, which is exactly what <code>log1p</code> fixes. The general lesson is to stay on the log scale throughout — ask R for <span class="math inline">\(\log\Phi(x)\)</span> rather than <span class="math inline">\(\Phi(x)\)</span>, and take the complement with <code>log1mexp</code>, which selects the correct branch automatically so that the tail direction never has to be diagnosed by hand.</p>
+<ul>
+<li><strong>Left tail</strong> (<span class="math inline">\(x\le -10\)</span>). <span class="math inline">\(\Phi(x)\)</span> is tiny, so <span class="math inline">\(\ell\)</span> is large and negative and <span class="math inline">\(u=-\ell\)</span> is <strong>large</strong>. <code>naive</code> and <code>expm1</code> both return <span class="math inline">\(0\)</span>: the tiny <span class="math inline">\(e^{\ell}\)</span> is absorbed in <span class="math inline">\(1-e^{\ell}\)</span> (large + small). <code>log1p</code> is correct, and the true value is <span class="math inline">\(\approx -e^{\ell} = -\Phi(x)\)</span>, a tiny negative number.</li>
+<li><strong>Right tail</strong> (<span class="math inline">\(x\ge 10\)</span>). <span class="math inline">\(\Phi(x)\)</span> is within roundoff of <span class="math inline">\(1\)</span>, so <span class="math inline">\(\ell\approx -\{1-\Phi(x)\}\)</span> is a tiny negative number and <span class="math inline">\(u\)</span> is <strong>small</strong>. <code>naive</code> and <code>log1p</code> both return <span class="math inline">\(-\infty\)</span>: <span class="math inline">\(e^{\ell}\)</span> rounds to exactly <span class="math inline">\(1\)</span> before the subtraction (large − large). <code>expm1</code> is correct, giving <span class="math inline">\(\log u \approx \log\{1-\Phi(x)\}\)</span>, a large negative number (<span class="math inline">\(\approx -53.23\)</span> at <span class="math inline">\(x=10\)</span>). Note that the accuracy here depends on starting from <span class="math inline">\(\ell\)</span>: had we computed <code>pnorm(x)</code> instead, the <span class="math inline">\(1-\Phi(x)\)</span> digits would already have been lost.</li>
+<li><strong>Middle</strong> (<span class="math inline">\(|x|\le 5\)</span>). All formulas agree.</li>
+<li><code>log1mexp</code> branches at <span class="math inline">\(u=\log 2\)</span> and matches the correct remedy in every row; R’s <code>pnorm(x, lower.tail = FALSE, log.p = TRUE)</code> computes <span class="math inline">\(\log\{1-\Phi(x)\}=\log\Phi(-x)\)</span> directly, never forming <span class="math inline">\(\Phi(x)\)</span>, and agrees with <code>log1mexp</code> throughout.</li>
+</ul>
+<p>The general lesson is to stay on the log scale throughout: ask R for <span class="math inline">\(\log\Phi(x)\)</span> rather than <span class="math inline">\(\Phi(x)\)</span>, and take the complement with <code>log1mexp</code>, which selects the correct branch automatically so that the tail direction never has to be diagnosed by hand. When a distribution function offers <code>lower.tail = FALSE</code>, as <code>pnorm</code> does, use it directly.</p>
 </section>
 </section>
 <section id="summary" class="level2" data-number="3.4">

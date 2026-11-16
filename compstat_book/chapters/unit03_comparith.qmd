@@ -935,21 +935,30 @@ Reading down the naive column: $\log(e^{2000}-e^{1999})$ is `Inf - Inf`, `NaN` (
 
 ### Computing $\log(1-e^{-u})$: large + small and large − large together
 
-This kernel appears whenever a difference is taken on the log scale: for $a>b$,
+**The log of a difference.** As in the log-sum-exp trick, factor out the larger term; a difference taken on the log scale then reduces to a single kernel: for $a>b$,
 $$
-\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b>0,
+\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b>0.
 $$
-where, with two Taylor terms,
+The term $a$ is exact, so computing the log of a difference accurately comes down to evaluating $\log(1-e^{-u})$ accurately for every $u>0$.
 
-- for small $u$: $1-e^{-u} = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)$, so $\log(1-e^{-u}) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u$ as $u\to 0$;
-- for large $u$: $\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})$, so $\log(1-e^{-u}) \approx -e^{-u}$ as $u\to\infty$.
+**Where the literal formula fails, and the remedy for each case.** Written literally as `log(1 - exp(-u))`, the kernel fails at **both** ends of the range, from the two failure modes introduced above. Each failure has its own remedy among R's functions for arguments near the landmark $1$: `expm1(x)` computes $e^{x}-1$, and `log1p(x)` computes $\log(1+x)$, both with full relative precision for small $x$ (Section on avoiding large − large, above).
 
-Hence evaluating $\log(1-e^{-u})$ accurately is the key step in computing the log of a difference. Written literally as `log(1 - exp(-u))`, it fails at **both** ends of the range, from the two failure modes introduced above:
+1. **$u$ small: large − large.** Here $e^{-u}\approx 1$, so $1-e^{-u}$ subtracts two nearly equal numbers. The true value is $\approx u$, far below the roundoff already present in $e^{-u}$, so the leading digits cancel and little survives; for $u<2^{-53}$, `exp(-u)` itself rounds to exactly $1$ and the result is $-\infty$.
 
-- **$u$ small.** $e^{-u}\approx 1$, so $1-e^{-u}$ is a **large − large** subtraction: the true value is $\approx u$, far below the roundoff already present in $e^{-u}$, so the leading digits cancel and little survives. For $u<2^{-53}$, `exp(-u)` itself rounds to exactly $1$ and the result is $-\infty$.
-- **$u$ large.** $e^{-u}$ is tiny, so $1-e^{-u}$ is a **large + small** addition: the small term is absorbed, `1 - exp(-u)` rounds to exactly $1$, and `log` returns $0$ instead of the true value $\approx -e^{-u}$.
+   *Remedy:* compute the difference with `expm1`, as `log(-expm1(-u))`. The function `expm1` never forms $1-e^{-u}$; it evaluates the series directly,
+   $$
+   -\operatorname{expm1}(-u) = 1-e^{-u} = u - \frac{u^2}{2} + O(u^3), \qquad\text{so}\qquad \log(1-e^{-u}) \approx \log u \quad (u\to 0),
+   $$
+   and the outer `log` then receives a value near $u$, far from the landmark $1$, which is safe.
 
-R provides two functions built precisely for arguments near the landmark $1$, each evaluating its series directly instead of forming the offending sum or difference: `expm1(x)` computes $e^{x}-1$ with full relative precision for small $x$, and `log1p(x)` computes $\log(1+x)$ with full relative precision for small $x$ (Section on avoiding large − large, above). Applied to $\log(1-e^{-u})$, each removes only **one** of the two failures, and neither removes the other:
+2. **$u$ large: large + small.** Here $e^{-u}$ is tiny, so in $1-e^{-u}$ the small term is absorbed: `1 - exp(-u)` rounds to exactly $1$, and `log` returns $0$ instead of the true value $\approx -e^{-u}$.
+
+   *Remedy:* compute the log with `log1p`, as `log1p(-exp(-u))`. The function `log1p` never forms $1+x$ at $x=-e^{-u}$; it evaluates the series directly,
+   $$
+   \operatorname{log1p}(-e^{-u}) = \log(1-e^{-u}) = -e^{-u} - \frac{e^{-2u}}{2} + O(e^{-3u}) \approx -e^{-u} \quad (u\to\infty).
+   $$
+
+Each remedy removes only **its own** failure, and neither removes the other:
 
 ```{r}
 #| label: log1mexp-functions
@@ -958,29 +967,48 @@ f_expm1 <- function(u) log(-expm1(-u))      # never forms the difference 1 - exp
 f_log1p <- function(u) log1p(-exp(-u))      # never forms the sum exp(-u)
 ```
 
-`f_expm1` evaluates $-\operatorname{expm1}(-u)=1-e^{-u}$ without ever subtracting two numbers near $1$, which fixes **small** $u$; its outer `log` then receives a value near $u$, far from the landmark $1$, and is safe. `f_log1p` passes $-e^{-u}$ straight into `log1p`, which fixes **large** $u$; but for small $u$ that argument has already rounded to $-1$ before `log1p` ever sees it, so `f_log1p` fails exactly where `f_naive` does.
+Neither remedy carries over to the other side. For large $u$, `f_expm1` returns $-\operatorname{expm1}(-u)=1$ exactly and its outer `log` gives $0$, just as `f_naive` does. For small $u$, the argument $-e^{-u}$ of `f_log1p` has already rounded to $-1$ before `log1p` ever sees it, so `f_log1p` fails exactly where `f_naive` does.
 
 @tbl-log1mexp compares the three formulas with the branched solution `correct` derived below. Numbers below $0.01$ in absolute value are written as $\pm e^{x}$, meaning $\pm\exp(x)$, so that for example $\log u$ and $-e^{-u}$ can be read off directly from the entries.
 
 ```{r}
 #| label: tbl-log1mexp
-u <- c(1e-100, 1e-18, 1e-15, 1e-8, 1, 20, 50, 500)
+#| tbl-cap: "Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e."
+library(gt)
+u <- c(500, 50, 20, 1, 1e-8, 1e-15, 1e-18, 1e-100)   # large u at the top, small u at the bottom
 log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
+m <- function(tex) paste0("\\(", tex, "\\)")   # inline math, typeset by MathJax
 ## plain decimals, except that numbers below 0.01 in absolute value are written +/- e^{x}, x = log|value|
 g <- function(v) vapply(v, function(v) {
   if (is.nan(v)) return("NaN")
-  if (is.infinite(v)) return(if (v < 0) "$-\\infty$" else "$\\infty$")
-  if (v == 0) return("$0$")
-  if (abs(v) < 0.01) return(paste0("$", if (v < 0) "-", "e^{", signif(log(abs(v)), 6), "}$"))
-  paste0("$", signif(v, 6), "$")
+  if (is.infinite(v)) return(m(if (v < 0) "-\\infty" else "\\infty"))
+  if (v == 0) return(m("0"))
+  if (abs(v) < 0.01) return(m(paste0(if (v < 0) "-", "e^{", signif(log(abs(v)), 6), "}")))
+  m(signif(v, 6))
 }, "")
-tab <- data.frame(g(u), g(f_naive(u)), g(f_expm1(u)), g(f_log1p(u)), g(log1mexp(u)))
-names(tab) <- c("$u$", "naive",
-                "expm1: $\\log(-(e^{-u}-1))$",
-                "log1p: $\\log(1-e^{-u})$",
-                "correct: log1mexp$(u)$")
-kable(tab, align = rep("r", 5),
-      caption = "Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e.")
+tab <- data.frame(u = g(u), naive = g(f_naive(u)), expm1 = g(f_expm1(u)),
+                  log1p = g(f_log1p(u)), correct = g(log1mexp(u)))
+gt(tab) |>
+  fmt_passthrough(everything(), escape = FALSE) |>
+  cols_label(u       = html(m("u")),
+             naive   = html(paste("naive:", m("\\log(1-e^{-u})"))),
+             expm1   = html(paste("expm1:", m("\\log(-\\mathrm{expm1}(-u))"))),
+             log1p   = html(paste("log1p:", m("\\mathrm{log1p}(-e^{-u})"))),
+             correct = html(paste("correct:", m("\\mathrm{log1mexp}(u)")))) |>
+  cols_align("right") |>
+  tab_footnote(
+    footnote = html(paste0("For small ", m("u"), ": ",
+      m("-\\mathrm{expm1}(-u) = u - \\frac{u^2}{2} + O(u^3)"), ", so ",
+      m("\\log(1-e^{-u}) \\approx \\log\\big(u - \\frac{u^2}{2}\\big) \\approx \\log u"),
+      " as ", m("u \\to 0"), ".")),
+    locations = cells_column_labels(expm1)) |>
+  tab_footnote(
+    footnote = html(paste0("For large ", m("u"), ": ",
+      m("\\mathrm{log1p}(-e^{-u}) = -e^{-u} - \\frac{e^{-2u}}{2} + O(e^{-3u})"), ", so ",
+      m("\\log(1-e^{-u}) \\approx -e^{-u}"), " as ", m("u \\to \\infty"), ".")),
+    locations = cells_column_labels(log1p)) |>
+  opt_footnote_marks("standard") |>
+  opt_row_striping()
 ```
 
 - For **small** $u$, `naive` tracks `log1p`: both lose digits and eventually collapse to $-\infty$; only `expm1` is correct.
@@ -996,91 +1024,45 @@ log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
 
 The same construction, named `log1mexp`, is shipped by several CRAN packages (including **copula** and **VGAM**), all tracing to Mächler (2012); `DPQ::logspace.sub(0, -u)` computes the same quantity by an equivalent route. Prefer a package function in production code, and write your own only to understand *why* it works.
 
-@fig-log1mexp shows the three implementations against `log1mexp` (grey reference), on a log scale for $u$: small $u$ on the left, where only `expm1` survives, and large $u$ on the right, where only `log1p` survives.
-
-```{r}
-#| label: fig-log1mexp
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-cap: "Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u.
-#|   The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference."
-#| fig-width: 10
-#| fig-height: 4.2
-
-fin <- function(y) replace(y, !is.finite(y), NA)   # -Inf: the curve simply stops
-## for the right panel: place y < 0 on a log axis without changing its sign,
-## by plotting log10(-y) against a reversed axis labelled -10^k
-negpow <- function(y) {
-  out <- rep(NA_real_, length(y)); ok <- is.finite(y) & y < 0
-  out[ok] <- log10(-y[ok]); out
-}
-cols <- c(naive = "#D62728", expm1 = "#1F5FBF", log1p = "#D9A400")
-par(mfrow = c(1, 2), mar = c(4.2, 5.2, 2.6, 1), cex = 1.05)
-
-## left: small u, value plotted directly; jitter in units of the response
-u <- 10^seq(-20, 0, length.out = 400)
-jit <- c(0.9, 0, -0.9)
-plot(u, log1mexp(u), type = "n", log = "x", ylim = c(-52, 2),
-     xlab = expression(u), ylab = expression(log(1 - e^-u)),
-     main = expression("Small" ~ u * ": only expm1 survives"))
-u_dead <- max(u[!is.finite(f_naive(u))])
-rect(min(u), -60, u_dead, 10, col = adjustcolor("gray50", 0.12), border = NA)
-text(sqrt(min(u) * u_dead), -24, "naive, log1p\nreturn -Inf", col = "gray30", cex = 0.8)
-lines(u, log1mexp(u), lwd = 9, col = "gray87")
-lines(u, fin(f_naive(u)) + jit[1], lwd = 2.5, col = cols["naive"])
-lines(u, fin(f_expm1(u)) + jit[2], lwd = 2.5, col = cols["expm1"])
-lines(u, fin(f_log1p(u)) + jit[3], lwd = 2.5, col = cols["log1p"])
-legend("topleft", bty = "n", cex = 0.8, lwd = c(9, 2.5, 2.5, 2.5),
-       col = c("gray87", cols), legend = c("exact", "naive", "expm1", "log1p"))
-
-## right: large u, same quantity on a log-magnitude axis (note the reversed ylim);
-## jitter is now in powers of ten, so it must be applied after negpow()
-u <- 10^seq(0, log10(700), length.out = 400)
-jit <- c(7, 0, -7)
-k <- seq(0, -300, by = -60)
-plot(u, negpow(log1mexp(u)), type = "n", log = "x", ylim = c(3, -320), yaxt = "n",
-     xlab = expression(u), ylab = expression(log(1 - e^-u)),
-     main = expression("Large" ~ u * ": only log1p survives"))
-axis(2, at = k, labels = parse(text = paste0("-10^", k)), las = 1, cex.axis = 0.8)
-u_dead <- min(u[f_naive(u) >= 0])
-rect(u_dead, 10, max(u), -330, col = adjustcolor("gray50", 0.12), border = NA)
-text(u_dead * 1.3, -150, "naive, expm1\nreturn 0", adj = c(0, 0.5), col = "gray30", cex = 0.8)
-lines(u, negpow(log1mexp(u)), lwd = 9, col = "gray87")
-lines(u, negpow(f_naive(u)) + jit[1], lwd = 2.5, col = cols["naive"])
-lines(u, negpow(f_expm1(u)) + jit[2], lwd = 2.5, col = cols["expm1"])
-lines(u, negpow(f_log1p(u)) + jit[3], lwd = 2.5, col = cols["log1p"])
-legend("topleft", bty = "n", cex = 0.8, lwd = c(9, 2.5, 2.5, 2.5),
-       col = c("gray87", cols), legend = c("exact", "naive", "expm1", "log1p"))
-```
-
 ### A combined example: $\log\{1-\Phi(x)\}$ at both tails
 
-The rounding fix `log1mexp`, developed earlier for $\log(1-e^{-u})$, and the underflow fix of working on the log scale are often needed **together**. Consider $\log\{1-\Phi(10)\}$ and $\log\{1-\Phi(-10)\}$, where $\Phi$ is the standard normal CDF (`pnorm`):
+The rounding fix `log1mexp` and the underflow fix of working on the log scale are often needed **together**. Consider $\log\{1-\Phi(x)\}$, where $\Phi$ is the standard normal CDF (`pnorm`), over a range of $x$ from the far left tail to the far right tail. Computing $\Phi(x)$ itself and then $1-\Phi(x)$ fails immediately for large $x$: `pnorm(10)` already rounds to exactly $1$, and no reformulation of the outer expression can recover digits lost inside `pnorm`. So we ask R for the log, $\ell = \log\Phi(x)$ = `pnorm(x, log.p = TRUE)`, which R returns accurately for every $x$, and then take the complement on the log scale:
+$$
+\log\{1-\Phi(x)\} = \log(1-e^{\ell}) = \log(1-e^{-u}), \qquad u = -\ell > 0.
+$$
+This is exactly the kernel of the previous section, so the same four formulas apply, with $e^{-u}=e^{\ell}$:
 
 ```{r}
-#| label: phi10-example
-c(naive    = log(1 - pnorm(10)),                          # pnorm(10) rounds to 1, so log(0) = -Inf
-  log1p    = log1p(-pnorm(10)),                            # log1p cannot recover digits already lost
-  log1mexp = log1mexp(-pnorm(10, log.p = TRUE)),           # complement taken in log space
-  stable   = pnorm(10, lower.tail = FALSE, log.p = TRUE))  # direct upper tail
+#| label: tbl-phi-tails
+#| tbl-cap: "Computing log(1 - Phi(x)) from l = log Phi(x) = pnorm(x, log.p = TRUE); numbers below 0.01 in absolute value are written as powers of e."
+x <- c(-38, -20, -10, -5, -1, 0, 1, 5, 10, 20, 38)
+l <- pnorm(x, log.p = TRUE)                                # log Phi(x), accurate for all x
+tab <- data.frame(x        = g(x),
+                  l        = g(l),
+                  naive    = g(log(1 - exp(l))),
+                  expm1    = g(log(-expm1(l))),
+                  log1p    = g(log1p(-exp(l))),
+                  log1mexp = g(log1mexp(-l)),
+                  pnorm    = g(pnorm(x, lower.tail = FALSE, log.p = TRUE)))  # R's direct upper tail
+gt(tab) |>
+  fmt_passthrough(everything(), escape = FALSE) |>
+  cols_label(x        = html(m("x")),
+             l        = html(m("\\ell = \\log\\Phi(x)")),
+             naive    = html(paste("naive:", m("\\log(1-e^{\\ell})"))),
+             expm1    = html(paste("expm1:", m("\\log(-\\mathrm{expm1}(\\ell))"))),
+             log1p    = html(paste("log1p:", m("\\mathrm{log1p}(-e^{\\ell})"))),
+             log1mexp = html(paste("log1mexp:", m("\\mathrm{log1mexp}(-\\ell)"))),
+             pnorm    = html(paste("pnorm:", "<code>lower.tail = FALSE</code>"))) |>
+  cols_align("right") |>
+  opt_row_striping()
 ```
 
-The target is $\log\{1-\Phi(10)\}\approx-53.23$, since $1-\Phi(10)\approx7.6\times10^{-24}$ is far below machine epsilon. `naive` and `log1p` both start from `pnorm(10)`, which has already rounded to exactly $1$ before either function is called, so no reformulation of the *outer* expression can recover digits lost by **underflow** inside `pnorm` itself. `log1mexp` instead starts from $\ell=\log\Phi(10)\approx-7.6\times10^{-24}$, which R returns accurately, and computes
-$$
-\log\{1-\Phi(10)\} = \log(1-e^{\ell}) = \log(1-e^{-u}) = \texttt{log1mexp}(u), \qquad u=-\ell,
-$$
-where the tiny $u$ correctly selects the `expm1` branch derived above. `stable` computes $1-\Phi(10)$ directly with `lower.tail = FALSE` and returns its log without ever forming $\Phi(10)$.
+- **Left tail** ($x\le -10$). $\Phi(x)$ is tiny, so $\ell$ is large and negative and $u=-\ell$ is **large**. `naive` and `expm1` both return $0$: the tiny $e^{\ell}$ is absorbed in $1-e^{\ell}$ (large + small). `log1p` is correct, and the true value is $\approx -e^{\ell} = -\Phi(x)$, a tiny negative number.
+- **Right tail** ($x\ge 10$). $\Phi(x)$ is within roundoff of $1$, so $\ell\approx -\{1-\Phi(x)\}$ is a tiny negative number and $u$ is **small**. `naive` and `log1p` both return $-\infty$: $e^{\ell}$ rounds to exactly $1$ before the subtraction (large − large). `expm1` is correct, giving $\log u \approx \log\{1-\Phi(x)\}$, a large negative number ($\approx -53.23$ at $x=10$). Note that the accuracy here depends on starting from $\ell$: had we computed `pnorm(x)` instead, the $1-\Phi(x)$ digits would already have been lost.
+- **Middle** ($|x|\le 5$). All formulas agree.
+- `log1mexp` branches at $u=\log 2$ and matches the correct remedy in every row; R's `pnorm(x, lower.tail = FALSE, log.p = TRUE)` computes $\log\{1-\Phi(x)\}=\log\Phi(-x)$ directly, never forming $\Phi(x)$, and agrees with `log1mexp` throughout.
 
-```{r}
-#| label: phi-neg10-example
-c(naive    = log(1 - pnorm(-10)),                           # 1 - 7.6e-24 rounds to 1, so log gives 0
-  log1p    = log1p(-pnorm(-10)),                             # pnorm(-10) is itself accurate
-  log1mexp = log1mexp(-pnorm(-10, log.p = TRUE)),
-  stable   = pnorm(-10, lower.tail = FALSE, log.p = TRUE))
-```
-
-Here $\Phi(-10)\approx7.6\times10^{-24}$ and the target $\log\{1-\Phi(-10)\}\approx-7.6\times10^{-24}$ is a tiny negative number rather than a large one. `naive` now fails for the opposite reason: the **subtraction** $1-7.6\times10^{-24}$ itself rounds to exactly $1$, destroying every significant digit — cancellation, not underflow. `log1p` succeeds here because its argument `pnorm(-10)` is accurate (a number near $0$ keeps full relative precision) and `log1p` evaluates $\log(1+x)$ by series without ever forming $1+x$. `log1mexp` is again correct, but now via its `log1p` branch: $\ell=\log\Phi(-10)\approx-53.23$, so $u=-\ell=53.23$ is large.
-
-The contrast between the two examples is the *location* of the loss: at $x=10$ the damage occurs inside `pnorm(10)` before `log1p` is ever reached; at $x=-10$ only the outer subtraction is unstable, which is exactly what `log1p` fixes. The general lesson is to stay on the log scale throughout — ask R for $\log\Phi(x)$ rather than $\Phi(x)$, and take the complement with `log1mexp`, which selects the correct branch automatically so that the tail direction never has to be diagnosed by hand.
+The general lesson is to stay on the log scale throughout: ask R for $\log\Phi(x)$ rather than $\Phi(x)$, and take the complement with `log1mexp`, which selects the correct branch automatically so that the tail direction never has to be diagnosed by hand. When a distribution function offers `lower.tail = FALSE`, as `pnorm` does, use it directly.
 
 ## Summary
 
