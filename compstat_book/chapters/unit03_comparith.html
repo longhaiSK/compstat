@@ -1946,7 +1946,12 @@ probabilities  0.97555875494443089479546</code></pre>
 <h3 data-number="3.3.6" class="anchored" data-anchor-id="computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.3.6</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</h3>
 <p>This kernel appears whenever a difference is taken on the log scale: for <span class="math inline">\(a&gt;b\)</span>, <span class="math display">\[
 \log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b&gt;0,
-\]</span> so evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately is the key step in computing the log of a difference. Written literally as <code>log(1 - exp(-u))</code>, it fails at <strong>both</strong> ends of the range, from the two failure modes introduced above:</p>
+\]</span> where, with two Taylor terms,</p>
+<ul>
+<li>for small <span class="math inline">\(u\)</span>: <span class="math inline">\(1-e^{-u} = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u\)</span> as <span class="math inline">\(u\to 0\)</span>;</li>
+<li>for large <span class="math inline">\(u\)</span>: <span class="math inline">\(\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx -e^{-u}\)</span> as <span class="math inline">\(u\to\infty\)</span>.</li>
+</ul>
+<p>Hence evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately is the key step in computing the log of a difference. Written literally as <code>log(1 - exp(-u))</code>, it fails at <strong>both</strong> ends of the range, from the two failure modes introduced above:</p>
 <ul>
 <li><strong><span class="math inline">\(u\)</span> small.</strong> <span class="math inline">\(e^{-u}\approx 1\)</span>, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large − large</strong> subtraction: the true value is <span class="math inline">\(\approx u\)</span>, far below the roundoff already present in <span class="math inline">\(e^{-u}\)</span>, so the leading digits cancel and little survives. For <span class="math inline">\(u&lt;2^{-53}\)</span>, <code>exp(-u)</code> itself rounds to exactly <span class="math inline">\(1\)</span> and the result is <span class="math inline">\(-\infty\)</span>.</li>
 <li><strong><span class="math inline">\(u\)</span> large.</strong> <span class="math inline">\(e^{-u}\)</span> is tiny, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large + small</strong> addition: the small term is absorbed, <code>1 - exp(-u)</code> rounds to exactly <span class="math inline">\(1\)</span>, and <code>log</code> returns <span class="math inline">\(0\)</span> instead of the true value <span class="math inline">\(\approx -e^{-u}\)</span>.</li>
@@ -1972,8 +1977,8 @@ probabilities  0.97555875494443089479546</code></pre>
 <span id="cb147-10"><a href="#cb147-10" aria-hidden="true" tabindex="-1"></a>}, <span class="st">""</span>)</span>
 <span id="cb147-11"><a href="#cb147-11" aria-hidden="true" tabindex="-1"></a>tab <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="fu">g</span>(u), <span class="fu">g</span>(<span class="fu">f_naive</span>(u)), <span class="fu">g</span>(<span class="fu">f_expm1</span>(u)), <span class="fu">g</span>(<span class="fu">f_log1p</span>(u)), <span class="fu">g</span>(<span class="fu">log1mexp</span>(u)))</span>
 <span id="cb147-12"><a href="#cb147-12" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(tab) <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"$u$"</span>, <span class="st">"naive"</span>,</span>
-<span id="cb147-13"><a href="#cb147-13" aria-hidden="true" tabindex="-1"></a>                <span class="st">"expm1: $</span><span class="sc">\\</span><span class="st">log(-(e^{-u}-1))^{</span><span class="sc">\\</span><span class="st">dagger}$"</span>,</span>
-<span id="cb147-14"><a href="#cb147-14" aria-hidden="true" tabindex="-1"></a>                <span class="st">"log1p: $</span><span class="sc">\\</span><span class="st">log(1-e^{-u})^{</span><span class="sc">\\</span><span class="st">ddagger}$"</span>,</span>
+<span id="cb147-13"><a href="#cb147-13" aria-hidden="true" tabindex="-1"></a>                <span class="st">"expm1: $</span><span class="sc">\\</span><span class="st">log(-(e^{-u}-1))$"</span>,</span>
+<span id="cb147-14"><a href="#cb147-14" aria-hidden="true" tabindex="-1"></a>                <span class="st">"log1p: $</span><span class="sc">\\</span><span class="st">log(1-e^{-u})$"</span>,</span>
 <span id="cb147-15"><a href="#cb147-15" aria-hidden="true" tabindex="-1"></a>                <span class="st">"correct: log1mexp$(u)$"</span>)</span>
 <span id="cb147-16"><a href="#cb147-16" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(tab, <span class="at">align =</span> <span class="fu">rep</span>(<span class="st">"r"</span>, <span class="dv">5</span>),</span>
 <span id="cb147-17"><a href="#cb147-17" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e."</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1986,18 +1991,18 @@ Table&nbsp;3.5: Computing log(1 - exp(-u)) four ways, across eighteen orders of 
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
 <colgroup>
-<col style="width: 12%">
-<col style="width: 9%">
-<col style="width: 30%">
-<col style="width: 28%">
-<col style="width: 18%">
+<col style="width: 14%">
+<col style="width: 11%">
+<col style="width: 26%">
+<col style="width: 23%">
+<col style="width: 22%">
 </colgroup>
 <thead>
 <tr class="header">
 <th style="text-align: right;"><span class="math inline">\(u\)</span></th>
 <th style="text-align: right;">naive</th>
-<th style="text-align: right;">expm1: <span class="math inline">\(\log(-(e^{-u}-1))^{\dagger}\)</span></th>
-<th style="text-align: right;">log1p: <span class="math inline">\(\log(1-e^{-u})^{\ddagger}\)</span></th>
+<th style="text-align: right;">expm1: <span class="math inline">\(\log(-(e^{-u}-1))\)</span></th>
+<th style="text-align: right;">log1p: <span class="math inline">\(\log(1-e^{-u})\)</span></th>
 <th style="text-align: right;">correct: log1mexp<span class="math inline">\((u)\)</span></th>
 </tr>
 </thead>
@@ -2065,9 +2070,6 @@ Table&nbsp;3.5: Computing log(1 - exp(-u)) four ways, across eighteen orders of 
 </figure>
 </div>
 </div>
-<p><em>Table notes.</em> The <code>expm1</code> and <code>log1p</code> columns evaluate the expressions in their headings with <code>expm1</code> and <code>log1p</code>, never forming the difference or the sum in the parentheses. Their two-term Taylor expansions explain where each is accurate.</p>
-<p><span class="math inline">\(^{\dagger}\)</span> For small <span class="math inline">\(u\)</span>: <span class="math inline">\(-(e^{-u}-1) = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)\)</span>, so <span class="math inline">\(\log(-(e^{-u}-1)) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u\)</span> as <span class="math inline">\(u\to 0\)</span>.</p>
-<p><span class="math inline">\(^{\ddagger}\)</span> For large <span class="math inline">\(u\)</span>: <span class="math inline">\(\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx -e^{-u}\)</span> as <span class="math inline">\(u\to\infty\)</span>.</p>
 <ul>
 <li>For <strong>small</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>log1p</code>: both lose digits and eventually collapse to <span class="math inline">\(-\infty\)</span>; only <code>expm1</code> is correct.</li>
 <li>For <strong>large</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>expm1</code>: both collapse to <span class="math inline">\(0\)</span>; only <code>log1p</code> is correct.</li>

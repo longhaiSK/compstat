@@ -939,7 +939,12 @@ This kernel appears whenever a difference is taken on the log scale: for $a>b$,
 $$
 \log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b>0,
 $$
-so evaluating $\log(1-e^{-u})$ accurately is the key step in computing the log of a difference. Written literally as `log(1 - exp(-u))`, it fails at **both** ends of the range, from the two failure modes introduced above:
+where, with two Taylor terms,
+
+- for small $u$: $1-e^{-u} = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)$, so $\log(1-e^{-u}) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u$ as $u\to 0$;
+- for large $u$: $\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})$, so $\log(1-e^{-u}) \approx -e^{-u}$ as $u\to\infty$.
+
+Hence evaluating $\log(1-e^{-u})$ accurately is the key step in computing the log of a difference. Written literally as `log(1 - exp(-u))`, it fails at **both** ends of the range, from the two failure modes introduced above:
 
 - **$u$ small.** $e^{-u}\approx 1$, so $1-e^{-u}$ is a **large − large** subtraction: the true value is $\approx u$, far below the roundoff already present in $e^{-u}$, so the leading digits cancel and little survives. For $u<2^{-53}$, `exp(-u)` itself rounds to exactly $1$ and the result is $-\infty$.
 - **$u$ large.** $e^{-u}$ is tiny, so $1-e^{-u}$ is a **large + small** addition: the small term is absorbed, `1 - exp(-u)` rounds to exactly $1$, and `log` returns $0$ instead of the true value $\approx -e^{-u}$.
@@ -971,18 +976,12 @@ g <- function(v) vapply(v, function(v) {
 }, "")
 tab <- data.frame(g(u), g(f_naive(u)), g(f_expm1(u)), g(f_log1p(u)), g(log1mexp(u)))
 names(tab) <- c("$u$", "naive",
-                "expm1: $\\log(-(e^{-u}-1))^{\\dagger}$",
-                "log1p: $\\log(1-e^{-u})^{\\ddagger}$",
+                "expm1: $\\log(-(e^{-u}-1))$",
+                "log1p: $\\log(1-e^{-u})$",
                 "correct: log1mexp$(u)$")
 kable(tab, align = rep("r", 5),
       caption = "Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e.")
 ```
-
-*Table notes.* The `expm1` and `log1p` columns evaluate the expressions in their headings with `expm1` and `log1p`, never forming the difference or the sum in the parentheses. Their two-term Taylor expansions explain where each is accurate.
-
-$^{\dagger}$ For small $u$: $-(e^{-u}-1) = -\operatorname{expm1}(-u) = u - \dfrac{u^2}{2} + O(u^3)$, so $\log(-(e^{-u}-1)) \approx \log\Big(u - \dfrac{u^2}{2}\Big) \approx \log u$ as $u\to 0$.
-
-$^{\ddagger}$ For large $u$: $\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) = -e^{-u} - \dfrac{e^{-2u}}{2} + O(e^{-3u})$, so $\log(1-e^{-u}) \approx -e^{-u}$ as $u\to\infty$.
 
 - For **small** $u$, `naive` tracks `log1p`: both lose digits and eventually collapse to $-\infty$; only `expm1` is correct.
 - For **large** $u$, `naive` tracks `expm1`: both collapse to $0$; only `log1p` is correct.
