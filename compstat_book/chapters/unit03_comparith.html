@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-23">
+<meta name="dcterms.date" content="2026-11-16">
 
 <title>arithmetic-chapter – Elements of Statistical Computation</title>
 <style>
@@ -309,7 +309,6 @@ window.Quarto = {
   <ul class="collapse">
   <li><a href="#fixes" id="toc-fixes" class="nav-link" data-scroll-target="#fixes">Fixes</a></li>
   </ul></li>
-  <li><a href="#computing-log1-e-u-large-small-and-large-large-together" id="toc-computing-log1-e-u-large-small-and-large-large-together" class="nav-link" data-scroll-target="#computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.2.5</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</a></li>
   </ul></li>
   <li><a href="#methods-for-mitigating-overflow-and-underflow-errors" id="toc-methods-for-mitigating-overflow-and-underflow-errors" class="nav-link" data-scroll-target="#methods-for-mitigating-overflow-and-underflow-errors"><span class="header-section-number">3.3</span> Methods for Mitigating Overflow and Underflow Errors</a>
   <ul>
@@ -318,7 +317,8 @@ window.Quarto = {
   <li><a href="#representing-numbers-in-logarithmic-form" id="toc-representing-numbers-in-logarithmic-form" class="nav-link" data-scroll-target="#representing-numbers-in-logarithmic-form"><span class="header-section-number">3.3.3</span> Representing numbers in logarithmic form</a></li>
   <li><a href="#the-log-sum-exp-trick" id="toc-the-log-sum-exp-trick" class="nav-link" data-scroll-target="#the-log-sum-exp-trick"><span class="header-section-number">3.3.4</span> The log-sum-exp trick</a></li>
   <li><a href="#differences-on-the-log-scale" id="toc-differences-on-the-log-scale" class="nav-link" data-scroll-target="#differences-on-the-log-scale"><span class="header-section-number">3.3.5</span> Differences on the log scale</a></li>
-  <li><a href="#a-combined-example-log1-phix-at-both-tails" id="toc-a-combined-example-log1-phix-at-both-tails" class="nav-link" data-scroll-target="#a-combined-example-log1-phix-at-both-tails"><span class="header-section-number">3.3.6</span> A combined example: <span class="math inline">\(\log\{1-\Phi(x)\}\)</span> at both tails</a></li>
+  <li><a href="#computing-log1-e-u-large-small-and-large-large-together" id="toc-computing-log1-e-u-large-small-and-large-large-together" class="nav-link" data-scroll-target="#computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.3.6</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</a></li>
+  <li><a href="#a-combined-example-log1-phix-at-both-tails" id="toc-a-combined-example-log1-phix-at-both-tails" class="nav-link" data-scroll-target="#a-combined-example-log1-phix-at-both-tails"><span class="header-section-number">3.3.7</span> A combined example: <span class="math inline">\(\log\{1-\Phi(x)\}\)</span> at both tails</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">3.4</span> Summary</a></li>
   <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises"><span class="header-section-number">3.5</span> Exercises</a></li>
@@ -351,7 +351,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 23, 2026</p>
+      <p class="date">November 16, 2026</p>
     </div>
   </div>
   
@@ -1558,180 +1558,6 @@ Table&nbsp;3.4: Demonstrates catastrophic cancellation in the one-pass variance 
 </div>
 </section>
 </section>
-<section id="computing-log1-e-u-large-small-and-large-large-together" class="level3" data-number="3.2.5">
-<h3 data-number="3.2.5" class="anchored" data-anchor-id="computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.2.5</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</h3>
-<p>This kernel appears whenever a difference is taken on the log scale: for <span class="math inline">\(a&gt;b\)</span>, <span class="math display">\[
-\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b&gt;0,
-\]</span> so evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately is the key step in computing the log of a difference. Written literally as <code>log(1 - exp(-u))</code>, it fails at <strong>both</strong> ends of the range, from the two failure modes introduced above:</p>
-<ul>
-<li><strong><span class="math inline">\(u\)</span> small.</strong> <span class="math inline">\(e^{-u}\approx 1\)</span>, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large − large</strong> subtraction: the true value is <span class="math inline">\(\approx u\)</span>, far below the roundoff already present in <span class="math inline">\(e^{-u}\)</span>, so the leading digits cancel and little survives. For <span class="math inline">\(u&lt;2^{-53}\)</span>, <code>exp(-u)</code> itself rounds to exactly <span class="math inline">\(1\)</span> and the result is <span class="math inline">\(-\infty\)</span>.</li>
-<li><strong><span class="math inline">\(u\)</span> large.</strong> <span class="math inline">\(e^{-u}\)</span> is tiny, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large + small</strong> addition: the small term is absorbed, <code>1 - exp(-u)</code> rounds to exactly <span class="math inline">\(1\)</span>, and <code>log</code> returns <span class="math inline">\(0\)</span> instead of the true value <span class="math inline">\(\approx -e^{-u}\)</span>.</li>
-</ul>
-<p>R provides two functions built precisely for arguments near the landmark <span class="math inline">\(1\)</span>, each evaluating its series directly instead of forming the offending sum or difference: <code>expm1(x)</code> computes <span class="math inline">\(e^{x}-1\)</span> with full relative precision for small <span class="math inline">\(x\)</span>, and <code>log1p(x)</code> computes <span class="math inline">\(\log(1+x)\)</span> with full relative precision for small <span class="math inline">\(x\)</span> (Section on avoiding large − large, above). Applied to <span class="math inline">\(\log(1-e^{-u})\)</span>, each removes only <strong>one</strong> of the two failures, and neither removes the other:</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>f_naive <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(<span class="sc">-</span>u))     <span class="co"># both failures</span></span>
-<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>f_expm1 <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u))      <span class="co"># never forms the difference 1 - exp(-u)</span></span>
-<span id="cb101-3"><a href="#cb101-3" aria-hidden="true" tabindex="-1"></a>f_log1p <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u))      <span class="co"># never forms the sum exp(-u)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<p><code>f_expm1</code> evaluates <span class="math inline">\(-\operatorname{expm1}(-u)=1-e^{-u}\)</span> without ever subtracting two numbers near <span class="math inline">\(1\)</span>, which fixes <strong>small</strong> <span class="math inline">\(u\)</span>; its outer <code>log</code> then receives a value near <span class="math inline">\(u\)</span>, far from the landmark <span class="math inline">\(1\)</span>, and is safe. <code>f_log1p</code> passes <span class="math inline">\(-e^{-u}\)</span> straight into <code>log1p</code>, which fixes <strong>large</strong> <span class="math inline">\(u\)</span>; but for small <span class="math inline">\(u\)</span> that argument has already rounded to <span class="math inline">\(-1\)</span> before <code>log1p</code> ever sees it, so <code>f_log1p</code> fails exactly where <code>f_naive</code> does.</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb102"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb102-1"><a href="#cb102-1" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">1e-100</span>, <span class="fl">1e-18</span>, <span class="fl">1e-15</span>, <span class="fl">1e-8</span>, <span class="dv">1</span>, <span class="dv">20</span>, <span class="dv">50</span>, <span class="dv">500</span>)</span>
-<span id="cb102-2"><a href="#cb102-2" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span>
-<span id="cb102-3"><a href="#cb102-3" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"g"</span>, <span class="at">digits =</span> <span class="dv">8</span>)</span>
-<span id="cb102-4"><a href="#cb102-4" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">u =</span> <span class="fu">g</span>(u), <span class="at">naive =</span> <span class="fu">g</span>(<span class="fu">f_naive</span>(u)), <span class="at">expm1 =</span> <span class="fu">g</span>(<span class="fu">f_expm1</span>(u)),</span>
-<span id="cb102-5"><a href="#cb102-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log1p =</span> <span class="fu">g</span>(<span class="fu">f_log1p</span>(u)), <span class="at">correct =</span> <span class="fu">g</span>(<span class="fu">log1mexp</span>(u))),</span>
-<span id="cb102-6"><a href="#cb102-6" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Tabulates log(1 - exp(-u)) computed four ways to show numerically where each formula loses accuracy or fails. log(1 - exp(-u)) by four methods, across eighteen orders of magnitude of u"</span>,</span>
-<span id="cb102-7"><a href="#cb102-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<caption>Tabulates log(1 - exp(-u)) computed four ways to show numerically where each formula loses accuracy or fails. log(1 - exp(-u)) by four methods, across eighteen orders of magnitude of u</caption>
-<colgroup>
-<col style="width: 10%">
-<col style="width: 21%">
-<col style="width: 21%">
-<col style="width: 23%">
-<col style="width: 23%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: right;">u</th>
-<th style="text-align: right;">naive</th>
-<th style="text-align: right;">expm1</th>
-<th style="text-align: right;">log1p</th>
-<th style="text-align: right;">correct</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: right;">1e-100</td>
-<td style="text-align: right;">-Inf</td>
-<td style="text-align: right;">-230.25851</td>
-<td style="text-align: right;">-Inf</td>
-<td style="text-align: right;">-230.25851</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">1e-18</td>
-<td style="text-align: right;">-Inf</td>
-<td style="text-align: right;">-41.446532</td>
-<td style="text-align: right;">-Inf</td>
-<td style="text-align: right;">-41.446532</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">1e-15</td>
-<td style="text-align: right;">-34.539576</td>
-<td style="text-align: right;">-34.538776</td>
-<td style="text-align: right;">-34.539576</td>
-<td style="text-align: right;">-34.538776</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">1e-08</td>
-<td style="text-align: right;">-18.420681</td>
-<td style="text-align: right;">-18.420681</td>
-<td style="text-align: right;">-18.420681</td>
-<td style="text-align: right;">-18.420681</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">-0.45867515</td>
-<td style="text-align: right;">-0.45867515</td>
-<td style="text-align: right;">-0.45867515</td>
-<td style="text-align: right;">-0.45867515</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">20</td>
-<td style="text-align: right;">-2.0611536e-09</td>
-<td style="text-align: right;">-2.0611536e-09</td>
-<td style="text-align: right;">-2.0611536e-09</td>
-<td style="text-align: right;">-2.0611536e-09</td>
-</tr>
-<tr class="odd">
-<td style="text-align: right;">50</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">-1.9287498e-22</td>
-<td style="text-align: right;">-1.9287498e-22</td>
-</tr>
-<tr class="even">
-<td style="text-align: right;">500</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">0</td>
-<td style="text-align: right;">-7.1245764e-218</td>
-<td style="text-align: right;">-7.1245764e-218</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<ul>
-<li>For <strong>small</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>log1p</code>: both lose digits and eventually collapse to <span class="math inline">\(-\infty\)</span>; only <code>expm1</code> is correct.</li>
-<li>For <strong>large</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>expm1</code>: both collapse to <span class="math inline">\(0\)</span>; only <code>log1p</code> is correct.</li>
-<li>In the <strong>middle</strong> (<span class="math inline">\(10^{-8}\le u\le 20\)</span>), all three agree, because <span class="math inline">\(u\)</span> is nowhere near either landmark.</li>
-</ul>
-<p><strong>Solution: branch between the two remedies.</strong> Split at <span class="math inline">\(u=\log 2\)</span>, where <span class="math inline">\(e^{-u}=1/2\)</span> is safely far from both traps, and use whichever incomplete remedy is valid on that side:</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</div>
-<p>The same construction, named <code>log1mexp</code>, is shipped by several CRAN packages (including <strong>copula</strong> and <strong>VGAM</strong>), all tracing to Mächler (2012); <code>DPQ::logspace.sub(0, -u)</code> computes the same quantity by an equivalent route. Prefer a package function in production code, and write your own only to understand <em>why</em> it works.</p>
-<p><a href="#fig-log1mexp" class="quarto-xref">Figure&nbsp;<span>3.2</span></a> shows the three implementations against <code>log1mexp</code> (grey reference), on a log scale for <span class="math inline">\(u\)</span>: small <span class="math inline">\(u\)</span> on the left, where only <code>expm1</code> survives, and large <span class="math inline">\(u\)</span> on the right, where only <code>log1p</code> survives.</p>
-<div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb104"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a>fin <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">replace</span>(y, <span class="sc">!</span><span class="fu">is.finite</span>(y), <span class="cn">NA</span>)   <span class="co"># -Inf: the curve simply stops</span></span>
-<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a><span class="do">## for the right panel: place y &lt; 0 on a log axis without changing its sign,</span></span>
-<span id="cb104-3"><a href="#cb104-3" aria-hidden="true" tabindex="-1"></a><span class="do">## by plotting log10(-y) against a reversed axis labelled -10^k</span></span>
-<span id="cb104-4"><a href="#cb104-4" aria-hidden="true" tabindex="-1"></a>negpow <span class="ot">&lt;-</span> <span class="cf">function</span>(y) {</span>
-<span id="cb104-5"><a href="#cb104-5" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, <span class="fu">length</span>(y)); ok <span class="ot">&lt;-</span> <span class="fu">is.finite</span>(y) <span class="sc">&amp;</span> y <span class="sc">&lt;</span> <span class="dv">0</span></span>
-<span id="cb104-6"><a href="#cb104-6" aria-hidden="true" tabindex="-1"></a>  out[ok] <span class="ot">&lt;-</span> <span class="fu">log10</span>(<span class="sc">-</span>y[ok]); out</span>
-<span id="cb104-7"><a href="#cb104-7" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb104-8"><a href="#cb104-8" aria-hidden="true" tabindex="-1"></a>cols <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">naive =</span> <span class="st">"#D62728"</span>, <span class="at">expm1 =</span> <span class="st">"#1F5FBF"</span>, <span class="at">log1p =</span> <span class="st">"#D9A400"</span>)</span>
-<span id="cb104-9"><a href="#cb104-9" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">4.2</span>, <span class="fl">5.2</span>, <span class="fl">2.6</span>, <span class="dv">1</span>), <span class="at">cex =</span> <span class="fl">1.05</span>)</span>
-<span id="cb104-10"><a href="#cb104-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb104-11"><a href="#cb104-11" aria-hidden="true" tabindex="-1"></a><span class="do">## left: small u, value plotted directly; jitter in units of the response</span></span>
-<span id="cb104-12"><a href="#cb104-12" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="at">length.out =</span> <span class="dv">400</span>)</span>
-<span id="cb104-13"><a href="#cb104-13" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.9</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="fl">0.9</span>)</span>
-<span id="cb104-14"><a href="#cb104-14" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">52</span>, <span class="dv">2</span>),</span>
-<span id="cb104-15"><a href="#cb104-15" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
-<span id="cb104-16"><a href="#cb104-16" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Small"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only expm1 survives"</span>))</span>
-<span id="cb104-17"><a href="#cb104-17" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">max</span>(u[<span class="sc">!</span><span class="fu">is.finite</span>(<span class="fu">f_naive</span>(u))])</span>
-<span id="cb104-18"><a href="#cb104-18" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(<span class="fu">min</span>(u), <span class="sc">-</span><span class="dv">60</span>, u_dead, <span class="dv">10</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb104-19"><a href="#cb104-19" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="fu">sqrt</span>(<span class="fu">min</span>(u) <span class="sc">*</span> u_dead), <span class="sc">-</span><span class="dv">24</span>, <span class="st">"naive, log1p</span><span class="sc">\n</span><span class="st">return -Inf"</span>, <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
-<span id="cb104-20"><a href="#cb104-20" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
-<span id="cb104-21"><a href="#cb104-21" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
-<span id="cb104-22"><a href="#cb104-22" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
-<span id="cb104-23"><a href="#cb104-23" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
-<span id="cb104-24"><a href="#cb104-24" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
-<span id="cb104-25"><a href="#cb104-25" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span>
-<span id="cb104-26"><a href="#cb104-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb104-27"><a href="#cb104-27" aria-hidden="true" tabindex="-1"></a><span class="do">## right: large u, same quantity on a log-magnitude axis (note the reversed ylim);</span></span>
-<span id="cb104-28"><a href="#cb104-28" aria-hidden="true" tabindex="-1"></a><span class="do">## jitter is now in powers of ten, so it must be applied after negpow()</span></span>
-<span id="cb104-29"><a href="#cb104-29" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="dv">0</span>, <span class="fu">log10</span>(<span class="dv">700</span>), <span class="at">length.out =</span> <span class="dv">400</span>)</span>
-<span id="cb104-30"><a href="#cb104-30" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="dv">7</span>)</span>
-<span id="cb104-31"><a href="#cb104-31" aria-hidden="true" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">300</span>, <span class="at">by =</span> <span class="sc">-</span><span class="dv">60</span>)</span>
-<span id="cb104-32"><a href="#cb104-32" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="sc">-</span><span class="dv">320</span>), <span class="at">yaxt =</span> <span class="st">"n"</span>,</span>
-<span id="cb104-33"><a href="#cb104-33" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
-<span id="cb104-34"><a href="#cb104-34" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Large"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only log1p survives"</span>))</span>
-<span id="cb104-35"><a href="#cb104-35" aria-hidden="true" tabindex="-1"></a><span class="fu">axis</span>(<span class="dv">2</span>, <span class="at">at =</span> k, <span class="at">labels =</span> <span class="fu">parse</span>(<span class="at">text =</span> <span class="fu">paste0</span>(<span class="st">"-10^"</span>, k)), <span class="at">las =</span> <span class="dv">1</span>, <span class="at">cex.axis =</span> <span class="fl">0.8</span>)</span>
-<span id="cb104-36"><a href="#cb104-36" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">min</span>(u[<span class="fu">f_naive</span>(u) <span class="sc">&gt;=</span> <span class="dv">0</span>])</span>
-<span id="cb104-37"><a href="#cb104-37" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(u_dead, <span class="dv">10</span>, <span class="fu">max</span>(u), <span class="sc">-</span><span class="dv">330</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
-<span id="cb104-38"><a href="#cb104-38" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(u_dead <span class="sc">*</span> <span class="fl">1.3</span>, <span class="sc">-</span><span class="dv">150</span>, <span class="st">"naive, expm1</span><span class="sc">\n</span><span class="st">return 0"</span>, <span class="at">adj =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.5</span>), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
-<span id="cb104-39"><a href="#cb104-39" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
-<span id="cb104-40"><a href="#cb104-40" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
-<span id="cb104-41"><a href="#cb104-41" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
-<span id="cb104-42"><a href="#cb104-42" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
-<span id="cb104-43"><a href="#cb104-43" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
-<span id="cb104-44"><a href="#cb104-44" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output-display">
-<div id="fig-log1mexp" class="quarto-float quarto-figure quarto-figure-center anchored">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="unit03_comparith_files/figure-html/fig-log1mexp-1.png" class="img-fluid figure-img" width="960">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3.2: Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u. The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</section>
 </section>
 <section id="methods-for-mitigating-overflow-and-underflow-errors" class="level2" data-number="3.3">
 <h2 data-number="3.3" class="anchored" data-anchor-id="methods-for-mitigating-overflow-and-underflow-errors"><span class="header-section-number">3.3</span> Methods for Mitigating Overflow and Underflow Errors</h2>
@@ -1781,26 +1607,26 @@ Figure&nbsp;3.2: Compares implementations of log(1 - exp(-u)) to show which form
 \sigma(x) = \begin{cases} 1/(1+e^{-x}) &amp; x \ge 0\\ e^{x}/(1+e^{x}) &amp; x &lt; 0.\end{cases}
 \]</span></p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="fu">exp</span>(theta) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(theta))</span>
-<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>theta))</span>
-<span id="cb105-3"><a href="#cb105-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb105-4"><a href="#cb105-4" aria-hidden="true" tabindex="-1"></a><span class="do">## large positive theta breaks p1, works in p2</span></span>
-<span id="cb105-5"><a href="#cb105-5" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
-<span id="cb105-6"><a href="#cb105-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb101"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="fu">exp</span>(theta) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(theta))</span>
+<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="cf">function</span>(theta) <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>theta))</span>
+<span id="cb101-3"><a href="#cb101-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb101-4"><a href="#cb101-4" aria-hidden="true" tabindex="-1"></a><span class="do">## large positive theta breaks p1, works in p2</span></span>
+<span id="cb101-5"><a href="#cb101-5" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="dv">2000</span></span>
+<span id="cb101-6"><a href="#cb101-6" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code> p1  p2 
 NaN   1 </code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="do">## large negative theta works for both</span></span>
-<span id="cb107-2"><a href="#cb107-2" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2000</span></span>
-<span id="cb107-3"><a href="#cb107-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb103"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="do">## large negative theta works for both</span></span>
+<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a>theta <span class="ot">&lt;-</span> <span class="sc">-</span><span class="dv">2000</span></span>
+<span id="cb103-3"><a href="#cb103-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">p1 =</span> <span class="fu">p1</span>(theta), <span class="at">p2 =</span> <span class="fu">p2</span>(theta))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>p1 p2 
  0  0 </code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb109"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the piecewise form is safe everywhere and keeps full precision in both tails</span></span>
-<span id="cb109-2"><a href="#cb109-2" aria-hidden="true" tabindex="-1"></a>sigmoid <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(x <span class="sc">&gt;=</span> <span class="dv">0</span>, <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>x)), <span class="fu">exp</span>(x) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(x)))</span>
-<span id="cb109-3"><a href="#cb109-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sigmoid</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">2000</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="dv">20</span>, <span class="dv">2000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb105"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="do">## the piecewise form is safe everywhere and keeps full precision in both tails</span></span>
+<span id="cb105-2"><a href="#cb105-2" aria-hidden="true" tabindex="-1"></a>sigmoid <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">ifelse</span>(x <span class="sc">&gt;=</span> <span class="dv">0</span>, <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(<span class="sc">-</span>x)), <span class="fu">exp</span>(x) <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">+</span> <span class="fu">exp</span>(x)))</span>
+<span id="cb105-3"><a href="#cb105-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sigmoid</span>(<span class="fu">c</span>(<span class="sc">-</span><span class="dv">2000</span>, <span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="dv">20</span>, <span class="dv">2000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0.000000000000000000000e+00 2.061153618190203325213e-09
 [3] 5.000000000000000000000e-01 9.999999979388463078323e-01
@@ -1860,17 +1686,17 @@ NaN   1 </code></pre>
 </tbody>
 </table>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb111"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">factorial</span>(<span class="dv">1000</span>)), <span class="at">lfactorial =</span> <span class="fu">lfactorial</span>(<span class="dv">1000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb107"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">factorial</span>(<span class="dv">1000</span>)), <span class="at">lfactorial =</span> <span class="fu">lfactorial</span>(<span class="dv">1000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                  naive              lfactorial 
                     Inf 5912.128178488163939619 </code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb113"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">dnorm</span>(<span class="dv">40</span>)), <span class="at">dnorm_log =</span> <span class="fu">dnorm</span>(<span class="dv">40</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb109"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="fu">dnorm</span>(<span class="dv">40</span>)), <span class="at">dnorm_log =</span> <span class="fu">dnorm</span>(<span class="dv">40</span>, <span class="at">log =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                dnorm_log 
                     -Inf -800.9189385332047095289 </code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb115"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)), <span class="at">stable =</span> <span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb111"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)), <span class="at">stable =</span> <span class="fu">pnorm</span>(<span class="dv">10</span>, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                   stable 
                     -Inf -53.23128515051246978373 </code></pre>
@@ -1889,30 +1715,30 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 \log(x_1 x_2) = \ell_1 + \ell_2, \qquad \log\left(\prod_{i=1}^{n} x_i\right) = \sum_{i=1}^{n} \ell_i, \qquad \log\frac{x_1}{x_2} = \ell_1 - \ell_2.
 \]</span> In particular <span class="math inline">\(\log \prod_i p(x_i) = \sum_i \log p(x_i)\)</span>: always compute the log-likelihood, never the likelihood.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb117"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="dv">800</span>; x <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_x); x          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb113"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="dv">800</span>; x <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_x); x          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb119"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a>log_y <span class="ot">&lt;-</span> <span class="dv">805</span>; y <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_y); y          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb115"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a>log_y <span class="ot">&lt;-</span> <span class="dv">805</span>; y <span class="ot">&lt;-</span> <span class="fu">exp</span>(log_y); y          <span class="co"># overflow</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb121"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a>x <span class="sc">/</span> y                                     <span class="co"># Inf/Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb117"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a>x <span class="sc">/</span> y                                     <span class="co"># Inf/Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] NaN</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb123"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a>log_xovery <span class="ot">&lt;-</span> log_x <span class="sc">-</span> log_y               <span class="co"># subtracting logs is safe</span></span>
-<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a>log_xovery</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb119"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a>log_xovery <span class="ot">&lt;-</span> log_x <span class="sc">-</span> log_y               <span class="co"># subtracting logs is safe</span></span>
+<span id="cb119-2"><a href="#cb119-2" aria-hidden="true" tabindex="-1"></a>log_xovery</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] -5</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb125"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_xovery)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb121"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_xovery)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0.006737946999085467000845</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb127"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="do">## likelihood versus log-likelihood for 2000 fair-coin tosses</span></span>
-<span id="cb127-2"><a href="#cb127-2" aria-hidden="true" tabindex="-1"></a>p <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fl">0.5</span>, <span class="dv">2000</span>)</span>
-<span id="cb127-3"><a href="#cb127-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">likelihood =</span> <span class="fu">prod</span>(p), <span class="at">log_likelihood =</span> <span class="fu">sum</span>(<span class="fu">log</span>(p)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb123"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="do">## likelihood versus log-likelihood for 2000 fair-coin tosses</span></span>
+<span id="cb123-2"><a href="#cb123-2" aria-hidden="true" tabindex="-1"></a>p <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fl">0.5</span>, <span class="dv">2000</span>)</span>
+<span id="cb123-3"><a href="#cb123-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">likelihood =</span> <span class="fu">prod</span>(p), <span class="at">log_likelihood =</span> <span class="fu">sum</span>(<span class="fu">log</span>(p)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>             likelihood          log_likelihood 
     0.00000000000000000 -1386.29436111982249713 </code></pre>
@@ -1964,29 +1790,29 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 \log\sum_i x_i = 2002 + \log(0.135 + 0.368 + 1) = 2002.408
 \]</span></p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb129"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x) {</span>
-<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
-<span id="cb129-3"><a href="#cb129-3" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x)))</span>
-<span id="cb129-4"><a href="#cb129-4" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb129-5"><a href="#cb129-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb129-6"><a href="#cb129-6" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would overflow directly</span></span>
-<span id="cb129-7"><a href="#cb129-7" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
-<span id="cb129-8"><a href="#cb129-8" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb125"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x) {</span>
+<span id="cb125-2"><a href="#cb125-2" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="ot">&lt;-</span> <span class="fu">max</span>(log_x)</span>
+<span id="cb125-3"><a href="#cb125-3" aria-hidden="true" tabindex="-1"></a>  max_log_x <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x <span class="sc">-</span> max_log_x)))</span>
+<span id="cb125-4"><a href="#cb125-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb125-5"><a href="#cb125-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb125-6"><a href="#cb125-6" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would overflow directly</span></span>
+<span id="cb125-7"><a href="#cb125-7" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
+<span id="cb125-8"><a href="#cb125-8" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] Inf Inf Inf</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb131"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb127"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb127-1"><a href="#cb127-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                 direct                     lse 
                     Inf 2030.000000002061142368 </code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb133"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would underflow directly</span></span>
-<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
-<span id="cb133-3"><a href="#cb133-3" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb129"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb129-1"><a href="#cb129-1" aria-hidden="true" tabindex="-1"></a><span class="do">## values that would underflow directly</span></span>
+<span id="cb129-2"><a href="#cb129-2" aria-hidden="true" tabindex="-1"></a>log_x <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2010</span>, <span class="dv">2030</span>)</span>
+<span id="cb129-3"><a href="#cb129-3" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(log_x)                                   <span class="co"># 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 0 0 0</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb135"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb131"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb131-1"><a href="#cb131-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">direct =</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(log_x))), <span class="at">lse =</span> <span class="fu">log_sum_exp</span>(log_x))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                 direct                     lse 
                    -Inf -1999.99995460110062595 </code></pre>
@@ -1994,11 +1820,11 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 </div>
 <p><strong>Example: log-likelihood of a mixture.</strong> The density of a two-component normal mixture is <span class="math inline">\(f(y) = \pi_1\varphi(y;\mu_1,1) + \pi_2\varphi(y;\mu_2,1)\)</span>, a sum inside a product. For an observation far from both means, both component densities underflow and the naive log-likelihood is <code>-Inf</code>; with log-sum-exp applied observation by observation it is finite and correct.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb137"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb137-1"><a href="#cb137-1" aria-hidden="true" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fl">0.5</span>, <span class="dv">2</span>, <span class="dv">45</span>)                      <span class="co"># the last value is far from both means</span></span>
-<span id="cb137-2"><a href="#cb137-2" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">3</span>); w <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.6</span>, <span class="fl">0.4</span>)</span>
-<span id="cb137-3"><a href="#cb137-3" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">log</span>(w[<span class="dv">1</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">1</span>]) <span class="sc">+</span> w[<span class="dv">2</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">2</span>])))</span>
-<span id="cb137-4"><a href="#cb137-4" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">sapply</span>(y, <span class="cf">function</span>(yi) <span class="fu">log_sum_exp</span>(<span class="fu">log</span>(w) <span class="sc">+</span> <span class="fu">dnorm</span>(yi, mu, <span class="at">log =</span> <span class="cn">TRUE</span>))))</span>
-<span id="cb137-5"><a href="#cb137-5" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> naive, <span class="at">stable =</span> stable)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb133"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb133-1"><a href="#cb133-1" aria-hidden="true" tabindex="-1"></a>y <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>, <span class="fl">0.5</span>, <span class="dv">2</span>, <span class="dv">45</span>)                      <span class="co"># the last value is far from both means</span></span>
+<span id="cb133-2"><a href="#cb133-2" aria-hidden="true" tabindex="-1"></a>mu <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">3</span>); w <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.6</span>, <span class="fl">0.4</span>)</span>
+<span id="cb133-3"><a href="#cb133-3" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">log</span>(w[<span class="dv">1</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">1</span>]) <span class="sc">+</span> w[<span class="dv">2</span>] <span class="sc">*</span> <span class="fu">dnorm</span>(y, mu[<span class="dv">2</span>])))</span>
+<span id="cb133-4"><a href="#cb133-4" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> <span class="fu">sum</span>(<span class="fu">sapply</span>(y, <span class="cf">function</span>(yi) <span class="fu">log_sum_exp</span>(<span class="fu">log</span>(w) <span class="sc">+</span> <span class="fu">dnorm</span>(yi, mu, <span class="at">log =</span> <span class="cn">TRUE</span>))))</span>
+<span id="cb133-5"><a href="#cb133-5" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive =</span> naive, <span class="at">stable =</span> stable)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   naive                   stable 
                     -Inf -889.3332627696936469874 </code></pre>
@@ -2006,10 +1832,10 @@ x_1,\dots,x_n \xrightarrow{\;f\;} y \qquad\Longleftrightarrow\qquad \ell_1,\dots
 </div>
 <p><strong>Example: log-softmax.</strong> The softmax probabilities <span class="math inline">\(p_k = e^{x_k}/\sum_j e^{x_j}\)</span> appear in multinomial logistic regression and neural networks. Their logarithm is <span class="math inline">\(\log p_k = x_k - \log\sum_j e^{x_j}\)</span>, and the second term is a log-sum-exp.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb139"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb139-1"><a href="#cb139-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1000</span>, <span class="dv">1001</span>, <span class="dv">1005</span>)</span>
-<span id="cb139-2"><a href="#cb139-2" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">exp</span>(x) <span class="sc">/</span> <span class="fu">sum</span>(<span class="fu">exp</span>(x)))</span>
-<span id="cb139-3"><a href="#cb139-3" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> x <span class="sc">-</span> <span class="fu">log_sum_exp</span>(x)</span>
-<span id="cb139-4"><a href="#cb139-4" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(naive, stable, <span class="at">probabilities =</span> <span class="fu">exp</span>(stable))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb135"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb135-1"><a href="#cb135-1" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1000</span>, <span class="dv">1001</span>, <span class="dv">1005</span>)</span>
+<span id="cb135-2"><a href="#cb135-2" aria-hidden="true" tabindex="-1"></a>naive <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">exp</span>(x) <span class="sc">/</span> <span class="fu">sum</span>(<span class="fu">exp</span>(x)))</span>
+<span id="cb135-3"><a href="#cb135-3" aria-hidden="true" tabindex="-1"></a>stable <span class="ot">&lt;-</span> x <span class="sc">-</span> <span class="fu">log_sum_exp</span>(x)</span>
+<span id="cb135-4"><a href="#cb135-4" aria-hidden="true" tabindex="-1"></a><span class="fu">rbind</span>(naive, stable, <span class="at">probabilities =</span> <span class="fu">exp</span>(stable))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                                     [,1]                      [,2]
 naive                                 NaN                       NaN
@@ -2023,8 +1849,8 @@ probabilities  0.97555875494443089479546</code></pre>
 </div>
 <p><strong>Software implementation.</strong> The log-sum-exp trick is already implemented, tested, and optimized in the <strong>matrixStats</strong> package (a dependency of hundreds of CRAN/Bioconductor packages), so production code should call it rather than the version above:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb141"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb141-1"><a href="#cb141-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(matrixStats)</span>
-<span id="cb141-2"><a href="#cb141-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">mine =</span> <span class="fu">log_sum_exp</span>(<span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2001</span>, <span class="dv">2002</span>)), <span class="at">matrixStats =</span> <span class="fu">logSumExp</span>(<span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2001</span>, <span class="dv">2002</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb137"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb137-1"><a href="#cb137-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(matrixStats)</span>
+<span id="cb137-2"><a href="#cb137-2" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">mine =</span> <span class="fu">log_sum_exp</span>(<span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2001</span>, <span class="dv">2002</span>)), <span class="at">matrixStats =</span> <span class="fu">logSumExp</span>(<span class="fu">c</span>(<span class="dv">2000</span>, <span class="dv">2001</span>, <span class="dv">2002</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>                   mine             matrixStats 
 2002.407605964444428537 2002.407605964444428537 </code></pre>
@@ -2037,22 +1863,22 @@ probabilities  0.97555875494443089479546</code></pre>
 \log(x - y) = \log\left(e^{\ell_x}\left(1 - e^{\ell_y - \ell_x}\right)\right) = \ell_x + \log\left(1 - e^{\ell_y - \ell_x}\right).
 \]</span> Since <span class="math inline">\(\ell_y - \ell_x &lt; 0\)</span>, <span class="math inline">\(e^{\ell_y-\ell_x}\in(0,1)\)</span> and there is no overflow. When <span class="math inline">\(x \approx y\)</span>, the factor <span class="math inline">\(1 - e^{\ell_y-\ell_x}\)</span> is itself a large − large subtraction; <code>log1p(-exp(ly - lx))</code> avoids it.</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb143"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb143-1"><a href="#cb143-1" aria-hidden="true" tabindex="-1"></a>log_minus_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x, log_y) {</span>
-<span id="cb143-2"><a href="#cb143-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (log_x <span class="sc">&lt;</span> log_y) <span class="fu">stop</span>(<span class="st">"the first argument must be the larger"</span>)</span>
-<span id="cb143-3"><a href="#cb143-3" aria-hidden="true" tabindex="-1"></a>  log_x <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_y <span class="sc">-</span> log_x))</span>
-<span id="cb143-4"><a href="#cb143-4" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb143-5"><a href="#cb143-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb143-6"><a href="#cb143-6" aria-hidden="true" tabindex="-1"></a><span class="fu">log_minus_exp</span>(<span class="dv">2020</span>, <span class="dv">2000</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb139"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb139-1"><a href="#cb139-1" aria-hidden="true" tabindex="-1"></a>log_minus_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(log_x, log_y) {</span>
+<span id="cb139-2"><a href="#cb139-2" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (log_x <span class="sc">&lt;</span> log_y) <span class="fu">stop</span>(<span class="st">"the first argument must be the larger"</span>)</span>
+<span id="cb139-3"><a href="#cb139-3" aria-hidden="true" tabindex="-1"></a>  log_x <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_y <span class="sc">-</span> log_x))</span>
+<span id="cb139-4"><a href="#cb139-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb139-5"><a href="#cb139-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb139-6"><a href="#cb139-6" aria-hidden="true" tabindex="-1"></a><span class="fu">log_minus_exp</span>(<span class="dv">2020</span>, <span class="dv">2000</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] 2019.999999997938857632</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb145"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb145-1"><a href="#cb145-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="dv">2000</span>) <span class="sc">-</span> <span class="fu">exp</span>(<span class="dv">1999</span>)                       <span class="co"># direct subtraction: Inf - Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb141"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb141-1"><a href="#cb141-1" aria-hidden="true" tabindex="-1"></a><span class="fu">exp</span>(<span class="dv">2000</span>) <span class="sc">-</span> <span class="fu">exp</span>(<span class="dv">1999</span>)                       <span class="co"># direct subtraction: Inf - Inf = NaN</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>[1] NaN</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb147"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb147-1"><a href="#cb147-1" aria-hidden="true" tabindex="-1"></a><span class="do">## nearly equal arguments: log1p keeps the precision that log(1 - .) would lose</span></span>
-<span id="cb147-2"><a href="#cb147-2" aria-hidden="true" tabindex="-1"></a>lx <span class="ot">&lt;-</span> <span class="dv">10</span>; ly <span class="ot">&lt;-</span> <span class="dv">10</span> <span class="sc">-</span> <span class="fl">1e-12</span></span>
-<span id="cb147-3"><a href="#cb147-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">with_log1p =</span> <span class="fu">log_minus_exp</span>(lx, ly), <span class="at">with_log =</span> lx <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(ly <span class="sc">-</span> lx)), <span class="at">exact =</span> <span class="fu">log</span>(<span class="fu">exp</span>(lx) <span class="sc">-</span> <span class="fu">exp</span>(ly)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb143"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb143-1"><a href="#cb143-1" aria-hidden="true" tabindex="-1"></a><span class="do">## nearly equal arguments: log1p keeps the precision that log(1 - .) would lose</span></span>
+<span id="cb143-2"><a href="#cb143-2" aria-hidden="true" tabindex="-1"></a>lx <span class="ot">&lt;-</span> <span class="dv">10</span>; ly <span class="ot">&lt;-</span> <span class="dv">10</span> <span class="sc">-</span> <span class="fl">1e-12</span></span>
+<span id="cb143-3"><a href="#cb143-3" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">with_log1p =</span> <span class="fu">log_minus_exp</span>(lx, ly), <span class="at">with_log =</span> lx <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(ly <span class="sc">-</span> lx)), <span class="at">exact =</span> <span class="fu">log</span>(<span class="fu">exp</span>(lx) <span class="sc">-</span> <span class="fu">exp</span>(ly)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>              with_log1p                 with_log                    exact 
 -17.63093221929763032563 -17.63093221929763032563 -17.63078806616063687329 </code></pre>
@@ -2061,14 +1887,14 @@ probabilities  0.97555875494443089479546</code></pre>
 <p>A statistical use of the difference formula is the survival function of a discrete distribution, <span class="math inline">\(\log P(X &gt; k) = \log\big(1 - P(X\le k)\big)\)</span>, when <span class="math inline">\(P(X\le k)\)</span> is available only as a log-probability close to <span class="math inline">\(0\)</span>.</p>
 <p>Four extreme choices of <span class="math inline">\(a,b\)</span> show that every one of the four failure modes met in this chapter — overflow, cancellation, underflow, and absorption — can destroy a naive <code>log(exp(a) - exp(b))</code>, and that <code>log_minus_exp</code> survives all four because it never forms <code>exp(a)</code> or <code>exp(b)</code> when they would be out of range:</p>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb149"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb149-1"><a href="#cb149-1" aria-hidden="true" tabindex="-1"></a>a <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="fl">1e-20</span>, <span class="sc">-</span><span class="dv">1000</span>,    <span class="dv">0</span>)</span>
-<span id="cb149-2"><a href="#cb149-2" aria-hidden="true" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1999</span>,     <span class="dv">0</span>, <span class="sc">-</span><span class="dv">1001</span>, <span class="sc">-</span><span class="dv">500</span>)</span>
-<span id="cb149-3"><a href="#cb149-3" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"g"</span>, <span class="at">digits =</span> <span class="dv">8</span>)</span>
-<span id="cb149-4"><a href="#cb149-4" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">a =</span> <span class="fu">g</span>(a), <span class="at">b =</span> <span class="fu">g</span>(b), <span class="at">u =</span> <span class="fu">g</span>(a <span class="sc">-</span> b),</span>
-<span id="cb149-5"><a href="#cb149-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">naive =</span> <span class="fu">g</span>(<span class="fu">log</span>(<span class="fu">exp</span>(a) <span class="sc">-</span> <span class="fu">exp</span>(b))),</span>
-<span id="cb149-6"><a href="#cb149-6" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log_minus_exp =</span> <span class="fu">g</span>(<span class="fu">mapply</span>(log_minus_exp, a, b))),</span>
-<span id="cb149-7"><a href="#cb149-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Shows why log(exp(a) - exp(b)) should be computed on the log scale: the naive expression overflows for large a and b, whereas log_minus_exp stays finite and accurate. log(exp(a) - exp(b)) by the naive expression and by log_minus_exp"</span>,</span>
-<span id="cb149-8"><a href="#cb149-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb145"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb145-1"><a href="#cb145-1" aria-hidden="true" tabindex="-1"></a>a <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">2000</span>, <span class="fl">1e-20</span>, <span class="sc">-</span><span class="dv">1000</span>,    <span class="dv">0</span>)</span>
+<span id="cb145-2"><a href="#cb145-2" aria-hidden="true" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1999</span>,     <span class="dv">0</span>, <span class="sc">-</span><span class="dv">1001</span>, <span class="sc">-</span><span class="dv">500</span>)</span>
+<span id="cb145-3"><a href="#cb145-3" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">formatC</span>(x, <span class="at">format =</span> <span class="st">"g"</span>, <span class="at">digits =</span> <span class="dv">8</span>)</span>
+<span id="cb145-4"><a href="#cb145-4" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">a =</span> <span class="fu">g</span>(a), <span class="at">b =</span> <span class="fu">g</span>(b), <span class="at">u =</span> <span class="fu">g</span>(a <span class="sc">-</span> b),</span>
+<span id="cb145-5"><a href="#cb145-5" aria-hidden="true" tabindex="-1"></a>                  <span class="at">naive =</span> <span class="fu">g</span>(<span class="fu">log</span>(<span class="fu">exp</span>(a) <span class="sc">-</span> <span class="fu">exp</span>(b))),</span>
+<span id="cb145-6"><a href="#cb145-6" aria-hidden="true" tabindex="-1"></a>                  <span class="at">log_minus_exp =</span> <span class="fu">g</span>(<span class="fu">mapply</span>(log_minus_exp, a, b))),</span>
+<span id="cb145-7"><a href="#cb145-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Shows why log(exp(a) - exp(b)) should be computed on the log scale: the naive expression overflows for large a and b, whereas log_minus_exp stays finite and accurate. log(exp(a) - exp(b)) by the naive expression and by log_minus_exp"</span>,</span>
+<span id="cb145-8"><a href="#cb145-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
 <caption>Shows why log(exp(a) - exp(b)) should be computed on the log scale: the naive expression overflows for large a and b, whereas log_minus_exp stays finite and accurate. log(exp(a) - exp(b)) by the naive expression and by log_minus_exp</caption>
@@ -2116,8 +1942,226 @@ probabilities  0.97555875494443089479546</code></pre>
 </div>
 <p>Reading down the naive column: <span class="math inline">\(\log(e^{2000}-e^{1999})\)</span> is <code>Inf - Inf</code>, <code>NaN</code> (overflow); <span class="math inline">\(\log(e^{10^{-20}}-e^{0})\)</span> is <code>1 - 1</code>, so <span class="math inline">\(-\infty\)</span> (cancellation, since <span class="math inline">\(u=10^{-20}\)</span> is tiny); <span class="math inline">\(\log(e^{-1000}-e^{-1001})\)</span> is <code>0 - 0</code>, so <span class="math inline">\(-\infty\)</span> (underflow, even though <span class="math inline">\(u=1\)</span> is not small); and <span class="math inline">\(\log(e^{0}-e^{-500})\)</span> silently returns <span class="math inline">\(0\)</span> because <span class="math inline">\(e^{-500}\approx7\times10^{-218}\)</span> is absorbed into <span class="math inline">\(1\)</span> before the subtraction (absorption). <code>log_minus_exp</code> is correct in all four rows, because it factors out <span class="math inline">\(e^{a}\)</span> and reduces every case to <code>log1p</code> evaluated at a safely bounded argument — even recovering the tiny but nonzero last entry. The same function is available as <code>DPQ::logspace.sub</code>, with <code>DPQ::logspace.add</code> as the corresponding stable version of <span class="math inline">\(\log(e^{a}+e^{b})\)</span> for a single pair (<code>logSumExp</code> above is the version for a whole vector).</p>
 </section>
-<section id="a-combined-example-log1-phix-at-both-tails" class="level3" data-number="3.3.6">
-<h3 data-number="3.3.6" class="anchored" data-anchor-id="a-combined-example-log1-phix-at-both-tails"><span class="header-section-number">3.3.6</span> A combined example: <span class="math inline">\(\log\{1-\Phi(x)\}\)</span> at both tails</h3>
+<section id="computing-log1-e-u-large-small-and-large-large-together" class="level3" data-number="3.3.6">
+<h3 data-number="3.3.6" class="anchored" data-anchor-id="computing-log1-e-u-large-small-and-large-large-together"><span class="header-section-number">3.3.6</span> Computing <span class="math inline">\(\log(1-e^{-u})\)</span>: large + small and large − large together</h3>
+<p>This kernel appears whenever a difference is taken on the log scale: for <span class="math inline">\(a&gt;b\)</span>, <span class="math display">\[
+\log(e^{a}-e^{b}) = a + \log(1-e^{-u}), \qquad u = a-b&gt;0,
+\]</span> so evaluating <span class="math inline">\(\log(1-e^{-u})\)</span> accurately is the key step in computing the log of a difference. Written literally as <code>log(1 - exp(-u))</code>, it fails at <strong>both</strong> ends of the range, from the two failure modes introduced above:</p>
+<ul>
+<li><strong><span class="math inline">\(u\)</span> small.</strong> <span class="math inline">\(e^{-u}\approx 1\)</span>, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large − large</strong> subtraction: the true value is <span class="math inline">\(\approx u\)</span>, far below the roundoff already present in <span class="math inline">\(e^{-u}\)</span>, so the leading digits cancel and little survives. For <span class="math inline">\(u&lt;2^{-53}\)</span>, <code>exp(-u)</code> itself rounds to exactly <span class="math inline">\(1\)</span> and the result is <span class="math inline">\(-\infty\)</span>.</li>
+<li><strong><span class="math inline">\(u\)</span> large.</strong> <span class="math inline">\(e^{-u}\)</span> is tiny, so <span class="math inline">\(1-e^{-u}\)</span> is a <strong>large + small</strong> addition: the small term is absorbed, <code>1 - exp(-u)</code> rounds to exactly <span class="math inline">\(1\)</span>, and <code>log</code> returns <span class="math inline">\(0\)</span> instead of the true value <span class="math inline">\(\approx -e^{-u}\)</span>.</li>
+</ul>
+<p>R provides two functions built precisely for arguments near the landmark <span class="math inline">\(1\)</span>, each evaluating its series directly instead of forming the offending sum or difference: <code>expm1(x)</code> computes <span class="math inline">\(e^{x}-1\)</span> with full relative precision for small <span class="math inline">\(x\)</span>, and <code>log1p(x)</code> computes <span class="math inline">\(\log(1+x)\)</span> with full relative precision for small <span class="math inline">\(x\)</span> (Section on avoiding large − large, above). Applied to <span class="math inline">\(\log(1-e^{-u})\)</span>, each removes only <strong>one</strong> of the two failures, and neither removes the other:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb146"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb146-1"><a href="#cb146-1" aria-hidden="true" tabindex="-1"></a>f_naive <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">exp</span>(<span class="sc">-</span>u))     <span class="co"># both failures</span></span>
+<span id="cb146-2"><a href="#cb146-2" aria-hidden="true" tabindex="-1"></a>f_expm1 <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u))      <span class="co"># never forms the difference 1 - exp(-u)</span></span>
+<span id="cb146-3"><a href="#cb146-3" aria-hidden="true" tabindex="-1"></a>f_log1p <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u))      <span class="co"># never forms the sum exp(-u)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>f_expm1</code> evaluates <span class="math inline">\(-\operatorname{expm1}(-u)=1-e^{-u}\)</span> without ever subtracting two numbers near <span class="math inline">\(1\)</span>, which fixes <strong>small</strong> <span class="math inline">\(u\)</span>; its outer <code>log</code> then receives a value near <span class="math inline">\(u\)</span>, far from the landmark <span class="math inline">\(1\)</span>, and is safe. <code>f_log1p</code> passes <span class="math inline">\(-e^{-u}\)</span> straight into <code>log1p</code>, which fixes <strong>large</strong> <span class="math inline">\(u\)</span>; but for small <span class="math inline">\(u\)</span> that argument has already rounded to <span class="math inline">\(-1\)</span> before <code>log1p</code> ever sees it, so <code>f_log1p</code> fails exactly where <code>f_naive</code> does.</p>
+<p><a href="#tbl-log1mexp" class="quarto-xref">Table&nbsp;<span>3.5</span></a> compares the three formulas with the branched solution <code>correct</code> derived below, and adds the two-term Taylor approximations that explain <em>why</em> <code>expm1</code> and <code>log1p</code> work in their respective ranges. For small <span class="math inline">\(u\)</span>, <span class="math inline">\(1-e^{-u} = -\operatorname{expm1}(-u) = u - u^2/2 + O(u^3)\)</span>, so <span class="math inline">\(\log(1-e^{-u}) \approx \log(u - u^2/2)\)</span> (column <code>expm1 series</code>). For large <span class="math inline">\(u\)</span>, <span class="math inline">\(\operatorname{log1p}(-e^{-u}) = -e^{-u} - e^{-2u}/2 + O(e^{-3u})\)</span> (column <code>log1p series</code>). Each series is accurate only on its own side of the table: <code>expm1 series</code> is <code>NaN</code> once <span class="math inline">\(u&gt;2\)</span> (where <span class="math inline">\(u-u^2/2&lt;0\)</span>), and <code>log1p series</code> is far off for small <span class="math inline">\(u\)</span> (it tends to <span class="math inline">\(-3/2\)</span>).</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb147"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb147-1"><a href="#cb147-1" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">1e-100</span>, <span class="fl">1e-18</span>, <span class="fl">1e-15</span>, <span class="fl">1e-8</span>, <span class="dv">1</span>, <span class="dv">20</span>, <span class="dv">50</span>, <span class="dv">500</span>)</span>
+<span id="cb147-2"><a href="#cb147-2" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span>
+<span id="cb147-3"><a href="#cb147-3" aria-hidden="true" tabindex="-1"></a><span class="do">## write numbers as m x 10^k (LaTeX), since the computer notation 1e-8 uses</span></span>
+<span id="cb147-4"><a href="#cb147-4" aria-hidden="true" tabindex="-1"></a><span class="do">## "e" for a power of ten and could be mistaken for Euler's e in this chapter</span></span>
+<span id="cb147-5"><a href="#cb147-5" aria-hidden="true" tabindex="-1"></a>g <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fu">vapply</span>(x, <span class="cf">function</span>(v) {</span>
+<span id="cb147-6"><a href="#cb147-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.nan</span>(v)) <span class="fu">return</span>(<span class="st">"NaN"</span>)</span>
+<span id="cb147-7"><a href="#cb147-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.infinite</span>(v)) <span class="fu">return</span>(<span class="cf">if</span> (v <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"$-</span><span class="sc">\\</span><span class="st">infty$"</span> <span class="cf">else</span> <span class="st">"$</span><span class="sc">\\</span><span class="st">infty$"</span>)</span>
+<span id="cb147-8"><a href="#cb147-8" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (v <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="st">"$0$"</span>)</span>
+<span id="cb147-9"><a href="#cb147-9" aria-hidden="true" tabindex="-1"></a>  k <span class="ot">&lt;-</span> <span class="fu">floor</span>(<span class="fu">log10</span>(<span class="fu">abs</span>(v)))</span>
+<span id="cb147-10"><a href="#cb147-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (k <span class="sc">&gt;=</span> <span class="sc">-</span><span class="dv">2</span> <span class="sc">&amp;&amp;</span> k <span class="sc">&lt;=</span> <span class="dv">3</span>) <span class="fu">return</span>(<span class="fu">paste0</span>(<span class="st">"$"</span>, <span class="fu">signif</span>(v, <span class="dv">6</span>), <span class="st">"$"</span>))</span>
+<span id="cb147-11"><a href="#cb147-11" aria-hidden="true" tabindex="-1"></a>  m <span class="ot">&lt;-</span> <span class="fu">signif</span>(v <span class="sc">/</span> <span class="dv">10</span><span class="sc">^</span>k, <span class="dv">6</span>)</span>
+<span id="cb147-12"><a href="#cb147-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">abs</span>(m) <span class="sc">==</span> <span class="dv">1</span>) <span class="fu">return</span>(<span class="fu">paste0</span>(<span class="st">"$"</span>, <span class="cf">if</span> (m <span class="sc">&lt;</span> <span class="dv">0</span>) <span class="st">"-"</span>, <span class="st">"10^{"</span>, k, <span class="st">"}$"</span>))</span>
+<span id="cb147-13"><a href="#cb147-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">paste0</span>(<span class="st">"$"</span>, m, <span class="st">"</span><span class="sc">\\</span><span class="st">times 10^{"</span>, k, <span class="st">"}$"</span>)</span>
+<span id="cb147-14"><a href="#cb147-14" aria-hidden="true" tabindex="-1"></a>}, <span class="st">""</span>)</span>
+<span id="cb147-15"><a href="#cb147-15" aria-hidden="true" tabindex="-1"></a>ser_expm1 <span class="ot">&lt;-</span> <span class="fu">suppressWarnings</span>(<span class="fu">log</span>(u <span class="sc">-</span> u<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> <span class="dv">2</span>))        <span class="co"># two-term Taylor series for 1 - exp(-u)</span></span>
+<span id="cb147-16"><a href="#cb147-16" aria-hidden="true" tabindex="-1"></a>ser_log1p <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u) <span class="sc">-</span> <span class="fu">exp</span>(<span class="sc">-</span><span class="dv">2</span> <span class="sc">*</span> u) <span class="sc">/</span> <span class="dv">2</span>                <span class="co"># two-term Taylor series for log1p(-exp(-u))</span></span>
+<span id="cb147-17"><a href="#cb147-17" aria-hidden="true" tabindex="-1"></a><span class="fu">kable</span>(<span class="fu">data.frame</span>(<span class="at">u =</span> <span class="fu">g</span>(u), <span class="at">naive =</span> <span class="fu">g</span>(<span class="fu">f_naive</span>(u)), <span class="at">expm1 =</span> <span class="fu">g</span>(<span class="fu">f_expm1</span>(u)),</span>
+<span id="cb147-18"><a href="#cb147-18" aria-hidden="true" tabindex="-1"></a>                 <span class="st">`</span><span class="at">expm1 series</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">g</span>(ser_expm1), <span class="at">log1p =</span> <span class="fu">g</span>(<span class="fu">f_log1p</span>(u)),</span>
+<span id="cb147-19"><a href="#cb147-19" aria-hidden="true" tabindex="-1"></a>                 <span class="st">`</span><span class="at">log1p series</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">g</span>(ser_log1p), <span class="at">correct =</span> <span class="fu">g</span>(<span class="fu">log1mexp</span>(u)),</span>
+<span id="cb147-20"><a href="#cb147-20" aria-hidden="true" tabindex="-1"></a>                 <span class="at">check.names =</span> <span class="cn">FALSE</span>),</span>
+<span id="cb147-21"><a href="#cb147-21" aria-hidden="true" tabindex="-1"></a>      <span class="at">caption =</span> <span class="st">"Computing log(1 - exp(-u)) four ways, with the two-term Taylor series behind expm1 and log1p, across eighteen orders of magnitude of u."</span>,</span>
+<span id="cb147-22"><a href="#cb147-22" aria-hidden="true" tabindex="-1"></a>      <span class="at">align =</span> <span class="fu">rep</span>(<span class="st">"r"</span>, <span class="dv">7</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="tbl-log1mexp" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;3.5: Computing log(1 - exp(-u)) four ways, with the two-term Taylor series behind expm1 and log1p, across eighteen orders of magnitude of u.
+</figcaption>
+<div aria-describedby="tbl-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 16%">
+<col style="width: 16%">
+<col style="width: 8%">
+<col style="width: 17%">
+<col style="width: 17%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">u</th>
+<th style="text-align: right;">naive</th>
+<th style="text-align: right;">expm1</th>
+<th style="text-align: right;">expm1 series</th>
+<th style="text-align: right;">log1p</th>
+<th style="text-align: right;">log1p series</th>
+<th style="text-align: right;">correct</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;"><span class="math inline">\(10^{-100}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-230.259\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-230.259\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.5\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-230.259\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><span class="math inline">\(10^{-18}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-41.4465\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-41.4465\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-\infty\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.5\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-41.4465\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><span class="math inline">\(10^{-15}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-34.5396\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-34.5388\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-34.5388\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-34.5396\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.5\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-34.5388\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><span class="math inline">\(10^{-8}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.5\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-18.4207\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><span class="math inline">\(1\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.693147\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.435547\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-0.458675\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><span class="math inline">\(20\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-2.06115\times 10^{-9}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-2.06115\times 10^{-9}\)</span></td>
+<td style="text-align: right;">NaN</td>
+<td style="text-align: right;"><span class="math inline">\(-2.06115\times 10^{-9}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-2.06115\times 10^{-9}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-2.06115\times 10^{-9}\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><span class="math inline">\(50\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: right;">NaN</td>
+<td style="text-align: right;"><span class="math inline">\(-1.92875\times 10^{-22}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.92875\times 10^{-22}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-1.92875\times 10^{-22}\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><span class="math inline">\(500\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: right;">NaN</td>
+<td style="text-align: right;"><span class="math inline">\(-7.12458\times 10^{-218}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-7.12458\times 10^{-218}\)</span></td>
+<td style="text-align: right;"><span class="math inline">\(-7.12458\times 10^{-218}\)</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<ul>
+<li>For <strong>small</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>log1p</code>: both lose digits and eventually collapse to <span class="math inline">\(-\infty\)</span>; only <code>expm1</code> is correct.</li>
+<li>For <strong>large</strong> <span class="math inline">\(u\)</span>, <code>naive</code> tracks <code>expm1</code>: both collapse to <span class="math inline">\(0\)</span>; only <code>log1p</code> is correct.</li>
+<li>In the <strong>middle</strong> (<span class="math inline">\(10^{-8}\le u\le 20\)</span>), all three agree, because <span class="math inline">\(u\)</span> is nowhere near either landmark.</li>
+</ul>
+<p><strong>Solution: branch between the two remedies.</strong> Split at <span class="math inline">\(u=\log 2\)</span>, where <span class="math inline">\(e^{-u}=1/2\)</span> is safely far from both traps, and use whichever incomplete remedy is valid on that side:</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb148"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb148-1"><a href="#cb148-1" aria-hidden="true" tabindex="-1"></a>log1mexp <span class="ot">&lt;-</span> <span class="cf">function</span>(u) <span class="fu">ifelse</span>(u <span class="sc">&lt;=</span> <span class="fu">log</span>(<span class="dv">2</span>), <span class="fu">log</span>(<span class="sc">-</span><span class="fu">expm1</span>(<span class="sc">-</span>u)), <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(<span class="sc">-</span>u)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The same construction, named <code>log1mexp</code>, is shipped by several CRAN packages (including <strong>copula</strong> and <strong>VGAM</strong>), all tracing to Mächler (2012); <code>DPQ::logspace.sub(0, -u)</code> computes the same quantity by an equivalent route. Prefer a package function in production code, and write your own only to understand <em>why</em> it works.</p>
+<p><a href="#fig-log1mexp" class="quarto-xref">Figure&nbsp;<span>3.2</span></a> shows the three implementations against <code>log1mexp</code> (grey reference), on a log scale for <span class="math inline">\(u\)</span>: small <span class="math inline">\(u\)</span> on the left, where only <code>expm1</code> survives, and large <span class="math inline">\(u\)</span> on the right, where only <code>log1p</code> survives.</p>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb149"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb149-1"><a href="#cb149-1" aria-hidden="true" tabindex="-1"></a>fin <span class="ot">&lt;-</span> <span class="cf">function</span>(y) <span class="fu">replace</span>(y, <span class="sc">!</span><span class="fu">is.finite</span>(y), <span class="cn">NA</span>)   <span class="co"># -Inf: the curve simply stops</span></span>
+<span id="cb149-2"><a href="#cb149-2" aria-hidden="true" tabindex="-1"></a><span class="do">## for the right panel: place y &lt; 0 on a log axis without changing its sign,</span></span>
+<span id="cb149-3"><a href="#cb149-3" aria-hidden="true" tabindex="-1"></a><span class="do">## by plotting log10(-y) against a reversed axis labelled -10^k</span></span>
+<span id="cb149-4"><a href="#cb149-4" aria-hidden="true" tabindex="-1"></a>negpow <span class="ot">&lt;-</span> <span class="cf">function</span>(y) {</span>
+<span id="cb149-5"><a href="#cb149-5" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="cn">NA_real_</span>, <span class="fu">length</span>(y)); ok <span class="ot">&lt;-</span> <span class="fu">is.finite</span>(y) <span class="sc">&amp;</span> y <span class="sc">&lt;</span> <span class="dv">0</span></span>
+<span id="cb149-6"><a href="#cb149-6" aria-hidden="true" tabindex="-1"></a>  out[ok] <span class="ot">&lt;-</span> <span class="fu">log10</span>(<span class="sc">-</span>y[ok]); out</span>
+<span id="cb149-7"><a href="#cb149-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb149-8"><a href="#cb149-8" aria-hidden="true" tabindex="-1"></a>cols <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">naive =</span> <span class="st">"#D62728"</span>, <span class="at">expm1 =</span> <span class="st">"#1F5FBF"</span>, <span class="at">log1p =</span> <span class="st">"#D9A400"</span>)</span>
+<span id="cb149-9"><a href="#cb149-9" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="fl">4.2</span>, <span class="fl">5.2</span>, <span class="fl">2.6</span>, <span class="dv">1</span>), <span class="at">cex =</span> <span class="fl">1.05</span>)</span>
+<span id="cb149-10"><a href="#cb149-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb149-11"><a href="#cb149-11" aria-hidden="true" tabindex="-1"></a><span class="do">## left: small u, value plotted directly; jitter in units of the response</span></span>
+<span id="cb149-12"><a href="#cb149-12" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">20</span>, <span class="dv">0</span>, <span class="at">length.out =</span> <span class="dv">400</span>)</span>
+<span id="cb149-13"><a href="#cb149-13" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fl">0.9</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="fl">0.9</span>)</span>
+<span id="cb149-14"><a href="#cb149-14" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">52</span>, <span class="dv">2</span>),</span>
+<span id="cb149-15"><a href="#cb149-15" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
+<span id="cb149-16"><a href="#cb149-16" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Small"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only expm1 survives"</span>))</span>
+<span id="cb149-17"><a href="#cb149-17" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">max</span>(u[<span class="sc">!</span><span class="fu">is.finite</span>(<span class="fu">f_naive</span>(u))])</span>
+<span id="cb149-18"><a href="#cb149-18" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(<span class="fu">min</span>(u), <span class="sc">-</span><span class="dv">60</span>, u_dead, <span class="dv">10</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb149-19"><a href="#cb149-19" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(<span class="fu">sqrt</span>(<span class="fu">min</span>(u) <span class="sc">*</span> u_dead), <span class="sc">-</span><span class="dv">24</span>, <span class="st">"naive, log1p</span><span class="sc">\n</span><span class="st">return -Inf"</span>, <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
+<span id="cb149-20"><a href="#cb149-20" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">log1mexp</span>(u), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
+<span id="cb149-21"><a href="#cb149-21" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
+<span id="cb149-22"><a href="#cb149-22" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
+<span id="cb149-23"><a href="#cb149-23" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">fin</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
+<span id="cb149-24"><a href="#cb149-24" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
+<span id="cb149-25"><a href="#cb149-25" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span>
+<span id="cb149-26"><a href="#cb149-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb149-27"><a href="#cb149-27" aria-hidden="true" tabindex="-1"></a><span class="do">## right: large u, same quantity on a log-magnitude axis (note the reversed ylim);</span></span>
+<span id="cb149-28"><a href="#cb149-28" aria-hidden="true" tabindex="-1"></a><span class="do">## jitter is now in powers of ten, so it must be applied after negpow()</span></span>
+<span id="cb149-29"><a href="#cb149-29" aria-hidden="true" tabindex="-1"></a>u <span class="ot">&lt;-</span> <span class="dv">10</span><span class="sc">^</span><span class="fu">seq</span>(<span class="dv">0</span>, <span class="fu">log10</span>(<span class="dv">700</span>), <span class="at">length.out =</span> <span class="dv">400</span>)</span>
+<span id="cb149-30"><a href="#cb149-30" aria-hidden="true" tabindex="-1"></a>jit <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">0</span>, <span class="sc">-</span><span class="dv">7</span>)</span>
+<span id="cb149-31"><a href="#cb149-31" aria-hidden="true" tabindex="-1"></a>k <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="sc">-</span><span class="dv">300</span>, <span class="at">by =</span> <span class="sc">-</span><span class="dv">60</span>)</span>
+<span id="cb149-32"><a href="#cb149-32" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">log =</span> <span class="st">"x"</span>, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">3</span>, <span class="sc">-</span><span class="dv">320</span>), <span class="at">yaxt =</span> <span class="st">"n"</span>,</span>
+<span id="cb149-33"><a href="#cb149-33" aria-hidden="true" tabindex="-1"></a>     <span class="at">xlab =</span> <span class="fu">expression</span>(u), <span class="at">ylab =</span> <span class="fu">expression</span>(<span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> e<span class="sc">^-</span>u)),</span>
+<span id="cb149-34"><a href="#cb149-34" aria-hidden="true" tabindex="-1"></a>     <span class="at">main =</span> <span class="fu">expression</span>(<span class="st">"Large"</span> <span class="sc">~</span> u <span class="sc">*</span> <span class="st">": only log1p survives"</span>))</span>
+<span id="cb149-35"><a href="#cb149-35" aria-hidden="true" tabindex="-1"></a><span class="fu">axis</span>(<span class="dv">2</span>, <span class="at">at =</span> k, <span class="at">labels =</span> <span class="fu">parse</span>(<span class="at">text =</span> <span class="fu">paste0</span>(<span class="st">"-10^"</span>, k)), <span class="at">las =</span> <span class="dv">1</span>, <span class="at">cex.axis =</span> <span class="fl">0.8</span>)</span>
+<span id="cb149-36"><a href="#cb149-36" aria-hidden="true" tabindex="-1"></a>u_dead <span class="ot">&lt;-</span> <span class="fu">min</span>(u[<span class="fu">f_naive</span>(u) <span class="sc">&gt;=</span> <span class="dv">0</span>])</span>
+<span id="cb149-37"><a href="#cb149-37" aria-hidden="true" tabindex="-1"></a><span class="fu">rect</span>(u_dead, <span class="dv">10</span>, <span class="fu">max</span>(u), <span class="sc">-</span><span class="dv">330</span>, <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray50"</span>, <span class="fl">0.12</span>), <span class="at">border =</span> <span class="cn">NA</span>)</span>
+<span id="cb149-38"><a href="#cb149-38" aria-hidden="true" tabindex="-1"></a><span class="fu">text</span>(u_dead <span class="sc">*</span> <span class="fl">1.3</span>, <span class="sc">-</span><span class="dv">150</span>, <span class="st">"naive, expm1</span><span class="sc">\n</span><span class="st">return 0"</span>, <span class="at">adj =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.5</span>), <span class="at">col =</span> <span class="st">"gray30"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>)</span>
+<span id="cb149-39"><a href="#cb149-39" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">log1mexp</span>(u)), <span class="at">lwd =</span> <span class="dv">9</span>, <span class="at">col =</span> <span class="st">"gray87"</span>)</span>
+<span id="cb149-40"><a href="#cb149-40" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_naive</span>(u)) <span class="sc">+</span> jit[<span class="dv">1</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"naive"</span>])</span>
+<span id="cb149-41"><a href="#cb149-41" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_expm1</span>(u)) <span class="sc">+</span> jit[<span class="dv">2</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"expm1"</span>])</span>
+<span id="cb149-42"><a href="#cb149-42" aria-hidden="true" tabindex="-1"></a><span class="fu">lines</span>(u, <span class="fu">negpow</span>(<span class="fu">f_log1p</span>(u)) <span class="sc">+</span> jit[<span class="dv">3</span>], <span class="at">lwd =</span> <span class="fl">2.5</span>, <span class="at">col =</span> cols[<span class="st">"log1p"</span>])</span>
+<span id="cb149-43"><a href="#cb149-43" aria-hidden="true" tabindex="-1"></a><span class="fu">legend</span>(<span class="st">"topleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.8</span>, <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>, <span class="fl">2.5</span>),</span>
+<span id="cb149-44"><a href="#cb149-44" aria-hidden="true" tabindex="-1"></a>       <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"gray87"</span>, cols), <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"exact"</span>, <span class="st">"naive"</span>, <span class="st">"expm1"</span>, <span class="st">"log1p"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<div id="fig-log1mexp" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="unit03_comparith_files/figure-html/fig-log1mexp-1.png" class="img-fluid figure-img" width="960">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-log1mexp-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;3.2: Compares implementations of log(1 - exp(-u)) to show which formulas remain accurate for very small and very large u. The three implementations of log(1 - exp(-u)) against u on a log scale. Curves are offset vertically by a small constant so that they remain distinguishable where they agree; log1mexp is the grey reference.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="a-combined-example-log1-phix-at-both-tails" class="level3" data-number="3.3.7">
+<h3 data-number="3.3.7" class="anchored" data-anchor-id="a-combined-example-log1-phix-at-both-tails"><span class="header-section-number">3.3.7</span> A combined example: <span class="math inline">\(\log\{1-\Phi(x)\}\)</span> at both tails</h3>
 <p>The rounding fix <code>log1mexp</code>, developed earlier for <span class="math inline">\(\log(1-e^{-u})\)</span>, and the underflow fix of working on the log scale are often needed <strong>together</strong>. Consider <span class="math inline">\(\log\{1-\Phi(10)\}\)</span> and <span class="math inline">\(\log\{1-\Phi(-10)\}\)</span>, where <span class="math inline">\(\Phi\)</span> is the standard normal CDF (<code>pnorm</code>):</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb150"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb150-1"><a href="#cb150-1" aria-hidden="true" tabindex="-1"></a><span class="fu">c</span>(<span class="at">naive    =</span> <span class="fu">log</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fu">pnorm</span>(<span class="dv">10</span>)),                          <span class="co"># pnorm(10) rounds to 1, so log(0) = -Inf</span></span>
