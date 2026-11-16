@@ -955,24 +955,31 @@ f_log1p <- function(u) log1p(-exp(-u))      # never forms the sum exp(-u)
 
 `f_expm1` evaluates $-\operatorname{expm1}(-u)=1-e^{-u}$ without ever subtracting two numbers near $1$, which fixes **small** $u$; its outer `log` then receives a value near $u$, far from the landmark $1$, and is safe. `f_log1p` passes $-e^{-u}$ straight into `log1p`, which fixes **large** $u$; but for small $u$ that argument has already rounded to $-1$ before `log1p` ever sees it, so `f_log1p` fails exactly where `f_naive` does.
 
-@tbl-log1mexp compares the three formulas with the branched solution `correct` derived below; the column headings give the expression each one evaluates. The two remedies work because of their series. For small $u$, $1-e^{-u} = -\operatorname{expm1}(-u) = u - u^2/2 + O(u^3)$, so $\operatorname{expm1}$ gives $\log(u-u^2/2)$, accurate for small $u$. For large $u$, $\operatorname{log1p}(-e^{-u}) = -e^{-u} - e^{-2u}/2 + O(e^{-3u})$, accurate for large $u$. Every number in the table is written with base $e$: $\pm e^{x}$ stands for $\pm\exp(x)$.
+@tbl-log1mexp compares the three formulas with the branched solution `correct` derived below. The two remedies work because each is an accurate series on its own side. For small $u$, $-\operatorname{expm1}(-u) = u - u^2/2 + O(u^3)$, so
+$$\log(1-e^{-u}) = \log\{-\operatorname{expm1}(-u)\} \approx \log u \qquad (u\to 0).$$
+For large $u$, $\operatorname{log1p}(-e^{-u}) = -e^{-u} - e^{-2u}/2 + O(e^{-3u})$, so
+$$\log(1-e^{-u}) = \operatorname{log1p}(-e^{-u}) \approx -e^{-u} \qquad (u\to\infty).$$
+Numbers below $0.01$ in absolute value are written as $\pm e^{x}$, meaning $\pm\exp(x)$, so that for example $\log u$ and $-e^{-u}$ can be read off directly from the entries.
 
 ```{r}
 #| label: tbl-log1mexp
 u <- c(1e-100, 1e-18, 1e-15, 1e-8, 1, 20, 50, 500)
 log1mexp <- function(u) ifelse(u <= log(2), log(-expm1(-u)), log1p(-exp(-u)))
-## write each number as +/- e^{x} (LaTeX): x = log|value|
+## plain decimals, except that numbers below 0.01 in absolute value are written +/- e^{x}, x = log|value|
 g <- function(v) vapply(v, function(v) {
   if (is.nan(v)) return("NaN")
   if (is.infinite(v)) return(if (v < 0) "$-\\infty$" else "$\\infty$")
   if (v == 0) return("$0$")
-  paste0("$", if (v < 0) "-", "e^{", signif(log(abs(v)), 6), "}$")
+  if (abs(v) < 0.01) return(paste0("$", if (v < 0) "-", "e^{", signif(log(abs(v)), 6), "}$"))
+  paste0("$", signif(v, 6), "$")
 }, "")
 tab <- data.frame(g(u), g(f_naive(u)), g(f_expm1(u)), g(f_log1p(u)), g(log1mexp(u)))
-names(tab) <- c("$u$", "naive: $\\log(1-e^{-u})$", "expm1: $\\log(-\\mathrm{expm1}(-u))$",
-                "log1p: $\\mathrm{log1p}(-e^{-u})$", "correct: log1mexp$(u)$")
+names(tab) <- c("$u$", "naive: $\\log(1-e^{-u})$",
+                "expm1: $\\log(-\\mathrm{expm1}(-u)) \\approx \\log u$ for small $u$",
+                "log1p: $\\mathrm{log1p}(-e^{-u}) \\approx -e^{-u}$ for large $u$",
+                "correct: log1mexp$(u)$")
 kable(tab, align = rep("r", 5),
-      caption = "Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; each number is written as a power of e.")
+      caption = "Computing log(1 - exp(-u)) four ways, across eighteen orders of magnitude of u; numbers below 0.01 in absolute value are written as powers of e.")
 ```
 
 - For **small** $u$, `naive` tracks `log1p`: both lose digits and eventually collapse to $-\infty$; only `expm1` is correct.
