@@ -53,23 +53,23 @@ This course covers the fundamental concepts in computational methods used the ar
 ::: {.cell-output-display}
 
 ```{=html}
-<div id="pcpfkxmiqh" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
-<style>#pcpfkxmiqh table {
+<div id="vnuivmknkk" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#vnuivmknkk table {
   font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-#pcpfkxmiqh thead, #pcpfkxmiqh tbody, #pcpfkxmiqh tfoot, #pcpfkxmiqh tr, #pcpfkxmiqh td, #pcpfkxmiqh th {
+#vnuivmknkk thead, #vnuivmknkk tbody, #vnuivmknkk tfoot, #vnuivmknkk tr, #vnuivmknkk td, #vnuivmknkk th {
   border-style: none;
 }
 
-#pcpfkxmiqh p {
+#vnuivmknkk p {
   margin: 0;
   padding: 0;
 }
 
-#pcpfkxmiqh .gt_table {
+#vnuivmknkk .gt_table {
   display: table;
   border-collapse: collapse;
   line-height: normal;
@@ -95,12 +95,12 @@ This course covers the fundamental concepts in computational methods used the ar
   border-left-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_caption {
+#vnuivmknkk .gt_caption {
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
-#pcpfkxmiqh .gt_title {
+#vnuivmknkk .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -112,7 +112,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-bottom-width: 0;
 }
 
-#pcpfkxmiqh .gt_subtitle {
+#vnuivmknkk .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -124,7 +124,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-top-width: 0;
 }
 
-#pcpfkxmiqh .gt_heading {
+#vnuivmknkk .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -136,13 +136,13 @@ This course covers the fundamental concepts in computational methods used the ar
   border-right-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_bottom_border {
+#vnuivmknkk .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_col_headings {
+#vnuivmknkk .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -157,7 +157,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-right-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_col_heading {
+#vnuivmknkk .gt_col_heading {
   color: #333333;
   background-color: #F0F0F0;
   font-size: 100%;
@@ -177,7 +177,7 @@ This course covers the fundamental concepts in computational methods used the ar
   overflow-x: hidden;
 }
 
-#pcpfkxmiqh .gt_column_spanner_outer {
+#vnuivmknkk .gt_column_spanner_outer {
   color: #333333;
   background-color: #F0F0F0;
   font-size: 100%;
@@ -189,15 +189,15 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 4px;
 }
 
-#pcpfkxmiqh .gt_column_spanner_outer:first-child {
+#vnuivmknkk .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#pcpfkxmiqh .gt_column_spanner_outer:last-child {
+#vnuivmknkk .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#pcpfkxmiqh .gt_column_spanner {
+#vnuivmknkk .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -209,11 +209,11 @@ This course covers the fundamental concepts in computational methods used the ar
   width: 100%;
 }
 
-#pcpfkxmiqh .gt_spanner_row {
+#vnuivmknkk .gt_spanner_row {
   border-bottom-style: hidden;
 }
 
-#pcpfkxmiqh .gt_group_heading {
+#vnuivmknkk .gt_group_heading {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -239,7 +239,7 @@ This course covers the fundamental concepts in computational methods used the ar
   text-align: left;
 }
 
-#pcpfkxmiqh .gt_empty_group_heading {
+#vnuivmknkk .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -254,15 +254,15 @@ This course covers the fundamental concepts in computational methods used the ar
   vertical-align: middle;
 }
 
-#pcpfkxmiqh .gt_from_md > :first-child {
+#vnuivmknkk .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#pcpfkxmiqh .gt_from_md > :last-child {
+#vnuivmknkk .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#pcpfkxmiqh .gt_row {
+#vnuivmknkk .gt_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -281,7 +281,7 @@ This course covers the fundamental concepts in computational methods used the ar
   overflow-x: hidden;
 }
 
-#pcpfkxmiqh .gt_stub {
+#vnuivmknkk .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -294,7 +294,7 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 5px;
 }
 
-#pcpfkxmiqh .gt_stub_row_group {
+#vnuivmknkk .gt_stub_row_group {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -308,15 +308,15 @@ This course covers the fundamental concepts in computational methods used the ar
   vertical-align: top;
 }
 
-#pcpfkxmiqh .gt_row_group_first td {
+#vnuivmknkk .gt_row_group_first td {
   border-top-width: 2px;
 }
 
-#pcpfkxmiqh .gt_row_group_first th {
+#vnuivmknkk .gt_row_group_first th {
   border-top-width: 2px;
 }
 
-#pcpfkxmiqh .gt_summary_row {
+#vnuivmknkk .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -326,16 +326,16 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 5px;
 }
 
-#pcpfkxmiqh .gt_first_summary_row {
+#vnuivmknkk .gt_first_summary_row {
   border-top-style: solid;
   border-top-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_first_summary_row.thick {
+#vnuivmknkk .gt_first_summary_row.thick {
   border-top-width: 2px;
 }
 
-#pcpfkxmiqh .gt_last_summary_row {
+#vnuivmknkk .gt_last_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -345,7 +345,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-bottom-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_grand_summary_row {
+#vnuivmknkk .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -355,7 +355,7 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 5px;
 }
 
-#pcpfkxmiqh .gt_first_grand_summary_row {
+#vnuivmknkk .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -365,7 +365,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-top-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_last_grand_summary_row_top {
+#vnuivmknkk .gt_last_grand_summary_row_top {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -375,11 +375,11 @@ This course covers the fundamental concepts in computational methods used the ar
   border-bottom-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_striped {
+#vnuivmknkk .gt_striped {
   background-color: rgba(128, 128, 128, 0.05);
 }
 
-#pcpfkxmiqh .gt_table_body {
+#vnuivmknkk .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -388,7 +388,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-bottom-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_footnotes {
+#vnuivmknkk .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -402,7 +402,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-right-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_footnote {
+#vnuivmknkk .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding-top: 4px;
@@ -411,7 +411,7 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 5px;
 }
 
-#pcpfkxmiqh .gt_sourcenotes {
+#vnuivmknkk .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -425,7 +425,7 @@ This course covers the fundamental concepts in computational methods used the ar
   border-right-color: #D3D3D3;
 }
 
-#pcpfkxmiqh .gt_sourcenote {
+#vnuivmknkk .gt_sourcenote {
   font-size: 90%;
   padding-top: 4px;
   padding-bottom: 4px;
@@ -433,72 +433,72 @@ This course covers the fundamental concepts in computational methods used the ar
   padding-right: 5px;
 }
 
-#pcpfkxmiqh .gt_left {
+#vnuivmknkk .gt_left {
   text-align: left;
 }
 
-#pcpfkxmiqh .gt_center {
+#vnuivmknkk .gt_center {
   text-align: center;
 }
 
-#pcpfkxmiqh .gt_right {
+#vnuivmknkk .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#pcpfkxmiqh .gt_font_normal {
+#vnuivmknkk .gt_font_normal {
   font-weight: normal;
 }
 
-#pcpfkxmiqh .gt_font_bold {
+#vnuivmknkk .gt_font_bold {
   font-weight: bold;
 }
 
-#pcpfkxmiqh .gt_font_italic {
+#vnuivmknkk .gt_font_italic {
   font-style: italic;
 }
 
-#pcpfkxmiqh .gt_super {
+#vnuivmknkk .gt_super {
   font-size: 65%;
 }
 
-#pcpfkxmiqh .gt_footnote_marks {
+#vnuivmknkk .gt_footnote_marks {
   font-size: 75%;
   vertical-align: 0.4em;
   position: initial;
 }
 
-#pcpfkxmiqh .gt_asterisk {
+#vnuivmknkk .gt_asterisk {
   font-size: 100%;
   vertical-align: 0;
 }
 
-#pcpfkxmiqh .gt_indent_1 {
+#vnuivmknkk .gt_indent_1 {
   text-indent: 5px;
 }
 
-#pcpfkxmiqh .gt_indent_2 {
+#vnuivmknkk .gt_indent_2 {
   text-indent: 10px;
 }
 
-#pcpfkxmiqh .gt_indent_3 {
+#vnuivmknkk .gt_indent_3 {
   text-indent: 15px;
 }
 
-#pcpfkxmiqh .gt_indent_4 {
+#vnuivmknkk .gt_indent_4 {
   text-indent: 20px;
 }
 
-#pcpfkxmiqh .gt_indent_5 {
+#vnuivmknkk .gt_indent_5 {
   text-indent: 25px;
 }
 
-#pcpfkxmiqh .katex-display {
+#vnuivmknkk .katex-display {
   display: inline-flex !important;
   margin-bottom: 0.75em !important;
 }
 
-#pcpfkxmiqh div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+#vnuivmknkk div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
   height: 0px !important;
 }
 </style>
@@ -548,11 +548,11 @@ This course covers the fundamental concepts in computational methods used the ar
 <td headers="Task" class="gt_row gt_left"></td></tr>
     <tr><td headers="Date" class="gt_row gt_left gt_striped">Oct 26</td>
 <td headers="Acad_Week" class="gt_row gt_center gt_striped">8</td>
-<td headers="Topic" class="gt_row gt_left gt_striped">5 Bayesian Inference &amp; MCMC: Intro Bayesian Inference and Numerical Quadrature</td>
+<td headers="Topic" class="gt_row gt_left gt_striped">4 Maximum Likelihood Estimation: EM Algorithm</td>
 <td headers="Task" class="gt_row gt_left gt_striped"><span data-qmd-base64="KipBc3NpZ25tZW50IDIgZHVlKio="><span class='gt_from_md'><strong>Assignment 2 due</strong></span></span></td></tr>
     <tr><td headers="Date" class="gt_row gt_left">Nov 02</td>
 <td headers="Acad_Week" class="gt_row gt_center">9</td>
-<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Laplace Approx, Rejection Sampling</td>
+<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Intro Bayesian Inference</td>
 <td headers="Task" class="gt_row gt_left"><span data-qmd-base64="KipNaWR0ZXJtIChkdXJpbmcgY2xhc3MpKio="><span class='gt_from_md'><strong>Midterm (during class)</strong></span></span></td></tr>
     <tr><td headers="Date" class="gt_row gt_left gt_striped" style="background-color: #D1E7DD; font-style: italic; font-weight: bold;">Nov 09</td>
 <td headers="Acad_Week" class="gt_row gt_center gt_striped" style="background-color: #D1E7DD; font-style: italic; font-weight: bold;">N/A</td>
@@ -560,19 +560,19 @@ This course covers the fundamental concepts in computational methods used the ar
 <td headers="Task" class="gt_row gt_left gt_striped" style="background-color: #D1E7DD; font-style: italic; font-weight: bold;"><span data-qmd-base64="KipSZWFkaW5nIFdlZWsg4oCTIE5vIGNsYXNzZXMqKg=="><span class='gt_from_md'><strong>Reading Week – No classes</strong></span></span></td></tr>
     <tr><td headers="Date" class="gt_row gt_left">Nov 16</td>
 <td headers="Acad_Week" class="gt_row gt_center">10</td>
-<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Importance Sampling</td>
+<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Numerical QuadratureLaplace Approx</td>
 <td headers="Task" class="gt_row gt_left"></td></tr>
     <tr><td headers="Date" class="gt_row gt_left gt_striped">Nov 23</td>
 <td headers="Acad_Week" class="gt_row gt_center gt_striped">11</td>
-<td headers="Topic" class="gt_row gt_left gt_striped">5 Bayesian Inference &amp; MCMC: Convergence, Gibbs Sampling</td>
+<td headers="Topic" class="gt_row gt_left gt_striped">5 Bayesian Inference &amp; MCMC: Importance Sampling, Rejection Sampling</td>
 <td headers="Task" class="gt_row gt_left gt_striped"></td></tr>
     <tr><td headers="Date" class="gt_row gt_left">Nov 30</td>
 <td headers="Acad_Week" class="gt_row gt_center">12</td>
-<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Metropolis-Hastings Sampling</td>
+<td headers="Topic" class="gt_row gt_left">5 Bayesian Inference &amp; MCMC: Gibbs Sampling, Metropolis Sampling</td>
 <td headers="Task" class="gt_row gt_left"></td></tr>
     <tr><td headers="Date" class="gt_row gt_left gt_striped">Dec 07</td>
 <td headers="Acad_Week" class="gt_row gt_center gt_striped">13</td>
-<td headers="Topic" class="gt_row gt_left gt_striped">5 Bayesian Inference &amp; MCMC: General-purpose Samplers (JAGS, STAN)</td>
+<td headers="Topic" class="gt_row gt_left gt_striped">Review</td>
 <td headers="Task" class="gt_row gt_left gt_striped"><span data-qmd-base64="KipBc3NpZ25tZW50IDMgZHVlKio8YnI+KipDb3Vyc2UgRW5kcyAoRGVjIDA3KSoq"><span class='gt_from_md'><strong>Assignment 3 due</strong><br><strong>Course Ends (Dec 07)</strong></span></span></td></tr>
   </tbody>
   
@@ -597,23 +597,23 @@ After completing this course, students are expected to grasp the following knowl
 ::: {.cell-output-display}
 
 ```{=html}
-<div id="dkxvwxxhad" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
-<style>#dkxvwxxhad table {
+<div id="ipraxjautu" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#ipraxjautu table {
   font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-#dkxvwxxhad thead, #dkxvwxxhad tbody, #dkxvwxxhad tfoot, #dkxvwxxhad tr, #dkxvwxxhad td, #dkxvwxxhad th {
+#ipraxjautu thead, #ipraxjautu tbody, #ipraxjautu tfoot, #ipraxjautu tr, #ipraxjautu td, #ipraxjautu th {
   border-style: none;
 }
 
-#dkxvwxxhad p {
+#ipraxjautu p {
   margin: 0;
   padding: 0;
 }
 
-#dkxvwxxhad .gt_table {
+#ipraxjautu .gt_table {
   display: table;
   border-collapse: collapse;
   line-height: normal;
@@ -639,12 +639,12 @@ After completing this course, students are expected to grasp the following knowl
   border-left-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_caption {
+#ipraxjautu .gt_caption {
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
-#dkxvwxxhad .gt_title {
+#ipraxjautu .gt_title {
   color: #333333;
   font-size: 125%;
   font-weight: initial;
@@ -656,7 +656,7 @@ After completing this course, students are expected to grasp the following knowl
   border-bottom-width: 0;
 }
 
-#dkxvwxxhad .gt_subtitle {
+#ipraxjautu .gt_subtitle {
   color: #333333;
   font-size: 85%;
   font-weight: initial;
@@ -668,7 +668,7 @@ After completing this course, students are expected to grasp the following knowl
   border-top-width: 0;
 }
 
-#dkxvwxxhad .gt_heading {
+#ipraxjautu .gt_heading {
   background-color: #FFFFFF;
   text-align: center;
   border-bottom-color: #FFFFFF;
@@ -680,13 +680,13 @@ After completing this course, students are expected to grasp the following knowl
   border-right-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_bottom_border {
+#ipraxjautu .gt_bottom_border {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_col_headings {
+#ipraxjautu .gt_col_headings {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -701,7 +701,7 @@ After completing this course, students are expected to grasp the following knowl
   border-right-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_col_heading {
+#ipraxjautu .gt_col_heading {
   color: #333333;
   background-color: #E0E0E0;
   font-size: 100%;
@@ -721,7 +721,7 @@ After completing this course, students are expected to grasp the following knowl
   overflow-x: hidden;
 }
 
-#dkxvwxxhad .gt_column_spanner_outer {
+#ipraxjautu .gt_column_spanner_outer {
   color: #333333;
   background-color: #E0E0E0;
   font-size: 100%;
@@ -733,15 +733,15 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 4px;
 }
 
-#dkxvwxxhad .gt_column_spanner_outer:first-child {
+#ipraxjautu .gt_column_spanner_outer:first-child {
   padding-left: 0;
 }
 
-#dkxvwxxhad .gt_column_spanner_outer:last-child {
+#ipraxjautu .gt_column_spanner_outer:last-child {
   padding-right: 0;
 }
 
-#dkxvwxxhad .gt_column_spanner {
+#ipraxjautu .gt_column_spanner {
   border-bottom-style: solid;
   border-bottom-width: 2px;
   border-bottom-color: #D3D3D3;
@@ -753,11 +753,11 @@ After completing this course, students are expected to grasp the following knowl
   width: 100%;
 }
 
-#dkxvwxxhad .gt_spanner_row {
+#ipraxjautu .gt_spanner_row {
   border-bottom-style: hidden;
 }
 
-#dkxvwxxhad .gt_group_heading {
+#ipraxjautu .gt_group_heading {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -783,7 +783,7 @@ After completing this course, students are expected to grasp the following knowl
   text-align: left;
 }
 
-#dkxvwxxhad .gt_empty_group_heading {
+#ipraxjautu .gt_empty_group_heading {
   padding: 0.5px;
   color: #333333;
   background-color: #FFFFFF;
@@ -798,15 +798,15 @@ After completing this course, students are expected to grasp the following knowl
   vertical-align: middle;
 }
 
-#dkxvwxxhad .gt_from_md > :first-child {
+#ipraxjautu .gt_from_md > :first-child {
   margin-top: 0;
 }
 
-#dkxvwxxhad .gt_from_md > :last-child {
+#ipraxjautu .gt_from_md > :last-child {
   margin-bottom: 0;
 }
 
-#dkxvwxxhad .gt_row {
+#ipraxjautu .gt_row {
   padding-top: 5px;
   padding-bottom: 5px;
   padding-left: 5px;
@@ -825,7 +825,7 @@ After completing this course, students are expected to grasp the following knowl
   overflow-x: hidden;
 }
 
-#dkxvwxxhad .gt_stub {
+#ipraxjautu .gt_stub {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -838,7 +838,7 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 5px;
 }
 
-#dkxvwxxhad .gt_stub_row_group {
+#ipraxjautu .gt_stub_row_group {
   color: #333333;
   background-color: #FFFFFF;
   font-size: 100%;
@@ -852,15 +852,15 @@ After completing this course, students are expected to grasp the following knowl
   vertical-align: top;
 }
 
-#dkxvwxxhad .gt_row_group_first td {
+#ipraxjautu .gt_row_group_first td {
   border-top-width: 2px;
 }
 
-#dkxvwxxhad .gt_row_group_first th {
+#ipraxjautu .gt_row_group_first th {
   border-top-width: 2px;
 }
 
-#dkxvwxxhad .gt_summary_row {
+#ipraxjautu .gt_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -870,16 +870,16 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 5px;
 }
 
-#dkxvwxxhad .gt_first_summary_row {
+#ipraxjautu .gt_first_summary_row {
   border-top-style: solid;
   border-top-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_first_summary_row.thick {
+#ipraxjautu .gt_first_summary_row.thick {
   border-top-width: 2px;
 }
 
-#dkxvwxxhad .gt_last_summary_row {
+#ipraxjautu .gt_last_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -889,7 +889,7 @@ After completing this course, students are expected to grasp the following knowl
   border-bottom-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_grand_summary_row {
+#ipraxjautu .gt_grand_summary_row {
   color: #333333;
   background-color: #FFFFFF;
   text-transform: inherit;
@@ -899,7 +899,7 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 5px;
 }
 
-#dkxvwxxhad .gt_first_grand_summary_row {
+#ipraxjautu .gt_first_grand_summary_row {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -909,7 +909,7 @@ After completing this course, students are expected to grasp the following knowl
   border-top-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_last_grand_summary_row_top {
+#ipraxjautu .gt_last_grand_summary_row_top {
   padding-top: 8px;
   padding-bottom: 8px;
   padding-left: 5px;
@@ -919,11 +919,11 @@ After completing this course, students are expected to grasp the following knowl
   border-bottom-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_striped {
+#ipraxjautu .gt_striped {
   background-color: #F5F5F5;
 }
 
-#dkxvwxxhad .gt_table_body {
+#ipraxjautu .gt_table_body {
   border-top-style: solid;
   border-top-width: 2px;
   border-top-color: #D3D3D3;
@@ -932,7 +932,7 @@ After completing this course, students are expected to grasp the following knowl
   border-bottom-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_footnotes {
+#ipraxjautu .gt_footnotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -946,7 +946,7 @@ After completing this course, students are expected to grasp the following knowl
   border-right-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_footnote {
+#ipraxjautu .gt_footnote {
   margin: 0px;
   font-size: 90%;
   padding-top: 4px;
@@ -955,7 +955,7 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 5px;
 }
 
-#dkxvwxxhad .gt_sourcenotes {
+#ipraxjautu .gt_sourcenotes {
   color: #333333;
   background-color: #FFFFFF;
   border-bottom-style: none;
@@ -969,7 +969,7 @@ After completing this course, students are expected to grasp the following knowl
   border-right-color: #D3D3D3;
 }
 
-#dkxvwxxhad .gt_sourcenote {
+#ipraxjautu .gt_sourcenote {
   font-size: 90%;
   padding-top: 4px;
   padding-bottom: 4px;
@@ -977,72 +977,72 @@ After completing this course, students are expected to grasp the following knowl
   padding-right: 5px;
 }
 
-#dkxvwxxhad .gt_left {
+#ipraxjautu .gt_left {
   text-align: left;
 }
 
-#dkxvwxxhad .gt_center {
+#ipraxjautu .gt_center {
   text-align: center;
 }
 
-#dkxvwxxhad .gt_right {
+#ipraxjautu .gt_right {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#dkxvwxxhad .gt_font_normal {
+#ipraxjautu .gt_font_normal {
   font-weight: normal;
 }
 
-#dkxvwxxhad .gt_font_bold {
+#ipraxjautu .gt_font_bold {
   font-weight: bold;
 }
 
-#dkxvwxxhad .gt_font_italic {
+#ipraxjautu .gt_font_italic {
   font-style: italic;
 }
 
-#dkxvwxxhad .gt_super {
+#ipraxjautu .gt_super {
   font-size: 65%;
 }
 
-#dkxvwxxhad .gt_footnote_marks {
+#ipraxjautu .gt_footnote_marks {
   font-size: 75%;
   vertical-align: 0.4em;
   position: initial;
 }
 
-#dkxvwxxhad .gt_asterisk {
+#ipraxjautu .gt_asterisk {
   font-size: 100%;
   vertical-align: 0;
 }
 
-#dkxvwxxhad .gt_indent_1 {
+#ipraxjautu .gt_indent_1 {
   text-indent: 5px;
 }
 
-#dkxvwxxhad .gt_indent_2 {
+#ipraxjautu .gt_indent_2 {
   text-indent: 10px;
 }
 
-#dkxvwxxhad .gt_indent_3 {
+#ipraxjautu .gt_indent_3 {
   text-indent: 15px;
 }
 
-#dkxvwxxhad .gt_indent_4 {
+#ipraxjautu .gt_indent_4 {
   text-indent: 20px;
 }
 
-#dkxvwxxhad .gt_indent_5 {
+#ipraxjautu .gt_indent_5 {
   text-indent: 25px;
 }
 
-#dkxvwxxhad .katex-display {
+#ipraxjautu .katex-display {
   display: inline-flex !important;
   margin-bottom: 0.75em !important;
 }
 
-#dkxvwxxhad div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+#ipraxjautu div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
   height: 0px !important;
 }
 </style>
