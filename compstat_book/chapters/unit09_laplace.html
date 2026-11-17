@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-28">
+<meta name="dcterms.date" content="2026-11-17">
 
 <title>laplace-chapter – Elements of Statistical Computation</title>
 <style>
@@ -293,9 +293,11 @@ window.Quarto = {
   <li><a href="#when-laplace-works-well-and-when-it-does-not" id="toc-when-laplace-works-well-and-when-it-does-not" class="nav-link" data-scroll-target="#when-laplace-works-well-and-when-it-does-not"><span class="header-section-number">9.3.3</span> When Laplace Works Well, and When It Does Not</a></li>
   </ul></li>
   <li><a href="#example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood" id="toc-example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood" class="nav-link" data-scroll-target="#example-comparing-laplace-quadrature-and-monte-carlo-on-computing-marginal-likelihood"><span class="header-section-number">9.4</span> Example: Comparing Laplace, Quadrature, and Monte Carlo on Computing Marginal Likelihood</a></li>
-  <li><a href="#sec-aghq" id="toc-sec-aghq" class="nav-link" data-scroll-target="#sec-aghq"><span class="header-section-number">9.5</span> Adaptive Gauss–Hermite Quadrature</a>
+  <li><a href="#sec-aghq" id="toc-sec-aghq" class="nav-link" data-scroll-target="#sec-aghq"><span class="header-section-number">9.5</span> Quadrature Adapted by the Laplace Approximation</a>
   <ul>
-  <li><a href="#sec-laplace-transform-app" id="toc-sec-laplace-transform-app" class="nav-link" data-scroll-target="#sec-laplace-transform-app"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</a></li>
+  <li><a href="#laplace-adapted-midpoint-rule" id="toc-laplace-adapted-midpoint-rule" class="nav-link" data-scroll-target="#laplace-adapted-midpoint-rule"><span class="header-section-number">9.5.1</span> Laplace-adapted midpoint rule</a></li>
+  <li><a href="#adaptive-gausshermite-quadrature-aghq" id="toc-adaptive-gausshermite-quadrature-aghq" class="nav-link" data-scroll-target="#adaptive-gausshermite-quadrature-aghq"><span class="header-section-number">9.5.2</span> Adaptive Gauss–Hermite quadrature (AGHQ)</a></li>
+  <li><a href="#sec-laplace-transform-app" id="toc-sec-laplace-transform-app" class="nav-link" data-scroll-target="#sec-laplace-transform-app"><span class="header-section-number">9.5.3</span> Shinylive Apps for the Laplace-Adapted Midpoint Rule</a></li>
   </ul></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary"><span class="header-section-number">9.6</span> Summary</a></li>
   </ul>
@@ -327,7 +329,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 28, 2026</p>
+      <p class="date">November 17, 2026</p>
     </div>
   </div>
   
@@ -595,37 +597,35 @@ P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>n_eff <span class="ot">&lt;-</span> <span class="dv">3</span>; sigma_prior <span class="ot">&lt;-</span> <span class="dv">5</span>                   <span class="co"># same setup as the Unit08 app</span></span>
 <span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="do">### true value: exact up to numerical-integration error, since z is a</span></span>
-<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="do">### normal-normal conjugate kernel</span></span>
-<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>log_mar_true_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
-<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  z <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff)) <span class="sc">*</span> <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior)</span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log</span>(<span class="fu">integrate</span>(z, <span class="sc">-</span><span class="cn">Inf</span>, <span class="cn">Inf</span>)<span class="sc">$</span>value)</span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="do">### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()</span></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>laplace_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="sc">-</span>(<span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>  op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(h, <span class="at">p =</span> mu_hat, <span class="at">hessian =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">mode =</span> op<span class="sc">$</span>estimate, <span class="at">log_ml =</span> <span class="sc">-</span>op<span class="sc">$</span>minimum <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi) <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(op<span class="sc">$</span>hessian[<span class="dv">1</span>, <span class="dv">1</span>]))</span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="do">### naive Monte Carlo: draw mu from the prior, average the likelihood</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>log_mar_mc_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, iters) {</span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  mus <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(iters, <span class="dv">0</span>, sigma_prior)</span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(<span class="fu">dnorm</span>(mu_hat, mus, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">-</span> <span class="fu">log</span>(iters)</span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="do">### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08</span></span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>log_mar_mid_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, n) {</span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>  u  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  mu <span class="ot">&lt;-</span> <span class="fu">log</span>(u <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  log_z <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>    <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log</span>(u <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(log_z) <span class="sc">+</span> <span class="fu">log</span>(h)</span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="do">### true value: exact, since z is a normal-normal conjugate kernel, so marginally</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="do">### mu_hat ~ N(0, 1/n_eff + sigma_prior^2). (integrate(z, -Inf, Inf) is not safe here:</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="do">### for mu_hat far from 0 it misses the narrow spike of z and returns a wrong value.)</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>log_mar_true_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) <span class="fu">dnorm</span>(mu_hat, <span class="dv">0</span>, <span class="fu">sqrt</span>(<span class="dv">1</span> <span class="sc">/</span> n_eff <span class="sc">+</span> sigma_prior<span class="sc">^</span><span class="dv">2</span>), <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="do">### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a>laplace_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat) {</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="sc">-</span>(<span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>                          <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a>  op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(h, <span class="at">p =</span> mu_hat, <span class="at">hessian =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">c</span>(<span class="at">mode =</span> op<span class="sc">$</span>estimate, <span class="at">log_ml =</span> <span class="sc">-</span>op<span class="sc">$</span>minimum <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi) <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(op<span class="sc">$</span>hessian[<span class="dv">1</span>, <span class="dv">1</span>]))</span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="do">### naive Monte Carlo: draw mu from the prior, average the likelihood</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a>log_sum_exp <span class="ot">&lt;-</span> <span class="cf">function</span>(lx) { m <span class="ot">&lt;-</span> <span class="fu">max</span>(lx); m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">sum</span>(<span class="fu">exp</span>(lx <span class="sc">-</span> m))) }</span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a>log_mar_mc_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, iters) {</span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a>  mus <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(iters, <span class="dv">0</span>, sigma_prior)</span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(<span class="fu">dnorm</span>(mu_hat, mus, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">-</span> <span class="fu">log</span>(iters)</span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="do">### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>log_mar_mid_mu <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, n) {</span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> n</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a>  u  <span class="ot">&lt;-</span> (<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">*</span> h</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>  mu <span class="ot">&lt;-</span> <span class="fu">log</span>(u <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>  log_z <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>    <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log</span>(u <span class="sc">*</span> (<span class="dv">1</span> <span class="sc">-</span> u))</span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(log_z) <span class="sc">+</span> <span class="fu">log</span>(h)</span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
@@ -691,18 +691,214 @@ Table&nbsp;9.3: Compares the Laplace approximation with grid quadrature and naiv
 <p>At <span class="math inline">\(\mu=0\)</span> the posterior sits right where both the logistic grid and the prior put their effort, so all four numbers should agree closely. As <span class="math inline">\(\mu\)</span> moves to <span class="math inline">\(-5\)</span> and then <span class="math inline">\(-20\)</span>, the fixed grid — centred at <span class="math inline">\(0\)</span> by construction — squeezes the posterior into an ever-thinner sliver of the unit interval, and quadrature is the first to break away from the true value, exactly the failure diagnosed at the end of Unit08. Naive Monte Carlo is built on the same fragile assumption in a different guise: it needs prior draws <em>near</em> <span class="math inline">\(\mu\)</span> to contribute any likelihood at all, so once <span class="math inline">\(\mu\)</span> is several prior standard deviations from <span class="math inline">\(0\)</span>, a fixed budget of draws from <span class="math inline">\(\pi\)</span> can also become too sparse there to be trusted, even though nothing about the Monte Carlo estimator’s derivation assumed <span class="math inline">\(\mu\)</span> would be small. Laplace has neither failure mode: it optimizes to find the mode wherever it actually is and builds its approximation <em>around that point</em>, so it automatically “recentres” itself for every <span class="math inline">\(\mu\)</span> — the same fix Unit08 proposed by hand for quadrature, done here for free by the optimizer.</p>
 </section>
 <section id="sec-aghq" class="level2" data-number="9.5">
-<h2 data-number="9.5" class="anchored" data-anchor-id="sec-aghq"><span class="header-section-number">9.5</span> Adaptive Gauss–Hermite Quadrature</h2>
-<p>A fixed logistic transform (<span class="math inline">\(u=1/(1+e^{-\mu})\)</span>) fails when the posterior mass moves far from <span class="math inline">\(\mu=0\)</span>. <strong>Adaptive Gauss-Hermite quadrature (AGHQ)</strong> solves this by relocating and rescaling the quadrature grid using the Laplace approximation’s mode (<span class="math inline">\(\hat\mu_L\)</span>) and standard deviation (<span class="math inline">\(s_L=1/\sqrt{H}\)</span>).</p>
-<p>Think of it as a smart, localized search grid: instead of laying a massive grid over the entire parameter space, AGHQ finds the peak of the posterior (the mode), measures its exact curvature (the Hessian), and places a custom-scaled grid directly over that localized area.</p>
-<p>By swapping the logistic function for the CDF and density of <span class="math inline">\(N(\hat\mu_L, s_L^2)\)</span>, the transform becomes: <span class="math display">\[
-u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right)
-\]</span></p>
-<p>Applying a midpoint rule on this adapted grid yields: <span class="math display">\[
-P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L}, \qquad \mu_i = \hat\mu_L + s_L\,\Phi^{-1}(u_i), \qquad u_i = \big(i-\tfrac12\big)/n
-\]</span></p>
-<section id="sec-laplace-transform-app" class="level3" data-number="9.5.1">
-<h3 data-number="9.5.1" class="anchored" data-anchor-id="sec-laplace-transform-app"><span class="header-section-number">9.5.1</span> Shinylive App for Adaptive Gauss–Hermite Quadrature</h3>
-<p>There is a <a href="../../shinylive_apps/app_ML_unknown_mean.html">shinylive app</a> that compares the logistic quadrature grid with a grid centred and scaled by the Laplace approximation, and shows how the latter lets a few grid points capture the posterior wherever it sits.</p>
+<h2 data-number="9.5" class="anchored" data-anchor-id="sec-aghq"><span class="header-section-number">9.5</span> Quadrature Adapted by the Laplace Approximation</h2>
+<p>A fixed logistic transform (<span class="math inline">\(u=1/(1+e^{-\mu})\)</span>) fails when the posterior mass moves far from <span class="math inline">\(\mu=0\)</span>. The remedy is to let the Laplace approximation tell the quadrature rule where to look: relocate and rescale the grid using the Laplace mode <span class="math inline">\(\hat\mu_L\)</span> and standard deviation <span class="math inline">\(s_L=1/\sqrt{H}\)</span>, where <span class="math inline">\(H\)</span> is the second derivative of <span class="math inline">\(-\log z\)</span> at <span class="math inline">\(\hat\mu_L\)</span>. In the standardized variable <span class="math display">\[
+t = \frac{\mu-\hat\mu_L}{s_L}, \qquad \mu = \hat\mu_L + s_L\,t,
+\]</span> the Laplace approximation says <span class="math inline">\(t\approx N(0,1)\)</span> under the posterior, and the marginal likelihood can be written as an expectation under the standard normal density <span class="math inline">\(\phi\)</span>: <span class="math display">\[
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu = s_L\int_{-\infty}^{\infty} g(t)\,\phi(t)\,dt, \qquad g(t) = \frac{z(\hat\mu_L + s_L t)}{\phi(t)}.
+\]</span> When the posterior is close to normal, <span class="math inline">\(g\)</span> is nearly constant, so a handful of well-placed points is enough. There are two ways to place them, which differ in how they handle the infinite range of <span class="math inline">\(t\)</span>.</p>
+<section id="laplace-adapted-midpoint-rule" class="level3" data-number="9.5.1">
+<h3 data-number="9.5.1" class="anchored" data-anchor-id="laplace-adapted-midpoint-rule"><span class="header-section-number">9.5.1</span> Laplace-adapted midpoint rule</h3>
+<p>The midpoint rule needs a finite interval to partition, so it maps <span class="math inline">\(t\)</span> to <span class="math inline">\((0,1)\)</span> by the normal CDF, swapping the logistic function of Unit08 for the CDF of <span class="math inline">\(N(\hat\mu_L, s_L^2)\)</span>: <span class="math display">\[
+u = \Phi(t) = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \frac{1}{s_L}\,\phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right).
+\]</span> Then <span class="math inline">\(P(y)=s_L\int_0^1 g\big(\Phi^{-1}(u)\big)\,du\)</span>, and the midpoint rule with <span class="math inline">\(n\)</span> equal cells of <span class="math inline">\((0,1)\)</span> gives <span class="math display">\[
+P(y) \approx \frac{s_L}{n}\sum_{i=1}^n \frac{z(\mu_i)}{\phi(t_i)}, \qquad t_i = \Phi^{-1}(u_i), \qquad \mu_i = \hat\mu_L + s_L\,t_i, \qquad u_i = \big(i-\tfrac12\big)/n .
+\]</span> In terms of <span class="math inline">\(t\)</span>, the points are the normal quantiles <span class="math inline">\(t_i=\Phi^{-1}(u_i)\)</span>, each with equal weight <span class="math inline">\(1/n\)</span>. The error decreases like <span class="math inline">\(1/n^2\)</span>, as for any midpoint rule, only when <span class="math inline">\(g\big(\Phi^{-1}(u)\big)\)</span> is smooth and bounded on <span class="math inline">\([0,1]\)</span>. When the posterior has heavier tails than its Laplace normal approximation, <span class="math inline">\(g(t)=z(\mu)/\phi(t)\)</span> grows without bound as <span class="math inline">\(u\to0\)</span> or <span class="math inline">\(1\)</span>, because <span class="math inline">\(\Phi^{-1}\)</span> is steep there and the outermost cells, each standing for a whole tail, sample it poorly; convergence is then much slower.</p>
+</section>
+<section id="adaptive-gausshermite-quadrature-aghq" class="level3" data-number="9.5.2">
+<h3 data-number="9.5.2" class="anchored" data-anchor-id="adaptive-gausshermite-quadrature-aghq"><span class="header-section-number">9.5.2</span> Adaptive Gauss–Hermite quadrature (AGHQ)</h3>
+<p>Gauss–Hermite quadrature does <strong>not</strong> partition anything, and so needs no map to <span class="math inline">\((0,1)\)</span>. It works directly on <span class="math inline">\((-\infty,\infty)\)</span> with the Gaussian factor <span class="math inline">\(e^{-t^2/2}\)</span> playing the role of a weight function: a <span class="math inline">\(k\)</span>-point rule <span class="math display">\[
+\int_{-\infty}^{\infty} f(t)\,e^{-t^2/2}\,dt \;\approx\; \sum_{j=1}^{k}\omega_j\,f(t_j)
+\]</span> chooses both the nodes <span class="math inline">\(t_j\)</span> and the weights <span class="math inline">\(\omega_j\)</span>, <span class="math inline">\(2k\)</span> numbers in all, so that the rule is <strong>exact</strong> whenever <span class="math inline">\(f\)</span> is a polynomial of degree at most <span class="math inline">\(2k-1\)</span>. The infinite range is handled by the weight <span class="math inline">\(e^{-t^2/2}\)</span>, not by a grid.</p>
+<p><strong>Constructing the nodes <span class="math inline">\(t_j\)</span> and weights <span class="math inline">\(\omega_j\)</span>.</strong> Exactness for <span class="math inline">\(f(t)=1,t,\ldots,t^{2k-1}\)</span> gives <span class="math inline">\(2k\)</span> nonlinear moment equations <span class="math inline">\(\sum_j\omega_j t_j^r=\int t^r e^{-t^2/2}\,dt\)</span>, <span class="math inline">\(r=0,\ldots,2k-1\)</span>. They are solved through orthogonal polynomials rather than directly:</p>
+<ol type="1">
+<li><strong>The orthogonal polynomials of the weight.</strong> The (probabilists’) Hermite polynomials <span class="math inline">\(\mathrm{He}_j\)</span> are orthogonal with respect to <span class="math inline">\(e^{-t^2/2}\)</span>, <span class="math inline">\(\int \mathrm{He}_j(t)\,\mathrm{He}_l(t)\,e^{-t^2/2}\,dt = 0\)</span> for <span class="math inline">\(j\ne l\)</span>, and satisfy the three-term recurrence <span class="math display">\[
+\mathrm{He}_0(t)=1,\qquad \mathrm{He}_1(t)=t,\qquad \mathrm{He}_{j+1}(t) = t\,\mathrm{He}_j(t) - j\,\mathrm{He}_{j-1}(t),
+\]</span> so <span class="math inline">\(\mathrm{He}_2(t)=t^2-1\)</span>, <span class="math inline">\(\mathrm{He}_3(t)=t^3-3t\)</span>, <span class="math inline">\(\mathrm{He}_4(t)=t^4-6t^2+3\)</span>, and so on.</li>
+<li><strong>The nodes are the roots of <span class="math inline">\(\mathrm{He}_k\)</span>.</strong> Any polynomial <span class="math inline">\(f\)</span> of degree <span class="math inline">\(\le 2k-1\)</span> can be divided as <span class="math inline">\(f = q\,\mathrm{He}_k + r\)</span> with <span class="math inline">\(q\)</span> and <span class="math inline">\(r\)</span> of degree <span class="math inline">\(\le k-1\)</span>. The term <span class="math inline">\(q\,\mathrm{He}_k\)</span> integrates to <span class="math inline">\(0\)</span> by orthogonality, and it also contributes <span class="math inline">\(0\)</span> to the sum if every <span class="math inline">\(t_j\)</span> is a root of <span class="math inline">\(\mathrm{He}_k\)</span>. So with these nodes the rule only has to integrate <span class="math inline">\(r\)</span> exactly, which <span class="math inline">\(k\)</span> weights can do. The roots are real, distinct and symmetric about <span class="math inline">\(0\)</span>.</li>
+<li><strong>The weights</strong> are the integrals of the Lagrange interpolating polynomials through the nodes, which simplify to <span class="math display">\[
+\omega_j = \frac{k!\,\sqrt{2\pi}}{k^2\,\mathrm{He}_{k-1}(t_j)^2}.
+\]</span></li>
+</ol>
+<p>For small <span class="math inline">\(k\)</span> this can be done by hand:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 30%">
+<col style="width: 23%">
+<col style="width: 23%">
+<col style="width: 23%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: center;"><span class="math inline">\(k\)</span></th>
+<th style="text-align: left;"><span class="math inline">\(\mathrm{He}_k(t)\)</span></th>
+<th style="text-align: left;">nodes <span class="math inline">\(t_j\)</span></th>
+<th style="text-align: left;">weights <span class="math inline">\(\omega_j/\sqrt{2\pi}\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: center;">1</td>
+<td style="text-align: left;"><span class="math inline">\(t\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(0\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(1\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: center;">2</td>
+<td style="text-align: left;"><span class="math inline">\(t^2-1\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\pm1\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\tfrac12,\ \tfrac12\)</span></td>
+</tr>
+<tr class="odd">
+<td style="text-align: center;">3</td>
+<td style="text-align: left;"><span class="math inline">\(t^3-3t\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(0,\ \pm\sqrt3\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\tfrac23;\ \tfrac16,\ \tfrac16\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>The weights divided by <span class="math inline">\(\sqrt{2\pi}\)</span> always sum to <span class="math inline">\(1\)</span>, since they integrate <span class="math inline">\(f=1\)</span> against the standard normal density. For larger <span class="math inline">\(k\)</span> the roots are found numerically, most stably by the <strong>Golub–Welsch algorithm</strong>: the recurrence in step 1 says that <span class="math inline">\(t\,\big(\mathrm{He}_0,\ldots,\mathrm{He}_{k-1}\big)^\top\)</span> equals a symmetric tridiagonal matrix <span class="math inline">\(J\)</span> times the same vector (after normalizing the polynomials), plus a multiple of <span class="math inline">\(\mathrm{He}_k\)</span>, which vanishes at the nodes. Hence the nodes are the <strong>eigenvalues</strong> of <span class="math display">\[
+J=\begin{pmatrix}0&amp;\sqrt1&amp;&amp;\\ \sqrt1&amp;0&amp;\sqrt2&amp;\\ &amp;\sqrt2&amp;0&amp;\ddots\\ &amp;&amp;\ddots&amp;\ddots&amp;\sqrt{k-1}\\ &amp;&amp;&amp;\sqrt{k-1}&amp;0\end{pmatrix},
+\]</span> and the weights are <span class="math inline">\(\omega_j=\sqrt{2\pi}\,v_{1j}^2\)</span>, where <span class="math inline">\(v_{1j}\)</span> is the first component of the unit eigenvector for <span class="math inline">\(t_j\)</span>:</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="do">### k-point Gauss-Hermite rule for the weight exp(-t^2/2), by Golub-Welsch</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>gauss_hermite <span class="ot">&lt;-</span> <span class="cf">function</span>(k) {</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  J <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, k, k)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_len</span>(k <span class="sc">-</span> <span class="dv">1</span>)) J[i, i <span class="sc">+</span> <span class="dv">1</span>] <span class="ot">&lt;-</span> J[i <span class="sc">+</span> <span class="dv">1</span>, i] <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(i)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  e <span class="ot">&lt;-</span> <span class="fu">eigen</span>(J, <span class="at">symmetric =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">t =</span> <span class="fu">rev</span>(e<span class="sc">$</span>values), <span class="at">w =</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> pi) <span class="sc">*</span> <span class="fu">rev</span>(e<span class="sc">$</span>vectors[<span class="dv">1</span>, ]<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>gh3 <span class="ot">&lt;-</span> <span class="fu">gauss_hermite</span>(<span class="dv">3</span>)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(<span class="fu">rbind</span>(<span class="at">t =</span> gh3<span class="sc">$</span>t, <span class="st">`</span><span class="at">w / sqrt(2 pi)</span><span class="st">`</span> <span class="ot">=</span> gh3<span class="sc">$</span>w <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> pi)), <span class="dv">6</span>)   <span class="co"># matches the table: 0, +-sqrt(3); 2/3, 1/6</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                    [,1]     [,2]     [,3]
+t              -1.732051 0.000000 1.732051
+w / sqrt(2 pi)  0.166667 0.666667 0.166667</code></pre>
+</div>
+</div>
+<p><strong>The adaptive rule.</strong> Applying the <span class="math inline">\(k\)</span>-point rule to <span class="math inline">\(f(t)=z(\hat\mu_L+s_Lt)\,e^{t^2/2} = g(t)/\sqrt{2\pi}\)</span> gives <span class="math display">\[
+P(y) = s_L\int z(\hat\mu_L + s_L t)\,e^{t^2/2}\,e^{-t^2/2}\,dt \;\approx\; s_L\sum_{j=1}^{k}\omega_j\,e^{t_j^2/2}\,z(\mu_j), \qquad \mu_j = \hat\mu_L + s_L\,t_j .
+\]</span> With <span class="math inline">\(k=1\)</span> the single node is <span class="math inline">\(t_1=0\)</span> with <span class="math inline">\(\omega_1=\sqrt{2\pi}\)</span>, and the rule reduces to <span class="math inline">\(s_L\sqrt{2\pi}\,z(\hat\mu_L)\)</span>, which is exactly the Laplace approximation; AGHQ with more nodes is a systematic refinement of it.</p>
+<p><strong>Comparing the two adapted rules.</strong> Both rules evaluate the same ratio <span class="math inline">\(g(t)=z(\mu)/\phi(t)\)</span> at points <span class="math inline">\(\mu=\hat\mu_L+s_Lt\)</span> placed by the Laplace approximation; they differ only in the points <span class="math inline">\(t\)</span> and the weights:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">points <span class="math inline">\(t\)</span></th>
+<th style="text-align: left;">weights (as a fraction of <span class="math inline">\(\int\phi=1\)</span>)</th>
+<th style="text-align: left;">exact for</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Laplace-adapted midpoint</td>
+<td style="text-align: left;">normal quantiles <span class="math inline">\(\Phi^{-1}\big((i-\tfrac12)/n\big)\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(1/n\)</span> each</td>
+<td style="text-align: left;">error <span class="math inline">\(O(1/n^2)\)</span></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">AGHQ</td>
+<td style="text-align: left;">roots of <span class="math inline">\(\mathrm{He}_k\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(\omega_j/\sqrt{2\pi}\)</span></td>
+<td style="text-align: left;"><span class="math inline">\(g\)</span> a polynomial of degree <span class="math inline">\(\le 2k-1\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>The table below applies both to the one-parameter example above. Because <span class="math inline">\(z(\mu)\)</span> is a normal–normal kernel here, the posterior is exactly normal, <span class="math inline">\(g\)</span> is exactly constant, and both rules are exact with any number of points, wherever the data sit. The two-parameter app below, where the posterior of <span class="math inline">\((\mu,\log\sigma)\)</span> is not exactly normal, shows the rules at work when <span class="math inline">\(g\)</span> is only approximately constant.</p>
+<div class="cell">
+<details class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>log_mar_adapted <span class="ot">&lt;-</span> <span class="cf">function</span>(mu_hat, rule, n) {</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  lz <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="fu">dnorm</span>(mu_hat, mu, <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(n_eff), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span> <span class="fu">dnorm</span>(mu, <span class="dv">0</span>, sigma_prior, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  h  <span class="ot">&lt;-</span> <span class="cf">function</span>(mu) <span class="sc">-</span><span class="fu">lz</span>(mu)</span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  op <span class="ot">&lt;-</span> <span class="fu">nlm</span>(h, <span class="at">p =</span> mu_hat, <span class="at">hessian =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  m  <span class="ot">&lt;-</span> op<span class="sc">$</span>estimate; sL <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(op<span class="sc">$</span>hessian[<span class="dv">1</span>, <span class="dv">1</span>])</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (rule <span class="sc">==</span> <span class="st">"midpoint"</span>) {</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    t <span class="ot">&lt;-</span> <span class="fu">qnorm</span>((<span class="fu">seq_len</span>(n) <span class="sc">-</span> <span class="fl">0.5</span>) <span class="sc">/</span> n); lw <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="sc">-</span><span class="fu">log</span>(n), n)       <span class="co"># equal weights 1/n</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    gh <span class="ot">&lt;-</span> <span class="fu">gauss_hermite</span>(n); t <span class="ot">&lt;-</span> gh<span class="sc">$</span>t; lw <span class="ot">&lt;-</span> <span class="fu">log</span>(gh<span class="sc">$</span>w <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="dv">2</span> <span class="sc">*</span> pi))</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">log_sum_exp</span>(lw <span class="sc">+</span> <span class="fu">lz</span>(m <span class="sc">+</span> sL <span class="sc">*</span> t) <span class="sc">-</span> <span class="fu">dnorm</span>(t, <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">+</span> <span class="fu">log</span>(sL)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>adapted <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(mu_hats, <span class="cf">function</span>(m) <span class="fu">c</span>(</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">True                 =</span> <span class="fu">log_mar_true_mu</span>(m),</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">Laplace              =</span> <span class="fu">unname</span>(<span class="fu">laplace_mu</span>(m)[<span class="st">"log_ml"</span>]),</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">Logistic midpoint (n=100)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">log_mar_mid_mu</span>(m, <span class="dv">100</span>),</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">Laplace-adapted midpoint (n=5)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">log_mar_adapted</span>(m, <span class="st">"midpoint"</span>, <span class="dv">5</span>),</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">AGHQ (k=5)</span><span class="st">`</span>         <span class="ot">=</span> <span class="fu">log_mar_adapted</span>(m, <span class="st">"gh"</span>, <span class="dv">5</span>))))</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">cbind</span>(<span class="at">mu =</span> mu_hats, <span class="fu">round</span>(adapted, <span class="dv">3</span>)), <span class="at">row.names =</span> <span class="cn">FALSE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="tbl-adapted-rules" class="cell quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-tbl figure">
+<figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-adapted-rules-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;9.4: Log marginal likelihood for data locations mu_hat = 0, -5, -20 (setup as in the table above): the logistic midpoint rule with 100 points, and the two Laplace-adapted rules with only 5 points each.
+</figcaption>
+<div aria-describedby="tbl-adapted-rules-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 4%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 29%">
+<col style="width: 35%">
+<col style="width: 12%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: right;">mu</th>
+<th style="text-align: right;">True</th>
+<th style="text-align: right;">Laplace</th>
+<th style="text-align: right;">Logistic midpoint (n=100)</th>
+<th style="text-align: right;">Laplace-adapted midpoint (n=5)</th>
+<th style="text-align: right;">AGHQ (k=5)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.535</td>
+<td style="text-align: right;">-2.535</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">-5</td>
+<td style="text-align: right;">-3.028</td>
+<td style="text-align: right;">-3.028</td>
+<td style="text-align: right;">-2.707</td>
+<td style="text-align: right;">-3.028</td>
+<td style="text-align: right;">-3.028</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">-20</td>
+<td style="text-align: right;">-50.734</td>
+<td style="text-align: right;">-10.430</td>
+<td style="text-align: right;">-327.191</td>
+<td style="text-align: right;">-10.430</td>
+<td style="text-align: right;">-10.430</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+</section>
+<section id="sec-laplace-transform-app" class="level3" data-number="9.5.3">
+<h3 data-number="9.5.3" class="anchored" data-anchor-id="sec-laplace-transform-app"><span class="header-section-number">9.5.3</span> Shinylive Apps for the Laplace-Adapted Midpoint Rule</h3>
+<p>There is a <a href="../../shinylive_apps/app_ML_unknown_mean.html">shinylive app</a> that compares the logistic midpoint grid with the Laplace-adapted midpoint grid for one unknown mean, and shows how the latter lets a few grid points capture the posterior wherever it sits. A <a href="../../shinylive_apps/app_ML_unknown_mean_sd.html">second app</a> does the same for normal data with unknown <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma\)</span>, where the product midpoint rule is applied on the unit square after the map <span class="math inline">\(\theta=\hat\theta+Cz\)</span>, <span class="math inline">\(z=\big(\Phi^{-1}(u),\Phi^{-1}(v)\big)\)</span>, with <span class="math inline">\(CC^\top\)</span> the Laplace covariance.</p>
 </section>
 </section>
 <section id="summary" class="level2" data-number="9.6">

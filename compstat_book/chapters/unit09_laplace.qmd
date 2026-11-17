@@ -251,12 +251,10 @@ averaging the likelihood — the same naive estimator used throughout Unit08.
 #| label: laplace-mu-functions
 n_eff <- 3; sigma_prior <- 5                   # same setup as the Unit08 app
 
-### true value: exact up to numerical-integration error, since z is a
-### normal-normal conjugate kernel
-log_mar_true_mu <- function(mu_hat) {
-  z <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff)) * dnorm(mu, 0, sigma_prior)
-  log(integrate(z, -Inf, Inf)$value)
-}
+### true value: exact, since z is a normal-normal conjugate kernel, so marginally
+### mu_hat ~ N(0, 1/n_eff + sigma_prior^2). (integrate(z, -Inf, Inf) is not safe here:
+### for mu_hat far from 0 it misses the narrow spike of z and returns a wrong value.)
+log_mar_true_mu <- function(mu_hat) dnorm(mu_hat, 0, sqrt(1 / n_eff + sigma_prior^2), log = TRUE)
 
 ### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()
 laplace_mu <- function(mu_hat) {
@@ -316,25 +314,120 @@ actually is and builds its approximation *around that point*, so it
 automatically "recentres" itself for every $\mu$ — the same fix Unit08
 proposed by hand for quadrature, done here for free by the optimizer.
 
-## Adaptive Gauss–Hermite Quadrature {#sec-aghq}
+## Quadrature Adapted by the Laplace Approximation {#sec-aghq}
 
-A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. **Adaptive Gauss-Hermite quadrature (AGHQ)** solves this by relocating and rescaling the quadrature grid using the Laplace approximation's mode ($\hat\mu_L$) and standard deviation ($s_L=1/\sqrt{H}$). 
-
-Think of it as a smart, localized search grid: instead of laying a massive grid over the entire parameter space, AGHQ finds the peak of the posterior (the mode), measures its exact curvature (the Hessian), and places a custom-scaled grid directly over that localized area.
-
-By swapping the logistic function for the CDF and density of $N(\hat\mu_L, s_L^2)$, the transform becomes:
+A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. The remedy is to let the Laplace approximation tell the quadrature rule where to look: relocate and rescale the grid using the Laplace mode $\hat\mu_L$ and standard deviation $s_L=1/\sqrt{H}$, where $H$ is the second derivative of $-\log z$ at $\hat\mu_L$. In the standardized variable
 $$
-u = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right)
+t = \frac{\mu-\hat\mu_L}{s_L}, \qquad \mu = \hat\mu_L + s_L\,t,
 $$
-
-Applying a midpoint rule on this adapted grid yields:
+the Laplace approximation says $t\approx N(0,1)$ under the posterior, and the marginal likelihood can be written as an expectation under the standard normal density $\phi$:
 $$
-P(y) \approx \frac1n\sum_{i=1}^n \frac{z(\mu_i)}{\phi\big((\mu_i-\hat\mu_L)/s_L\big)/s_L}, \qquad \mu_i = \hat\mu_L + s_L\,\Phi^{-1}(u_i), \qquad u_i = \big(i-\tfrac12\big)/n
+P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu = s_L\int_{-\infty}^{\infty} g(t)\,\phi(t)\,dt, \qquad g(t) = \frac{z(\hat\mu_L + s_L t)}{\phi(t)}.
 $$
+When the posterior is close to normal, $g$ is nearly constant, so a handful of well-placed points is enough. There are two ways to place them, which differ in how they handle the infinite range of $t$.
 
-### Shinylive App for Adaptive Gauss–Hermite Quadrature {#sec-laplace-transform-app}
+### Laplace-adapted midpoint rule
 
-There is a [shinylive app](../../shinylive_apps/app_ML_unknown_mean.html) that compares the logistic quadrature grid with a grid centred and scaled by the Laplace approximation, and shows how the latter lets a few grid points capture the posterior wherever it sits.
+The midpoint rule needs a finite interval to partition, so it maps $t$ to $(0,1)$ by the normal CDF, swapping the logistic function of Unit08 for the CDF of $N(\hat\mu_L, s_L^2)$:
+$$
+u = \Phi(t) = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \frac{1}{s_L}\,\phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right).
+$$
+Then $P(y)=s_L\int_0^1 g\big(\Phi^{-1}(u)\big)\,du$, and the midpoint rule with $n$ equal cells of $(0,1)$ gives
+$$
+P(y) \approx \frac{s_L}{n}\sum_{i=1}^n \frac{z(\mu_i)}{\phi(t_i)}, \qquad t_i = \Phi^{-1}(u_i), \qquad \mu_i = \hat\mu_L + s_L\,t_i, \qquad u_i = \big(i-\tfrac12\big)/n .
+$$
+In terms of $t$, the points are the normal quantiles $t_i=\Phi^{-1}(u_i)$, each with equal weight $1/n$. The error decreases like $1/n^2$, as for any midpoint rule, only when $g\big(\Phi^{-1}(u)\big)$ is smooth and bounded on $[0,1]$. When the posterior has heavier tails than its Laplace normal approximation, $g(t)=z(\mu)/\phi(t)$ grows without bound as $u\to0$ or $1$, because $\Phi^{-1}$ is steep there and the outermost cells, each standing for a whole tail, sample it poorly; convergence is then much slower.
+
+### Adaptive Gauss–Hermite quadrature (AGHQ)
+
+Gauss–Hermite quadrature does **not** partition anything, and so needs no map to $(0,1)$. It works directly on $(-\infty,\infty)$ with the Gaussian factor $e^{-t^2/2}$ playing the role of a weight function: a $k$-point rule
+$$
+\int_{-\infty}^{\infty} f(t)\,e^{-t^2/2}\,dt \;\approx\; \sum_{j=1}^{k}\omega_j\,f(t_j)
+$$
+chooses both the nodes $t_j$ and the weights $\omega_j$, $2k$ numbers in all, so that the rule is **exact** whenever $f$ is a polynomial of degree at most $2k-1$. The infinite range is handled by the weight $e^{-t^2/2}$, not by a grid.
+
+**Constructing the nodes $t_j$ and weights $\omega_j$.** Exactness for $f(t)=1,t,\ldots,t^{2k-1}$ gives $2k$ nonlinear moment equations $\sum_j\omega_j t_j^r=\int t^r e^{-t^2/2}\,dt$, $r=0,\ldots,2k-1$. They are solved through orthogonal polynomials rather than directly:
+
+1. **The orthogonal polynomials of the weight.** The (probabilists') Hermite polynomials $\mathrm{He}_j$ are orthogonal with respect to $e^{-t^2/2}$, $\int \mathrm{He}_j(t)\,\mathrm{He}_l(t)\,e^{-t^2/2}\,dt = 0$ for $j\ne l$, and satisfy the three-term recurrence
+   $$
+   \mathrm{He}_0(t)=1,\qquad \mathrm{He}_1(t)=t,\qquad \mathrm{He}_{j+1}(t) = t\,\mathrm{He}_j(t) - j\,\mathrm{He}_{j-1}(t),
+   $$
+   so $\mathrm{He}_2(t)=t^2-1$, $\mathrm{He}_3(t)=t^3-3t$, $\mathrm{He}_4(t)=t^4-6t^2+3$, and so on.
+2. **The nodes are the roots of $\mathrm{He}_k$.** Any polynomial $f$ of degree $\le 2k-1$ can be divided as $f = q\,\mathrm{He}_k + r$ with $q$ and $r$ of degree $\le k-1$. The term $q\,\mathrm{He}_k$ integrates to $0$ by orthogonality, and it also contributes $0$ to the sum if every $t_j$ is a root of $\mathrm{He}_k$. So with these nodes the rule only has to integrate $r$ exactly, which $k$ weights can do. The roots are real, distinct and symmetric about $0$.
+3. **The weights** are the integrals of the Lagrange interpolating polynomials through the nodes, which simplify to
+   $$
+   \omega_j = \frac{k!\,\sqrt{2\pi}}{k^2\,\mathrm{He}_{k-1}(t_j)^2}.
+   $$
+
+For small $k$ this can be done by hand:
+
+| $k$ | $\mathrm{He}_k(t)$ | nodes $t_j$ | weights $\omega_j/\sqrt{2\pi}$ |
+|:--:|:--|:--|:--|
+| 1 | $t$ | $0$ | $1$ |
+| 2 | $t^2-1$ | $\pm1$ | $\tfrac12,\ \tfrac12$ |
+| 3 | $t^3-3t$ | $0,\ \pm\sqrt3$ | $\tfrac23;\ \tfrac16,\ \tfrac16$ |
+
+The weights divided by $\sqrt{2\pi}$ always sum to $1$, since they integrate $f=1$ against the standard normal density. For larger $k$ the roots are found numerically, most stably by the **Golub–Welsch algorithm**: the recurrence in step 1 says that $t\,\big(\mathrm{He}_0,\ldots,\mathrm{He}_{k-1}\big)^\top$ equals a symmetric tridiagonal matrix $J$ times the same vector (after normalizing the polynomials), plus a multiple of $\mathrm{He}_k$, which vanishes at the nodes. Hence the nodes are the **eigenvalues** of
+$$
+J=\begin{pmatrix}0&\sqrt1&&\\ \sqrt1&0&\sqrt2&\\ &\sqrt2&0&\ddots\\ &&\ddots&\ddots&\sqrt{k-1}\\ &&&\sqrt{k-1}&0\end{pmatrix},
+$$
+and the weights are $\omega_j=\sqrt{2\pi}\,v_{1j}^2$, where $v_{1j}$ is the first component of the unit eigenvector for $t_j$:
+
+```{r}
+#| label: gauss-hermite-nodes
+### k-point Gauss-Hermite rule for the weight exp(-t^2/2), by Golub-Welsch
+gauss_hermite <- function(k) {
+  J <- matrix(0, k, k)
+  for (i in seq_len(k - 1)) J[i, i + 1] <- J[i + 1, i] <- sqrt(i)
+  e <- eigen(J, symmetric = TRUE)
+  list(t = rev(e$values), w = sqrt(2 * pi) * rev(e$vectors[1, ]^2))
+}
+gh3 <- gauss_hermite(3)
+round(rbind(t = gh3$t, `w / sqrt(2 pi)` = gh3$w / sqrt(2 * pi)), 6)   # matches the table: 0, +-sqrt(3); 2/3, 1/6
+```
+
+**The adaptive rule.** Applying the $k$-point rule to $f(t)=z(\hat\mu_L+s_Lt)\,e^{t^2/2} = g(t)/\sqrt{2\pi}$ gives
+$$
+P(y) = s_L\int z(\hat\mu_L + s_L t)\,e^{t^2/2}\,e^{-t^2/2}\,dt \;\approx\; s_L\sum_{j=1}^{k}\omega_j\,e^{t_j^2/2}\,z(\mu_j), \qquad \mu_j = \hat\mu_L + s_L\,t_j .
+$$
+With $k=1$ the single node is $t_1=0$ with $\omega_1=\sqrt{2\pi}$, and the rule reduces to $s_L\sqrt{2\pi}\,z(\hat\mu_L)$, which is exactly the Laplace approximation; AGHQ with more nodes is a systematic refinement of it.
+
+**Comparing the two adapted rules.** Both rules evaluate the same ratio $g(t)=z(\mu)/\phi(t)$ at points $\mu=\hat\mu_L+s_Lt$ placed by the Laplace approximation; they differ only in the points $t$ and the weights:
+
+| | points $t$ | weights (as a fraction of $\int\phi=1$) | exact for |
+|:--|:--|:--|:--|
+| Laplace-adapted midpoint | normal quantiles $\Phi^{-1}\big((i-\tfrac12)/n\big)$ | $1/n$ each | error $O(1/n^2)$ |
+| AGHQ | roots of $\mathrm{He}_k$ | $\omega_j/\sqrt{2\pi}$ | $g$ a polynomial of degree $\le 2k-1$ |
+
+The table below applies both to the one-parameter example above. Because $z(\mu)$ is a normal–normal kernel here, the posterior is exactly normal, $g$ is exactly constant, and both rules are exact with any number of points, wherever the data sit. The two-parameter app below, where the posterior of $(\mu,\log\sigma)$ is not exactly normal, shows the rules at work when $g$ is only approximately constant.
+
+```{r}
+#| label: tbl-adapted-rules
+#| tbl-cap: "Log marginal likelihood for data locations mu_hat = 0, -5, -20 (setup as in the table above): the logistic midpoint rule with 100 points, and the two Laplace-adapted rules with only 5 points each."
+log_mar_adapted <- function(mu_hat, rule, n) {
+  lz <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) + dnorm(mu, 0, sigma_prior, log = TRUE)
+  h  <- function(mu) -lz(mu)
+  op <- nlm(h, p = mu_hat, hessian = TRUE)
+  m  <- op$estimate; sL <- 1 / sqrt(op$hessian[1, 1])
+  if (rule == "midpoint") {
+    t <- qnorm((seq_len(n) - 0.5) / n); lw <- rep(-log(n), n)       # equal weights 1/n
+  } else {
+    gh <- gauss_hermite(n); t <- gh$t; lw <- log(gh$w / sqrt(2 * pi))
+  }
+  log_sum_exp(lw + lz(m + sL * t) - dnorm(t, log = TRUE)) + log(sL)
+}
+adapted <- t(sapply(mu_hats, function(m) c(
+  True                 = log_mar_true_mu(m),
+  Laplace              = unname(laplace_mu(m)["log_ml"]),
+  `Logistic midpoint (n=100)` = log_mar_mid_mu(m, 100),
+  `Laplace-adapted midpoint (n=5)` = log_mar_adapted(m, "midpoint", 5),
+  `AGHQ (k=5)`         = log_mar_adapted(m, "gh", 5))))
+knitr::kable(cbind(mu = mu_hats, round(adapted, 3)), row.names = FALSE)
+```
+
+### Shinylive Apps for the Laplace-Adapted Midpoint Rule {#sec-laplace-transform-app}
+
+There is a [shinylive app](../../shinylive_apps/app_ML_unknown_mean.html) that compares the logistic midpoint grid with the Laplace-adapted midpoint grid for one unknown mean, and shows how the latter lets a few grid points capture the posterior wherever it sits. A [second app](../../shinylive_apps/app_ML_unknown_mean_sd.html) does the same for normal data with unknown $\mu$ and $\sigma$, where the product midpoint rule is applied on the unit square after the map $\theta=\hat\theta+Cz$, $z=\big(\Phi^{-1}(u),\Phi^{-1}(v)\big)$, with $CC^\top$ the Laplace covariance.
 
 ## Summary
 
