@@ -19,7 +19,7 @@ important point — the mode — and replaces the whole integrand there by the
 Gaussian that matches its height and curvature. No grid is needed at any
 dimension, at the price of assuming the integrand is roughly bell-shaped.
 
-## Laplace Approximation Formula
+## Laplace Approximation Formula {#sec-laplace-formula}
 
 **The goal and the idea.** Many Bayesian calculations are posterior expectations
 $$
@@ -139,7 +139,7 @@ for free from any optimizer that returns a Hessian. The relative error of the
 second result is $O(1/n)$ for regular models; the error of the first is
 governed by how skewed the true posterior actually is.
 
-## Example: A Poisson Rate with a Gamma Prior
+### Example: A Poisson Rate with a Gamma Prior
 
 To see the approximation against ground truth, use a model with a known exact
 answer: the Gamma–Poisson conjugate pair from the Bayesian Inference chapter.
@@ -245,7 +245,7 @@ The two intervals agree closely even at $n=20$: the mild right-skew of the
 Gamma posterior visible in @fig-poisson-gamma-density has not yet noticeably
 distorted a Wald-style interval built from a symmetric Gaussian.
 
-## Example: A Normal Mean with a Normal Prior {#sec-laplace-normal-mean}
+### Example: Computing ML of Normal Data with an Unknown Mean {#sec-laplace-normal-mean}
 
 To compare the three methods on an apples-to-apples problem, reuse the single-parameter example from the end of Unit 08, where one unknown mean has to be integrated out.
 
@@ -365,7 +365,7 @@ proposed by hand for quadrature, done here for free by the optimizer.
 
 A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. The remedy is to let the Laplace approximation tell the quadrature rule where to look. Laplace approximates the posterior by $N(\hat\mu_L, s_L^2)$, where $\hat\mu_L$ is the mode of $f$ and $s_L=1/\sqrt{H}$ with $H$ the second derivative of $-\log f$ at $\hat\mu_L$. The Laplace-adapted midpoint rule below places its grid points according to this normal distribution, so it follows the posterior wherever it sits.
 
-### Laplace-adapted midpoint rule
+### Univraite Laplace-adapted midpoint rule
 
 **A general transformation.** The midpoint rule needs a finite interval to partition, so the real line is first mapped to $(0,1)$. Let $t$ be any strictly increasing, differentiable map from $(-\infty,\infty)$ onto $(0,1)$, that is, the CDF of a continuous distribution, with density $t'(\mu)>0$. Substituting
 $$
@@ -426,7 +426,7 @@ adapted <- t(sapply(mu_hats, function(m) c(
 knitr::kable(cbind(mu = mu_hats, round(adapted, 3)), row.names = FALSE)
 ```
 
-### Example: One Unknown Mean {#sec-laplace-transform-app}
+### Example: Computing ML of Normal Data with an Unknown Mean {#sec-laplace-transform-app}
 
 This example compares the logistic midpoint rule with the Laplace-adapted midpoint rule on the normal-mean model of @sec-laplace-normal-mean, and can be explored in a [shinylive app](../../shinylive_apps/app_ML_unknown_mean.html). The model is $n=3$ observations from $N(\mu,1)$ with sample mean $\hat\mu$, so $L(\mu)=N(\hat\mu;\,\mu,\,1/3)$, prior $\pi(\mu)=N(\mu;\,0,\,5^2)$, and $f(\mu)=L(\mu)\,\pi(\mu)$. Sliders set the data location $\hat\mu$ (from $-5$ to $25$) and the number $N$ of grid points. The app computes $P(y)=\int f(\mu)\,d\mu$ by the two midpoint rules, each written as an integral over $u\in(0,1)$:
 
@@ -441,7 +441,147 @@ This example compares the logistic midpoint rule with the Laplace-adapted midpoi
 
 In each row the left plot shows $f(\mu)$ with the grid points $\mu_i$, and the right plot shows the integrand over $u$ with the midpoint rectangles, whose total area is the estimate; the true value $N(\hat\mu;\,0,\,1/3+5^2)$ is shown for comparison. As $\hat\mu$ moves away from $0$, the logistic integrand becomes a spike near $u=1$ that falls between grid points and the estimate collapses, while the Laplace-adapted integrand stays flat and a few rectangles give the right area.
 
-### Example: Unknown Mean and Standard Deviation {#sec-laplace-mean-sd-app}
+### Multivariate Laplace-adapted midpoint rule {#sec-laplace-adapted-mv}
+
+For $\theta\in\mathbb{R}^p$ the Laplace approximation of $f$ is
+$$
+\tilde f(\theta) = f(\hat\theta)\exp\Big\{-\tfrac12(\theta-\hat\theta)^\top H\,(\theta-\hat\theta)\Big\},
+$$
+whose normalized form is the density $\phi_p(\theta;\,\hat\theta,\,H^{-1})$ of $N_p(\hat\theta, H^{-1})$. Applying the one-dimensional map to each coordinate of $\theta$ separately would ignore the correlations in $H^{-1}$: a product grid aligned with the $\theta$ axes puts many points where the tilted posterior ellipse has no mass. The remedy is to standardize $\theta$ first, so that the Laplace normal becomes $N_p(0, I)$, whose coordinates are independent, and only then map each coordinate to $(0,1)$.
+
+**Step 1: standardize with the Cholesky factor.** Factor the Laplace covariance as
+$$
+H^{-1} = C\,C^\top,
+$$
+with $C$ triangular (the Cholesky factor), and change variables to
+$$
+\theta = \hat\theta + C z, \qquad z = C^{-1}(\theta-\hat\theta), \qquad d\theta = |\det C|\,dz .
+$$
+Since $C^\top H C = C^\top (CC^\top)^{-1} C = I$, the quadratic form becomes $(\theta-\hat\theta)^\top H(\theta-\hat\theta) = z^\top z$, so in the $z$ coordinates the Laplace approximation is spherical,
+$$
+\tilde f(\hat\theta + Cz) = f(\hat\theta)\,e^{-z^\top z/2} = f(\hat\theta)\,(2\pi)^{p/2}\prod_{j=1}^p \phi(z_j),
+$$
+with $\phi$ the standard normal density. The factor $C$ removes the correlations and rescales every direction to unit spread; $|\det C| = |H|^{-1/2}$ is the volume factor of @sec-laplace-formula. Any square root of $H^{-1}$, such as the symmetric one from the eigendecomposition, would make $z^\top z$ spherical too; the Cholesky factor is simply the cheapest to compute. In R, `chol(H)` returns an upper-triangular $R$ with $H=R^\top R$, and $C=R^{-1}$ (`backsolve(R, diag(p))`) satisfies $CC^\top = (R^\top R)^{-1} = H^{-1}$, with $|\det C| = 1/\prod_j R_{jj}$.
+
+**Step 2: map each coordinate to $(0,1)$.** Apply the standard normal CDF to each $z_j$,
+$$
+u_j = \Phi(z_j), \qquad z_j = \Phi^{-1}(u_j), \qquad dz_j = \frac{du_j}{\phi(z_j)}, \qquad j = 1,\ldots,p .
+$$
+Combining the two steps, the target becomes an integral over the unit cube,
+$$
+P(y) = \int_{\mathbb{R}^p} f(\theta)\,d\theta = \int_{(0,1)^p} g(u)\,du, \qquad
+g(u) = \frac{|\det C|\, f\big(\hat\theta + C\,z(u)\big)}{\prod_{j=1}^p \phi\big(z_j(u)\big)}, \qquad
+z(u) = \big(\Phi^{-1}(u_1),\ldots,\Phi^{-1}(u_p)\big).
+$$
+Because $\phi_p(\hat\theta+Cz;\,\hat\theta,\,H^{-1}) = (2\pi)^{-p/2}|H|^{1/2}e^{-z^\top z/2} = \prod_j\phi(z_j)\,/\,|\det C|$, the integrand is again the posterior kernel divided by the Laplace normal density,
+$$
+g(u) = \frac{f\big(\theta(u)\big)}{\phi_p\big(\theta(u);\,\hat\theta,\,H^{-1}\big)}, \qquad \theta(u) = \hat\theta + C\,z(u),
+$$
+exactly as for $p=1$, where $C=s_L$. If $f$ were exactly $\tilde f$, $g$ would be constant on the cube, equal to the Laplace approximation $f(\hat\theta)(2\pi)^{p/2}|H|^{-1/2}$.
+
+**Step 3: product midpoint rule.** With $k$ cells per axis and centres $u_{(i)} = (i-\tfrac12)/k$, the product rule uses the $N=k^p$ points
+$$
+\theta_{\mathbf i} = \hat\theta + C\,z_{\mathbf i}, \qquad z_{\mathbf i} = \big(\Phi^{-1}(u_{(i_1)}),\ldots,\Phi^{-1}(u_{(i_p)})\big), \qquad \mathbf i = (i_1,\ldots,i_p)\in\{1,\ldots,k\}^p,
+$$
+and gives
+$$
+P(y) \approx \frac{1}{k^p}\sum_{\mathbf i} g\big(u_{\mathbf i}\big) = \frac{|\det C|}{k^p}\sum_{\mathbf i} \frac{f(\theta_{\mathbf i})}{\prod_{j=1}^p \phi\big(z_{\mathbf i j}\big)} .
+$$
+The grid $z_{\mathbf i}$ is a square lattice of normal quantiles; $C$ maps it onto a sheared lattice that follows the orientation and spread of the posterior ellipse. As in one dimension, the sum is computed on the log scale, $\log g = \log f(\theta_{\mathbf i}) + \log|\det C| - \sum_j\log\phi(z_{\mathbf i j})$, followed by log-sum-exp. Two limitations carry over or get worse with $p$: the number of points $k^p$ grows exponentially, so the product rule is practical only for small $p$; and when the posterior has heavier tails than its Laplace normal, $g$ grows towards the faces of the cube and convergence in $k$ is slow.
+
+@fig-adapted-mv-grids follows the two maps for $p=2$, $k=8$, $\hat\theta=(1,2)$ and
+$$
+H = \begin{pmatrix} 2.78 & -2.22 \\ -2.22 & 2.78 \end{pmatrix}, \qquad
+H^{-1} = \begin{pmatrix} 1 & 0.8 \\ 0.8 & 1 \end{pmatrix}, \qquad
+C = \begin{pmatrix} 1 & 0 \\ 0.8 & 0.6 \end{pmatrix}.
+$$
+
+```{r}
+#| label: fig-adapted-mv-grids
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 12
+#| fig-height: 4.6
+#| fig-cap: "Shows how the Laplace-adapted product grid is built: equal cells on the unit square are mapped to normal quantiles, then sheared by the Cholesky factor onto the posterior ellipse.
+#|   Left: the k x k = 8 x 8 midpoint grid u_i on (0,1)^2, with cell edges in gray. Middle: z = (Phi^{-1}(u_1), Phi^{-1}(u_2)), a square lattice of standard normal quantiles, with contours of the N_2(0, I) density; the outermost cells stretch to infinity. Right: theta = theta_hat + C z with theta_hat = (1, 2) and H^{-1} = C C' having correlation 0.8, with contours of the Laplace normal N_2(theta_hat, H^{-1}); the cross marks theta_hat. One row (orange) and one column (blue) of points, and one cell (shaded), are tracked through both maps: lines of constant z_1 stay vertical, because C is lower triangular, while lines of constant z_2 are tilted along the ellipse."
+theta_hat <- c(1, 2)
+Sigma <- matrix(c(1, 0.8, 0.8, 1), 2)       # H^{-1}
+H  <- solve(Sigma)
+C  <- t(chol(Sigma))                        # lower triangular, C C' = H^{-1}
+k  <- 8
+uc <- (seq_len(k) - 0.5) / k                # cell centres
+ue <- seq(0, 1, length.out = k + 1)         # cell edges
+zc <- qnorm(uc)
+ze <- qnorm(pmin(pmax(ue, 1e-4), 1 - 1e-4)) # clip the infinite outer edges for drawing
+to_theta <- function(z1, z2) sweep(cbind(z1, z2) %*% t(C), 2, theta_hat, "+")
+
+col_row <- "darkorange"; col_col <- "steelblue"; col_pt <- "gray30"
+r_sel <- 6; c_sel <- 3                      # tracked row (u2 index) and column (u1 index)
+G  <- expand.grid(i = 1:k, l = 1:k)
+pc <- ifelse(G$l == r_sel, col_row, ifelse(G$i == c_sel, col_col, col_pt))
+pch_cex <- ifelse(pc == col_pt, 0.9, 1.4)
+
+op <- par(mfrow = c(1, 3), mar = c(4.5, 4.5, 3, 1))
+
+## panel 1: u grid
+plot(NA, xlim = c(0, 1), ylim = c(0, 1), asp = 1, xlab = expression(u[1]), ylab = expression(u[2]),
+     main = expression("Unit square:  " * u[i] == (i - 1/2) / k))
+rect(ue[c_sel], ue[r_sel], ue[c_sel + 1], ue[r_sel + 1], col = adjustcolor("gold", 0.35), border = NA)
+abline(v = ue, h = ue, col = "gray80")
+points(uc[G$i], uc[G$l], pch = 19, col = pc, cex = pch_cex)
+
+## panel 2: z grid
+zg <- seq(-3.5, 3.5, length.out = 201)
+plot(NA, xlim = c(-3, 3), ylim = c(-3, 3), asp = 1, xlab = expression(z[1]), ylab = expression(z[2]),
+     main = expression(z[j] == Phi^{-1}*(u[j])))
+contour(zg, zg, outer(zg, zg, function(a, b) dnorm(a) * dnorm(b)), add = TRUE,
+        drawlabels = FALSE, col = "seagreen", nlevels = 6)
+rect(ze[c_sel], ze[r_sel], ze[c_sel + 1], ze[r_sel + 1], col = adjustcolor("gold", 0.35), border = NA)
+abline(v = ze, h = ze, col = "gray80")
+points(zc[G$i], zc[G$l], pch = 19, col = pc, cex = pch_cex)
+
+## panel 3: theta grid
+Tc <- to_theta(zc[G$i], zc[G$l])
+tg1 <- seq(-3, 5, length.out = 201); tg2 <- seq(-1, 5, length.out = 201)
+dens <- outer(tg1, tg2, function(a, b) {
+  d <- cbind(a - theta_hat[1], b - theta_hat[2])
+  exp(-0.5 * rowSums((d %*% H) * d))
+})
+plot(NA, xlim = c(-2, 4), ylim = c(-0.8, 4.8), asp = 1,
+     xlab = expression(theta[1]), ylab = expression(theta[2]),
+     main = expression(theta == hat(theta) + C * z))
+contour(tg1, tg2, dens, add = TRUE, drawlabels = FALSE, col = "seagreen", nlevels = 6)
+s <- seq(min(ze), max(ze), length.out = 50) # images of the grid lines z1 = const and z2 = const
+for (e in ze) {
+  a <- to_theta(rep(e, 50), s); lines(a, col = "gray80")
+  b <- to_theta(s, rep(e, 50)); lines(b, col = "gray80")
+}
+cell <- to_theta(ze[c(c_sel, c_sel + 1, c_sel + 1, c_sel)], ze[c(r_sel, r_sel, r_sel + 1, r_sel + 1)])
+polygon(cell, col = adjustcolor("gold", 0.35), border = NA)
+points(Tc, pch = 19, col = pc, cex = pch_cex)
+points(theta_hat[1], theta_hat[2], pch = 4, cex = 2, lwd = 2)
+par(op)
+```
+
+```{r}
+#| label: adapted-mv-function
+### Laplace-adapted product midpoint rule in p dimensions, k points per axis.
+### log_f takes one parameter vector; the optional log_f_rows evaluates log f on every row
+### of a matrix at once, which is much faster when k^p is large.
+log_mar_adapted_mv <- function(log_f, theta0, k, log_f_rows = NULL) {
+  op     <- optim(theta0, function(th) -log_f(th), method = "BFGS", hessian = TRUE)
+  th_hat <- op$par; p <- length(th_hat)
+  R  <- chol(op$hessian)                         # H = R'R
+  C  <- backsolve(R, diag(p))                    # C = R^{-1}, so C C' = H^{-1}
+  z1 <- qnorm((seq_len(k) - 0.5) / k)            # normal quantiles on one axis
+  Z  <- as.matrix(expand.grid(rep(list(z1), p))) # k^p x p lattice of z
+  Th <- sweep(Z %*% t(C), 2, th_hat, "+")        # theta_i = theta_hat + C z_i
+  lf <- if (is.null(log_f_rows)) apply(Th, 1, log_f) else log_f_rows(Th)
+  log_g <- lf + sum(log(diag(C))) - rowSums(dnorm(Z, log = TRUE))
+  log_sum_exp(log_g) - p * log(k)
+}
+```
+
+### Example: Computing ML of Normal Data with Unknown Mean and Variance {#sec-laplace-mean-sd-app}
 
 This example extends the comparison to two parameters, and can be explored in a [shinylive app](../../shinylive_apps/app_ML_unknown_mean_sd.html). The data are $y_1,\ldots,y_n\mid\mu,\sigma\overset{iid}{\sim}N(\mu,\sigma^2)$, simulated with the slider "data location" as the true mean, $\sigma=2$, and $n$ set by a slider (10 to 200). With $w=\log\sigma$, so that both parameters live on the whole real line, the likelihood is
 $$
@@ -455,7 +595,7 @@ the priors are independent, $\mu\sim N(0,\sigma_\mu^2)$ and $w\sim N(0,\sigma_w^
   $$
   with $u_i=(i-\tfrac12)/N$ and $v_l=(l-\tfrac12)/N$.
 * *Laplace approximation* with $p=2$: $\log P(y)\approx\log f(\hat\theta)+\log(2\pi)-\tfrac12\log|H|$, where $\hat\theta=(\hat\mu,\hat w)$ is the posterior mode and $H$ the $2\times2$ Hessian of $-\log f$ there.
-* *Product midpoint rule on a Laplace-adapted grid.* Factor the Laplace covariance as $H^{-1}=CC^\top$ (Cholesky) and write $\theta=(\mu,w)=\hat\theta+Cz$, so that $z\approx N_2(0,I)$ under the posterior; the matrix $C$ also removes the correlation between $\mu$ and $w$. Each coordinate of $z$ is then mapped to $(0,1)$ by the normal CDF, $u=\Phi(z_1)$, $v=\Phi(z_2)$. The Jacobian is $d\mu\,dw = |\det C|\,dz_1\,dz_2$ and $dz_1 = du/\phi(z_1)$, $dz_2 = dv/\phi(z_2)$, so
+* *Product midpoint rule on a Laplace-adapted grid*, the $p=2$ case of @sec-laplace-adapted-mv. With the Cholesky factor $H^{-1}=CC^\top$, $\theta=(\mu,w)=\hat\theta+Cz$ and $u=\Phi(z_1)$, $v=\Phi(z_2)$,
   $$
   P(y) = \int_0^1\!\!\int_0^1 \frac{|\det C|\,f\big(\hat\theta + C\,z(u,v)\big)}{\phi\big(\Phi^{-1}(u)\big)\,\phi\big(\Phi^{-1}(v)\big)}\,du\,dv, \qquad z(u,v) = \big(\Phi^{-1}(u),\,\Phi^{-1}(v)\big),
   $$
@@ -465,6 +605,97 @@ the priors are independent, $\mu\sim N(0,\sigma_\mu^2)$ and $w\sim N(0,\sigma_w^
   $$
 
 The top row of plots shows $f$ on the $(\mu,w)$ plane with the logistic grid mapped back, and the logistic integrand on the unit square; the bottom row shows the same for the Laplace-adapted grid. A table lists $\log P(y)$, the error against the reference and the number of function evaluations for each method, and the effective number of grid points for each midpoint rule. Moving the data location to $-5$ or $-10$ makes the logistic integrand a thin spike near the edge of the square, and the logistic rule fails however many points are used. The Laplace-adapted integrand stays nearly flat in the middle of the square, so its error stays close to that of the Laplace approximation wherever the data sit. Its error shrinks only slowly as $k$ grows, because the posterior of $(\mu,w)$ has somewhat heavier tails than its Laplace normal approximation and the integrand rises towards the edges of the square.
+
+### Example: Choosing the Number of Predictors in Logistic Regression {#sec-laplace-logistic-p}
+
+The marginal likelihood can compare models of different dimension, because integrating over $\beta$ automatically penalizes parameters the data do not need. This example uses `log_mar_adapted_mv` to choose the number of predictors in a logistic regression.
+
+**Data.** $n=200$ observations with $20$ candidate predictors $x_{i1},\ldots,x_{i,20}\overset{iid}{\sim}N(0,1)$ and
+$$
+y_i\mid x_i \sim \text{Bernoulli}\big(\operatorname{logit}^{-1}(x_{i1} - x_{i2})\big),
+$$
+so only the first two predictors carry signal; there is no intercept.
+
+**Models.** Model $M_p$ uses the first $p$ predictors, for $p = 1,2,3,4,5,10,20$, so the models are nested and $M_2$ is the true one. With $\eta_i = \sum_{j=1}^p x_{ij}\beta_j$, the likelihood and prior are
+$$
+L_p(\beta) = \prod_{i=1}^n \frac{e^{y_i\eta_i}}{1+e^{\eta_i}}, \qquad \beta_1,\ldots,\beta_p\overset{iid}{\sim}N(0,\sigma_\beta^2),
+$$
+$f_p(\beta)=L_p(\beta)\,\pi(\beta)$, and the target is the $p$-dimensional integral
+$$
+P(y\mid M_p) = \int_{\mathbb{R}^p} f_p(\beta)\,d\beta .
+$$
+
+**Computation.** Each $P(y\mid M_p)$ is computed by the Laplace-adapted product midpoint rule of @sec-laplace-adapted-mv. Because the grid has $k^p$ points, $k$ must shrink as $p$ grows: $k=10$ for $p\le3$, then $6$, $5$, $3$ and $2$ for $p=4,5,10,20$; the largest grid, $2^{20}\approx10^6$ points, is evaluated in blocks with matrix products. With $k=1$ the only point is $u=(\tfrac12,\ldots,\tfrac12)$, that is $z=0$ and $\beta=\hat\beta$, and the rule reduces exactly to the Laplace approximation, which is shown for comparison. Two prior standard deviations are compared, $\sigma_\beta=1$ and $\sigma_\beta=10$.
+
+```{r}
+#| label: logistic-p-logml
+### data: 20 candidate predictors, only x1 and x2 carry signal
+set.seed(2024)
+n_lr <- 200; p_max <- 20
+X_lr <- matrix(rnorm(n_lr * p_max), n_lr, p_max)
+y_lr <- rbinom(n_lr, 1, plogis(drop(X_lr %*% c(1, -1, rep(0, p_max - 2)))))
+
+### log P(y | M_p) by the Laplace-adapted product midpoint rule, k points per axis
+log_ml_logit <- function(p, sigma_beta, k) {
+  Xp <- X_lr[, seq_len(p), drop = FALSE]
+  log_f <- function(b) {
+    eta <- drop(Xp %*% b)
+    sum(y_lr * eta - log1p(exp(eta))) + sum(dnorm(b, 0, sigma_beta, log = TRUE))
+  }
+  log_f_rows <- function(B) {                       # one row of B per grid point, in blocks
+    out <- numeric(nrow(B))
+    for (I in split(seq_len(nrow(B)), ceiling(seq_len(nrow(B)) / 2e4))) {
+      Bi <- B[I, , drop = FALSE]
+      E  <- Xp %*% t(Bi)                            # n x |I| linear predictors
+      out[I] <- colSums(y_lr * E - log1p(exp(E))) + rowSums(dnorm(Bi, 0, sigma_beta, log = TRUE))
+    }
+    out
+  }
+  log_mar_adapted_mv(log_f, rep(0, p), k, log_f_rows)
+}
+
+p_vals  <- c(1, 2, 3, 4, 5, 10, 20)
+k_vals  <- c(10, 10, 10, 6, 5, 3, 2)               # k^p kept at most about 10^6
+sb_vals <- c(1, 10)
+logml_adapt <- sapply(sb_vals, function(sb) mapply(function(p, k) log_ml_logit(p, sb, k), p_vals, k_vals))
+logml_lap   <- sapply(sb_vals, function(sb) sapply(p_vals, function(p) log_ml_logit(p, sb, 1)))
+dimnames(logml_adapt) <- dimnames(logml_lap) <- list(p = p_vals, sigma_beta = sb_vals)
+```
+
+```{r}
+#| label: fig-logistic-p-logml
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 8
+#| fig-height: 4.8
+#| fig-cap: "Shows that the marginal likelihood picks the true number of predictors in a logistic regression, for two prior scales.
+#|   log P(y | M_p) computed by the Laplace-adapted product midpoint rule for models using the first p of 20 predictors (n = 200, only x1 and x2 carry signal), with prior beta_j ~ N(0, sigma_beta^2) for sigma_beta = 1 and 10. Both curves peak at p = 2 (filled point). Beyond p = 2 the curves fall, roughly linearly in p, because each useless coefficient adds a penalty of about log(sigma_beta / posterior sd); the penalty is larger, and the curve steeper, for the more diffuse prior sigma_beta = 10."
+cols <- c("steelblue", "firebrick")
+plot(NA, xlim = range(p_vals), ylim = range(logml_adapt), log = "x", xaxt = "n",
+     xlab = "number of predictors p (log scale)", ylab = expression(log ~ P(y ~ "|" ~ M[p])))
+axis(1, at = p_vals)
+abline(v = 2, col = "gray80", lty = 2)
+for (j in seq_along(sb_vals)) {
+  lines(p_vals, logml_adapt[, j], type = "b", pch = 1, col = cols[j], lwd = 2)
+  jmax <- which.max(logml_adapt[, j])
+  points(p_vals[jmax], logml_adapt[jmax, j], pch = 19, col = cols[j], cex = 1.6)
+}
+legend("bottomleft", bty = "n", lwd = 2, pch = 1, col = cols,
+       legend = c(expression(sigma[beta] == 1), expression(sigma[beta] == 10)))
+```
+
+```{r}
+#| label: tbl-logistic-p-logml
+#| tbl-cap: "log P(y | M_p) for the logistic regression models in the figure above: the Laplace-adapted product midpoint rule (k points per axis, k^p grid points) and the Laplace approximation (the same rule with k = 1)."
+knitr::kable(data.frame(p = p_vals, k = k_vals, points = k_vals^p_vals,
+                        adapted_1 = logml_adapt[, 1], laplace_1 = logml_lap[, 1],
+                        adapted_10 = logml_adapt[, 2], laplace_10 = logml_lap[, 2]),
+             digits = 3, format.args = list(big.mark = ","),
+             col.names = c("p", "k", "grid points",
+                           "adapted, σ_β = 1", "Laplace, σ_β = 1",
+                           "adapted, σ_β = 10", "Laplace, σ_β = 10"))
+```
+
+Both curves rise sharply from $p=1$ to $p=2$, because the model with only $x_1$ misses a real effect and fits the data much worse. Both peak at the true $p=2$. They then fall as useless predictors are added: each extra coefficient improves the fit only slightly, while the prior spreads its probability over a range of $\beta_j$ the data do not need. The decrease is steeper for $\sigma_\beta=10$, because a more diffuse prior wastes more probability on implausible values. The choice of prior variance changes how strongly extra parameters are penalized, so it matters for model comparison in a way it rarely does for estimation. For this posterior the adapted rule and the Laplace approximation agree to within about $0.07$ even at $p=20$, so the ranking of the models is the same under either method.
 
 ## Remarks on the Laplace Approximation
 
