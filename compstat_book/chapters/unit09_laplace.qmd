@@ -19,9 +19,9 @@ important point — the mode — and replaces the whole integrand there by the
 Gaussian that matches its height and curvature. No grid is needed at any
 dimension, at the price of assuming the integrand is roughly bell-shaped.
 
-## The Goal and the Idea
+## Laplace Approximation Formula
 
-Many Bayesian calculations are posterior expectations
+**The goal and the idea.** Many Bayesian calculations are posterior expectations
 $$
 E_f\big[a(\theta)\big] = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta},
 $$
@@ -40,9 +40,7 @@ Laplace approximation makes this precise by expanding $h$ to second order at
 its minimum and integrating the resulting Gaussian exactly — no grid, no
 sampling, just one optimization and one Hessian.
 
-## Derivation
-
-Let $\theta_0 = \arg\min_\theta h(\theta)$, the posterior mode, found
+**Derivation.** Let $\theta_0 = \arg\min_\theta h(\theta)$, the posterior mode, found
 numerically (`optim(..., hessian = TRUE)` or `nlm(..., hessian = TRUE)` in
 R — exactly the optimizers used to find the MLE in earlier chapters). Expand
 $h$ around $\theta_0$:
@@ -55,12 +53,18 @@ $H$, the Hessian of $-\log f$ at the mode, is positive definite at a genuine
 minimum; for $f = L\pi$ it is the observed information plus the curvature of
 the log-prior. Dropping the cubic remainder and exponentiating,
 $$
-f(\theta) \approx \tilde f(\theta) = f(\theta_0)\exp\Big\{-\tfrac12(\theta-\theta_0)^\top H(\theta-\theta_0)\Big\}
- = \underbrace{f(\theta_0)(2\pi)^{p/2}|H|^{-1/2}}_{\text{constant}}
-   \cdot \underbrace{(2\pi)^{-p/2}|H|^{1/2}e^{-\frac12(\theta-\theta_0)^\top H(\theta-\theta_0)}}_{N_p(\theta_0,\,H^{-1})\text{ density}}.
+f(\theta) \approx \tilde f(\theta) = f(\theta_0)\exp\Big\{-\tfrac12(\theta-\theta_0)^\top H(\theta-\theta_0)\Big\}.
 $$
-Two results follow immediately, since the bracketed factor is a properly
-normalized $N_p(\theta_0, H^{-1})$ density:
+The exponential factor is, up to its normalizing constant, the density of $N_p(\theta_0, H^{-1})$,
+$$
+\varphi_H(\theta) = (2\pi)^{-p/2}\,|H|^{1/2}\exp\Big\{-\tfrac12(\theta-\theta_0)^\top H(\theta-\theta_0)\Big\},
+$$
+so multiplying and dividing by $(2\pi)^{-p/2}|H|^{1/2}$ splits $\tilde f$ into a constant times a density:
+$$
+\tilde f(\theta) = c\cdot\varphi_H(\theta), \qquad c = f(\theta_0)\,(2\pi)^{p/2}\,|H|^{-1/2}.
+$$
+Two results follow immediately, since $\varphi_H$ is a properly
+normalized density that integrates to $1$:
 
 $$
 \boxed{\ \theta \mid \text{data} \ \approx\ N_p\big(\theta_0,\ H^{-1}\big) \ }
@@ -68,12 +72,74 @@ $$
 \boxed{\ \int f(\theta)\,d\theta \ \approx\ f(\theta_0)\,(2\pi)^{p/2}\,|H|^{-1/2} \ }
 $$
 
+**Geometric meaning of $|H|$.** The second result says that the integral is the **height** of $f$ at its mode times a **volume**, $(2\pi)^{p/2}|H|^{-1/2}$. The volume is that of a contour of $\tilde f$. The contours are the ellipsoids
+$$
+E_r = \big\{\theta : (\theta-\theta_0)^\top H(\theta-\theta_0) \le r^2\big\}.
+$$
+If $\lambda_1,\ldots,\lambda_p$ are the eigenvalues of $H$, $E_r$ has semi-axes of length $r/\sqrt{\lambda_j}$ along the eigenvectors of $H$, so its volume is
+$$
+\operatorname{vol}(E_r) = V_p\, r^p \prod_{j=1}^p \frac{1}{\sqrt{\lambda_j}} = V_p\, r^p\,|H|^{-1/2}, \qquad V_p = \frac{\pi^{p/2}}{\Gamma(p/2+1)},
+$$
+where $V_p$ is the volume of the unit ball in $\mathbb R^p$. Setting $\operatorname{vol}(E_r) = (2\pi)^{p/2}|H|^{-1/2}$ and solving for $r$ gives
+$$
+r^\ast = \sqrt2\;\Gamma\big(p/2+1\big)^{1/p}, \qquad \int f(\theta)\,d\theta \approx f(\theta_0)\cdot\operatorname{vol}\big(E_{r^\ast}\big).
+$$
+So the Laplace approximation replaces the bell-shaped $f$ by a flat-topped cylinder of height $f(\theta_0)$ over the contour ellipsoid $E_{r^\ast}$, which has the same volume as the Gaussian $\tilde f$. For $p=1$, $r^\ast=\sqrt{\pi/2}\approx1.25$ and $E_{r^\ast}$ is the interval $\theta_0\pm r^\ast/\sqrt H$, of length $\sqrt{2\pi/H}$; for $p=2$, $r^\ast=\sqrt2$ and $E_{r^\ast}$ is the ellipse of area $\pi r^{\ast2}|H|^{-1/2} = 2\pi|H|^{-1/2}$. As $p$ grows, $r^\ast\approx\sqrt{p/e}$, far inside the typical radius $\sqrt p$ of the normal distribution, so $E_{r^\ast}$ holds less and less of the posterior probability.
+
+A large $|H|$ means strong curvature, tight contours and a small integral; a small $|H|$ means a flat, wide peak and a large integral, for the same height $f(\theta_0)$. @fig-laplace-H-geometry shows this for two Hessians that differ by a factor of $4$, so $|H|$ differs by $4^2=16$ and the area of $E_{r^\ast}$ by $4$.
+
+```{r}
+#| label: fig-laplace-H-geometry
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 10
+#| fig-height: 5.2
+#| fig-cap: "Illustrates the geometric meaning of |H| in the Laplace approximation: the integral is the peak height times the area of a contour ellipse, which is proportional to |H|^(-1/2).
+#|   Contours of exp{-(theta - theta_0)' H (theta - theta_0) / 2} for two Hessians with the same peak height, H (left) and 4H (right), drawn on the same axes. The shaded ellipse is the contour (theta - theta_0)' H (theta - theta_0) = r*^2 with r* = sqrt(2), whose area is 2 pi |H|^(-1/2): a cylinder of height f(theta_0) over it has the same volume as the Gaussian. Its semi-axes (blue) have lengths sqrt(2)/sqrt(lambda_j) along the eigenvectors of H. Multiplying H by 4 shrinks every semi-axis by 2, the area by 4, and so the Laplace integral by 4."
+local({
+  H1 <- matrix(c(2, 0.9, 0.9, 1), 2)                  # Hessian of -log f at the mode
+  rs <- sqrt(2)                                       # r* for p = 2: area of E_r* = 2 pi |H|^(-1/2)
+  par(mfrow = c(1, 2), mar = c(4, 4, 3.2, 1))
+  for (H in list(H1, 4 * H1)) {
+    g  <- seq(-5, 5, length.out = 401)
+    q  <- outer(g, g, function(a, b) H[1, 1] * a^2 + 2 * H[1, 2] * a * b + H[2, 2] * b^2)
+    contour(g, g, exp(-q / 2), levels = exp(-c(0.25, 1, 4, 6.25) / 2), drawlabels = FALSE,
+            col = "gray55", asp = 1, xlim = c(-3.5, 3.5), ylim = c(-3.6, 4.6), xlab = expression(theta[1] - theta[0 * "," * 1]),
+            ylab = expression(theta[2] - theta[0 * "," * 2]),
+            main = bquote(list(group("|", H, "|") == .(round(det(H), 2)),
+                               ~~"area" ~ 2 * pi * group("|", H, "|")^{-1/2} == .(round(2 * pi / sqrt(det(H)), 2)))))
+    cl <- contourLines(g, g, q, levels = rs^2)[[1]]
+    polygon(cl$x, cl$y, col = adjustcolor("#D62728", 0.15), border = "#D62728", lwd = 3)
+    e <- eigen(H, symmetric = TRUE)
+    for (j in 1:2) {
+      a <- rs * e$vectors[, j] / sqrt(e$values[j])       # semi-axis: length r* / sqrt(lambda_j)
+      arrows(0, 0, a[1], a[2], length = 0.08, lwd = 2, col = "#1F5FBF")
+    }
+    points(0, 0, pch = 3, lwd = 2)
+    ax <- round(rs / sqrt(e$values), 2)
+    legend("topright", bg = "white", box.col = NA, cex = 0.85, lwd = c(3, 2, 1), col = c("#D62728", "#1F5FBF", "gray55"),
+           legend = c(expression((theta - theta[0])^T * H * (theta - theta[0]) == 2 ~~ (r^"*" == sqrt(2))),
+                      bquote("semi-axes" ~ sqrt(2) / sqrt(lambda[j]) * ":" ~ .(ax[1]) * "," ~ .(ax[2])),
+                      "other contours"))
+  }
+})
+```
+
+On the $-2\log$ scale, the scale of deviances and information criteria, the second result reads
+$$
+-2\log\int f(\theta)\,d\theta \;\approx\; -2\log f(\theta_0) + \log|H| - p\log(2\pi) \;=\; 2\,h(\theta_0) + \log|H| - p\log(2\pi),
+$$
+and for a marginal likelihood, where $f(\theta)=L(\theta)\,\pi(\theta)$ and $P(y)=\int f(\theta)\,d\theta$,
+$$
+-2\log P(y) \;\approx\; -2\log L(\theta_0) - 2\log\pi(\theta_0) + \log|H| - p\log(2\pi).
+$$
+The first term measures fit at the mode; the other three penalize through the prior density at the mode and the volume of the posterior, $|H|^{-1/2}$. This is the form from which BIC is derived in @sec-laplace-bic.
+
 Only the mode and the Hessian of $-\log f$ at the mode are needed — both come
 for free from any optimizer that returns a Hessian. The relative error of the
 second result is $O(1/n)$ for regular models; the error of the first is
 governed by how skewed the true posterior actually is.
 
-## Worked Example: A Poisson Rate with a Gamma Prior
+## Example: A Poisson Rate with a Gamma Prior
 
 To see the approximation against ground truth, use a model with a known exact
 answer: the Gamma–Poisson conjugate pair from the Bayesian Inference chapter.
@@ -179,7 +245,230 @@ The two intervals agree closely even at $n=20$: the mild right-skew of the
 Gamma posterior visible in @fig-poisson-gamma-density has not yet noticeably
 distorted a Wald-style interval built from a symmetric Gaussian.
 
-### BIC as a large-$n$ simplification
+## Example: A Normal Mean with a Normal Prior {#sec-laplace-normal-mean}
+
+To compare the three methods on an apples-to-apples problem, reuse the single-parameter example from the end of Unit 08, where one unknown mean has to be integrated out.
+
+**The model.** The data are $n=3$ observations $y_1,\ldots,y_{n}\mid\mu \overset{iid}{\sim} N(\mu,1)$ with known variance $1$. Their mean $\hat\mu=\bar y$ is sufficient for $\mu$, and $\hat\mu\mid\mu\sim N(\mu,1/n)$, so we take the likelihood to be the density of $\hat\mu$,
+$$
+L(\mu) = N\big(\hat\mu;\,\mu,\,1/n\big) = \sqrt{\frac{n}{2\pi}}\,\exp\Big\{-\frac{n}{2}(\hat\mu-\mu)^2\Big\}.
+$$
+(The full likelihood $\prod_i N(y_i;\mu,1)$ differs from this only by a factor that does not involve $\mu$.) The prior is $\pi(\mu)=N(\mu;\,0,\,\sigma_\pi^2)$ with $\sigma_\pi=5$. To see how each method copes as the data move away from where the prior puts its mass, $\hat\mu$ is set to $0$, $-5$ and $-20$, i.e. $0$, $1$ and $4$ prior standard deviations from the prior mean.
+
+**The target.** The marginal likelihood is the integral of the unnormalized posterior $f(\mu)=L(\mu)\,\pi(\mu)$ over the whole real line,
+$$
+P(y) = \int_{-\infty}^{\infty} f(\mu)\,d\mu, \qquad f(\mu) = N\big(\hat\mu;\,\mu,\,1/n\big)\,N(\mu;\,0,\,\sigma_\pi^2).
+$$
+Because the prior and likelihood are a normal-normal conjugate pair, everything is available in closed form. The posterior is
+$$
+\mu\mid y \sim N\big(m,\,v\big), \qquad v = \Big(n+\frac{1}{\sigma_\pi^2}\Big)^{-1} = \frac{1}{3.04}\approx 0.574^2, \qquad m = v\,n\,\hat\mu \approx 0.987\,\hat\mu,
+$$
+a narrow bump that follows the data, and integrating $\mu$ out gives $\hat\mu\sim N(0,\,1/n+\sigma_\pi^2)$ marginally, so the **true** value is
+$$
+P(y) = N\big(\hat\mu;\,0,\,1/n+\sigma_\pi^2\big).
+$$
+
+**Laplace.** Laplace attacks the integral by optimization instead of a grid. Let $h(\mu)=-\log f(\mu)$; `nlm()` finds its minimizer $\hat\mu_L$ and the second derivative $H=h''(\hat\mu_L)$, and the boxed formula with $p=1$ gives
+$$
+\log P(y) \approx \log f(\hat\mu_L) + \tfrac12\log(2\pi) - \tfrac12\log H .
+$$
+Here $\hat\mu_L=m$ and $H=1/v$, and since $f$ is exactly a normal kernel, the Laplace approximation is exact for every $\hat\mu$.
+
+**Quadrature on a logistic grid.** The midpoint rule needs a finite interval, so, as in Unit08, the real line is first mapped to $(0,1)$ by the logistic transform
+$$
+u = \frac{1}{1+e^{-\mu}}, \qquad \mu = \operatorname{logit}(u) = \log\frac{u}{1-u}, \qquad \frac{d\mu}{du} = \frac{1}{u(1-u)} .
+$$
+Substituting $\mu=\operatorname{logit}(u)$, $d\mu = du/\{u(1-u)\}$ turns the target into an integral over the unit interval,
+$$
+P(y) = \int_{-\infty}^{\infty} f(\mu)\,d\mu = \int_0^1 g(u)\,du, \qquad g(u) = \frac{f\big(\operatorname{logit}(u)\big)}{u(1-u)} .
+$$
+The midpoint rule with $N$ equal cells of width $1/N$, evaluated at the cell centres $u_i=(i-\tfrac12)/N$, then gives
+$$
+P(y) \approx \frac{1}{N}\sum_{i=1}^{N} g(u_i) = \frac{1}{N}\sum_{i=1}^{N} \frac{f(\mu_i)}{u_i(1-u_i)}, \qquad \mu_i = \operatorname{logit}(u_i),
+$$
+with $N=100$ below, computed on the log scale with log-sum-exp. The grid is fixed in advance: its points $\mu_i$ are dense near $\mu=0$ and sparse far from it. The posterior at $\hat\mu=-20$ sits near $u\approx e^{-20}\approx2\times10^{-9}$, in an interval only a few times $10^{-9}$ wide in $u$, far inside the first cell, whose centre is $u_1=0.005$, i.e. $\mu_1\approx-5.3$.
+
+**Monte Carlo from the prior.** Writing the target as an expectation under the prior, $P(y)=\int L(\mu)\,\pi(\mu)\,d\mu = E_\pi[L(\mu)]$, the naive Monte Carlo estimator of Unit08 draws $\mu^{(1)},\ldots,\mu^{(M)}\overset{iid}{\sim}\pi$ and averages the likelihood,
+$$
+P(y) \approx \frac1M\sum_{m=1}^{M} L\big(\mu^{(m)}\big),
+$$
+with $M=10^6$. Only draws that land under the posterior bump contribute; at $\hat\mu=-20$ that is about $\Phi(-3.8)\approx 7\times10^{-5}$ of the draws, roughly a hundred out of a million.
+
+```{r}
+#| label: laplace-mu-functions
+n_obs <- 3; sigma_prior <- 5                   # n = 3 observations; same setup as the Unit08 app
+
+### true value: exact, since f is a normal-normal conjugate kernel, so marginally
+### mu_hat ~ N(0, 1/n_obs + sigma_prior^2). (integrate(f, -Inf, Inf) is not safe here:
+### for mu_hat far from 0 it misses the narrow spike of f and returns a wrong value.)
+log_mar_true_mu <- function(mu_hat) dnorm(mu_hat, 0, sqrt(1 / n_obs + sigma_prior^2), log = TRUE)
+
+### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()
+laplace_mu <- function(mu_hat) {
+  h  <- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_obs), log = TRUE) +
+                          dnorm(mu, 0, sigma_prior, log = TRUE))
+  op <- nlm(h, p = mu_hat, hessian = TRUE)
+  c(mode = op$estimate, log_ml = -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1]))
+}
+
+### naive Monte Carlo: draw mu from the prior, average the likelihood
+log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
+log_mar_mc_mu <- function(mu_hat, iters) {
+  mus <- rnorm(iters, 0, sigma_prior)
+  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_obs), log = TRUE)) - log(iters)
+}
+
+### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08
+log_mar_mid_mu <- function(mu_hat, n) {
+  h  <- 1 / n
+  u  <- (seq_len(n) - 0.5) * h
+  mu <- log(u / (1 - u))
+  log_f <- dnorm(mu_hat, mu, 1 / sqrt(n_obs), log = TRUE) +
+    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
+  log_sum_exp(log_f) + log(h)
+}
+```
+
+```{r}
+#| label: tbl-three-way
+#| tbl-cap: "Compares the Laplace approximation with grid quadrature and naive Monte Carlo against the true value as the posterior moves away from the prior mean, to show where each method succeeds or fails.
+#|   Log marginal likelihood by four methods, for data locations mu_hat = 0, -5, -20 (n = 3 observations with sd 1, prior N(0, 5^2) on mu). Quadrature uses a 100-point midpoint grid; Monte Carlo uses 1e6 prior draws; both are unchanged from Unit08's app."
+set.seed(7)
+mu_hats <- c(0, -5, -20)
+three_way <- t(sapply(mu_hats, function(m) {
+  c(True = log_mar_true_mu(m),
+    Laplace = laplace_mu(m)["log_ml"],
+    Monte_Carlo_pi = log_mar_mc_mu(m, 1e6),
+    Quadrature = log_mar_mid_mu(m, 100))
+}))
+knitr::kable(cbind(`mu` = mu_hats, round(three_way, 3)), row.names = FALSE,
+             col.names = c("mu", "True", "Laplace", "Monte Carlo (pi)", "Quadrature (N=100)"))
+```
+
+At $\mu=0$ the posterior sits right where both the logistic grid and the
+prior put their effort, so all four numbers should agree closely. As $\mu$
+moves to $-5$ and then $-20$, the fixed grid — centred at $0$ by
+construction — squeezes the posterior into an ever-thinner sliver of the
+unit interval, and quadrature is the first to break away from the true
+value, exactly the failure diagnosed at the end of Unit08. Naive Monte Carlo
+is built on the same fragile assumption in a different guise: it needs prior
+draws *near* $\mu$ to contribute any likelihood at all, so once $\mu$ is
+several prior standard deviations from $0$, a fixed budget of draws from
+$\pi$ can also become too sparse there to be trusted, even though nothing
+about the Monte Carlo estimator's derivation assumed $\mu$ would be small.
+Laplace has neither failure mode: it optimizes to find the mode wherever it
+actually is and builds its approximation *around that point*, so it
+automatically "recentres" itself for every $\mu$ — the same fix Unit08
+proposed by hand for quadrature, done here for free by the optimizer.
+
+## Quadrature Adapted by the Laplace Approximation {#sec-laplace-adapted-quadrature}
+
+A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. The remedy is to let the Laplace approximation tell the quadrature rule where to look. Laplace approximates the posterior by $N(\hat\mu_L, s_L^2)$, where $\hat\mu_L$ is the mode of $f$ and $s_L=1/\sqrt{H}$ with $H$ the second derivative of $-\log f$ at $\hat\mu_L$. The Laplace-adapted midpoint rule below places its grid points according to this normal distribution, so it follows the posterior wherever it sits.
+
+### Laplace-adapted midpoint rule
+
+**A general transformation.** The midpoint rule needs a finite interval to partition, so the real line is first mapped to $(0,1)$. Let $t$ be any strictly increasing, differentiable map from $(-\infty,\infty)$ onto $(0,1)$, that is, the CDF of a continuous distribution, with density $t'(\mu)>0$. Substituting
+$$
+u = t(\mu), \qquad \mu = t^{-1}(u), \qquad d\mu = \frac{du}{t'\big(t^{-1}(u)\big)}
+$$
+turns the target into an integral over the unit interval,
+$$
+P(y) = \int_{-\infty}^{\infty} f(\mu)\,d\mu = \int_0^1 \frac{f\big(t^{-1}(u)\big)}{t'\big(t^{-1}(u)\big)}\,du,
+$$
+and the midpoint rule with $N$ equal cells and centres $u_i=(i-\tfrac12)/N$ gives
+$$
+P(y) \approx \frac1N\sum_{i=1}^N \frac{f(\mu_i)}{t'(\mu_i)}, \qquad \mu_i = t^{-1}(u_i).
+$$
+The integrand over $u$ is $f$ divided by the density $t'$. It is nearly constant, and a few points are enough, when $t'$ has the same shape as $f$; it is a narrow spike, which a fixed grid can miss, when $t'$ puts its mass somewhere else. A fixed choice such as the logistic CDF $t(\mu)=1/(1+e^{-\mu})$, with $t'(\mu)=t(\mu)\{1-t(\mu)\}$, matches $f$ only when the posterior happens to sit near $0$ with a scale near $1$.
+
+**The Laplace choice.** The best available description of the shape of $f$ is its Laplace approximation, which for $p=1$ is
+$$
+\tilde f(\mu) = f(\hat\mu_L)\exp\Big\{-\frac{(\mu-\hat\mu_L)^2}{2s_L^2}\Big\}, \qquad s_L = H^{-1/2},
+$$
+where $\hat\mu_L$ is the mode of $f$ and $H$ the second derivative of $-\log f$ there. Normalized, $\tilde f$ is the density of $N(\hat\mu_L, s_L^2)$; write
+$$
+\phi(x;\,\hat\mu_L,\,s_L) = \frac{1}{s_L\sqrt{2\pi}}\exp\Big\{-\frac{(x-\hat\mu_L)^2}{2s_L^2}\Big\}, \qquad \Phi(x;\,\hat\mu_L,\,s_L) = \int_{-\infty}^{x}\phi(v;\,\hat\mu_L,\,s_L)\,dv
+$$
+for this density and its CDF, and $\Phi^{-1}(u;\,\hat\mu_L,\,s_L)$ for the quantile function (`dnorm`, `pnorm` and `qnorm` with `mean = mu_L, sd = s_L` in R). Taking $t$ to be the CDF of the normalized $\tilde f$,
+$$
+t(\mu) = \Phi(\mu;\,\hat\mu_L,\,s_L), \qquad t^{-1}(u) = \Phi^{-1}(u;\,\hat\mu_L,\,s_L), \qquad t'(\mu) = \phi(\mu;\,\hat\mu_L,\,s_L),
+$$
+the general integral becomes
+$$
+P(y) = \int_0^1 g(u)\,du, \qquad g(u) = \frac{f\big(\mu(u)\big)}{\phi\big(\mu(u);\,\hat\mu_L,\,s_L\big)}, \qquad \mu(u) = \Phi^{-1}(u;\,\hat\mu_L,\,s_L).
+$$
+The integrand $g(u)$ is the posterior kernel divided by the Laplace normal density at the same point. If the posterior were exactly $N(\hat\mu_L,s_L^2)$, $g$ would be constant on $(0,1)$, equal to the Laplace approximation $f(\hat\mu_L)/\phi(\hat\mu_L;\,\hat\mu_L,\,s_L)=\sqrt{2\pi}\,s_L f(\hat\mu_L)$. The midpoint rule on the same cells then gives
+$$
+P(y) \approx \frac{1}{N}\sum_{i=1}^N g(u_i) = \frac{1}{N}\sum_{i=1}^N \frac{f(\mu_i)}{\phi(\mu_i;\,\hat\mu_L,\,s_L)}, \qquad \mu_i = \Phi^{-1}(u_i;\,\hat\mu_L,\,s_L).
+$$
+Compared with the logistic map, only $t$ has changed: the grid points $\mu_i$ are now the quantiles of the Laplace normal, so they sit under the posterior wherever it is. The error decreases like $1/N^2$, as for any midpoint rule, only when $g$ is smooth and bounded on $[0,1]$. When the posterior has heavier tails than its Laplace normal approximation, $g(u)$ grows without bound as $u\to0$ or $1$, because $\Phi^{-1}(u;\,\hat\mu_L,\,s_L)$ is steep there and the outermost cells, each standing for a whole tail, sample it poorly; convergence is then much slower.
+
+The table below applies the rule to the example of @sec-laplace-normal-mean. Because $f(\mu)$ is a normal–normal kernel here, the posterior is exactly normal, $g(u)$ is exactly constant, and the rule is exact with any number of points, wherever the data sit. The two-parameter example below, where the posterior of $(\mu,\log\sigma)$ is not exactly normal, shows the rule at work when $g$ is only approximately constant.
+
+```{r}
+#| label: tbl-adapted-rules
+#| tbl-cap: "Log marginal likelihood for data locations mu_hat = 0, -5, -20 (setup as in the table above): the logistic midpoint rule with 100 points, and the Laplace-adapted midpoint rule with only 5 points."
+### Laplace-adapted midpoint rule: mu_i = qnorm(u_i, mu_L, s_L), g(u_i) = f(mu_i) / dnorm(mu_i, mu_L, s_L)
+log_mar_adapted <- function(mu_hat, n) {
+  lf <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_obs), log = TRUE) + dnorm(mu, 0, sigma_prior, log = TRUE)
+  h  <- function(mu) -lf(mu)
+  op <- nlm(h, p = mu_hat, hessian = TRUE)
+  m  <- op$estimate; sL <- 1 / sqrt(op$hessian[1, 1])
+  u  <- (seq_len(n) - 0.5) / n
+  mu <- qnorm(u, m, sL)
+  log_sum_exp(lf(mu) - dnorm(mu, m, sL, log = TRUE)) - log(n)
+}
+adapted <- t(sapply(mu_hats, function(m) c(
+  True                 = log_mar_true_mu(m),
+  Laplace              = unname(laplace_mu(m)["log_ml"]),
+  `Logistic midpoint (N=100)` = log_mar_mid_mu(m, 100),
+  `Laplace-adapted midpoint (N=5)` = log_mar_adapted(m, 5))))
+knitr::kable(cbind(mu = mu_hats, round(adapted, 3)), row.names = FALSE)
+```
+
+### Example: One Unknown Mean {#sec-laplace-transform-app}
+
+This example compares the logistic midpoint rule with the Laplace-adapted midpoint rule on the normal-mean model of @sec-laplace-normal-mean, and can be explored in a [shinylive app](../../shinylive_apps/app_ML_unknown_mean.html). The model is $n=3$ observations from $N(\mu,1)$ with sample mean $\hat\mu$, so $L(\mu)=N(\hat\mu;\,\mu,\,1/3)$, prior $\pi(\mu)=N(\mu;\,0,\,5^2)$, and $f(\mu)=L(\mu)\,\pi(\mu)$. Sliders set the data location $\hat\mu$ (from $-5$ to $25$) and the number $N$ of grid points. The app computes $P(y)=\int f(\mu)\,d\mu$ by the two midpoint rules, each written as an integral over $u\in(0,1)$:
+
+* *Logistic grid* (top row), with $\mu=\operatorname{logit}(u)$:
+  $$
+  P(y) = \int_0^1 \frac{f\big(\operatorname{logit}(u)\big)}{u(1-u)}\,du \;\approx\; \frac1N\sum_{i=1}^N \frac{f\big(\operatorname{logit}(u_i)\big)}{u_i(1-u_i)} .
+  $$
+* *Laplace-adapted grid* (bottom row), with $\mu=\Phi^{-1}(u;\,\hat\mu_L,\,s_L)$ and $\hat\mu_L$, $s_L$ recomputed for each $\hat\mu$:
+  $$
+  P(y) = \int_0^1 \frac{f\big(\Phi^{-1}(u;\,\hat\mu_L,\,s_L)\big)}{\phi\big(\Phi^{-1}(u;\,\hat\mu_L,\,s_L);\,\hat\mu_L,\,s_L\big)}\,du \;\approx\; \frac1N\sum_{i=1}^N \frac{f(\mu_i)}{\phi(\mu_i;\,\hat\mu_L,\,s_L)}, \qquad \mu_i=\Phi^{-1}(u_i;\,\hat\mu_L,\,s_L) .
+  $$
+
+In each row the left plot shows $f(\mu)$ with the grid points $\mu_i$, and the right plot shows the integrand over $u$ with the midpoint rectangles, whose total area is the estimate; the true value $N(\hat\mu;\,0,\,1/3+5^2)$ is shown for comparison. As $\hat\mu$ moves away from $0$, the logistic integrand becomes a spike near $u=1$ that falls between grid points and the estimate collapses, while the Laplace-adapted integrand stays flat and a few rectangles give the right area.
+
+### Example: Unknown Mean and Standard Deviation {#sec-laplace-mean-sd-app}
+
+This example extends the comparison to two parameters, and can be explored in a [shinylive app](../../shinylive_apps/app_ML_unknown_mean_sd.html). The data are $y_1,\ldots,y_n\mid\mu,\sigma\overset{iid}{\sim}N(\mu,\sigma^2)$, simulated with the slider "data location" as the true mean, $\sigma=2$, and $n$ set by a slider (10 to 200). With $w=\log\sigma$, so that both parameters live on the whole real line, the likelihood is
+$$
+L(\mu,w) = \prod_{i=1}^n N\big(y_i;\,\mu,\,e^{2w}\big) = (2\pi)^{-n/2}\,e^{-nw}\exp\Big\{-\frac{e^{-2w}}{2}\sum_{i=1}^n (y_i-\mu)^2\Big\},
+$$
+the priors are independent, $\mu\sim N(0,\sigma_\mu^2)$ and $w\sim N(0,\sigma_w^2)$ (both standard deviations set by sliders), $f(\mu,w)=L(\mu,w)\,\pi(\mu)\,\pi(w)$, and the target is the double integral $P(y)=\iint f(\mu,w)\,d\mu\,dw$. Three methods are compared with a reference value from a fine grid centred on the posterior mode:
+
+* *Product midpoint rule on a logistic grid*, with $\mu=\operatorname{logit}(u)$ and $w=\operatorname{logit}(v)$ mapped separately:
+  $$
+  P(y) = \int_0^1\!\!\int_0^1 \frac{f\big(\operatorname{logit}(u),\,\operatorname{logit}(v)\big)}{u(1-u)\,v(1-v)}\,du\,dv \;\approx\; \frac{1}{N^2}\sum_{i=1}^N\sum_{l=1}^N \frac{f\big(\operatorname{logit}(u_i),\,\operatorname{logit}(v_l)\big)}{u_i(1-u_i)\,v_l(1-v_l)},
+  $$
+  with $u_i=(i-\tfrac12)/N$ and $v_l=(l-\tfrac12)/N$.
+* *Laplace approximation* with $p=2$: $\log P(y)\approx\log f(\hat\theta)+\log(2\pi)-\tfrac12\log|H|$, where $\hat\theta=(\hat\mu,\hat w)$ is the posterior mode and $H$ the $2\times2$ Hessian of $-\log f$ there.
+* *Product midpoint rule on a Laplace-adapted grid.* Factor the Laplace covariance as $H^{-1}=CC^\top$ (Cholesky) and write $\theta=(\mu,w)=\hat\theta+Cz$, so that $z\approx N_2(0,I)$ under the posterior; the matrix $C$ also removes the correlation between $\mu$ and $w$. Each coordinate of $z$ is then mapped to $(0,1)$ by the normal CDF, $u=\Phi(z_1)$, $v=\Phi(z_2)$. The Jacobian is $d\mu\,dw = |\det C|\,dz_1\,dz_2$ and $dz_1 = du/\phi(z_1)$, $dz_2 = dv/\phi(z_2)$, so
+  $$
+  P(y) = \int_0^1\!\!\int_0^1 \frac{|\det C|\,f\big(\hat\theta + C\,z(u,v)\big)}{\phi\big(\Phi^{-1}(u)\big)\,\phi\big(\Phi^{-1}(v)\big)}\,du\,dv, \qquad z(u,v) = \big(\Phi^{-1}(u),\,\Phi^{-1}(v)\big),
+  $$
+  and with $k$ points per axis,
+  $$
+  P(y) \approx \frac{|\det C|}{k^2}\sum_{i=1}^k\sum_{l=1}^k \frac{f\big(\hat\theta + C\,z(u_i,v_l)\big)}{\phi\big(\Phi^{-1}(u_i)\big)\,\phi\big(\Phi^{-1}(v_l)\big)}, \qquad u_i=\frac{i-\tfrac12}{k},\quad v_l=\frac{l-\tfrac12}{k}.
+  $$
+
+The top row of plots shows $f$ on the $(\mu,w)$ plane with the logistic grid mapped back, and the logistic integrand on the unit square; the bottom row shows the same for the Laplace-adapted grid. A table lists $\log P(y)$, the error against the reference and the number of function evaluations for each method, and the effective number of grid points for each midpoint rule. Moving the data location to $-5$ or $-10$ makes the logistic integrand a thin spike near the edge of the square, and the logistic rule fails however many points are used. The Laplace-adapted integrand stays nearly flat in the middle of the square, so its error stays close to that of the Laplace approximation wherever the data sit. Its error shrinks only slowly as $k$ grows, because the posterior of $(\mu,w)$ has somewhat heavier tails than its Laplace normal approximation and the integrand rises towards the edges of the square.
+
+## Remarks on the Laplace Approximation
+
+### BIC as a large-$n$ simplification {#sec-laplace-bic}
 
 With $f(\theta) = L(\theta;D)\pi(\theta)$, the Laplace approximation to the
 log marginal likelihood is
@@ -222,212 +511,6 @@ optimizer happened to find; and in hierarchical models where $p$ grows with
 $n$, so the $O(1/n)$ error does not vanish (nested Laplace approximation,
 INLA, handles this by integrating out the high-dimensional part
 analytically).
-
-## Example: Comparing Laplace, Quadrature, and Monte Carlo on Computing Marginal Likelihood
-
-To compare the three methods on an apples-to-apples problem, reuse the
-single-parameter example from the end of Unit 08: a single unknown mean
-$\mu$, with likelihood
-$$
-L(\mu) = N\big(\hat\mu;\,\mu,\,1/n_{\text{eff}}\big),
-$$
-treating $\hat\mu$ as the sample mean of $n_{\text{eff}}$ observations from
-$N(\mu,1)$, under a prior $\pi(\mu) = N(\mu;0,5^2)$. The marginal likelihood
-is
-$$
-P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu, \qquad z(\mu) = \pi(\mu)L(\mu).
-$$
-Because this is a normal-normal conjugate pair, $P(y)$ has a closed form, so
-a genuine **true** value is available for comparison — computed here by
-numerical integration, exactly as in Unit08, rather than by writing out the
-closed-form expression. **Laplace** attacks the integral by optimization
-instead of a grid: find the mode of $z(\mu)$ and the second derivative of
-$-\log z$ there, then apply the boxed formula with $p=1$. **Quadrature**
-attacks it with the logistic-transform midpoint rule from Unit08. **Monte
-Carlo with $\pi$** attacks it by drawing $\mu$ directly from the prior and
-averaging the likelihood — the same naive estimator used throughout Unit08.
-
-```{r}
-#| label: laplace-mu-functions
-n_eff <- 3; sigma_prior <- 5                   # same setup as the Unit08 app
-
-### true value: exact, since z is a normal-normal conjugate kernel, so marginally
-### mu_hat ~ N(0, 1/n_eff + sigma_prior^2). (integrate(z, -Inf, Inf) is not safe here:
-### for mu_hat far from 0 it misses the narrow spike of z and returns a wrong value.)
-log_mar_true_mu <- function(mu_hat) dnorm(mu_hat, 0, sqrt(1 / n_eff + sigma_prior^2), log = TRUE)
-
-### Laplace: p = 1 case of the boxed formula, mode and Hessian from nlm()
-laplace_mu <- function(mu_hat) {
-  h  <- function(mu) -(dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-                          dnorm(mu, 0, sigma_prior, log = TRUE))
-  op <- nlm(h, p = mu_hat, hessian = TRUE)
-  c(mode = op$estimate, log_ml = -op$minimum + 0.5 * log(2 * pi) - 0.5 * log(op$hessian[1, 1]))
-}
-
-### naive Monte Carlo: draw mu from the prior, average the likelihood
-log_sum_exp <- function(lx) { m <- max(lx); m + log(sum(exp(lx - m))) }
-log_mar_mc_mu <- function(mu_hat, iters) {
-  mus <- rnorm(iters, 0, sigma_prior)
-  log_sum_exp(dnorm(mu_hat, mus, 1 / sqrt(n_eff), log = TRUE)) - log(iters)
-}
-
-### midpoint rule on the logistic-transformed (0, 1) grid, as in Unit08
-log_mar_mid_mu <- function(mu_hat, n) {
-  h  <- 1 / n
-  u  <- (seq_len(n) - 0.5) * h
-  mu <- log(u / (1 - u))
-  log_z <- dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) +
-    dnorm(mu, 0, sigma_prior, log = TRUE) - log(u * (1 - u))
-  log_sum_exp(log_z) + log(h)
-}
-```
-
-```{r}
-#| label: tbl-three-way
-#| tbl-cap: "Compares the Laplace approximation with grid quadrature and naive Monte Carlo against the true value as the posterior moves away from the prior mean, to show where each method succeeds or fails.
-#|   Log marginal likelihood by four methods, for data locations mu_hat = 0, -5, -20 (n_eff = 3, sigma = 1, prior N(0, 5^2) on mu). Quadrature uses a 100-point midpoint grid; Monte Carlo uses 1e6 prior draws; both are unchanged from Unit08's app."
-set.seed(7)
-mu_hats <- c(0, -5, -20)
-three_way <- t(sapply(mu_hats, function(m) {
-  c(True = log_mar_true_mu(m),
-    Laplace = laplace_mu(m)["log_ml"],
-    Monte_Carlo_pi = log_mar_mc_mu(m, 1e6),
-    Quadrature = log_mar_mid_mu(m, 100))
-}))
-knitr::kable(cbind(`mu` = mu_hats, round(three_way, 3)), row.names = FALSE,
-             col.names = c("mu", "True", "Laplace", "Monte Carlo (pi)", "Quadrature (n=100)"))
-```
-
-At $\mu=0$ the posterior sits right where both the logistic grid and the
-prior put their effort, so all four numbers should agree closely. As $\mu$
-moves to $-5$ and then $-20$, the fixed grid — centred at $0$ by
-construction — squeezes the posterior into an ever-thinner sliver of the
-unit interval, and quadrature is the first to break away from the true
-value, exactly the failure diagnosed at the end of Unit08. Naive Monte Carlo
-is built on the same fragile assumption in a different guise: it needs prior
-draws *near* $\mu$ to contribute any likelihood at all, so once $\mu$ is
-several prior standard deviations from $0$, a fixed budget of draws from
-$\pi$ can also become too sparse there to be trusted, even though nothing
-about the Monte Carlo estimator's derivation assumed $\mu$ would be small.
-Laplace has neither failure mode: it optimizes to find the mode wherever it
-actually is and builds its approximation *around that point*, so it
-automatically "recentres" itself for every $\mu$ — the same fix Unit08
-proposed by hand for quadrature, done here for free by the optimizer.
-
-## Quadrature Adapted by the Laplace Approximation {#sec-aghq}
-
-A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. The remedy is to let the Laplace approximation tell the quadrature rule where to look: relocate and rescale the grid using the Laplace mode $\hat\mu_L$ and standard deviation $s_L=1/\sqrt{H}$, where $H$ is the second derivative of $-\log z$ at $\hat\mu_L$. In the standardized variable
-$$
-t = \frac{\mu-\hat\mu_L}{s_L}, \qquad \mu = \hat\mu_L + s_L\,t,
-$$
-the Laplace approximation says $t\approx N(0,1)$ under the posterior, and the marginal likelihood can be written as an expectation under the standard normal density $\phi$:
-$$
-P(y) = \int_{-\infty}^{\infty} z(\mu)\,d\mu = s_L\int_{-\infty}^{\infty} g(t)\,\phi(t)\,dt, \qquad g(t) = \frac{z(\hat\mu_L + s_L t)}{\phi(t)}.
-$$
-When the posterior is close to normal, $g$ is nearly constant, so a handful of well-placed points is enough. There are two ways to place them, which differ in how they handle the infinite range of $t$.
-
-### Laplace-adapted midpoint rule
-
-The midpoint rule needs a finite interval to partition, so it maps $t$ to $(0,1)$ by the normal CDF, swapping the logistic function of Unit08 for the CDF of $N(\hat\mu_L, s_L^2)$:
-$$
-u = \Phi(t) = \Phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right), \qquad \mu = \hat\mu_L + s_L\,\Phi^{-1}(u), \qquad \frac{du}{d\mu} = \frac{1}{s_L}\,\phi\!\left(\frac{\mu-\hat\mu_L}{s_L}\right).
-$$
-Then $P(y)=s_L\int_0^1 g\big(\Phi^{-1}(u)\big)\,du$, and the midpoint rule with $n$ equal cells of $(0,1)$ gives
-$$
-P(y) \approx \frac{s_L}{n}\sum_{i=1}^n \frac{z(\mu_i)}{\phi(t_i)}, \qquad t_i = \Phi^{-1}(u_i), \qquad \mu_i = \hat\mu_L + s_L\,t_i, \qquad u_i = \big(i-\tfrac12\big)/n .
-$$
-In terms of $t$, the points are the normal quantiles $t_i=\Phi^{-1}(u_i)$, each with equal weight $1/n$. The error decreases like $1/n^2$, as for any midpoint rule, only when $g\big(\Phi^{-1}(u)\big)$ is smooth and bounded on $[0,1]$. When the posterior has heavier tails than its Laplace normal approximation, $g(t)=z(\mu)/\phi(t)$ grows without bound as $u\to0$ or $1$, because $\Phi^{-1}$ is steep there and the outermost cells, each standing for a whole tail, sample it poorly; convergence is then much slower.
-
-### Adaptive Gauss–Hermite quadrature (AGHQ)
-
-Gauss–Hermite quadrature does **not** partition anything, and so needs no map to $(0,1)$. It works directly on $(-\infty,\infty)$ with the Gaussian factor $e^{-t^2/2}$ playing the role of a weight function: a $k$-point rule
-$$
-\int_{-\infty}^{\infty} f(t)\,e^{-t^2/2}\,dt \;\approx\; \sum_{j=1}^{k}\omega_j\,f(t_j)
-$$
-chooses both the nodes $t_j$ and the weights $\omega_j$, $2k$ numbers in all, so that the rule is **exact** whenever $f$ is a polynomial of degree at most $2k-1$. The infinite range is handled by the weight $e^{-t^2/2}$, not by a grid.
-
-**Constructing the nodes $t_j$ and weights $\omega_j$.** Exactness for $f(t)=1,t,\ldots,t^{2k-1}$ gives $2k$ nonlinear moment equations $\sum_j\omega_j t_j^r=\int t^r e^{-t^2/2}\,dt$, $r=0,\ldots,2k-1$. They are solved through orthogonal polynomials rather than directly:
-
-1. **The orthogonal polynomials of the weight.** The (probabilists') Hermite polynomials $\mathrm{He}_j$ are orthogonal with respect to $e^{-t^2/2}$, $\int \mathrm{He}_j(t)\,\mathrm{He}_l(t)\,e^{-t^2/2}\,dt = 0$ for $j\ne l$, and satisfy the three-term recurrence
-   $$
-   \mathrm{He}_0(t)=1,\qquad \mathrm{He}_1(t)=t,\qquad \mathrm{He}_{j+1}(t) = t\,\mathrm{He}_j(t) - j\,\mathrm{He}_{j-1}(t),
-   $$
-   so $\mathrm{He}_2(t)=t^2-1$, $\mathrm{He}_3(t)=t^3-3t$, $\mathrm{He}_4(t)=t^4-6t^2+3$, and so on.
-2. **The nodes are the roots of $\mathrm{He}_k$.** Any polynomial $f$ of degree $\le 2k-1$ can be divided as $f = q\,\mathrm{He}_k + r$ with $q$ and $r$ of degree $\le k-1$. The term $q\,\mathrm{He}_k$ integrates to $0$ by orthogonality, and it also contributes $0$ to the sum if every $t_j$ is a root of $\mathrm{He}_k$. So with these nodes the rule only has to integrate $r$ exactly, which $k$ weights can do. The roots are real, distinct and symmetric about $0$.
-3. **The weights** are the integrals of the Lagrange interpolating polynomials through the nodes, which simplify to
-   $$
-   \omega_j = \frac{k!\,\sqrt{2\pi}}{k^2\,\mathrm{He}_{k-1}(t_j)^2}.
-   $$
-
-For small $k$ this can be done by hand:
-
-| $k$ | $\mathrm{He}_k(t)$ | nodes $t_j$ | weights $\omega_j/\sqrt{2\pi}$ |
-|:--:|:--|:--|:--|
-| 1 | $t$ | $0$ | $1$ |
-| 2 | $t^2-1$ | $\pm1$ | $\tfrac12,\ \tfrac12$ |
-| 3 | $t^3-3t$ | $0,\ \pm\sqrt3$ | $\tfrac23;\ \tfrac16,\ \tfrac16$ |
-
-The weights divided by $\sqrt{2\pi}$ always sum to $1$, since they integrate $f=1$ against the standard normal density. For larger $k$ the roots are found numerically, most stably by the **Golub–Welsch algorithm**: the recurrence in step 1 says that $t\,\big(\mathrm{He}_0,\ldots,\mathrm{He}_{k-1}\big)^\top$ equals a symmetric tridiagonal matrix $J$ times the same vector (after normalizing the polynomials), plus a multiple of $\mathrm{He}_k$, which vanishes at the nodes. Hence the nodes are the **eigenvalues** of
-$$
-J=\begin{pmatrix}0&\sqrt1&&\\ \sqrt1&0&\sqrt2&\\ &\sqrt2&0&\ddots\\ &&\ddots&\ddots&\sqrt{k-1}\\ &&&\sqrt{k-1}&0\end{pmatrix},
-$$
-and the weights are $\omega_j=\sqrt{2\pi}\,v_{1j}^2$, where $v_{1j}$ is the first component of the unit eigenvector for $t_j$:
-
-```{r}
-#| label: gauss-hermite-nodes
-### k-point Gauss-Hermite rule for the weight exp(-t^2/2), by Golub-Welsch
-gauss_hermite <- function(k) {
-  J <- matrix(0, k, k)
-  for (i in seq_len(k - 1)) J[i, i + 1] <- J[i + 1, i] <- sqrt(i)
-  e <- eigen(J, symmetric = TRUE)
-  list(t = rev(e$values), w = sqrt(2 * pi) * rev(e$vectors[1, ]^2))
-}
-gh3 <- gauss_hermite(3)
-round(rbind(t = gh3$t, `w / sqrt(2 pi)` = gh3$w / sqrt(2 * pi)), 6)   # matches the table: 0, +-sqrt(3); 2/3, 1/6
-```
-
-**The adaptive rule.** Applying the $k$-point rule to $f(t)=z(\hat\mu_L+s_Lt)\,e^{t^2/2} = g(t)/\sqrt{2\pi}$ gives
-$$
-P(y) = s_L\int z(\hat\mu_L + s_L t)\,e^{t^2/2}\,e^{-t^2/2}\,dt \;\approx\; s_L\sum_{j=1}^{k}\omega_j\,e^{t_j^2/2}\,z(\mu_j), \qquad \mu_j = \hat\mu_L + s_L\,t_j .
-$$
-With $k=1$ the single node is $t_1=0$ with $\omega_1=\sqrt{2\pi}$, and the rule reduces to $s_L\sqrt{2\pi}\,z(\hat\mu_L)$, which is exactly the Laplace approximation; AGHQ with more nodes is a systematic refinement of it.
-
-**Comparing the two adapted rules.** Both rules evaluate the same ratio $g(t)=z(\mu)/\phi(t)$ at points $\mu=\hat\mu_L+s_Lt$ placed by the Laplace approximation; they differ only in the points $t$ and the weights:
-
-| | points $t$ | weights (as a fraction of $\int\phi=1$) | exact for |
-|:--|:--|:--|:--|
-| Laplace-adapted midpoint | normal quantiles $\Phi^{-1}\big((i-\tfrac12)/n\big)$ | $1/n$ each | error $O(1/n^2)$ |
-| AGHQ | roots of $\mathrm{He}_k$ | $\omega_j/\sqrt{2\pi}$ | $g$ a polynomial of degree $\le 2k-1$ |
-
-The table below applies both to the one-parameter example above. Because $z(\mu)$ is a normal–normal kernel here, the posterior is exactly normal, $g$ is exactly constant, and both rules are exact with any number of points, wherever the data sit. The two-parameter app below, where the posterior of $(\mu,\log\sigma)$ is not exactly normal, shows the rules at work when $g$ is only approximately constant.
-
-```{r}
-#| label: tbl-adapted-rules
-#| tbl-cap: "Log marginal likelihood for data locations mu_hat = 0, -5, -20 (setup as in the table above): the logistic midpoint rule with 100 points, and the two Laplace-adapted rules with only 5 points each."
-log_mar_adapted <- function(mu_hat, rule, n) {
-  lz <- function(mu) dnorm(mu_hat, mu, 1 / sqrt(n_eff), log = TRUE) + dnorm(mu, 0, sigma_prior, log = TRUE)
-  h  <- function(mu) -lz(mu)
-  op <- nlm(h, p = mu_hat, hessian = TRUE)
-  m  <- op$estimate; sL <- 1 / sqrt(op$hessian[1, 1])
-  if (rule == "midpoint") {
-    t <- qnorm((seq_len(n) - 0.5) / n); lw <- rep(-log(n), n)       # equal weights 1/n
-  } else {
-    gh <- gauss_hermite(n); t <- gh$t; lw <- log(gh$w / sqrt(2 * pi))
-  }
-  log_sum_exp(lw + lz(m + sL * t) - dnorm(t, log = TRUE)) + log(sL)
-}
-adapted <- t(sapply(mu_hats, function(m) c(
-  True                 = log_mar_true_mu(m),
-  Laplace              = unname(laplace_mu(m)["log_ml"]),
-  `Logistic midpoint (n=100)` = log_mar_mid_mu(m, 100),
-  `Laplace-adapted midpoint (n=5)` = log_mar_adapted(m, "midpoint", 5),
-  `AGHQ (k=5)`         = log_mar_adapted(m, "gh", 5))))
-knitr::kable(cbind(mu = mu_hats, round(adapted, 3)), row.names = FALSE)
-```
-
-### Shinylive Apps for the Laplace-Adapted Midpoint Rule {#sec-laplace-transform-app}
-
-There is a [shinylive app](../../shinylive_apps/app_ML_unknown_mean.html) that compares the logistic midpoint grid with the Laplace-adapted midpoint grid for one unknown mean, and shows how the latter lets a few grid points capture the posterior wherever it sits. A [second app](../../shinylive_apps/app_ML_unknown_mean_sd.html) does the same for normal data with unknown $\mu$ and $\sigma$, where the product midpoint rule is applied on the unit square after the map $\theta=\hat\theta+Cz$, $z=\big(\Phi^{-1}(u),\Phi^{-1}(v)\big)$, with $CC^\top$ the Laplace covariance.
 
 ## Summary
 
