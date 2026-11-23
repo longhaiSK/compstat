@@ -569,7 +569,192 @@ estimate was badly wrong, because there the weights were uniform among the
 draws actually observed and the trouble lay entirely outside the region the
 proposal ever visited.
 
-## Example 4: Area of an Irregular Region
+## Example 4: Choosing the Number of Predictors in Logistic Regression {#sec-is-logistic-p}
+
+The marginal likelihood can compare models of different dimension, because
+integrating over the coefficients penalizes parameters the data do not need.
+@sec-laplace-logistic-p computed it for a sequence of nested logistic
+regressions with a Laplace-adapted product grid, whose $k^p$ points force $k$
+down to $2$ at $p=20$. Importance sampling with the Laplace approximation as
+the proposal has no such limit: its cost is $S$ draws whatever $p$ is, and
+$S_{\text{eff}}$ reports how well the proposal fits in each dimension.
+
+**Data and models.** There are $n=200$ observations with $20$ candidate
+predictors $x_{i1},\ldots,x_{i,20}\overset{iid}{\sim}N(0,1)$ and
+$$
+y_i\mid x_i \sim \text{Bernoulli}\big(\operatorname{logit}^{-1}(x_{i1} - x_{i2})\big),
+$$
+so only the first two predictors carry signal; there is no intercept. Model
+$M_p$ uses the first $p$ predictors, $p = 1,2,3,4,5,10,20$, so $M_2$ is the true
+model. With $\eta_i=\sum_{j=1}^p x_{ij}\beta_j$,
+$$
+f_p(\beta) = L_p(\beta)\,\pi(\beta) = \prod_{i=1}^n \frac{e^{y_i\eta_i}}{1+e^{\eta_i}}\;\prod_{j=1}^p N(\beta_j;\,0,\,\sigma_\beta^2),
+\qquad P(y\mid M_p) = \int_{\mathbb{R}^p} f_p(\beta)\,d\beta ,
+$$
+for two prior scales, $\sigma_\beta=1$ and $\sigma_\beta=10$.
+
+**Laplace proposal.** For each model, find the posterior mode $\hat\beta$ and
+the Hessian $H$ of $-\log f_p$ there, and take
+$g = N_p(\hat\beta, H^{-1})$. With the Cholesky factorization $H = R^\top R$,
+a draw is $\beta_s = \hat\beta + R^{-1}z_s$ with $z_s\sim N_p(0,I)$, and its
+log density is
+$$
+\log g(\beta_s) = \sum_{j=1}^p \log\phi(z_{sj}) + \sum_{j=1}^p \log R_{jj} .
+$$
+The estimate and its log-scale standard error are those of Example 3,
+$$
+\widehat{P(y\mid M_p)} = \frac1S\sum_{s=1}^S w_s, \qquad
+w_s = \frac{f_p(\beta_s)}{g(\beta_s)} ,
+$$
+computed from the log weights. The Laplace approximation itself is
+$\log f_p(\hat\beta) + \tfrac p2\log(2\pi) - \sum_j\log R_{jj}$, which is the
+value $\widehat{P(y\mid M_p)}$ would take if every weight equalled the one at
+$z=0$; importance sampling corrects it by averaging the weights over the
+whole proposal.
+
+```{r}
+#| label: is-logistic-p
+### data: 20 candidate predictors, only x1 and x2 carry signal
+set.seed(2024)
+n_lr <- 200; p_max <- 20
+X_lr <- matrix(rnorm(n_lr * p_max), n_lr, p_max)
+y_lr <- rbinom(n_lr, 1, plogis(drop(X_lr %*% c(1, -1, rep(0, p_max - 2)))))
+
+### log P(y | M_p) by importance sampling from the Laplace normal N_p(beta_hat, H^{-1});
+### also returns the Laplace approximation, the log-scale SE and S_eff as % of S
+log_ml_logit_is <- function(p, sigma_beta, S) {
+  Xp <- X_lr[, seq_len(p), drop = FALSE]
+  log_f_rows <- function(B) {                     # log f_p at every row of B (S x p)
+    E <- Xp %*% t(B)                              # n x S linear predictors
+    colSums(y_lr * E - log1p(exp(E))) + rowSums(dnorm(B, 0, sigma_beta, log = TRUE))
+  }
+  fit <- optim(rep(0, p), function(b) -log_f_rows(matrix(b, 1)),
+               method = "BFGS", hessian = TRUE)
+  R <- chol(fit$hessian)                          # H = R'R, so H^{-1} = R^{-1} R^{-T}
+  Z <- matrix(rnorm(S * p), S, p)
+  B <- sweep(t(backsolve(R, t(Z))), 2, fit$par, "+")   # beta_s = beta_hat + R^{-1} z_s
+  log_g <- rowSums(dnorm(Z, log = TRUE)) + sum(log(diag(R)))
+  lw <- log_f_rows(B) - log_g
+  v  <- exp(lw - max(lw))
+  c(laplace = -fit$value + p / 2 * log(2 * pi) - sum(log(diag(R))),
+    is      = log_sum_exp(lw) - log(S),
+    se      = sd(v) / (sqrt(S) * mean(v)),
+    ess     = 100 * log_ess(lw) / S)
+}
+
+p_vals  <- c(1, 2, 3, 4, 5, 10, 20)
+sb_vals <- c(1, 10)
+S_lr    <- 5000
+set.seed(11)
+is_res <- lapply(sb_vals, function(sb) t(sapply(p_vals, log_ml_logit_is, sigma_beta = sb, S = S_lr)))
+names(is_res) <- sb_vals
+
+### BIC = -2 log L(beta_mle) + p log n and AIC = -2 log L(beta_mle) + 2 p, on the same
+### scale as -2 log P(y | M_p). Neither depends on the prior.
+loglik_mle <- sapply(p_vals, function(p)
+  as.numeric(logLik(glm(y_lr ~ X_lr[, seq_len(p), drop = FALSE] - 1, family = binomial))))
+ic <- cbind(bic = -2 * loglik_mle + p_vals * log(n_lr),
+            aic = -2 * loglik_mle + 2 * p_vals,
+            dev = -2 * loglik_mle)                  # training loss, no penalty
+```
+
+```{r}
+#| label: fig-is-logistic-p
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 8
+#| fig-height: 4.8
+#| fig-cap: 'Shows that the marginal likelihood, estimated by importance sampling from the Laplace approximation, picks the true number of predictors in a logistic regression, for two prior scales.
+#|   $-2\log P(y\mid M_p)$ for models using the first $p$ of 20 predictors ($n = 200$; only $x_1$ and $x_2$ carry signal), with prior $\beta_j \sim N(0, \sigma_\beta^2)$ for $\sigma_\beta = 1$ and $10$. Solid lines: importance sampling with $S = 5000$ draws from $N_p(\hat\beta, H^{-1})$; their 95% intervals (in the table below) are narrower than the plotted points, so they are not drawn. Dashed lines: the Laplace approximation alone. Dotted gray lines: $\text{BIC} = -2\log L(\hat\beta) + p\log n$ (triangles) and $\text{AIC} = -2\log L(\hat\beta) + 2p$ (squares), computed from the maximum likelihood fit and the same for both priors. Black line with diamonds: the training loss $-2\log L(\hat\beta)$ with no penalty, which keeps decreasing as predictors are added and so always favours the largest model. On every other curve the filled symbol marks the minimum. Both marginal-likelihood curves and BIC are smallest at $p = 2$, and the marginal likelihood rises faster for the more diffuse prior. AIC, with its lighter penalty of 2 per parameter, is smallest at $p = 3$, but only by 0.14 (207.76 against 207.90 at $p = 2$).'
+cols <- c("steelblue", "firebrick")
+m2 <- lapply(is_res, function(r) -2 * r[, c("laplace", "is")])   # -2 log P(y | M_p)
+yl <- range(ic, unlist(m2))
+plot(NA, xlim = range(p_vals), ylim = yl, log = "x", xaxt = "n",
+     xlab = "number of predictors p (log scale)",
+     ylab = expression(-2 * log ~ P(y ~ "|" ~ M[p]) * ",  BIC,  AIC"))
+axis(1, at = p_vals)
+abline(v = 2, col = "gray80", lty = 2)
+ic_pch <- c(bic = 2, aic = 0); ic_fill <- c(bic = 17, aic = 15)   # triangle, square
+for (m in c("bic", "aic")) {
+  lines(p_vals, ic[, m], type = "b", lty = 3, lwd = 1.5, pch = ic_pch[m], col = "gray25")
+  jmin <- which.min(ic[, m])
+  points(p_vals[jmin], ic[jmin, m], pch = ic_fill[m], col = "gray25", cex = 1.6)
+}
+lines(p_vals, ic[, "dev"], type = "b", lty = 1, lwd = 1.5, pch = 5, col = "black")   # no minimum to mark
+for (j in seq_along(sb_vals)) {
+  r <- m2[[j]]
+  lines(p_vals, r[, "laplace"], lty = 2, col = cols[j])
+  lines(p_vals, r[, "is"], type = "b", pch = 1, col = cols[j], lwd = 2)
+  jmin <- which.min(r[, "is"])
+  points(p_vals[jmin], r[jmin, "is"], pch = 19, col = cols[j], cex = 1.6)
+}
+legend("topleft", bty = "n", lwd = c(2, 2, 1, 1.5, 1.5, 1.5), lty = c(1, 1, 2, 3, 3, 1),
+       pch = c(1, 1, NA, 2, 0, 5), col = c(cols, "gray40", "gray25", "gray25", "black"),
+       legend = c(expression("IS, " * sigma[beta] == 1), expression("IS, " * sigma[beta] == 10),
+                  "Laplace approximation",
+                  expression(BIC == -2 * log ~ L(hat(beta)) + p * log ~ n),
+                  expression(AIC == -2 * log ~ L(hat(beta)) + 2 * p),
+                  expression(-2 * log ~ L(hat(beta)) ~ "(training loss)")))
+```
+
+```{r}
+#| label: tbl-is-logistic-p
+#| tbl-cap: "log P(y | M_p) for the logistic regression models in the figure above: the Laplace approximation, the importance-sampling estimate (S = 5000) with its 95% interval, and S_eff as a percentage of S, for the two prior scales."
+fmt_block <- function(r) data.frame(
+  laplace = sprintf("%.3f", r[, "laplace"]),
+  is      = sprintf("%.3f", r[, "is"]),
+  ci      = sprintf("(%.3f, %.3f)", r[, "is"] - 1.96 * r[, "se"], r[, "is"] + 1.96 * r[, "se"]),
+  ess     = sprintf("%.1f", r[, "ess"]))
+tb <- cbind(p = p_vals, setNames(fmt_block(is_res[[1]]), paste0(c("laplace", "is", "ci", "ess"), "_1")),
+                        setNames(fmt_block(is_res[[2]]), paste0(c("laplace", "is", "ci", "ess"), "_10")))
+gt::gt(tb) |>
+  gt::tab_spanner(gt::md("σ<sub>β</sub> = 1"),  c(laplace_1, is_1, ci_1, ess_1)) |>
+  gt::tab_spanner(gt::md("σ<sub>β</sub> = 10"), c(laplace_10, is_10, ci_10, ess_10)) |>
+  gt::cols_label(laplace_1 = "Laplace", is_1 = "IS", ci_1 = "95% CI", ess_1 = "ESS %",
+                 laplace_10 = "Laplace", is_10 = "IS", ci_10 = "95% CI", ess_10 = "ESS %")
+```
+
+On the $-2\log P(y\mid M_p)$ scale of the figure, both curves drop sharply
+from $p=1$ to $p=2$, because the model with only $x_1$ misses a real effect,
+reach their minimum at the true $p=2$, and then rise as useless predictors are
+added: each extra coefficient improves the fit only slightly, while its prior
+spreads probability over values the data do not support. The rise is steeper for $\sigma_\beta=10$, so the prior scale, which hardly matters
+for estimating $\beta$, matters a great deal for comparing models.
+
+The figure plots $-2\log P(y\mid M_p)$, so smaller is better, together with
+the two information criteria on the same scale,
+$$
+\text{BIC}_p = -2\log L_p(\hat\beta) + p\log n, \qquad
+\text{AIC}_p = -2\log L_p(\hat\beta) + 2p,
+$$
+with $\hat\beta$ the maximum likelihood estimate. Both start from the
+training loss $-2\log L_p(\hat\beta)$, also drawn in the figure, which can
+only decrease as predictors are added because each model contains the one
+before it; on its own it always picks $p=20$. The criteria add a penalty that
+grows with $p$, and they need no prior and no integration. BIC is the large-$n$ simplification of the Laplace approximation
+([Section @sec-laplace-bic]): it keeps $-2$ times the maximized log likelihood
+and the $p\log n$ term and drops everything of order one, including the
+prior, so its curve has the same shape as $-2\log P(y\mid M_p)$ and lies
+between the two prior scales. It also picks $p=2$. AIC charges only $2$ per
+parameter instead of $\log n\approx5.3$, so its curve rises slowly; here it
+narrowly prefers $p=3$, the usual tendency of AIC to admit a spurious
+predictor when the extra fit is small. AIC targets prediction rather than the
+probability of the model, so the two criteria answer different questions.
+
+The table also shows how the Laplace proposal degrades with dimension. For
+small $p$ the posterior is close to normal, $S_{\text{eff}}$ is above $90\%$ of
+$S$, and the Laplace approximation and the importance-sampling estimate agree
+to two or three decimals. As $p$ grows, the small departures of each
+coordinate from normality compound: $S_{\text{eff}}$ falls to between a quarter and a
+third of $S$ at $p=20$, and the Laplace approximation is too low by about
+$0.6$ on the log scale. That error is far smaller than the differences between models, so
+here it does not change the choice of $p$, but importance sampling both
+corrects it and measures it, which the Laplace approximation alone cannot do.
+Unlike the prior-sampling failure of Example 3, this decline is gradual and
+announced by $S_{\text{eff}}$; a heavier-tailed proposal such as a
+multivariate $t$ centred at $\hat\beta$ with scale $H^{-1}$ would slow it
+further.
+
+## Example 5: Area of an Irregular Region
 
 The two fundamental estimators from [Fundamental Estimators] were stated for
 a generic unnormalized target $f$, but nothing in their derivation assumes
