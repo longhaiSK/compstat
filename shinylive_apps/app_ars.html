@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Longhai Li">
-<meta name="dcterms.date" content="2026-10-28">
+<meta name="dcterms.date" content="2026-11-24">
 
 <title>ars-shinylive – Shinylive Apps for Statistical Computation</title>
 <style>
@@ -200,7 +200,7 @@ window.Quarto = {
   </li>  
         <li>
     <a class="dropdown-item" href="./app_ML_unknown_mean_sd.html">
- <span class="dropdown-text">Marginal Likelihood of Normal Data: Midpoint, Laplace and Gauss–Hermite</span></a>
+ <span class="dropdown-text">Marginal Likelihood of Normal Data: Midpoint, Laplace and Laplace-Adapted Midpoint</span></a>
   </li>  
         <li>
     <a class="dropdown-item" href="./app_rejection.html">
@@ -265,7 +265,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">October 28, 2026</p>
+      <p class="date">November 24, 2026</p>
     </div>
   </div>
   
@@ -378,17 +378,11 @@ init_hull &lt;- function(lb, ub) {
     build_hull(x_init, lb, ub)
 }
 
-### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
-### where "mode" is the peak of the density *within* the truncation window --
-### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
-### window is then entirely on one side of the peak, so the density is
-### monotonic and highest right at that edge). A wide window far out in the
-### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
-### mostly-flat, uninformative sliver near that one edge.
-smart_xlim &lt;- function(lb, ub) {
-    m &lt;- if (lb &gt;= 0) lb else if (ub &lt;= 0) ub else 0
-    c(max(lb, m - 2), min(ub, m + 2))
-}
+### plotting window: the whole truncation interval [lb, ub]. (An earlier version
+### zoomed to [mode - 2, mode + 2] clipped to [lb, ub], meant for far-tail windows
+### such as [100, 200]; with the slider limited to [-10, 10] that zoom only hid
+### part of an asymmetric window, e.g. (-2, 10) was shown as [-2, 2].)
+smart_xlim &lt;- function(lb, ub) c(lb, ub)
 
 ### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
 ### difference underflows to 0 for windows far out in either tail
@@ -405,6 +399,15 @@ log_pnorm_diff &lt;- function(lb, ub) {
     }
 }
 tnorm_density &lt;- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
+### E(X | l &lt; X &lt; u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of
+### the two phi values formed on the log scale so that it stays accurate in either tail
+tnorm_mean &lt;- function(lb, ub) {
+    la &lt;- dnorm(lb, log = TRUE); lu &lt;- dnorm(ub, log = TRUE)
+    m &lt;- max(la, lu)
+    if (!is.finite(m)) return(0)
+    sign(la - lu) * exp(m + log(abs(exp(la - m) - exp(lu - m))) - log_pnorm_diff(lb, ub))
+}
 
 ui &lt;- fluidPage(
     wellPanel(
@@ -428,6 +431,8 @@ ui &lt;- fluidPage(
             tags$style("#tab td, #tab th { white-space: nowrap; }"),
             h5("Run summary"),
             tableOutput("tab"),
+            helpText("P and log P are estimated by the mean importance weight over all ",
+                     "proposals; E(X | l &lt; X &lt; u) by the mean of the accepted draws."),
             textOutput("status"))
     )
 )
@@ -521,6 +526,14 @@ server &lt;- function(input, output, session) {
         log_true &lt;- log_pnorm_diff(rv$lb, rv$ub)
         T &lt;- rv$tries
         est &lt;- c("-", "-"); ci &lt;- c("-", "-")
+        ### mean of X: the accepted draws are exact iid draws from the truncated normal,
+        ### so their sample mean and a t-type interval estimate E(X | l &lt; X &lt; u)
+        ns &lt;- length(rv$samples); mest &lt;- "-"; mci &lt;- "-"
+        if (ns &gt;= 2) {
+            xbar &lt;- mean(rv$samples); se &lt;- sd(rv$samples) / sqrt(ns)
+            mest &lt;- sprintf("%.4f", xbar)
+            mci  &lt;- sprintf("(%.4f, %.4f)", xbar - 1.96 * se, xbar + 1.96 * se)
+        }
         if (T &gt;= 2) {
             log_m  &lt;- rv$logsumw - log(T)                          # log of the mean weight
             rel_se &lt;- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
@@ -530,11 +543,12 @@ server &lt;- function(input, output, session) {
             ci  &lt;- c(sprintf("(%s, %s)", fmt(lo), fmt(hi)), sprintf("(%s, %s)", flog(lo), flog(hi)))
         }
         data.frame(
-            ` ` = c("true", "IS estimate", "95% CI"),
+            ` ` = c("true", "estimate", "95% CI"),
             `P(l &lt; X &lt; u)` = c(fmt(log_true), est[1], ci[1]),
             `log P` = c(flog(log_true), est[2], ci[2]),
+            `E(X | l &lt; X &lt; u)` = c(sprintf("%.4f", tnorm_mean(rv$lb, rv$ub)), mest, mci),
             check.names = FALSE)
-    }, striped = TRUE, align = "lll", width = "100%")
+    }, striped = TRUE, align = "llll", width = "100%")
 
     output$status &lt;- renderText({
         sprintf("%d / %d samples accepted  |  %d proposals  |  %d tangent points",
@@ -695,214 +709,228 @@ shinyApp(ui, server)</code></pre>
 <span id="cb2-90"><a href="#cb2-90" aria-hidden="true" tabindex="-1"></a>    <span class="fu">build_hull</span>(x_init, lb, ub)</span>
 <span id="cb2-91"><a href="#cb2-91" aria-hidden="true" tabindex="-1"></a>}</span>
 <span id="cb2-92"><a href="#cb2-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a><span class="do">### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],</span></span>
-<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a><span class="do">### where "mode" is the peak of the density *within* the truncation window --</span></span>
-<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a><span class="do">### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the</span></span>
-<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a><span class="do">### window is then entirely on one side of the peak, so the density is</span></span>
-<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a><span class="do">### monotonic and highest right at that edge). A wide window far out in the</span></span>
-<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a><span class="do">### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a</span></span>
-<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a><span class="do">### mostly-flat, uninformative sliver near that one edge.</span></span>
-<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a>smart_xlim <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
-<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>    m <span class="ot">&lt;-</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) lb <span class="cf">else</span> <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) ub <span class="cf">else</span> <span class="dv">0</span></span>
-<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>    <span class="fu">c</span>(<span class="fu">max</span>(lb, m <span class="sc">-</span> <span class="dv">2</span>), <span class="fu">min</span>(ub, m <span class="sc">+</span> <span class="dv">2</span>))</span>
-<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a><span class="do">### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive</span></span>
-<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a><span class="do">### difference underflows to 0 for windows far out in either tail</span></span>
-<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>log_pnorm_diff <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
-<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) {</span>
-<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">log.p =</span> <span class="cn">TRUE</span>); log_pl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_pl <span class="sc">-</span> log_pu))</span>
-<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) {</span>
-<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>        log_su <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_su <span class="sc">-</span> log_sl))</span>
-<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
-<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(<span class="fu">pnorm</span>(ub) <span class="sc">-</span> <span class="fu">pnorm</span>(lb))</span>
-<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>tnorm_density <span class="ot">&lt;-</span> <span class="cf">function</span>(x, lb, ub) <span class="fu">exp</span>(<span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
-<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
-<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>    <span class="fu">wellPanel</span>(</span>
-<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
-<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">numericInput</span>(<span class="st">"n"</span>, <span class="st">"sample size (target)"</span>, <span class="at">value =</span> <span class="dv">200</span>, <span class="at">min =</span> <span class="dv">1</span>, <span class="at">step =</span> <span class="dv">10</span>)),</span>
-<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">4</span>, <span class="fu">sliderInput</span>(<span class="st">"lim"</span>, <span class="st">"truncation interval (l, u)"</span>, <span class="at">min =</span> <span class="sc">-</span><span class="dv">10</span>, <span class="at">max =</span> <span class="dv">10</span>,</span>
-<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">value =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>), <span class="at">step =</span> <span class="fl">0.1</span>)),</span>
-<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"play_pause"</span>, <span class="st">"▶ Play"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
-<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"next_step"</span>, <span class="st">"Next ↷"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
-<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"restart"</span>, <span class="st">"↺ Restart"</span>, <span class="at">width =</span> <span class="st">"100%"</span>))),</span>
-<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>        <span class="fu">helpText</span>(<span class="st">"Each step draws one candidate from the current hull. "</span>,</span>
-<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"Accepted points (green) join the histogram; rejected "</span>,</span>
-<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"points (black x) become new tangent lines, tightening "</span>,</span>
-<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"the hull. Changing the limits restarts the run. Every proposal, "</span>,</span>
-<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"accepted or not, also gets an importance weight under the hull "</span>,</span>
-<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"that produced it; their mean estimates P(l &lt; X &lt; u)."</span>)</span>
-<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
-<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">8</span>, <span class="fu">plotOutput</span>(<span class="st">"panels"</span>, <span class="at">height =</span> <span class="st">"560px"</span>)),</span>
-<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">4</span>,</span>
-<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>            tags<span class="sc">$</span><span class="fu">style</span>(<span class="st">"#tab td, #tab th { white-space: nowrap; }"</span>),</span>
-<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>            <span class="fu">h5</span>(<span class="st">"Run summary"</span>),</span>
-<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>            <span class="fu">tableOutput</span>(<span class="st">"tab"</span>),</span>
-<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>            <span class="fu">textOutput</span>(<span class="st">"status"</span>))</span>
-<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
-<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>    rv <span class="ot">&lt;-</span> <span class="fu">reactiveValues</span>(<span class="at">hull =</span> <span class="cn">NULL</span>, <span class="at">samples =</span> <span class="fu">numeric</span>(<span class="dv">0</span>), <span class="at">tries =</span> <span class="dv">0</span>, <span class="at">target_n =</span> <span class="dv">200</span>,</span>
-<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>                          <span class="at">lb =</span> <span class="sc">-</span><span class="dv">2</span>, <span class="at">ub =</span> <span class="dv">2</span>, <span class="at">done =</span> <span class="cn">FALSE</span>, <span class="at">playing =</span> <span class="cn">FALSE</span>,</span>
-<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a>                          <span class="at">last_x =</span> <span class="cn">NULL</span>, <span class="at">last_accept =</span> <span class="cn">NA</span>, <span class="at">logsumw =</span> <span class="sc">-</span><span class="cn">Inf</span>, <span class="at">logsumw2 =</span> <span class="sc">-</span><span class="cn">Inf</span>)</span>
-<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a>    reset_run <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
-<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>        lb <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>lim)) input<span class="sc">$</span>lim[<span class="dv">1</span>] <span class="cf">else</span> <span class="sc">-</span><span class="dv">2</span></span>
-<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>        ub <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>lim)) input<span class="sc">$</span>lim[<span class="dv">2</span>] <span class="cf">else</span> <span class="dv">2</span></span>
-<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (ub <span class="sc">-</span> lb <span class="sc">&lt;</span> <span class="fl">0.05</span>) ub <span class="ot">&lt;-</span> lb <span class="sc">+</span> <span class="fl">0.05</span>      <span class="co"># guard against a degenerate window</span></span>
-<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>hull <span class="ot">&lt;-</span> <span class="fu">init_hull</span>(lb, ub)</span>
-<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>samples <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>)</span>
-<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>tries <span class="ot">&lt;-</span> <span class="dv">0</span></span>
-<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>lb <span class="ot">&lt;-</span> lb; rv<span class="sc">$</span>ub <span class="ot">&lt;-</span> ub</span>
-<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>target_n <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>n) <span class="sc">&amp;&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(input<span class="sc">$</span>n) <span class="sc">&amp;&amp;</span> input<span class="sc">$</span>n <span class="sc">&gt;=</span> <span class="dv">1</span>) input<span class="sc">$</span>n <span class="cf">else</span> <span class="dv">200</span></span>
-<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>last_x <span class="ot">&lt;-</span> <span class="cn">NULL</span>; rv<span class="sc">$</span>last_accept <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
-<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw <span class="ot">&lt;-</span> <span class="sc">-</span><span class="cn">Inf</span>; rv<span class="sc">$</span>logsumw2 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="cn">Inf</span></span>
-<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
-<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>    <span class="fu">isolate</span>(<span class="fu">reset_run</span>())</span>
-<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>    do_step <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
-<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="fu">return</span>(<span class="fu">invisible</span>(<span class="cn">NULL</span>))</span>
-<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>        draw <span class="ot">&lt;-</span> <span class="fu">sample_hull</span>(rv<span class="sc">$</span>hull)</span>
-<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> draw<span class="sc">$</span>x; logg <span class="ot">&lt;-</span> draw<span class="sc">$</span>logg; logf <span class="ot">&lt;-</span> <span class="fu">h</span>(x)</span>
-<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>tries <span class="ot">&lt;-</span> rv<span class="sc">$</span>tries <span class="sc">+</span> <span class="dv">1</span></span>
-<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>        <span class="do">### importance weight of this proposal under the envelope that generated it:</span></span>
-<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a>        <span class="do">### w = f(x) / g_t(x) with g_t = envelope / (its area), so log w = log f - log envelope + log area</span></span>
-<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>        lw <span class="ot">&lt;-</span> logf <span class="sc">-</span> logg <span class="sc">+</span> draw<span class="sc">$</span>logA</span>
-<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>        mw <span class="ot">&lt;-</span> <span class="fu">max</span>(rv<span class="sc">$</span>logsumw, lw)</span>
-<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw <span class="ot">&lt;-</span> mw <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">exp</span>(rv<span class="sc">$</span>logsumw <span class="sc">-</span> mw) <span class="sc">+</span> <span class="fu">exp</span>(lw <span class="sc">-</span> mw))</span>
-<span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a>        mw2 <span class="ot">&lt;-</span> <span class="fu">max</span>(rv<span class="sc">$</span>logsumw2, <span class="dv">2</span> <span class="sc">*</span> lw)                  <span class="co"># running sum of w^2, for the standard error</span></span>
-<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw2 <span class="ot">&lt;-</span> mw2 <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">exp</span>(rv<span class="sc">$</span>logsumw2 <span class="sc">-</span> mw2) <span class="sc">+</span> <span class="fu">exp</span>(<span class="dv">2</span> <span class="sc">*</span> lw <span class="sc">-</span> mw2))</span>
-<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>        accept <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> logf <span class="sc">-</span> logg</span>
-<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>last_x <span class="ot">&lt;-</span> x; rv<span class="sc">$</span>last_accept <span class="ot">&lt;-</span> accept</span>
-<span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (accept) {</span>
-<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>samples <span class="ot">&lt;-</span> <span class="fu">c</span>(rv<span class="sc">$</span>samples, x)</span>
-<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> {</span>
-<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>hull <span class="ot">&lt;-</span> <span class="fu">build_hull</span>(<span class="fu">sort</span>(<span class="fu">c</span>(rv<span class="sc">$</span>hull<span class="sc">$</span>x, x)), rv<span class="sc">$</span>lb, rv<span class="sc">$</span>ub)</span>
-<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">&gt;=</span> rv<span class="sc">$</span>target_n) {</span>
-<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
-<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>            <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
+<span id="cb2-93"><a href="#cb2-93" aria-hidden="true" tabindex="-1"></a><span class="do">### plotting window: the whole truncation interval [lb, ub]. (An earlier version</span></span>
+<span id="cb2-94"><a href="#cb2-94" aria-hidden="true" tabindex="-1"></a><span class="do">### zoomed to [mode - 2, mode + 2] clipped to [lb, ub], meant for far-tail windows</span></span>
+<span id="cb2-95"><a href="#cb2-95" aria-hidden="true" tabindex="-1"></a><span class="do">### such as [100, 200]; with the slider limited to [-10, 10] that zoom only hid</span></span>
+<span id="cb2-96"><a href="#cb2-96" aria-hidden="true" tabindex="-1"></a><span class="do">### part of an asymmetric window, e.g. (-2, 10) was shown as [-2, 2].)</span></span>
+<span id="cb2-97"><a href="#cb2-97" aria-hidden="true" tabindex="-1"></a>smart_xlim <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) <span class="fu">c</span>(lb, ub)</span>
+<span id="cb2-98"><a href="#cb2-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-99"><a href="#cb2-99" aria-hidden="true" tabindex="-1"></a><span class="do">### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive</span></span>
+<span id="cb2-100"><a href="#cb2-100" aria-hidden="true" tabindex="-1"></a><span class="do">### difference underflows to 0 for windows far out in either tail</span></span>
+<span id="cb2-101"><a href="#cb2-101" aria-hidden="true" tabindex="-1"></a>log_pnorm_diff <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
+<span id="cb2-102"><a href="#cb2-102" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (ub <span class="sc">&lt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb2-103"><a href="#cb2-103" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">log.p =</span> <span class="cn">TRUE</span>); log_pl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-104"><a href="#cb2-104" aria-hidden="true" tabindex="-1"></a>        log_pu <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_pl <span class="sc">-</span> log_pu))</span>
+<span id="cb2-105"><a href="#cb2-105" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> <span class="cf">if</span> (lb <span class="sc">&gt;=</span> <span class="dv">0</span>) {</span>
+<span id="cb2-106"><a href="#cb2-106" aria-hidden="true" tabindex="-1"></a>        log_su <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(ub, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-107"><a href="#cb2-107" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="ot">&lt;-</span> <span class="fu">pnorm</span>(lb, <span class="at">lower.tail =</span> <span class="cn">FALSE</span>, <span class="at">log.p =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-108"><a href="#cb2-108" aria-hidden="true" tabindex="-1"></a>        log_sl <span class="sc">+</span> <span class="fu">log1p</span>(<span class="sc">-</span><span class="fu">exp</span>(log_su <span class="sc">-</span> log_sl))</span>
+<span id="cb2-109"><a href="#cb2-109" aria-hidden="true" tabindex="-1"></a>    } <span class="cf">else</span> {</span>
+<span id="cb2-110"><a href="#cb2-110" aria-hidden="true" tabindex="-1"></a>        <span class="fu">log</span>(<span class="fu">pnorm</span>(ub) <span class="sc">-</span> <span class="fu">pnorm</span>(lb))</span>
+<span id="cb2-111"><a href="#cb2-111" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-112"><a href="#cb2-112" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-113"><a href="#cb2-113" aria-hidden="true" tabindex="-1"></a>tnorm_density <span class="ot">&lt;-</span> <span class="cf">function</span>(x, lb, ub) <span class="fu">exp</span>(<span class="fu">dnorm</span>(x, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
+<span id="cb2-114"><a href="#cb2-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-115"><a href="#cb2-115" aria-hidden="true" tabindex="-1"></a><span class="do">### E(X | l &lt; X &lt; u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of</span></span>
+<span id="cb2-116"><a href="#cb2-116" aria-hidden="true" tabindex="-1"></a><span class="do">### the two phi values formed on the log scale so that it stays accurate in either tail</span></span>
+<span id="cb2-117"><a href="#cb2-117" aria-hidden="true" tabindex="-1"></a>tnorm_mean <span class="ot">&lt;-</span> <span class="cf">function</span>(lb, ub) {</span>
+<span id="cb2-118"><a href="#cb2-118" aria-hidden="true" tabindex="-1"></a>    la <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(lb, <span class="at">log =</span> <span class="cn">TRUE</span>); lu <span class="ot">&lt;-</span> <span class="fu">dnorm</span>(ub, <span class="at">log =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-119"><a href="#cb2-119" aria-hidden="true" tabindex="-1"></a>    m <span class="ot">&lt;-</span> <span class="fu">max</span>(la, lu)</span>
+<span id="cb2-120"><a href="#cb2-120" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(m)) <span class="fu">return</span>(<span class="dv">0</span>)</span>
+<span id="cb2-121"><a href="#cb2-121" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sign</span>(la <span class="sc">-</span> lu) <span class="sc">*</span> <span class="fu">exp</span>(m <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">abs</span>(<span class="fu">exp</span>(la <span class="sc">-</span> m) <span class="sc">-</span> <span class="fu">exp</span>(lu <span class="sc">-</span> m))) <span class="sc">-</span> <span class="fu">log_pnorm_diff</span>(lb, ub))</span>
+<span id="cb2-122"><a href="#cb2-122" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-123"><a href="#cb2-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-124"><a href="#cb2-124" aria-hidden="true" tabindex="-1"></a>ui <span class="ot">&lt;-</span> <span class="fu">fluidPage</span>(</span>
+<span id="cb2-125"><a href="#cb2-125" aria-hidden="true" tabindex="-1"></a>    <span class="fu">wellPanel</span>(</span>
+<span id="cb2-126"><a href="#cb2-126" aria-hidden="true" tabindex="-1"></a>        <span class="fu">fluidRow</span>(</span>
+<span id="cb2-127"><a href="#cb2-127" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">numericInput</span>(<span class="st">"n"</span>, <span class="st">"sample size (target)"</span>, <span class="at">value =</span> <span class="dv">200</span>, <span class="at">min =</span> <span class="dv">1</span>, <span class="at">step =</span> <span class="dv">10</span>)),</span>
+<span id="cb2-128"><a href="#cb2-128" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">4</span>, <span class="fu">sliderInput</span>(<span class="st">"lim"</span>, <span class="st">"truncation interval (l, u)"</span>, <span class="at">min =</span> <span class="sc">-</span><span class="dv">10</span>, <span class="at">max =</span> <span class="dv">10</span>,</span>
+<span id="cb2-129"><a href="#cb2-129" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">value =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>), <span class="at">step =</span> <span class="fl">0.1</span>)),</span>
+<span id="cb2-130"><a href="#cb2-130" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"play_pause"</span>, <span class="st">"▶ Play"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
+<span id="cb2-131"><a href="#cb2-131" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"next_step"</span>, <span class="st">"Next ↷"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)),</span>
+<span id="cb2-132"><a href="#cb2-132" aria-hidden="true" tabindex="-1"></a>            <span class="fu">column</span>(<span class="dv">2</span>, <span class="fu">br</span>(), <span class="fu">actionButton</span>(<span class="st">"restart"</span>, <span class="st">"↺ Restart"</span>, <span class="at">width =</span> <span class="st">"100%"</span>))),</span>
+<span id="cb2-133"><a href="#cb2-133" aria-hidden="true" tabindex="-1"></a>        <span class="fu">helpText</span>(<span class="st">"Each step draws one candidate from the current hull. "</span>,</span>
+<span id="cb2-134"><a href="#cb2-134" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"Accepted points (green) join the histogram; rejected "</span>,</span>
+<span id="cb2-135"><a href="#cb2-135" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"points (black x) become new tangent lines, tightening "</span>,</span>
+<span id="cb2-136"><a href="#cb2-136" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"the hull. Changing the limits restarts the run. Every proposal, "</span>,</span>
+<span id="cb2-137"><a href="#cb2-137" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"accepted or not, also gets an importance weight under the hull "</span>,</span>
+<span id="cb2-138"><a href="#cb2-138" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"that produced it; their mean estimates P(l &lt; X &lt; u)."</span>)</span>
+<span id="cb2-139"><a href="#cb2-139" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb2-140"><a href="#cb2-140" aria-hidden="true" tabindex="-1"></a>    <span class="fu">fluidRow</span>(</span>
+<span id="cb2-141"><a href="#cb2-141" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">8</span>, <span class="fu">plotOutput</span>(<span class="st">"panels"</span>, <span class="at">height =</span> <span class="st">"560px"</span>)),</span>
+<span id="cb2-142"><a href="#cb2-142" aria-hidden="true" tabindex="-1"></a>        <span class="fu">column</span>(<span class="dv">4</span>,</span>
+<span id="cb2-143"><a href="#cb2-143" aria-hidden="true" tabindex="-1"></a>            tags<span class="sc">$</span><span class="fu">style</span>(<span class="st">"#tab td, #tab th { white-space: nowrap; }"</span>),</span>
+<span id="cb2-144"><a href="#cb2-144" aria-hidden="true" tabindex="-1"></a>            <span class="fu">h5</span>(<span class="st">"Run summary"</span>),</span>
+<span id="cb2-145"><a href="#cb2-145" aria-hidden="true" tabindex="-1"></a>            <span class="fu">tableOutput</span>(<span class="st">"tab"</span>),</span>
+<span id="cb2-146"><a href="#cb2-146" aria-hidden="true" tabindex="-1"></a>            <span class="fu">helpText</span>(<span class="st">"P and log P are estimated by the mean importance weight over all "</span>,</span>
+<span id="cb2-147"><a href="#cb2-147" aria-hidden="true" tabindex="-1"></a>                     <span class="st">"proposals; E(X | l &lt; X &lt; u) by the mean of the accepted draws."</span>),</span>
+<span id="cb2-148"><a href="#cb2-148" aria-hidden="true" tabindex="-1"></a>            <span class="fu">textOutput</span>(<span class="st">"status"</span>))</span>
+<span id="cb2-149"><a href="#cb2-149" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb2-150"><a href="#cb2-150" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb2-151"><a href="#cb2-151" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-152"><a href="#cb2-152" aria-hidden="true" tabindex="-1"></a>server <span class="ot">&lt;-</span> <span class="cf">function</span>(input, output, session) {</span>
+<span id="cb2-153"><a href="#cb2-153" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-154"><a href="#cb2-154" aria-hidden="true" tabindex="-1"></a>    rv <span class="ot">&lt;-</span> <span class="fu">reactiveValues</span>(<span class="at">hull =</span> <span class="cn">NULL</span>, <span class="at">samples =</span> <span class="fu">numeric</span>(<span class="dv">0</span>), <span class="at">tries =</span> <span class="dv">0</span>, <span class="at">target_n =</span> <span class="dv">200</span>,</span>
+<span id="cb2-155"><a href="#cb2-155" aria-hidden="true" tabindex="-1"></a>                          <span class="at">lb =</span> <span class="sc">-</span><span class="dv">2</span>, <span class="at">ub =</span> <span class="dv">2</span>, <span class="at">done =</span> <span class="cn">FALSE</span>, <span class="at">playing =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb2-156"><a href="#cb2-156" aria-hidden="true" tabindex="-1"></a>                          <span class="at">last_x =</span> <span class="cn">NULL</span>, <span class="at">last_accept =</span> <span class="cn">NA</span>, <span class="at">logsumw =</span> <span class="sc">-</span><span class="cn">Inf</span>, <span class="at">logsumw2 =</span> <span class="sc">-</span><span class="cn">Inf</span>)</span>
+<span id="cb2-157"><a href="#cb2-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-158"><a href="#cb2-158" aria-hidden="true" tabindex="-1"></a>    reset_run <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
+<span id="cb2-159"><a href="#cb2-159" aria-hidden="true" tabindex="-1"></a>        lb <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>lim)) input<span class="sc">$</span>lim[<span class="dv">1</span>] <span class="cf">else</span> <span class="sc">-</span><span class="dv">2</span></span>
+<span id="cb2-160"><a href="#cb2-160" aria-hidden="true" tabindex="-1"></a>        ub <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>lim)) input<span class="sc">$</span>lim[<span class="dv">2</span>] <span class="cf">else</span> <span class="dv">2</span></span>
+<span id="cb2-161"><a href="#cb2-161" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (ub <span class="sc">-</span> lb <span class="sc">&lt;</span> <span class="fl">0.05</span>) ub <span class="ot">&lt;-</span> lb <span class="sc">+</span> <span class="fl">0.05</span>      <span class="co"># guard against a degenerate window</span></span>
+<span id="cb2-162"><a href="#cb2-162" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>hull <span class="ot">&lt;-</span> <span class="fu">init_hull</span>(lb, ub)</span>
+<span id="cb2-163"><a href="#cb2-163" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>samples <span class="ot">&lt;-</span> <span class="fu">numeric</span>(<span class="dv">0</span>)</span>
+<span id="cb2-164"><a href="#cb2-164" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>tries <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb2-165"><a href="#cb2-165" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>lb <span class="ot">&lt;-</span> lb; rv<span class="sc">$</span>ub <span class="ot">&lt;-</span> ub</span>
+<span id="cb2-166"><a href="#cb2-166" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>target_n <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(input<span class="sc">$</span>n) <span class="sc">&amp;&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(input<span class="sc">$</span>n) <span class="sc">&amp;&amp;</span> input<span class="sc">$</span>n <span class="sc">&gt;=</span> <span class="dv">1</span>) input<span class="sc">$</span>n <span class="cf">else</span> <span class="dv">200</span></span>
+<span id="cb2-167"><a href="#cb2-167" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-168"><a href="#cb2-168" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-169"><a href="#cb2-169" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>last_x <span class="ot">&lt;-</span> <span class="cn">NULL</span>; rv<span class="sc">$</span>last_accept <span class="ot">&lt;-</span> <span class="cn">NA</span></span>
+<span id="cb2-170"><a href="#cb2-170" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw <span class="ot">&lt;-</span> <span class="sc">-</span><span class="cn">Inf</span>; rv<span class="sc">$</span>logsumw2 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="cn">Inf</span></span>
+<span id="cb2-171"><a href="#cb2-171" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
+<span id="cb2-172"><a href="#cb2-172" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-173"><a href="#cb2-173" aria-hidden="true" tabindex="-1"></a>    <span class="fu">isolate</span>(<span class="fu">reset_run</span>())</span>
+<span id="cb2-174"><a href="#cb2-174" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-175"><a href="#cb2-175" aria-hidden="true" tabindex="-1"></a>    do_step <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
+<span id="cb2-176"><a href="#cb2-176" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="fu">return</span>(<span class="fu">invisible</span>(<span class="cn">NULL</span>))</span>
+<span id="cb2-177"><a href="#cb2-177" aria-hidden="true" tabindex="-1"></a>        draw <span class="ot">&lt;-</span> <span class="fu">sample_hull</span>(rv<span class="sc">$</span>hull)</span>
+<span id="cb2-178"><a href="#cb2-178" aria-hidden="true" tabindex="-1"></a>        x <span class="ot">&lt;-</span> draw<span class="sc">$</span>x; logg <span class="ot">&lt;-</span> draw<span class="sc">$</span>logg; logf <span class="ot">&lt;-</span> <span class="fu">h</span>(x)</span>
+<span id="cb2-179"><a href="#cb2-179" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>tries <span class="ot">&lt;-</span> rv<span class="sc">$</span>tries <span class="sc">+</span> <span class="dv">1</span></span>
+<span id="cb2-180"><a href="#cb2-180" aria-hidden="true" tabindex="-1"></a>        <span class="do">### importance weight of this proposal under the envelope that generated it:</span></span>
+<span id="cb2-181"><a href="#cb2-181" aria-hidden="true" tabindex="-1"></a>        <span class="do">### w = f(x) / g_t(x) with g_t = envelope / (its area), so log w = log f - log envelope + log area</span></span>
+<span id="cb2-182"><a href="#cb2-182" aria-hidden="true" tabindex="-1"></a>        lw <span class="ot">&lt;-</span> logf <span class="sc">-</span> logg <span class="sc">+</span> draw<span class="sc">$</span>logA</span>
+<span id="cb2-183"><a href="#cb2-183" aria-hidden="true" tabindex="-1"></a>        mw <span class="ot">&lt;-</span> <span class="fu">max</span>(rv<span class="sc">$</span>logsumw, lw)</span>
+<span id="cb2-184"><a href="#cb2-184" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw <span class="ot">&lt;-</span> mw <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">exp</span>(rv<span class="sc">$</span>logsumw <span class="sc">-</span> mw) <span class="sc">+</span> <span class="fu">exp</span>(lw <span class="sc">-</span> mw))</span>
+<span id="cb2-185"><a href="#cb2-185" aria-hidden="true" tabindex="-1"></a>        mw2 <span class="ot">&lt;-</span> <span class="fu">max</span>(rv<span class="sc">$</span>logsumw2, <span class="dv">2</span> <span class="sc">*</span> lw)                  <span class="co"># running sum of w^2, for the standard error</span></span>
+<span id="cb2-186"><a href="#cb2-186" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>logsumw2 <span class="ot">&lt;-</span> mw2 <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">exp</span>(rv<span class="sc">$</span>logsumw2 <span class="sc">-</span> mw2) <span class="sc">+</span> <span class="fu">exp</span>(<span class="dv">2</span> <span class="sc">*</span> lw <span class="sc">-</span> mw2))</span>
+<span id="cb2-187"><a href="#cb2-187" aria-hidden="true" tabindex="-1"></a>        accept <span class="ot">&lt;-</span> <span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> logf <span class="sc">-</span> logg</span>
+<span id="cb2-188"><a href="#cb2-188" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>last_x <span class="ot">&lt;-</span> x; rv<span class="sc">$</span>last_accept <span class="ot">&lt;-</span> accept</span>
+<span id="cb2-189"><a href="#cb2-189" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (accept) {</span>
+<span id="cb2-190"><a href="#cb2-190" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>samples <span class="ot">&lt;-</span> <span class="fu">c</span>(rv<span class="sc">$</span>samples, x)</span>
+<span id="cb2-191"><a href="#cb2-191" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> {</span>
+<span id="cb2-192"><a href="#cb2-192" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>hull <span class="ot">&lt;-</span> <span class="fu">build_hull</span>(<span class="fu">sort</span>(<span class="fu">c</span>(rv<span class="sc">$</span>hull<span class="sc">$</span>x, x)), rv<span class="sc">$</span>lb, rv<span class="sc">$</span>ub)</span>
 <span id="cb2-193"><a href="#cb2-193" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>lim, { <span class="fu">reset_run</span>() }, <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>restart, { <span class="fu">reset_run</span>() })</span>
-<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>n, {</span>
-<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a>        <span class="fu">req</span>(input<span class="sc">$</span>n)</span>
-<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>target_n <span class="ot">&lt;-</span> input<span class="sc">$</span>n</span>
-<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">&lt;</span> rv<span class="sc">$</span>target_n) rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>play_pause, {</span>
-<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="fu">return</span>()</span>
-<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="sc">!</span>rv<span class="sc">$</span>playing</span>
-<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>,</span>
-<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a>                            <span class="at">label =</span> <span class="cf">if</span> (rv<span class="sc">$</span>playing) <span class="st">"⏸ Pause"</span> <span class="cf">else</span> <span class="st">"▶ Play"</span>)</span>
-<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>next_step, {</span>
-<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
-<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
-<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>        <span class="fu">do_step</span>()</span>
-<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>    <span class="do">### auto-advance one step every 120ms while playing</span></span>
-<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observe</span>({</span>
-<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(rv<span class="sc">$</span>playing) <span class="sc">&amp;&amp;</span> <span class="sc">!</span>rv<span class="sc">$</span>done) {</span>
-<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>            <span class="fu">invalidateLater</span>(<span class="dv">120</span>, session)</span>
-<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a>            <span class="fu">isolate</span>(<span class="fu">do_step</span>())</span>
-<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>    <span class="do">### P(l &lt; X &lt; u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l &lt; X &lt; u), and</span></span>
-<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>    <span class="do">### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.</span></span>
-<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>    <span class="do">### The standard error uses the sample variance of the weights (an approximation, since the</span></span>
-<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>    <span class="do">### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)</span></span>
-<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>tab <span class="ot">&lt;-</span> <span class="fu">renderTable</span>({</span>
-<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>        fmt  <span class="ot">&lt;-</span> <span class="cf">function</span>(lp) <span class="cf">if</span> (lp <span class="sc">&gt;</span> <span class="sc">-</span><span class="dv">700</span>) <span class="fu">sprintf</span>(<span class="st">"%.4g"</span>, <span class="fu">exp</span>(lp)) <span class="cf">else</span> <span class="fu">sprintf</span>(<span class="st">"exp(%.4f)"</span>, lp)   <span class="co"># probability</span></span>
-<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a>        flog <span class="ot">&lt;-</span> <span class="cf">function</span>(lp) <span class="fu">sprintf</span>(<span class="st">"%.4f"</span>, lp)                                                     <span class="co"># log probability</span></span>
-<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>        log_true <span class="ot">&lt;-</span> <span class="fu">log_pnorm_diff</span>(rv<span class="sc">$</span>lb, rv<span class="sc">$</span>ub)</span>
-<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>        T <span class="ot">&lt;-</span> rv<span class="sc">$</span>tries</span>
-<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>        est <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"-"</span>, <span class="st">"-"</span>); ci <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"-"</span>, <span class="st">"-"</span>)</span>
-<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (T <span class="sc">&gt;=</span> <span class="dv">2</span>) {</span>
-<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>            log_m  <span class="ot">&lt;-</span> rv<span class="sc">$</span>logsumw <span class="sc">-</span> <span class="fu">log</span>(T)                          <span class="co"># log of the mean weight</span></span>
-<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>            rel_se <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">max</span>(<span class="fu">expm1</span>(rv<span class="sc">$</span>logsumw2 <span class="sc">-</span> <span class="fu">log</span>(T) <span class="sc">-</span> <span class="dv">2</span> <span class="sc">*</span> log_m), <span class="dv">0</span>) <span class="sc">/</span> T)</span>
-<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>            log_est <span class="ot">&lt;-</span> log_m <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi)</span>
-<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>            lo <span class="ot">&lt;-</span> log_est <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">max</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> rel_se, <span class="fl">1e-12</span>)); hi <span class="ot">&lt;-</span> log_est <span class="sc">+</span> <span class="fu">log1p</span>(<span class="fl">1.96</span> <span class="sc">*</span> rel_se)</span>
-<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>            est <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">fmt</span>(log_est), <span class="fu">flog</span>(log_est))</span>
-<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>            ci  <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sprintf</span>(<span class="st">"(%s, %s)"</span>, <span class="fu">fmt</span>(lo), <span class="fu">fmt</span>(hi)), <span class="fu">sprintf</span>(<span class="st">"(%s, %s)"</span>, <span class="fu">flog</span>(lo), <span class="fu">flog</span>(hi)))</span>
-<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>        <span class="fu">data.frame</span>(</span>
-<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at"> </span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="st">"true"</span>, <span class="st">"IS estimate"</span>, <span class="st">"95% CI"</span>),</span>
-<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at">P(l &lt; X &lt; u)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="fu">fmt</span>(log_true), est[<span class="dv">1</span>], ci[<span class="dv">1</span>]),</span>
-<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at">log P</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="fu">flog</span>(log_true), est[<span class="dv">2</span>], ci[<span class="dv">2</span>]),</span>
-<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>            <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">striped =</span> <span class="cn">TRUE</span>, <span class="at">align =</span> <span class="st">"lll"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)</span>
-<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>status <span class="ot">&lt;-</span> <span class="fu">renderText</span>({</span>
-<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">"%d / %d samples accepted  |  %d proposals  |  %d tangent points"</span>,</span>
-<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>                <span class="fu">length</span>(rv<span class="sc">$</span>samples), rv<span class="sc">$</span>target_n, rv<span class="sc">$</span>tries, <span class="fu">length</span>(rv<span class="sc">$</span>hull<span class="sc">$</span>x))</span>
-<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>panels <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
-<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>        hull <span class="ot">&lt;-</span> rv<span class="sc">$</span>hull; lb <span class="ot">&lt;-</span> rv<span class="sc">$</span>lb; ub <span class="ot">&lt;-</span> rv<span class="sc">$</span>ub</span>
-<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>        dl <span class="ot">&lt;-</span> <span class="fu">smart_xlim</span>(lb, ub)</span>
-<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a>        xg <span class="ot">&lt;-</span> <span class="fu">seq</span>(dl[<span class="dv">1</span>], dl[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">400</span>)</span>
-<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>        hull_log <span class="ot">&lt;-</span> <span class="fu">hull_val</span>(hull, xg); target_log <span class="ot">&lt;-</span> <span class="fu">h</span>(xg)</span>
-<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">1</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
-<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(xg, hull_log, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
-<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylim =</span> <span class="fu">range</span>(<span class="fu">c</span>(hull_log, target_log)), <span class="at">xlab =</span> <span class="st">"x"</span>,</span>
-<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="st">"log density (unnormalized)"</span>,</span>
-<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"log target vs. hull (%d tangent points)"</span>, <span class="fu">length</span>(hull<span class="sc">$</span>x)))</span>
-<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xg, target_log, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
-<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(hull<span class="sc">$</span>x, hull<span class="sc">$</span>hx, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray20"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
-<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>        <span class="fu">abline</span>(<span class="at">v =</span> hull<span class="sc">$</span>z[<span class="sc">-</span><span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">length</span>(hull<span class="sc">$</span>z))], <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray40"</span>, <span class="fl">0.4</span>), <span class="at">lty =</span> <span class="dv">3</span>)</span>
-<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>        <span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">c</span>(lb, ub), <span class="at">col =</span> <span class="st">"darkorange"</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
-<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(rv<span class="sc">$</span>last_x)) {</span>
-<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>            <span class="fu">points</span>(rv<span class="sc">$</span>last_x, <span class="fu">h</span>(rv<span class="sc">$</span>last_x), <span class="at">pch =</span> <span class="cf">if</span> (rv<span class="sc">$</span>last_accept) <span class="dv">19</span> <span class="cf">else</span> <span class="dv">4</span>,</span>
-<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a>                   <span class="at">col =</span> <span class="cf">if</span> (rv<span class="sc">$</span>last_accept) <span class="st">"forestgreen"</span> <span class="cf">else</span> <span class="st">"black"</span>, <span class="at">cex =</span> <span class="fl">1.6</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
-<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
-<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a>               <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">1</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">pch =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="dv">19</span>, <span class="dv">4</span>),</span>
-<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>, <span class="st">"darkorange"</span>, <span class="st">"forestgreen"</span>, <span class="st">"black"</span>),</span>
-<span id="cb2-279"><a href="#cb2-279" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"log hull"</span>, <span class="st">"log target"</span>, <span class="st">"truncation limits"</span>, <span class="st">"last: accepted"</span>, <span class="st">"last: rejected"</span>))</span>
-<span id="cb2-280"><a href="#cb2-280" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-281"><a href="#cb2-281" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">==</span> <span class="dv">0</span>) {</span>
-<span id="cb2-282"><a href="#cb2-282" aria-hidden="true" tabindex="-1"></a>            <span class="fu">plot</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">xlim =</span> dl, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">xlab =</span> <span class="st">"x"</span>, <span class="at">ylab =</span> <span class="st">""</span>,</span>
-<span id="cb2-283"><a href="#cb2-283" aria-hidden="true" tabindex="-1"></a>                 <span class="at">main =</span> <span class="st">"no samples accepted yet"</span>)</span>
-<span id="cb2-284"><a href="#cb2-284" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> {</span>
-<span id="cb2-285"><a href="#cb2-285" aria-hidden="true" tabindex="-1"></a>            <span class="do">### scale the bin count so ~30 bins fall within the *visible* view,</span></span>
-<span id="cb2-286"><a href="#cb2-286" aria-hidden="true" tabindex="-1"></a>            <span class="do">### not the full [lb, ub] window -- otherwise a wide window (e.g.</span></span>
-<span id="cb2-287"><a href="#cb2-287" aria-hidden="true" tabindex="-1"></a>            <span class="do">### [100, 200] zoomed to [100, 102]) puts everything in one giant bin</span></span>
-<span id="cb2-288"><a href="#cb2-288" aria-hidden="true" tabindex="-1"></a>            n_bins <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="dv">5000</span>, <span class="fu">max</span>(<span class="dv">30</span>, <span class="fu">ceiling</span>(<span class="dv">30</span> <span class="sc">*</span> (ub <span class="sc">-</span> lb) <span class="sc">/</span> (dl[<span class="dv">2</span>] <span class="sc">-</span> dl[<span class="dv">1</span>]))))</span>
-<span id="cb2-289"><a href="#cb2-289" aria-hidden="true" tabindex="-1"></a>            breaks <span class="ot">&lt;-</span> <span class="fu">seq</span>(lb, ub, <span class="at">length.out =</span> n_bins <span class="sc">+</span> <span class="dv">1</span>)</span>
-<span id="cb2-290"><a href="#cb2-290" aria-hidden="true" tabindex="-1"></a>            <span class="fu">hist</span>(rv<span class="sc">$</span>samples, <span class="at">breaks =</span> breaks, <span class="at">freq =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
-<span id="cb2-291"><a href="#cb2-291" aria-hidden="true" tabindex="-1"></a>                 <span class="at">xlim =</span> dl, <span class="at">xlab =</span> <span class="st">"x"</span>,</span>
-<span id="cb2-292"><a href="#cb2-292" aria-hidden="true" tabindex="-1"></a>                 <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"%d / %d samples%s"</span>, <span class="fu">length</span>(rv<span class="sc">$</span>samples), rv<span class="sc">$</span>target_n,</span>
-<span id="cb2-293"><a href="#cb2-293" aria-hidden="true" tabindex="-1"></a>                                 <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="st">"  (done)"</span> <span class="cf">else</span> <span class="st">""</span>))</span>
-<span id="cb2-294"><a href="#cb2-294" aria-hidden="true" tabindex="-1"></a>            <span class="fu">curve</span>(<span class="fu">tnorm_density</span>(x, lb, ub), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">300</span>)</span>
-<span id="cb2-295"><a href="#cb2-295" aria-hidden="true" tabindex="-1"></a>            <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">legend =</span> <span class="st">"true truncated-normal density"</span>)</span>
-<span id="cb2-296"><a href="#cb2-296" aria-hidden="true" tabindex="-1"></a>        }</span>
-<span id="cb2-297"><a href="#cb2-297" aria-hidden="true" tabindex="-1"></a>    })</span>
-<span id="cb2-298"><a href="#cb2-298" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb2-299"><a href="#cb2-299" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-300"><a href="#cb2-300" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-194"><a href="#cb2-194" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">&gt;=</span> rv<span class="sc">$</span>target_n) {</span>
+<span id="cb2-195"><a href="#cb2-195" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb2-196"><a href="#cb2-196" aria-hidden="true" tabindex="-1"></a>            rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-197"><a href="#cb2-197" aria-hidden="true" tabindex="-1"></a>            <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
+<span id="cb2-198"><a href="#cb2-198" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-199"><a href="#cb2-199" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb2-200"><a href="#cb2-200" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-201"><a href="#cb2-201" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>lim, { <span class="fu">reset_run</span>() }, <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-202"><a href="#cb2-202" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>restart, { <span class="fu">reset_run</span>() })</span>
+<span id="cb2-203"><a href="#cb2-203" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-204"><a href="#cb2-204" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>n, {</span>
+<span id="cb2-205"><a href="#cb2-205" aria-hidden="true" tabindex="-1"></a>        <span class="fu">req</span>(input<span class="sc">$</span>n)</span>
+<span id="cb2-206"><a href="#cb2-206" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>target_n <span class="ot">&lt;-</span> input<span class="sc">$</span>n</span>
+<span id="cb2-207"><a href="#cb2-207" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">&lt;</span> rv<span class="sc">$</span>target_n) rv<span class="sc">$</span>done <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-208"><a href="#cb2-208" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">ignoreInit =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-209"><a href="#cb2-209" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-210"><a href="#cb2-210" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>play_pause, {</span>
+<span id="cb2-211"><a href="#cb2-211" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="fu">return</span>()</span>
+<span id="cb2-212"><a href="#cb2-212" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="sc">!</span>rv<span class="sc">$</span>playing</span>
+<span id="cb2-213"><a href="#cb2-213" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>,</span>
+<span id="cb2-214"><a href="#cb2-214" aria-hidden="true" tabindex="-1"></a>                            <span class="at">label =</span> <span class="cf">if</span> (rv<span class="sc">$</span>playing) <span class="st">"⏸ Pause"</span> <span class="cf">else</span> <span class="st">"▶ Play"</span>)</span>
+<span id="cb2-215"><a href="#cb2-215" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-216"><a href="#cb2-216" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-217"><a href="#cb2-217" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observeEvent</span>(input<span class="sc">$</span>next_step, {</span>
+<span id="cb2-218"><a href="#cb2-218" aria-hidden="true" tabindex="-1"></a>        rv<span class="sc">$</span>playing <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-219"><a href="#cb2-219" aria-hidden="true" tabindex="-1"></a>        <span class="fu">updateActionButton</span>(session, <span class="st">"play_pause"</span>, <span class="at">label =</span> <span class="st">"▶ Play"</span>)</span>
+<span id="cb2-220"><a href="#cb2-220" aria-hidden="true" tabindex="-1"></a>        <span class="fu">do_step</span>()</span>
+<span id="cb2-221"><a href="#cb2-221" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-222"><a href="#cb2-222" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-223"><a href="#cb2-223" aria-hidden="true" tabindex="-1"></a>    <span class="do">### auto-advance one step every 120ms while playing</span></span>
+<span id="cb2-224"><a href="#cb2-224" aria-hidden="true" tabindex="-1"></a>    <span class="fu">observe</span>({</span>
+<span id="cb2-225"><a href="#cb2-225" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">isTRUE</span>(rv<span class="sc">$</span>playing) <span class="sc">&amp;&amp;</span> <span class="sc">!</span>rv<span class="sc">$</span>done) {</span>
+<span id="cb2-226"><a href="#cb2-226" aria-hidden="true" tabindex="-1"></a>            <span class="fu">invalidateLater</span>(<span class="dv">120</span>, session)</span>
+<span id="cb2-227"><a href="#cb2-227" aria-hidden="true" tabindex="-1"></a>            <span class="fu">isolate</span>(<span class="fu">do_step</span>())</span>
+<span id="cb2-228"><a href="#cb2-228" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-229"><a href="#cb2-229" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-230"><a href="#cb2-230" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-231"><a href="#cb2-231" aria-hidden="true" tabindex="-1"></a>    <span class="do">### P(l &lt; X &lt; u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l &lt; X &lt; u), and</span></span>
+<span id="cb2-232"><a href="#cb2-232" aria-hidden="true" tabindex="-1"></a>    <span class="do">### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.</span></span>
+<span id="cb2-233"><a href="#cb2-233" aria-hidden="true" tabindex="-1"></a>    <span class="do">### The standard error uses the sample variance of the weights (an approximation, since the</span></span>
+<span id="cb2-234"><a href="#cb2-234" aria-hidden="true" tabindex="-1"></a>    <span class="do">### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)</span></span>
+<span id="cb2-235"><a href="#cb2-235" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>tab <span class="ot">&lt;-</span> <span class="fu">renderTable</span>({</span>
+<span id="cb2-236"><a href="#cb2-236" aria-hidden="true" tabindex="-1"></a>        fmt  <span class="ot">&lt;-</span> <span class="cf">function</span>(lp) <span class="cf">if</span> (lp <span class="sc">&gt;</span> <span class="sc">-</span><span class="dv">700</span>) <span class="fu">sprintf</span>(<span class="st">"%.4g"</span>, <span class="fu">exp</span>(lp)) <span class="cf">else</span> <span class="fu">sprintf</span>(<span class="st">"exp(%.4f)"</span>, lp)   <span class="co"># probability</span></span>
+<span id="cb2-237"><a href="#cb2-237" aria-hidden="true" tabindex="-1"></a>        flog <span class="ot">&lt;-</span> <span class="cf">function</span>(lp) <span class="fu">sprintf</span>(<span class="st">"%.4f"</span>, lp)                                                     <span class="co"># log probability</span></span>
+<span id="cb2-238"><a href="#cb2-238" aria-hidden="true" tabindex="-1"></a>        log_true <span class="ot">&lt;-</span> <span class="fu">log_pnorm_diff</span>(rv<span class="sc">$</span>lb, rv<span class="sc">$</span>ub)</span>
+<span id="cb2-239"><a href="#cb2-239" aria-hidden="true" tabindex="-1"></a>        T <span class="ot">&lt;-</span> rv<span class="sc">$</span>tries</span>
+<span id="cb2-240"><a href="#cb2-240" aria-hidden="true" tabindex="-1"></a>        est <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"-"</span>, <span class="st">"-"</span>); ci <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"-"</span>, <span class="st">"-"</span>)</span>
+<span id="cb2-241"><a href="#cb2-241" aria-hidden="true" tabindex="-1"></a>        <span class="do">### mean of X: the accepted draws are exact iid draws from the truncated normal,</span></span>
+<span id="cb2-242"><a href="#cb2-242" aria-hidden="true" tabindex="-1"></a>        <span class="do">### so their sample mean and a t-type interval estimate E(X | l &lt; X &lt; u)</span></span>
+<span id="cb2-243"><a href="#cb2-243" aria-hidden="true" tabindex="-1"></a>        ns <span class="ot">&lt;-</span> <span class="fu">length</span>(rv<span class="sc">$</span>samples); mest <span class="ot">&lt;-</span> <span class="st">"-"</span>; mci <span class="ot">&lt;-</span> <span class="st">"-"</span></span>
+<span id="cb2-244"><a href="#cb2-244" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (ns <span class="sc">&gt;=</span> <span class="dv">2</span>) {</span>
+<span id="cb2-245"><a href="#cb2-245" aria-hidden="true" tabindex="-1"></a>            xbar <span class="ot">&lt;-</span> <span class="fu">mean</span>(rv<span class="sc">$</span>samples); se <span class="ot">&lt;-</span> <span class="fu">sd</span>(rv<span class="sc">$</span>samples) <span class="sc">/</span> <span class="fu">sqrt</span>(ns)</span>
+<span id="cb2-246"><a href="#cb2-246" aria-hidden="true" tabindex="-1"></a>            mest <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">"%.4f"</span>, xbar)</span>
+<span id="cb2-247"><a href="#cb2-247" aria-hidden="true" tabindex="-1"></a>            mci  <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">"(%.4f, %.4f)"</span>, xbar <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> se, xbar <span class="sc">+</span> <span class="fl">1.96</span> <span class="sc">*</span> se)</span>
+<span id="cb2-248"><a href="#cb2-248" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-249"><a href="#cb2-249" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (T <span class="sc">&gt;=</span> <span class="dv">2</span>) {</span>
+<span id="cb2-250"><a href="#cb2-250" aria-hidden="true" tabindex="-1"></a>            log_m  <span class="ot">&lt;-</span> rv<span class="sc">$</span>logsumw <span class="sc">-</span> <span class="fu">log</span>(T)                          <span class="co"># log of the mean weight</span></span>
+<span id="cb2-251"><a href="#cb2-251" aria-hidden="true" tabindex="-1"></a>            rel_se <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(<span class="fu">max</span>(<span class="fu">expm1</span>(rv<span class="sc">$</span>logsumw2 <span class="sc">-</span> <span class="fu">log</span>(T) <span class="sc">-</span> <span class="dv">2</span> <span class="sc">*</span> log_m), <span class="dv">0</span>) <span class="sc">/</span> T)</span>
+<span id="cb2-252"><a href="#cb2-252" aria-hidden="true" tabindex="-1"></a>            log_est <span class="ot">&lt;-</span> log_m <span class="sc">-</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> pi)</span>
+<span id="cb2-253"><a href="#cb2-253" aria-hidden="true" tabindex="-1"></a>            lo <span class="ot">&lt;-</span> log_est <span class="sc">+</span> <span class="fu">log</span>(<span class="fu">max</span>(<span class="dv">1</span> <span class="sc">-</span> <span class="fl">1.96</span> <span class="sc">*</span> rel_se, <span class="fl">1e-12</span>)); hi <span class="ot">&lt;-</span> log_est <span class="sc">+</span> <span class="fu">log1p</span>(<span class="fl">1.96</span> <span class="sc">*</span> rel_se)</span>
+<span id="cb2-254"><a href="#cb2-254" aria-hidden="true" tabindex="-1"></a>            est <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">fmt</span>(log_est), <span class="fu">flog</span>(log_est))</span>
+<span id="cb2-255"><a href="#cb2-255" aria-hidden="true" tabindex="-1"></a>            ci  <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="fu">sprintf</span>(<span class="st">"(%s, %s)"</span>, <span class="fu">fmt</span>(lo), <span class="fu">fmt</span>(hi)), <span class="fu">sprintf</span>(<span class="st">"(%s, %s)"</span>, <span class="fu">flog</span>(lo), <span class="fu">flog</span>(hi)))</span>
+<span id="cb2-256"><a href="#cb2-256" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-257"><a href="#cb2-257" aria-hidden="true" tabindex="-1"></a>        <span class="fu">data.frame</span>(</span>
+<span id="cb2-258"><a href="#cb2-258" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at"> </span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="st">"true"</span>, <span class="st">"estimate"</span>, <span class="st">"95% CI"</span>),</span>
+<span id="cb2-259"><a href="#cb2-259" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at">P(l &lt; X &lt; u)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="fu">fmt</span>(log_true), est[<span class="dv">1</span>], ci[<span class="dv">1</span>]),</span>
+<span id="cb2-260"><a href="#cb2-260" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at">log P</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="fu">flog</span>(log_true), est[<span class="dv">2</span>], ci[<span class="dv">2</span>]),</span>
+<span id="cb2-261"><a href="#cb2-261" aria-hidden="true" tabindex="-1"></a>            <span class="st">`</span><span class="at">E(X | l &lt; X &lt; u)</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">c</span>(<span class="fu">sprintf</span>(<span class="st">"%.4f"</span>, <span class="fu">tnorm_mean</span>(rv<span class="sc">$</span>lb, rv<span class="sc">$</span>ub)), mest, mci),</span>
+<span id="cb2-262"><a href="#cb2-262" aria-hidden="true" tabindex="-1"></a>            <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb2-263"><a href="#cb2-263" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">striped =</span> <span class="cn">TRUE</span>, <span class="at">align =</span> <span class="st">"llll"</span>, <span class="at">width =</span> <span class="st">"100%"</span>)</span>
+<span id="cb2-264"><a href="#cb2-264" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-265"><a href="#cb2-265" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>status <span class="ot">&lt;-</span> <span class="fu">renderText</span>({</span>
+<span id="cb2-266"><a href="#cb2-266" aria-hidden="true" tabindex="-1"></a>        <span class="fu">sprintf</span>(<span class="st">"%d / %d samples accepted  |  %d proposals  |  %d tangent points"</span>,</span>
+<span id="cb2-267"><a href="#cb2-267" aria-hidden="true" tabindex="-1"></a>                <span class="fu">length</span>(rv<span class="sc">$</span>samples), rv<span class="sc">$</span>target_n, rv<span class="sc">$</span>tries, <span class="fu">length</span>(rv<span class="sc">$</span>hull<span class="sc">$</span>x))</span>
+<span id="cb2-268"><a href="#cb2-268" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-269"><a href="#cb2-269" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-270"><a href="#cb2-270" aria-hidden="true" tabindex="-1"></a>    output<span class="sc">$</span>panels <span class="ot">&lt;-</span> <span class="fu">renderPlot</span>({</span>
+<span id="cb2-271"><a href="#cb2-271" aria-hidden="true" tabindex="-1"></a>        hull <span class="ot">&lt;-</span> rv<span class="sc">$</span>hull; lb <span class="ot">&lt;-</span> rv<span class="sc">$</span>lb; ub <span class="ot">&lt;-</span> rv<span class="sc">$</span>ub</span>
+<span id="cb2-272"><a href="#cb2-272" aria-hidden="true" tabindex="-1"></a>        dl <span class="ot">&lt;-</span> <span class="fu">smart_xlim</span>(lb, ub)</span>
+<span id="cb2-273"><a href="#cb2-273" aria-hidden="true" tabindex="-1"></a>        xg <span class="ot">&lt;-</span> <span class="fu">seq</span>(dl[<span class="dv">1</span>], dl[<span class="dv">2</span>], <span class="at">length.out =</span> <span class="dv">400</span>)</span>
+<span id="cb2-274"><a href="#cb2-274" aria-hidden="true" tabindex="-1"></a>        hull_log <span class="ot">&lt;-</span> <span class="fu">hull_val</span>(hull, xg); target_log <span class="ot">&lt;-</span> <span class="fu">h</span>(xg)</span>
+<span id="cb2-275"><a href="#cb2-275" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-276"><a href="#cb2-276" aria-hidden="true" tabindex="-1"></a>        <span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">1</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">3</span>, <span class="dv">1</span>))</span>
+<span id="cb2-277"><a href="#cb2-277" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-278"><a href="#cb2-278" aria-hidden="true" tabindex="-1"></a>        <span class="fu">plot</span>(xg, hull_log, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>,</span>
+<span id="cb2-279"><a href="#cb2-279" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylim =</span> <span class="fu">range</span>(<span class="fu">c</span>(hull_log, target_log)), <span class="at">xlab =</span> <span class="st">"x"</span>,</span>
+<span id="cb2-280"><a href="#cb2-280" aria-hidden="true" tabindex="-1"></a>             <span class="at">ylab =</span> <span class="st">"log density (unnormalized)"</span>,</span>
+<span id="cb2-281"><a href="#cb2-281" aria-hidden="true" tabindex="-1"></a>             <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"log target vs. hull (%d tangent points)"</span>, <span class="fu">length</span>(hull<span class="sc">$</span>x)))</span>
+<span id="cb2-282"><a href="#cb2-282" aria-hidden="true" tabindex="-1"></a>        <span class="fu">lines</span>(xg, target_log, <span class="at">lwd =</span> <span class="dv">2</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>)</span>
+<span id="cb2-283"><a href="#cb2-283" aria-hidden="true" tabindex="-1"></a>        <span class="fu">points</span>(hull<span class="sc">$</span>x, hull<span class="sc">$</span>hx, <span class="at">pch =</span> <span class="dv">19</span>, <span class="at">col =</span> <span class="st">"gray20"</span>, <span class="at">cex =</span> <span class="fl">0.9</span>)</span>
+<span id="cb2-284"><a href="#cb2-284" aria-hidden="true" tabindex="-1"></a>        <span class="fu">abline</span>(<span class="at">v =</span> hull<span class="sc">$</span>z[<span class="sc">-</span><span class="fu">c</span>(<span class="dv">1</span>, <span class="fu">length</span>(hull<span class="sc">$</span>z))], <span class="at">col =</span> <span class="fu">adjustcolor</span>(<span class="st">"gray40"</span>, <span class="fl">0.4</span>), <span class="at">lty =</span> <span class="dv">3</span>)</span>
+<span id="cb2-285"><a href="#cb2-285" aria-hidden="true" tabindex="-1"></a>        <span class="fu">abline</span>(<span class="at">v =</span> <span class="fu">c</span>(lb, ub), <span class="at">col =</span> <span class="st">"darkorange"</span>, <span class="at">lty =</span> <span class="dv">2</span>)</span>
+<span id="cb2-286"><a href="#cb2-286" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.null</span>(rv<span class="sc">$</span>last_x)) {</span>
+<span id="cb2-287"><a href="#cb2-287" aria-hidden="true" tabindex="-1"></a>            <span class="fu">points</span>(rv<span class="sc">$</span>last_x, <span class="fu">h</span>(rv<span class="sc">$</span>last_x), <span class="at">pch =</span> <span class="cf">if</span> (rv<span class="sc">$</span>last_accept) <span class="dv">19</span> <span class="cf">else</span> <span class="dv">4</span>,</span>
+<span id="cb2-288"><a href="#cb2-288" aria-hidden="true" tabindex="-1"></a>                   <span class="at">col =</span> <span class="cf">if</span> (rv<span class="sc">$</span>last_accept) <span class="st">"forestgreen"</span> <span class="cf">else</span> <span class="st">"black"</span>, <span class="at">cex =</span> <span class="fl">1.6</span>, <span class="at">lwd =</span> <span class="dv">2</span>)</span>
+<span id="cb2-289"><a href="#cb2-289" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-290"><a href="#cb2-290" aria-hidden="true" tabindex="-1"></a>        <span class="fu">legend</span>(<span class="st">"bottomleft"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">cex =</span> <span class="fl">0.85</span>,</span>
+<span id="cb2-291"><a href="#cb2-291" aria-hidden="true" tabindex="-1"></a>               <span class="at">lwd =</span> <span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">1</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">lty =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">2</span>, <span class="cn">NA</span>, <span class="cn">NA</span>), <span class="at">pch =</span> <span class="fu">c</span>(<span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="dv">19</span>, <span class="dv">4</span>),</span>
+<span id="cb2-292"><a href="#cb2-292" aria-hidden="true" tabindex="-1"></a>               <span class="at">col =</span> <span class="fu">c</span>(<span class="st">"steelblue"</span>, <span class="st">"firebrick"</span>, <span class="st">"darkorange"</span>, <span class="st">"forestgreen"</span>, <span class="st">"black"</span>),</span>
+<span id="cb2-293"><a href="#cb2-293" aria-hidden="true" tabindex="-1"></a>               <span class="at">legend =</span> <span class="fu">c</span>(<span class="st">"log hull"</span>, <span class="st">"log target"</span>, <span class="st">"truncation limits"</span>, <span class="st">"last: accepted"</span>, <span class="st">"last: rejected"</span>))</span>
+<span id="cb2-294"><a href="#cb2-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-295"><a href="#cb2-295" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> (<span class="fu">length</span>(rv<span class="sc">$</span>samples) <span class="sc">==</span> <span class="dv">0</span>) {</span>
+<span id="cb2-296"><a href="#cb2-296" aria-hidden="true" tabindex="-1"></a>            <span class="fu">plot</span>(<span class="dv">0</span>, <span class="dv">0</span>, <span class="at">type =</span> <span class="st">"n"</span>, <span class="at">xlim =</span> dl, <span class="at">ylim =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">xlab =</span> <span class="st">"x"</span>, <span class="at">ylab =</span> <span class="st">""</span>,</span>
+<span id="cb2-297"><a href="#cb2-297" aria-hidden="true" tabindex="-1"></a>                 <span class="at">main =</span> <span class="st">"no samples accepted yet"</span>)</span>
+<span id="cb2-298"><a href="#cb2-298" aria-hidden="true" tabindex="-1"></a>        } <span class="cf">else</span> {</span>
+<span id="cb2-299"><a href="#cb2-299" aria-hidden="true" tabindex="-1"></a>            <span class="do">### scale the bin count so ~30 bins fall within the *visible* view,</span></span>
+<span id="cb2-300"><a href="#cb2-300" aria-hidden="true" tabindex="-1"></a>            <span class="do">### not the full [lb, ub] window -- otherwise a wide window (e.g.</span></span>
+<span id="cb2-301"><a href="#cb2-301" aria-hidden="true" tabindex="-1"></a>            <span class="do">### [100, 200] zoomed to [100, 102]) puts everything in one giant bin</span></span>
+<span id="cb2-302"><a href="#cb2-302" aria-hidden="true" tabindex="-1"></a>            n_bins <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="dv">5000</span>, <span class="fu">max</span>(<span class="dv">30</span>, <span class="fu">ceiling</span>(<span class="dv">30</span> <span class="sc">*</span> (ub <span class="sc">-</span> lb) <span class="sc">/</span> (dl[<span class="dv">2</span>] <span class="sc">-</span> dl[<span class="dv">1</span>]))))</span>
+<span id="cb2-303"><a href="#cb2-303" aria-hidden="true" tabindex="-1"></a>            breaks <span class="ot">&lt;-</span> <span class="fu">seq</span>(lb, ub, <span class="at">length.out =</span> n_bins <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-304"><a href="#cb2-304" aria-hidden="true" tabindex="-1"></a>            <span class="fu">hist</span>(rv<span class="sc">$</span>samples, <span class="at">breaks =</span> breaks, <span class="at">freq =</span> <span class="cn">FALSE</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">border =</span> <span class="st">"white"</span>,</span>
+<span id="cb2-305"><a href="#cb2-305" aria-hidden="true" tabindex="-1"></a>                 <span class="at">xlim =</span> dl, <span class="at">xlab =</span> <span class="st">"x"</span>,</span>
+<span id="cb2-306"><a href="#cb2-306" aria-hidden="true" tabindex="-1"></a>                 <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"%d / %d samples%s"</span>, <span class="fu">length</span>(rv<span class="sc">$</span>samples), rv<span class="sc">$</span>target_n,</span>
+<span id="cb2-307"><a href="#cb2-307" aria-hidden="true" tabindex="-1"></a>                                 <span class="cf">if</span> (rv<span class="sc">$</span>done) <span class="st">"  (done)"</span> <span class="cf">else</span> <span class="st">""</span>))</span>
+<span id="cb2-308"><a href="#cb2-308" aria-hidden="true" tabindex="-1"></a>            <span class="fu">curve</span>(<span class="fu">tnorm_density</span>(x, lb, ub), <span class="at">add =</span> <span class="cn">TRUE</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">n =</span> <span class="dv">300</span>)</span>
+<span id="cb2-309"><a href="#cb2-309" aria-hidden="true" tabindex="-1"></a>            <span class="fu">legend</span>(<span class="st">"topright"</span>, <span class="at">bty =</span> <span class="st">"n"</span>, <span class="at">lwd =</span> <span class="dv">3</span>, <span class="at">col =</span> <span class="st">"firebrick"</span>, <span class="at">legend =</span> <span class="st">"true truncated-normal density"</span>)</span>
+<span id="cb2-310"><a href="#cb2-310" aria-hidden="true" tabindex="-1"></a>        }</span>
+<span id="cb2-311"><a href="#cb2-311" aria-hidden="true" tabindex="-1"></a>    })</span>
+<span id="cb2-312"><a href="#cb2-312" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb2-313"><a href="#cb2-313" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-314"><a href="#cb2-314" aria-hidden="true" tabindex="-1"></a><span class="fu">shinyApp</span>(ui, server)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
 </div>
 </div>

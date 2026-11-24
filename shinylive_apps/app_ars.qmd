@@ -104,17 +104,11 @@ init_hull <- function(lb, ub) {
     build_hull(x_init, lb, ub)
 }
 
-### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
-### where "mode" is the peak of the density *within* the truncation window --
-### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
-### window is then entirely on one side of the peak, so the density is
-### monotonic and highest right at that edge). A wide window far out in the
-### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
-### mostly-flat, uninformative sliver near that one edge.
-smart_xlim <- function(lb, ub) {
-    m <- if (lb >= 0) lb else if (ub <= 0) ub else 0
-    c(max(lb, m - 2), min(ub, m + 2))
-}
+### plotting window: the whole truncation interval [lb, ub]. (An earlier version
+### zoomed to [mode - 2, mode + 2] clipped to [lb, ub], meant for far-tail windows
+### such as [100, 200]; with the slider limited to [-10, 10] that zoom only hid
+### part of an asymmetric window, e.g. (-2, 10) was shown as [-2, 2].)
+smart_xlim <- function(lb, ub) c(lb, ub)
 
 ### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
 ### difference underflows to 0 for windows far out in either tail
@@ -131,6 +125,15 @@ log_pnorm_diff <- function(lb, ub) {
     }
 }
 tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
+### E(X | l < X < u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of
+### the two phi values formed on the log scale so that it stays accurate in either tail
+tnorm_mean <- function(lb, ub) {
+    la <- dnorm(lb, log = TRUE); lu <- dnorm(ub, log = TRUE)
+    m <- max(la, lu)
+    if (!is.finite(m)) return(0)
+    sign(la - lu) * exp(m + log(abs(exp(la - m) - exp(lu - m))) - log_pnorm_diff(lb, ub))
+}
 
 ui <- fluidPage(
     wellPanel(
@@ -154,6 +157,8 @@ ui <- fluidPage(
             tags$style("#tab td, #tab th { white-space: nowrap; }"),
             h5("Run summary"),
             tableOutput("tab"),
+            helpText("P and log P are estimated by the mean importance weight over all ",
+                     "proposals; E(X | l < X < u) by the mean of the accepted draws."),
             textOutput("status"))
     )
 )
@@ -247,6 +252,14 @@ server <- function(input, output, session) {
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
         T <- rv$tries
         est <- c("-", "-"); ci <- c("-", "-")
+        ### mean of X: the accepted draws are exact iid draws from the truncated normal,
+        ### so their sample mean and a t-type interval estimate E(X | l < X < u)
+        ns <- length(rv$samples); mest <- "-"; mci <- "-"
+        if (ns >= 2) {
+            xbar <- mean(rv$samples); se <- sd(rv$samples) / sqrt(ns)
+            mest <- sprintf("%.4f", xbar)
+            mci  <- sprintf("(%.4f, %.4f)", xbar - 1.96 * se, xbar + 1.96 * se)
+        }
         if (T >= 2) {
             log_m  <- rv$logsumw - log(T)                          # log of the mean weight
             rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
@@ -256,11 +269,12 @@ server <- function(input, output, session) {
             ci  <- c(sprintf("(%s, %s)", fmt(lo), fmt(hi)), sprintf("(%s, %s)", flog(lo), flog(hi)))
         }
         data.frame(
-            ` ` = c("true", "IS estimate", "95% CI"),
+            ` ` = c("true", "estimate", "95% CI"),
             `P(l < X < u)` = c(fmt(log_true), est[1], ci[1]),
             `log P` = c(flog(log_true), est[2], ci[2]),
+            `E(X | l < X < u)` = c(sprintf("%.4f", tnorm_mean(rv$lb, rv$ub)), mest, mci),
             check.names = FALSE)
-    }, striped = TRUE, align = "lll", width = "100%")
+    }, striped = TRUE, align = "llll", width = "100%")
 
     output$status <- renderText({
         sprintf("%d / %d samples accepted  |  %d proposals  |  %d tangent points",
@@ -427,17 +441,11 @@ init_hull <- function(lb, ub) {
     build_hull(x_init, lb, ub)
 }
 
-### smart plotting window: view = [mode - 2, mode + 2], clipped to [lb, ub],
-### where "mode" is the peak of the density *within* the truncation window --
-### 0 if the window straddles it, otherwise whichever edge is nearest 0 (the
-### window is then entirely on one side of the peak, so the density is
-### monotonic and highest right at that edge). A wide window far out in the
-### tail (e.g. [100, 200]) would otherwise dilute the whole plot into a
-### mostly-flat, uninformative sliver near that one edge.
-smart_xlim <- function(lb, ub) {
-    m <- if (lb >= 0) lb else if (ub <= 0) ub else 0
-    c(max(lb, m - 2), min(ub, m + 2))
-}
+### plotting window: the whole truncation interval [lb, ub]. (An earlier version
+### zoomed to [mode - 2, mode + 2] clipped to [lb, ub], meant for far-tail windows
+### such as [100, 200]; with the slider limited to [-10, 10] that zoom only hid
+### part of an asymmetric window, e.g. (-2, 10) was shown as [-2, 2].)
+smart_xlim <- function(lb, ub) c(lb, ub)
 
 ### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
 ### difference underflows to 0 for windows far out in either tail
@@ -454,6 +462,15 @@ log_pnorm_diff <- function(lb, ub) {
     }
 }
 tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
+### E(X | l < X < u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of
+### the two phi values formed on the log scale so that it stays accurate in either tail
+tnorm_mean <- function(lb, ub) {
+    la <- dnorm(lb, log = TRUE); lu <- dnorm(ub, log = TRUE)
+    m <- max(la, lu)
+    if (!is.finite(m)) return(0)
+    sign(la - lu) * exp(m + log(abs(exp(la - m) - exp(lu - m))) - log_pnorm_diff(lb, ub))
+}
 
 ui <- fluidPage(
     wellPanel(
@@ -477,6 +494,8 @@ ui <- fluidPage(
             tags$style("#tab td, #tab th { white-space: nowrap; }"),
             h5("Run summary"),
             tableOutput("tab"),
+            helpText("P and log P are estimated by the mean importance weight over all ",
+                     "proposals; E(X | l < X < u) by the mean of the accepted draws."),
             textOutput("status"))
     )
 )
@@ -570,6 +589,14 @@ server <- function(input, output, session) {
         log_true <- log_pnorm_diff(rv$lb, rv$ub)
         T <- rv$tries
         est <- c("-", "-"); ci <- c("-", "-")
+        ### mean of X: the accepted draws are exact iid draws from the truncated normal,
+        ### so their sample mean and a t-type interval estimate E(X | l < X < u)
+        ns <- length(rv$samples); mest <- "-"; mci <- "-"
+        if (ns >= 2) {
+            xbar <- mean(rv$samples); se <- sd(rv$samples) / sqrt(ns)
+            mest <- sprintf("%.4f", xbar)
+            mci  <- sprintf("(%.4f, %.4f)", xbar - 1.96 * se, xbar + 1.96 * se)
+        }
         if (T >= 2) {
             log_m  <- rv$logsumw - log(T)                          # log of the mean weight
             rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
@@ -579,11 +606,12 @@ server <- function(input, output, session) {
             ci  <- c(sprintf("(%s, %s)", fmt(lo), fmt(hi)), sprintf("(%s, %s)", flog(lo), flog(hi)))
         }
         data.frame(
-            ` ` = c("true", "IS estimate", "95% CI"),
+            ` ` = c("true", "estimate", "95% CI"),
             `P(l < X < u)` = c(fmt(log_true), est[1], ci[1]),
             `log P` = c(flog(log_true), est[2], ci[2]),
+            `E(X | l < X < u)` = c(sprintf("%.4f", tnorm_mean(rv$lb, rv$ub)), mest, mci),
             check.names = FALSE)
-    }, striped = TRUE, align = "lll", width = "100%")
+    }, striped = TRUE, align = "llll", width = "100%")
 
     output$status <- renderText({
         sprintf("%d / %d samples accepted  |  %d proposals  |  %d tangent points",
