@@ -20,7 +20,7 @@ rstan_options(auto_write = TRUE)
 
 The last two chapters drew from a **fixed** proposal $g$: an envelope for rejection sampling, an importance distribution for reweighting. Both work well when $g$ can be made to resemble the target $f$ over its whole support, but in more than a handful of dimensions no fixed $g$ does — the target occupies an ever-thinner sliver of the space $g$ covers, exactly the curse of dimensionality met already for quadrature grids. **Markov chain Monte Carlo (MCMC)** answers this differently: instead of one global proposal, build a **random process** $\theta^{(0)}, \theta^{(1)}, \theta^{(2)}, \ldots$ that moves *locally* — each step depends only on where the chain currently is — and is engineered so that, after enough steps, $\theta^{(t)}$ is (approximately) distributed as the target $f$. The price is that consecutive draws are dependent and the guarantee is only asymptotic; the payoff is that the same local-move idea scales to any dimension.
 
-This chapter develops the Markov chain theory that makes this work, then builds three increasingly automatic ways to construct such a chain — Gibbs sampling, Metropolis–Hastings, and Hamiltonian Monte Carlo — and ends with Stan, which automates the last of these for essentially arbitrary models.
+This chapter develops the Markov chain theory that makes this work, then builds three increasingly automatic ways to construct such a chain — Gibbs sampling, Metropolis–Hastings, and Hamiltonian Monte Carlo — and ends with Stan, which automates the last of these for essentially arbitrary models. Each method is presented first as theory, followed by one or more examples, each named after the problem it solves.
 
 ## Markov Chains
 
@@ -34,9 +34,31 @@ where $T$, the **transition distribution**, does not depend on $i$. A chain is c
 
 The question MCMC answers is: given a target $\pi$ known only up to a constant, can we *design* a $T$ such that, no matter where the chain starts, $\theta^{(i)}$ converges in distribution to $\pi$ as $i \to \infty$? If so, running the chain for a long time and averaging $a(\theta^{(i)})$ over the later iterations estimates $E_\pi[a(\theta)]$ — this is what "MCMC" means in practice.
 
-### A worked example: two random walks on a cycle
+### Invariance, detailed balance, and convergence
 
-To make "designing $T$" concrete before turning to theory, consider a chain on the ten states $\{0, 1, \ldots, 9\}$, arranged on a circle. At each step it moves one position clockwise with probability $0.45$, one position counter-clockwise with probability $0.45$, and stays put with probability $0.1$ — a *cyclic* random walk, since state $9$'s clockwise neighbour wraps around to state $0$:
+$\pi$ is an **invariant** (or stationary) distribution of transition $T$ if
+$$
+\int \pi(\theta)\, T(\theta \to \theta') \, d\theta = \pi(\theta') \qquad \text{for all } \theta'.
+$$
+In words: if $\theta \sim \pi$ and one step of the chain is applied, the result is again distributed as $\pi$ — $\pi$ is a fixed point of $T$. Invariance alone does not guarantee the chain *converges* to $\pi$ from an arbitrary start (a chain that never moves leaves every distribution invariant), so two more conditions are needed: **aperiodicity** (the chain does not cycle deterministically through a fixed sequence of states) and **irreducibility** (every state can eventually be reached from every other). Under all three, $\theta^{(i)} \to \pi$ in distribution from any starting point, and ergodic averages converge, $\frac1n\sum_i a(\theta^{(i)}) \to E_\pi[a(\theta)]$.
+
+Invariance is a *global* condition (it involves integrating over all $\theta$) and is awkward to check directly for a proposed $T$. The standard shortcut is a *local*, pairwise condition. $T$ satisfies **detailed balance** with respect to $\pi$ if
+$$
+\pi(\theta)\, T(\theta \to \theta') = \pi(\theta')\, T(\theta' \to \theta) \qquad \text{for all } \theta, \theta',
+$$
+i.e. the flow of probability from $\theta$ to $\theta'$ under $\pi$ exactly balances the reverse flow (the transition $T$ itself need not be symmetric — only the $\pi$-weighted flow is). Detailed balance implies invariance: integrating both sides over $\theta$,
+$$
+\begin{aligned}
+\int \pi(\theta)\, T(\theta \to \theta') \, d\theta
+&= \int \pi(\theta')\, T(\theta' \to \theta) \, d\theta \\
+&= \pi(\theta') \underbrace{\int T(\theta' \to \theta)\, d\theta}_{=\,1} = \pi(\theta').
+\end{aligned}
+$$
+Every construction in this chapter — Gibbs, Metropolis–Hastings, Hamiltonian Monte Carlo — is a recipe for building a $T$ that satisfies detailed balance (or, for Gibbs, invariance directly) with respect to a *given* target $\pi$, so that simulating the chain long enough and discarding an initial **burn-in** period produces (dependent) draws from $\pi$.
+
+### Example 1: Random Walks on a Cycle and on a Segment
+
+To see how much the long-run behaviour depends on the details of $T$, consider a chain on the ten states $\{0, 1, \ldots, 9\}$, arranged on a circle. At each step it moves one position clockwise with probability $0.45$, one position counter-clockwise with probability $0.45$, and stays put with probability $0.1$ — a *cyclic* random walk, since state $9$'s clockwise neighbour wraps around to state $0$:
 
 ```{r}
 #| label: cyclic-walk
@@ -91,26 +113,7 @@ barplot(table(refl[-(1:200)]) / length(refl[-(1:200)]), col = "firebrick",
         xlab = "state", ylab = "frequency", main = "reflecting walk (bounces off ends)")
 ```
 
-The two chains use almost the same rule and yet settle into completely different long-run behaviour, and the theory below explains why. In the cyclic walk every state has exactly the same *local* picture — two neighbours, reached with equal probability $0.45$ in each direction — so no state is structurally different from any other, and the equilibrium distribution treats them all alike: uniform on $\{0,\ldots,9\}$. The reflecting walk changes two things at once, and both matter. First, its forward and backward probabilities are themselves unequal ($0.4$ versus $0.2$, with $0.4$ probability of staying put), so even on a cycle this chain would drift persistently in one direction — though a *cyclic* chain with that same asymmetry would still converge to uniform, because every state would still be structurally identical to every other. Second, and decisively, states $0$ and $9$ are no longer structurally identical to the interior states: an attempted move off either end is turned into a self-loop instead of wrapping around, so probability that would have left the segment is returned to the same state. Combined with the rightward drift, this reflecting boundary acts as a trap at state $9$ specifically — mass drifts right, and once it arrives it accumulates there rather than passing through — which is exactly the extreme, almost-all-mass-at-$9$ pattern in the right panel above. This is the invariance and detailed-balance machinery below made visible: a transition rule under which every state looks alike to the chain preserves the uniform distribution, and one that treats some states differently does not.
-
-### Invariance, detailed balance, and convergence
-
-$\pi$ is an **invariant** (or stationary) distribution of transition $T$ if
-$$
-\int \pi(\theta)\, T(\theta \to \theta') \, d\theta = \pi(\theta') \qquad \text{for all } \theta'.
-$$
-In words: if $\theta \sim \pi$ and one step of the chain is applied, the result is again distributed as $\pi$ — $\pi$ is a fixed point of $T$. Invariance alone does not guarantee the chain *converges* to $\pi$ from an arbitrary start (a chain that never moves leaves every distribution invariant), so two more conditions are needed: **aperiodicity** (the chain does not cycle deterministically through a fixed sequence of states) and **irreducibility** (every state can eventually be reached from every other). Under all three, $\theta^{(i)} \to \pi$ in distribution from any starting point, and ergodic averages converge, $\frac1n\sum_i a(\theta^{(i)}) \to E_\pi[a(\theta)]$.
-
-Invariance is a *global* condition (it involves integrating over all $\theta$) and is awkward to check directly for a proposed $T$. The standard shortcut is a *local*, pairwise condition. $T$ satisfies **detailed balance** with respect to $\pi$ if
-$$
-\pi(\theta)\, T(\theta \to \theta') = \pi(\theta')\, T(\theta' \to \theta) \qquad \text{for all } \theta, \theta',
-$$
-i.e. the flow of probability from $\theta$ to $\theta'$ under $\pi$ exactly balances the reverse flow (the transition $T$ itself need not be symmetric — only the $\pi$-weighted flow is). Detailed balance implies invariance: integrating both sides over $\theta$,
-$$
-\int \pi(\theta)\, T(\theta \to \theta') \, d\theta = \int \pi(\theta')\, T(\theta' \to \theta) \, d\theta
-= \pi(\theta') \underbrace{\int T(\theta' \to \theta)\, d\theta}_{=\,1} = \pi(\theta').
-$$
-Every construction in this chapter — Gibbs, Metropolis–Hastings, Hamiltonian Monte Carlo — is a recipe for building a $T$ that satisfies detailed balance (or, for Gibbs, invariance directly) with respect to a *given* target $\pi$, so that simulating the chain long enough and discarding an initial **burn-in** period produces (dependent) draws from $\pi$.
+The two chains use almost the same rule and yet settle into completely different long-run behaviour, and the theory above explains why. In the cyclic walk every state has exactly the same *local* picture — two neighbours, reached with equal probability $0.45$ in each direction — so no state is structurally different from any other, and the equilibrium distribution treats them all alike: uniform on $\{0,\ldots,9\}$. The reflecting walk changes two things at once, and both matter. First, its forward and backward probabilities are themselves unequal ($0.4$ versus $0.2$, with $0.4$ probability of staying put), so even on a cycle this chain would drift persistently in one direction — though a *cyclic* chain with that same asymmetry would still converge to uniform, because every state would still be structurally identical to every other. Second, and decisively, states $0$ and $9$ are no longer structurally identical to the interior states: an attempted move off either end is turned into a self-loop instead of wrapping around, so probability that would have left the segment is returned to the same state. Combined with the rightward drift, this reflecting boundary acts as a trap at state $9$ specifically — mass drifts right, and once it arrives it accumulates there rather than passing through — which is exactly the extreme, almost-all-mass-at-$9$ pattern in the right panel above. This is the invariance and detailed-balance machinery above made visible: a transition rule under which every state looks alike to the chain preserves the uniform distribution, and one that treats some states differently does not.
 
 ## Gibbs Sampling
 
@@ -123,28 +126,124 @@ $$
 $$
 Each half-step leaves $\pi$ invariant: if $(\theta_1, \theta_2) \sim \pi$, then $\theta_2 \sim \pi(\theta_2)$ (its marginal), and replacing $\theta_1$ by a fresh draw from $\pi(\theta_1 \mid \theta_2)$ produces a pair with joint density $\pi(\theta_2)\,\pi(\theta_1 \mid \theta_2) = \pi(\theta_1, \theta_2)$ — exactly $\pi$ again. Cycling through both coordinates therefore also leaves $\pi$ invariant, and as long as the full conditionals are everywhere positive the chain is irreducible and aperiodic. No proposal, no acceptance step, no tuning: Gibbs sampling only needs full conditionals that can be sampled.
 
-### Deriving the full conditionals for normal data
+### Data augmentation
 
-Take the running example for this half of the book: $x_1, \ldots, x_n \mid \mu, \sigma^2 \overset{iid}{\sim} N(\mu, \sigma^2)$, with independent priors $\mu \sim N(\mu_0, \sigma_0^2)$ and $\sigma^2 \sim \mathrm{IG}(a_0, \lambda_0)$ (inverse-gamma: $1/\sigma^2 \sim \mathrm{Gamma}(a_0, \lambda_0)$, so $a_0$ is a shape and $\lambda_0$ a rate/scale). The joint posterior is
+Gibbs sampling extends immediately to models with **latent variables**. If the
+target $\pi(\theta)$ is awkward but can be written as the marginal of a joint
+density $\pi(\theta, z)$ over $\theta$ and some extra unknowns $z$,
 $$
-P(\mu, \sigma^2 \mid x) \ \propto\ e^{-(\mu-\mu_0)^2 / (2\sigma_0^2)} \cdot (\sigma^2)^{-(a_0+1)} e^{-\lambda_0/\sigma^2} \cdot (\sigma^2)^{-n/2} \exp\Big\{-\sum_{i=1}^n \tfrac{(x_i-\mu)^2}{2\sigma^2}\Big\},
+\pi(\theta) = \int \pi(\theta, z)\, dz,
+$$
+then a Gibbs sampler on $(\theta, z)$ that alternates $z \sim \pi(z \mid \theta)$
+and $\theta \sim \pi(\theta \mid z)$ has $\pi(\theta, z)$ as its invariant
+distribution, so its $\theta$-coordinates are draws from $\pi(\theta)$: the
+$z$'s are simply discarded. This **data augmentation** pays off when the
+conditionals given $z$ are standard even though $\pi(\theta)$ itself is not.
+The $z$ may be real missing data (Example 3, where exact values are hidden
+by censoring) or a purely mathematical device (Example 4, where a latent
+variance per observation turns a Cauchy likelihood into a normal one).
+
+### Example 2: Normal Data with Unknown Mean and Variance
+
+#### The full conditionals
+
+The running example for this half of the book is $x_1, \ldots, x_n \mid \mu, \sigma^2 \overset{iid}{\sim} N(\mu, \sigma^2)$, with independent priors $\mu \sim N(\mu_0, \sigma_0^2)$ and $\sigma^2 \sim \mathrm{IG}(a_0, \lambda_0)$ (inverse-gamma: $1/\sigma^2 \sim \mathrm{Gamma}(a_0, \lambda_0)$, so $a_0$ is a shape and $\lambda_0$ a rate/scale). The joint posterior is
+$$
+\begin{aligned}
+P(\mu, \sigma^2 \mid x) \ \propto\ {} & e^{-(\mu-\mu_0)^2 / (2\sigma_0^2)} \cdot (\sigma^2)^{-(a_0+1)} e^{-\lambda_0/\sigma^2} \\
+& \times (\sigma^2)^{-n/2} \exp\Big\{-\sum_{i=1}^n \tfrac{(x_i-\mu)^2}{2\sigma^2}\Big\},
+\end{aligned}
 $$
 two-dimensional with no closed-form normalizing constant, but each conditional is standard.
 
+The model is easiest to read as a graph (@fig-dag-normal). Squares are fixed
+hyperparameters, open circles are unknown random quantities, shaded circles
+are observed data, and each arrow points from a quantity to one whose
+distribution depends on it. The box (a *plate*) stands for $n$ copies of what
+it contains, one for each observation. The full conditional of a node depends
+only on its parents, its children and its children's other parents, which is
+why the conditional of $\mu$ needs only its prior constants, the data, and
+$\sigma^2$ (the other parent of the data), and likewise for $\sigma^2$.
+
+```{r}
+#| label: model-dag-fn
+### draw a directed acyclic graph of a Bayesian model:
+### squares = fixed hyperparameters, open circles = unknown random quantities,
+### shaded circles = observed data (type "observed_square" draws observed data as a
+### shaded square; type "dots" is a bare label, e.g. for an omitted stretch of a chain); arrows point from parent to child, and a
+### rounded box (plate) holds the quantities repeated over i = 1, ..., n
+draw_dag <- function(nodes, edges, plates = list(), main = "", r = 0.33,
+                     xlim = range(nodes$x) + c(-0.8, 0.8), ylim = range(nodes$y) + c(-0.8, 0.8)) {
+    plot.new(); plot.window(xlim = xlim, ylim = ylim, asp = 1)
+    title(main, cex.main = 1)
+    for (p in plates) {
+        rect(p$x[1], p$y[1], p$x[2], p$y[2], border = "gray45", lwd = 1.5)
+        text(p$x[2] - 0.08, p$y[1] + 0.08, p$label, adj = c(1, 0), cex = 0.85, col = "gray30")
+    }
+    for (k in seq_len(nrow(edges))) {
+        a <- nodes[nodes$id == edges$from[k], ]; b <- nodes[nodes$id == edges$to[k], ]
+        d <- c(b$x - a$x, b$y - a$y); u <- d / sqrt(sum(d^2))
+        arrows(a$x + r * u[1], a$y + r * u[2], b$x - (r + 0.03) * u[1], b$y - (r + 0.03) * u[2],
+               length = 0.08, lwd = 1.4, col = if (is.null(edges$col)) "gray20" else edges$col[k])
+    }
+    th <- seq(0, 2 * pi, length.out = 100)
+    for (k in seq_len(nrow(nodes))) {
+        nd <- nodes[k, ]
+        if (nd$type == "dots") {
+            # placeholder for the omitted middle of a chain: label only
+        } else if (nd$type %in% c("fixed", "observed_square")) {
+            rect(nd$x - r * 0.85, nd$y - r * 0.85, nd$x + r * 0.85, nd$y + r * 0.85,
+                 col = if (nd$type == "observed_square") "gray80" else "white",
+                 border = "gray20", lwd = 1.5)
+        } else {
+            polygon(nd$x + r * cos(th), nd$y + r * sin(th), border = "gray20", lwd = 1.5,
+                    col = if (nd$type == "observed") "gray80" else "white")
+        }
+        text(nd$x, nd$y, parse(text = nd$label), cex = 1.05)
+    }
+}
+```
+
+```{r}
+#| label: fig-dag-normal
+#| fig-width: 4.5
+#| fig-height: 3.6
+#| fig-cap: "Shows the structure of the normal model with unknown mean and variance as a directed graph.
+#|   Squares: fixed hyperparameters; open circles: unknown parameters; shaded circle:
+#|   observed data. The plate repeats x_i for i = 1, ..., n."
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_norm <- data.frame(
+    id    = c("m0", "s0", "a0", "l0", "mu", "s2", "x"),
+    label = c("mu[0]", "sigma[0]^2", "a[0]", "lambda[0]", "mu", "sigma^2", "x[i]"),
+    x = c(-1.6, -0.6, 0.6, 1.6, -1.1, 1.1, 0), y = c(2, 2, 2, 2, 1, 1, -0.2),
+    type = c(rep("fixed", 4), "latent", "latent", "observed"))
+edges_norm <- data.frame(from = c("m0", "s0", "a0", "l0", "mu", "s2"),
+                         to   = c("mu", "mu", "s2", "s2", "x", "x"))
+draw_dag(nodes_norm, edges_norm,
+         plates = list(list(x = c(-0.8, 0.8), y = c(-0.9, 0.5), label = "i = 1, ..., n")))
+```
+
 **Conditional of $\mu$.** Collect the factors that involve $\mu$ and expand $\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2$:
 $$
-P(\mu \mid \sigma^2, x) \ \propto\ \exp\Big\{-\tfrac12\Big[\big(\tfrac{1}{\sigma_0^2} + \tfrac{n}{\sigma^2}\big)\mu^2 - 2\big(\tfrac{\mu_0}{\sigma_0^2} + \tfrac{n\bar x}{\sigma^2}\big)\mu\Big]\Big\},
+\begin{aligned}
+P(\mu \mid \sigma^2, x) \ \propto\ \exp\Big\{-\tfrac12\Big[ & \big(\tfrac{1}{\sigma_0^2} + \tfrac{n}{\sigma^2}\big)\mu^2 \\
+& - 2\big(\tfrac{\mu_0}{\sigma_0^2} + \tfrac{n\bar x}{\sigma^2}\big)\mu\Big]\Big\},
+\end{aligned}
 $$
 which is the kernel of $N(m, v)$ with $1/v = 1/\sigma_0^2 + n/\sigma^2$ and $m/v = \mu_0/\sigma_0^2 + n\bar x/\sigma^2$ — a precision-weighted average of the prior mean and the sample mean, with $n/\sigma^2$ the weight the data contribute. As $n \to \infty$, $m \to \bar x$ and $v \approx \sigma^2/n$: the prior is overwhelmed.
 
 **Conditional of $\sigma^2$.** Collect the factors involving $\sigma^2$:
 $$
-P(\sigma^2 \mid \mu, x) \ \propto\ (\sigma^2)^{-(a_0+1)} e^{-\lambda_0/\sigma^2} \cdot (\sigma^2)^{-n/2} e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)}
-= (\sigma^2)^{-\left(\frac n2 + a_0 + 1\right)} \exp\Big\{-\tfrac{\lambda_0 + \frac12\sum_i(x_i-\mu)^2}{\sigma^2}\Big\},
+\begin{aligned}
+P(\sigma^2 \mid \mu, x) & \ \propto\ (\sigma^2)^{-(a_0+1)} e^{-\lambda_0/\sigma^2} \cdot (\sigma^2)^{-n/2} e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)} \\
+& \ =\ (\sigma^2)^{-\left(\frac n2 + a_0 + 1\right)} \exp\Big\{-\tfrac{\lambda_0 + \frac12\sum_i(x_i-\mu)^2}{\sigma^2}\Big\},
+\end{aligned}
 $$
 again an inverse-gamma kernel, $\sigma^2 \mid \mu, x \sim \mathrm{IG}\big(\tfrac n2 + a_0,\ \tfrac12\sum_i(x_i-\mu)^2 + \lambda_0\big)$: the prior contributes $a_0$ "pseudo-observations" worth of shape and $\lambda_0$ worth of sum-of-squares, and the data add $n$ and $\sum_i(x_i-\mu)^2$ to each.
 
-### Implementation
+#### Implementation
+
+In the code, `sigma0` is the prior *variance* $\sigma_0^2$, and the prior $\mathrm{IG}(a_0, \lambda_0)$ is written as $a_0 = \alpha/2$, $\lambda_0 = \alpha w/2$ (arguments `alpha` and `w`).
 
 ```{r}
 #| label: gibbs-normal
@@ -201,54 +300,372 @@ knitr::kable(gibbs_summary, digits = 3,
              align = c("l", "r", "r", "r", "r"))
 ```
 
-### Data augmentation: sampling with censored data
+### Example 3: Interval-Censored Normal Data
 
-Gibbs sampling extends immediately to models with **latent variables**, by treating the latent quantities as extra parameters to sample. Suppose the $x_i$ are not observed exactly but only rounded down to the nearest multiple of some interval length $l$ (ages recorded in whole years, measurements binned to the nearest instrument tick): we observe $y_i$ with $x_i \in [y_i, y_i + l)$. **Data augmentation** adds $x_1,\ldots,x_n$ as unknowns and Gibbs-samples all three blocks:
+**The problem.** The quantities of interest are
+$x_1, \ldots, x_n \mid \mu, \sigma^2 \overset{iid}{\sim} N(\mu, \sigma^2)$, with the
+priors of Example 2, but not every $x_i$ is seen exactly. For each unit we
+observe a pair $(I_i, \delta_i)$:
+
+- $\delta_i = 1$ means $x_i$ is **not censored**: it is observed exactly, and
+  $I_i = \{x_i\}$.
+- $\delta_i = 0$ means $x_i$ is **censored**: we only learn an interval
+  $I_i = [a_i, b_i)$ that contains it. The interval may be bounded (a value
+  recorded only to the nearest decade, or between two inspection times) or
+  open-ended, $b_i = \infty$ (a value known only to exceed a detection or
+  follow-up limit, which is right censoring).
+
+The observed data are the $(I_i, \delta_i)$, and the censored $x_i$ are
+unknown. The indicators $\delta_i$ are independent of the $x_i$ and of
+$(\mu, \sigma^2)$, so they carry no information about the parameters, and the
+likelihood is
 $$
-x_i^{(t)} \sim P\big(x_i \mid \mu^{(t-1)}, \sigma^{2(t-1)}, y_i\big), \qquad
-\mu^{(t)} \sim P\big(\mu \mid x^{(t)}, \sigma^{2(t-1)}\big), \qquad
+\begin{aligned}
+L(\mu, \sigma^2) = {} & \prod_{i:\,\delta_i = 1} \frac{1}{\sigma}\,\varphi\Big(\frac{x_i - \mu}{\sigma}\Big) \\
+& \times \prod_{i:\,\delta_i = 0} \Big[\Phi\Big(\frac{b_i - \mu}{\sigma}\Big) - \Phi\Big(\frac{a_i - \mu}{\sigma}\Big)\Big],
+\end{aligned}
+$$
+where $\varphi$ and $\Phi$ are the standard normal density and CDF. The
+products of $\Phi$ differences make the posterior non-standard: neither
+conditional of $\mu$ or $\sigma^2$ is a normal or inverse-gamma distribution.
+
+**Data augmentation.** Treat the unobserved $x_i$ as extra unknowns. Given all
+$x_i$, the data are complete and the conditionals of $\mu$ and $\sigma^2$ are
+exactly those of Example 2. Given $(\mu, \sigma^2)$ and the observed
+$(I_i, \delta_i)$, a censored $x_i$ has density proportional to the
+$N(\mu, \sigma^2)$ density times the indicator that $x_i \in I_i$:
+$$
+x_i \mid \mu, \sigma^2, I_i, \delta_i = 0 \ \sim\ N(\mu, \sigma^2) \text{ truncated to } [a_i, b_i),
+$$
+while an uncensored $x_i$ is fixed at its observed value. One Gibbs iteration is
+$$
+\begin{aligned}
+x_i^{(t)} & \sim P\big(x_i \mid \mu^{(t-1)}, \sigma^{2(t-1)}, I_i, \delta_i\big) \quad (\text{censored } i), \\
+\mu^{(t)} & \sim P\big(\mu \mid x^{(t)}, \sigma^{2(t-1)}\big), \qquad
 \sigma^{2(t)} \sim P\big(\sigma^2 \mid x^{(t)}, \mu^{(t)}\big).
+\end{aligned}
 $$
-The last two steps are exactly the conditionals derived above, applied to the imputed $x$. The first is a normal density restricted to the interval $[y_i, y_i+l)$ and renormalized — a **truncated normal**, sampled directly with `truncnorm::rtruncnorm` rather than by rejection:
+Integrating the latent $x_i$ out of the augmented model gives back exactly the
+likelihood above, since $\int_{a_i}^{b_i} \sigma^{-1}\varphi((x - \mu)/\sigma)\,dx$ is
+the bracketed $\Phi$ difference.
+
+In the graph of the model (@fig-dag-censored), $x_i$ is an unknown circle
+below the parameters, and the observed interval $I_i$ and indicator $\delta_i$
+are shaded squares. $I_i$ contains $x_i$ (and equals it when $\delta_i = 1$), so
+$x_i$ is its parent. The indicator $\delta_i$ is independent of $x_i$ and of the
+parameters (whether a unit is observed exactly does not depend on its value),
+so it has no arrows: it carries no information about $(\mu, \sigma^2)$.
+
+```{r}
+#| label: fig-dag-censored
+#| fig-width: 4.5
+#| fig-height: 4.4
+#| fig-cap: "Shows the structure of the interval-censored normal model as a directed graph, with the exact values as latent variables.
+#|   The exact value x_i (open circle) is unknown. The observed data (shaded squares) are the
+#|   interval I_i that contains x_i and the indicator delta_i, which is 1 when x_i is observed
+#|   exactly (I_i is the single point x_i) and 0 when it is censored. delta_i is independent
+#|   of x_i and the parameters, so it has no arrows."
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_cens <- rbind(nodes_norm[1:6, ], data.frame(
+    id = c("x", "d", "I"), label = c("x[i]", "delta[i]", "I[i]"),
+    x = c(0, 1.3, 0), y = c(-0.2, -1.4, -1.4),
+    type = c("latent", "observed_square", "observed_square")))
+edges_cens <- rbind(edges_norm, data.frame(from = "x", to = "I"))
+draw_dag(nodes_cens, edges_cens,
+         plates = list(list(x = c(-0.8, 2.0), y = c(-2.1, 0.5), label = "i = 1, ..., n")))
+```
+
+The sampler below stores each interval as its endpoints `a`, `b`, with
+`a = b = x` for an uncensored unit. The censored $x_i$ are drawn from their
+truncated normals with `truncnorm::rtruncnorm`, which also handles $b_i = \infty$:
 
 ```{r}
 #| label: gibbs-censored
-gibbs_norm_interval <- function(iters, y, mu0, sigma0, alpha, w, l = 1) {
-    n <- length(y)
-    mu <- 0; s2 <- 1; x <- rep(0, n)
-    out <- matrix(NA_real_, iters, 2 + n)
+gibbs_norm_censored <- function(iters, a, b, delta, mu0, sigma0, alpha, w) {
+    n <- length(a); cens <- delta == 0
+    x <- ifelse(cens, pmin(a + 1, b), a)     # start: exact values, or a point in the interval
+    mu <- mean(x); s2 <- var(x)
+    out <- matrix(NA_real_, iters, 2)
     for (t in seq_len(iters)) {
-        x <- rtruncnorm(n, a = y, b = y + l, mean = mu, sd = sqrt(s2))
-        sumx <- sum(x)
+        ### censored units: x_i | mu, sigma^2 ~ N(mu, sigma^2) truncated to [a_i, b_i)
+        x[cens] <- rtruncnorm(sum(cens), a = a[cens], b = b[cens], mean = mu, sd = sqrt(s2))
+        ### complete-data conditionals of Example 2
         v  <- 1 / (n / s2 + 1 / sigma0)
-        mu <- rnorm(1, (sumx / s2 + mu0 / sigma0) * v, sqrt(v))
+        mu <- rnorm(1, (sum(x) / s2 + mu0 / sigma0) * v, sqrt(v))
         s2 <- 1 / rgamma(1, (alpha + n) / 2, (alpha * w + sum((x - mu)^2)) / 2)
-        out[t, ] <- c(mu, s2, x)
+        out[t, ] <- c(mu, s2)
     }
-    list(mu = out[, 1], sd = sqrt(out[, 2]), x = out[, -(1:2)])
+    list(mu = out[, 1], sd = sqrt(out[, 2]))
 }
 ```
 
+To test it, simulate $n = 200$ values from $N(100, 40^2)$. Each is observed
+exactly with probability $0.3$. Otherwise it is censored: values above $150$
+are only known to be at least $150$ (right censoring, $I_i = [150, \infty)$),
+and the rest are only known to the decade, $I_i = [10k, 10k + 10)$.
+
 ```{r}
 #| label: tbl-gibbs-censored
-#| tbl-cap: "Shows that Gibbs sampling extends to rounded (censored) data by treating the exact values as latent variables, and that the parameters are still recovered.
-#|   Recovering mu and sigma from data rounded down to the nearest 10, n = 200."
+#| tbl-cap: "Shows that Gibbs sampling extends to interval-censored data by treating the exact values as latent variables, and that the parameters are still recovered.
+#|   n = 200 values from N(100, 40^2): 30% observed exactly, the rest censored to a decade or, above 150, right-censored at 150. The naive estimates treat each censored value as its interval's lower end."
 set.seed(3)
-x_true <- rnorm(200, 100, 40)
-y_obs  <- floor(x_true / 10) * 10
-fit_cens <- gibbs_norm_interval(5000, y_obs, mu0 = 0, sigma0 = 1e10, alpha = 1e-5, w = 1e-5, l = 10)
+n_c <- 200
+x_true <- rnorm(n_c, 100, 40)
+delta  <- rbinom(n_c, 1, 0.3)
+a_obs  <- ifelse(delta == 1, x_true, ifelse(x_true >= 150, 150, floor(x_true / 10) * 10))
+b_obs  <- ifelse(delta == 1, x_true, ifelse(x_true >= 150, Inf, a_obs + 10))
+fit_cens <- gibbs_norm_censored(5000, a_obs, b_obs, delta, mu0 = 0, sigma0 = 1e10,
+                                alpha = 1e-5, w = 1e-5)
 burn2 <- 1:200
 knitr::kable(data.frame(
-    quantity = c("true mu (unknown to the model)", "true sigma", "posterior mean of mu", "posterior mean of sigma"),
-    value = c(100, 40, mean(fit_cens$mu[-burn2]), mean(fit_cens$sd[-burn2]))
-), digits = 2, col.names = c("quantity", "value"), align = c("l", "r"))
+    quantity = c("exact / interval / right-censored", "mu", "sigma"),
+    truth = c(sprintf("%d / %d / %d", sum(delta == 1), sum(delta == 0 & is.finite(b_obs)),
+                      sum(is.infinite(b_obs))), "100", "40"),
+    naive = c("", sprintf("%.2f", mean(a_obs)), sprintf("%.2f", sd(a_obs))),
+    posterior = c("", sprintf("%.2f (%.2f, %.2f)", mean(fit_cens$mu[-burn2]),
+                              quantile(fit_cens$mu[-burn2], 0.025), quantile(fit_cens$mu[-burn2], 0.975)),
+                  sprintf("%.2f (%.2f, %.2f)", mean(fit_cens$sd[-burn2]),
+                          quantile(fit_cens$sd[-burn2], 0.025), quantile(fit_cens$sd[-burn2], 0.975)))
+), col.names = c("", "truth", "naive", "posterior mean (95% interval)"), align = c("l", "r", "r", "r"))
 ```
 
-The rounding destroys a great deal of information (each $y_i$ only says which decade $x_i$ fell in), yet the augmented Gibbs sampler still recovers $\mu$ and $\sigma$ close to their true values, because it correctly propagates the *uncertainty* in each $x_i$ rather than, say, treating $y_i$ as if it were exact.
+Censoring removes a great deal of information: most units only say which
+decade $x_i$ fell in, and the largest values are only known to exceed $150$.
+Treating each censored value as the lower end of its interval biases both
+estimates downward, and the naive estimates come with no honest measure of
+their uncertainty. The augmented
+Gibbs sampler still recovers $\mu$ and $\sigma$, because it imputes each
+censored $x_i$ from its conditional distribution given the current parameters
+and so propagates the uncertainty about where in $I_i$ it lies.
 
-### Shinylive App for Gibbs Sampling of a Cauchy Model {#sec-gibbs-cauchy-app}
+### Example 4: Cauchy Data with Unknown Location and Scale {#sec-gibbs-cauchy}
 
-There is a [shinylive app](../../shinylive_apps/app_gibbs_cauchy.html) that applies the same idea to the Cauchy model with unknown location and scale. The Cauchy density is a scale mixture of normals, so adding one latent variance $v_i$ per observation turns every full conditional into a standard distribution. The app lets you step through each conditional update (the $v_i$, then $\mu$, then $\sigma$) and watch the path on the exact posterior.
+**The problem.** Observations $y_1, \ldots, y_n$ are modelled as
+$\text{Cauchy}(\mu, \sigma)$, a heavy-tailed model that is robust to outliers:
+$$
+p(y_i \mid \mu, \sigma) = \frac{1}{\pi\sigma\,\big(1 + r_i^2\big)}, \qquad r_i = \frac{y_i - \mu}{\sigma}.
+$$
+The priors are $\mu \sim N(\mu_0, \tau^2)$ and $\sigma^2 \sim \mathrm{IG}(a_0, b_0)$,
+with density $p(\sigma^2) \propto (\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}$. The
+posterior of $(\mu, \sigma^2)$ is proportional to
+$e^{-(\mu-\mu_0)^2/(2\tau^2)}\,(\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}\prod_i \sigma^{-1}(1 + r_i^2)^{-1}$.
+Neither conditional is a standard distribution, because of the factors
+$(1 + r_i^2)^{-1}$. Data augmentation fixes this.
+
+#### Step 1: the Cauchy as a scale mixture of normals
+
+Introduce a latent variance $v_i$ for each observation, with
+$$
+\begin{aligned}
+& y_i \mid \mu, \sigma^2, v_i \sim N(\mu, \sigma^2 v_i), \qquad v_i \sim \mathrm{IG}\big(\tfrac12, \tfrac12\big), \\
+& p(v_i) = \frac{(1/2)^{1/2}}{\Gamma(1/2)}\, v_i^{-3/2} e^{-1/(2v_i)} = \frac{1}{\sqrt{2\pi}}\, v_i^{-3/2} e^{-1/(2v_i)}.
+\end{aligned}
+$$
+Integrating out $v_i$ gives back the Cauchy density:
+$$
+\begin{aligned}
+& \int_0^\infty p(y_i \mid \mu, \sigma^2, v_i)\, p(v_i)\, dv_i \\
+&\quad = \int_0^\infty \frac{1}{\sqrt{2\pi\sigma^2 v_i}}\, e^{-r_i^2/(2v_i)} \cdot \frac{1}{\sqrt{2\pi}}\, v_i^{-3/2} e^{-1/(2v_i)}\, dv_i \\
+&\quad = \frac{1}{2\pi\sigma} \int_0^\infty v_i^{-2} \exp\Big\{-\frac{1 + r_i^2}{2v_i}\Big\}\, dv_i \\
+&\quad = \frac{1}{2\pi\sigma}\cdot\frac{2}{1 + r_i^2} = \frac{1}{\pi\sigma(1 + r_i^2)},
+\end{aligned}
+$$
+using $\int_0^\infty v^{-2}e^{-c/v}\,dv = 1/c$ (substitute $u = 1/v$). So the
+augmented model has exactly the original posterior as its $(\mu, \sigma^2)$
+marginal, and a Gibbs sampler on $(v, \mu, \sigma^2)$ samples the Cauchy
+posterior once the $v_i$ are ignored.
+
+@fig-dag-cauchy shows this augmented model. Compared with @fig-dag-normal, each
+observation has its own latent variance $v_i$, a child of the fixed constants
+$\tfrac12, \tfrac12$ of its $\mathrm{IG}$ prior and a parent of $y_i$. Since
+$v_i$ has only one child, its full conditional involves only $y_i$, $\mu$ and
+$\sigma^2$, as Step 3 below confirms.
+
+```{r}
+#| label: fig-dag-cauchy
+#| fig-width: 4.8
+#| fig-height: 3.8
+#| fig-cap: "Shows the structure of the augmented Cauchy model as a directed graph.
+#|   Each observation y_i has its own latent variance v_i with a fixed IG(1/2, 1/2) prior;
+#|   integrating v_i out gives the Cauchy model for y_i."
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_cauchy <- data.frame(
+    id    = c("m0", "t2", "a0", "b0", "mu", "s2", "half", "v", "y"),
+    label = c("mu[0]", "tau^2", "a[0]", "b[0]", "mu", "sigma^2", "frac(1, 2)", "v[i]", "y[i]"),
+    x = c(-1.6, -0.6, 0.6, 1.6, -1.1, 1.1, -2.4, -1.3, 0),
+    y = c(2, 2, 2, 2, 1, 1, -0.2, -0.2, -1.2),
+    type = c(rep("fixed", 4), "latent", "latent", "fixed", "latent", "observed"))
+edges_cauchy <- data.frame(from = c("m0", "t2", "a0", "b0", "half", "mu", "s2", "v"),
+                           to   = c("mu", "mu", "s2", "s2", "v", "y", "y", "y"))
+draw_dag(nodes_cauchy, edges_cauchy,
+         plates = list(list(x = c(-1.9, 0.6), y = c(-1.9, 0.4), label = "i = 1, ..., n")))
+```
+
+#### Step 2: the augmented joint posterior
+
+Multiplying priors, the latent-variable densities and the normal likelihood,
+$$
+\begin{aligned}
+p(\mu, \sigma^2, v \mid y) \propto {} & e^{-\frac{(\mu-\mu_0)^2}{2\tau^2}}
+\,(\sigma^2)^{-(a_0+1)} e^{-b_0/\sigma^2} \\
+& \times \prod_{i=1}^n \Big[ (\sigma^2 v_i)^{-1/2} \exp\Big\{-\frac{(y_i-\mu)^2}{2\sigma^2 v_i}\Big\}
+\cdot v_i^{-3/2} e^{-1/(2v_i)} \Big].
+\end{aligned}
+$$
+Each full conditional is read off by keeping only the factors that contain the
+parameter being updated and recognizing the kernel.
+
+#### Step 3: the full conditional of each $v_i$
+
+The factors containing $v_i$ are those in the $i$-th term of the product:
+$$
+\begin{aligned}
+p(v_i \mid \mu, \sigma^2, y) & \propto v_i^{-1/2}\, v_i^{-3/2}
+\exp\Big\{-\frac{1}{v_i}\Big(\frac{(y_i-\mu)^2}{2\sigma^2} + \frac12\Big)\Big\} \\
+& = v_i^{-(1+1)} \exp\Big\{-\frac{(1 + r_i^2)/2}{v_i}\Big\}.
+\end{aligned}
+$$
+This is the $\mathrm{IG}(a, b)$ kernel $v^{-(a+1)}e^{-b/v}$ with $a = 1$ and
+$b = (1 + r_i^2)/2$:
+$$
+v_i \mid \mu, \sigma^2, y \sim \mathrm{IG}\Big(1,\ \frac{1 + r_i^2}{2}\Big), \qquad i = 1, \ldots, n,
+$$
+independently across $i$, since $v_i$ appears in no other factor. The scale
+$(1 + r_i^2)/2$ grows with the standardized residual $r_i$, so an outlier
+gets a large latent variance.
+
+#### Step 4: the full conditional of $\mu$
+
+The factors containing $\mu$ are the prior and the exponentials of the
+likelihood. Writing $w_i = 1/(\sigma^2 v_i)$ for the precision of observation
+$i$,
+$$
+\begin{aligned}
+p(\mu \mid \sigma^2, v, y) & \propto \exp\Big\{-\frac{(\mu-\mu_0)^2}{2\tau^2} - \sum_i \frac{w_i (y_i-\mu)^2}{2}\Big\} \\
+& \propto \exp\Big\{-\frac12\Big[\Big(\frac{1}{\tau^2} + \sum_i w_i\Big)\mu^2 - 2\Big(\frac{\mu_0}{\tau^2} + \sum_i w_i y_i\Big)\mu\Big]\Big\},
+\end{aligned}
+$$
+after expanding the squares and dropping terms free of $\mu$. Completing the
+square gives a normal distribution:
+$$
+\begin{aligned}
+& \mu \mid \sigma^2, v, y \sim N\big(m, s^2\big), \\
+& \frac{1}{s^2} = \frac{1}{\tau^2} + \sum_{i=1}^n w_i, \qquad
+m = s^2\Big(\frac{\mu_0}{\tau^2} + \sum_{i=1}^n w_i y_i\Big).
+\end{aligned}
+$$
+This is a precision-weighted mean of the prior mean and the observations, as
+in Example 2, except that each observation now has its own weight $w_i$. An
+outlier, with a large $v_i$, has a small weight and barely moves $\mu$; this
+is where the robustness of the Cauchy model comes from.
+
+#### Step 5: the full conditional of $\sigma^2$
+
+The factors containing $\sigma^2$ are its prior and the likelihood terms
+$(\sigma^2)^{-1/2}$ and $\exp\{-(y_i-\mu)^2/(2\sigma^2 v_i)\}$:
+$$
+\begin{aligned}
+p(\sigma^2 \mid \mu, v, y) & \propto (\sigma^2)^{-(a_0+1)} e^{-b_0/\sigma^2} \cdot (\sigma^2)^{-n/2} \exp\Big\{-\frac{1}{\sigma^2}\sum_i \frac{(y_i-\mu)^2}{2v_i}\Big\} \\
+& = (\sigma^2)^{-(a_0 + \frac n2 + 1)} \exp\Big\{-\frac{b_0 + \sum_i (y_i-\mu)^2/(2v_i)}{\sigma^2}\Big\},
+\end{aligned}
+$$
+again an inverse-gamma kernel:
+$$
+\sigma^2 \mid \mu, v, y \sim \mathrm{IG}\Big(a_0 + \frac n2,\ b_0 + \sum_{i=1}^n \frac{(y_i-\mu)^2}{2v_i}\Big).
+$$
+
+#### The sampler and a check against the exact posterior
+
+One Gibbs iteration draws all $v_i$ (Step 3), then $\mu$ (Step 4), then
+$\sigma^2$ (Step 5), each from its full conditional at the current values of
+the others. We use $\mu_0 = 0$, $\tau = 10$ and $a_0 = b_0 = 1$, and 30
+observations from $\text{Cauchy}(2, 1)$, which include several outliers
+(the largest is above 35). Because the posterior of $(\mu, \sigma)$ is only
+two-dimensional, it can also be computed exactly on a grid, which gives an
+independent check of the sampler. On the $\sigma$ scale the prior density
+is $p(\sigma^2)\cdot 2\sigma$, by the change of variable $\sigma^2 \to \sigma$.
+
+```{r}
+#| label: gibbs-cauchy
+gibbs_cauchy <- function(iters, y, mu0 = 0, tau = 10, a0 = 1, b0 = 1, mu = 0, s2 = 1) {
+    n <- length(y)
+    out <- matrix(NA_real_, iters, 2, dimnames = list(NULL, c("mu", "sigma")))
+    for (t in seq_len(iters)) {
+        ### Step 3: v_i | mu, sigma^2 ~ IG(1, (1 + r_i^2) / 2), drawn as 1 / Gamma
+        v <- 1 / rgamma(n, shape = 1, rate = (1 + (y - mu)^2 / s2) / 2)
+        ### Step 4: mu | sigma^2, v ~ N(m, s^2), with observation weights w_i = 1 / (sigma^2 v_i)
+        w <- 1 / (s2 * v)
+        prec <- 1 / tau^2 + sum(w)
+        mu <- rnorm(1, (mu0 / tau^2 + sum(w * y)) / prec, sqrt(1 / prec))
+        ### Step 5: sigma^2 | mu, v ~ IG(a0 + n / 2, b0 + sum (y_i - mu)^2 / (2 v_i))
+        s2 <- 1 / rgamma(1, shape = a0 + n / 2, rate = b0 + sum((y - mu)^2 / (2 * v)))
+        out[t, ] <- c(mu, sqrt(s2))
+    }
+    out
+}
+
+### exact log posterior of (mu, sigma), up to a constant, for the grid check
+log_post_cauchy <- function(mu, sigma, y, mu0 = 0, tau = 10, a0 = 1, b0 = 1) {
+    sum(dcauchy(y, mu, sigma, log = TRUE)) + dnorm(mu, mu0, tau, log = TRUE) -
+        (a0 + 1) * log(sigma^2) - b0 / sigma^2 + log(2 * sigma)
+}
+
+set.seed(7)
+y_cauchy <- rcauchy(30, location = 2, scale = 1)
+draws_cauchy <- gibbs_cauchy(20000, y_cauchy, mu = -5, s2 = 25)   # deliberately poor start
+keep_c <- -(1:1000)
+
+mu_grid <- seq(0, 4, length.out = 300); sg_grid <- seq(0.2, 3.5, length.out = 300)
+lp <- outer(mu_grid, sg_grid, Vectorize(function(m, s) log_post_cauchy(m, s, y_cauchy)))
+post <- exp(lp - max(lp)); post <- post / sum(post)
+```
+
+```{r}
+#| label: fig-gibbs-cauchy
+#| fig-width: 10
+#| fig-height: 3.6
+#| fig-cap: "Demonstrates the data-augmentation Gibbs sampler for Cauchy data with unknown location and scale, checked against the exact posterior.
+#|   Left: the first 15 iterations from a poor start (triangle), drawn as the staircase of
+#|   mu- and sigma-updates, over the contours of the exact posterior computed on a grid.
+#|   Middle and right: trace plots of mu and sigma for the first 500 iterations;
+#|   the chain reaches the posterior within a few iterations."
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+contour(mu_grid, sg_grid, post, nlevels = 8, drawlabels = FALSE, col = "gray55",
+        xlim = c(-5.5, 4), ylim = c(0, 5.5), xlab = expression(mu), ylab = expression(sigma),
+        main = "first 15 iterations")
+path <- rbind(c(-5, 5), draws_cauchy[1:15, ])
+for (t in 1:15) {   # mu moves first (horizontal leg), then sigma (vertical leg)
+    segments(path[t, 1], path[t, 2], path[t + 1, 1], path[t, 2], col = "darkorange", lwd = 1.5)
+    segments(path[t + 1, 1], path[t, 2], path[t + 1, 1], path[t + 1, 2], col = "steelblue", lwd = 1.5)
+}
+points(-5, 5, pch = 17, cex = 1.4)
+plot(draws_cauchy[1:500, "mu"], type = "l", col = "darkorange", xlab = "iteration",
+     ylab = expression(mu), main = "trace of mu")
+plot(draws_cauchy[1:500, "sigma"], type = "l", col = "steelblue", xlab = "iteration",
+     ylab = expression(sigma), main = "trace of sigma")
+```
+
+```{r}
+#| label: tbl-gibbs-cauchy
+#| tbl-cap: "Checks the data-augmentation Gibbs sampler for the Cauchy model against the exact posterior computed on a grid.
+#|   Posterior means and standard deviations of mu and sigma from 19,000 Gibbs draws (after a 1,000-iteration burn-in) and from the exact grid posterior. The sample median and the sample standard deviation are shown for contrast: the outliers inflate the standard deviation, while the Cauchy posterior is not affected by them."
+grid_mean <- function(g, margin) sum(apply(post, margin, sum) * g)
+grid_sd   <- function(g, margin) sqrt(sum(apply(post, margin, sum) * g^2) - grid_mean(g, margin)^2)
+knitr::kable(data.frame(
+    quantity = c("posterior mean of mu", "posterior sd of mu",
+                 "posterior mean of sigma", "posterior sd of sigma"),
+    gibbs = c(mean(draws_cauchy[keep_c, "mu"]), sd(draws_cauchy[keep_c, "mu"]),
+              mean(draws_cauchy[keep_c, "sigma"]), sd(draws_cauchy[keep_c, "sigma"])),
+    exact = c(grid_mean(mu_grid, 1), grid_sd(mu_grid, 1),
+              grid_mean(sg_grid, 2), grid_sd(sg_grid, 2))
+), digits = 3, col.names = c("quantity", "Gibbs", "exact (grid)"), align = c("l", "r", "r"))
+```
+
+The Gibbs estimates agree with the exact posterior to Monte Carlo error. For
+comparison, the sample mean of these data is `r round(mean(y_cauchy), 2)` and
+the sample standard deviation is `r round(sd(y_cauchy), 2)`, both dragged far
+off by the outliers, while the posterior mean of $\mu$ stays near the centre of
+the bulk of the data. []{#gibbs-cauchy-app}A [shinylive app](../../shinylive_apps/app_gibbs_cauchy.html) runs this sampler one conditional update at a time: it shows the $v$, $\mu$ and $\sigma$ updates as separate steps on the exact posterior, and the latent variances $v_i$ of the outliers.
 
 ## Metropolis–Hastings
 
@@ -286,7 +703,7 @@ met_gauss <- function(iters, log_f, stepsizes, ini_value, ...) {
 }
 ```
 
-An indicator-shaped target needs no special handling: sampling a normal truncated to $[l, u]$ by targeting $\pi(\theta) \propto \varphi(\theta)\,I(l \le \theta \le u)$, any proposal landing outside $[l,u]$ has $\pi(\theta^*) = 0$, hence $r = 0$, and is automatically rejected.
+An indicator-shaped target needs no special handling. To sample a normal truncated to $[l, u]$, target $\pi(\theta) \propto \varphi(\theta)\,I(l \le \theta \le u)$, then any proposal landing outside $[l,u]$ has $\pi(\theta^*) = 0$, hence $r = 0$, and is automatically rejected.
 
 ```{r}
 #| label: fig-tnorm-mh
@@ -309,7 +726,10 @@ for (step in c(0.1, 1, 2)) {
 
 The chain's draws are dependent, and what determines the precision of an ergodic average is not the acceptance rate itself but the resulting **autocorrelation**: for a stationary chain with lag-$k$ autocorrelation $\rho_k$,
 $$
-\mathrm{Var}\Big(\tfrac1T\sum_{t=1}^T \theta^{(t)}\Big) \approx \frac{\sigma^2}{T}\Big(1 + 2\sum_{k \ge 1} \rho_k\Big) = \frac{\sigma^2}{T_\text{eff}},
+\begin{aligned}
+\mathrm{Var}\Big(\tfrac1T\sum_{t=1}^T \theta^{(t)}\Big) & \approx \frac{\sigma^2}{T}\Big(1 + 2\sum_{k \ge 1} \rho_k\Big) \\
+& = \frac{\sigma^2}{T_\text{eff}},
+\end{aligned}
 $$
 so the tuning goal is small autocorrelation, not a high acceptance rate as such. A step too small is accepted almost every time but crawls (highly autocorrelated); a step too large is almost always rejected, so the chain barely moves either. Both extremes waste the same $T$ iterations on far fewer effective ones — the figure below (three step sizes on a $N(0,1)$ target) makes this visible directly in the trace and the ACF.
 
@@ -338,7 +758,13 @@ for (k in 1:3) acf(res[[k]]$th, lag.max = 50, main = "ACF")
 
 For random-walk Metropolis on a smooth target, theory recommends an acceptance rate near $0.234$ in high dimension (up to about $0.44$ in one dimension) as the rate that minimizes autocorrelation for a given computational budget — a useful rule of thumb, not a target to hit exactly.
 
-### Example: the same normal-data model, by Metropolis–Hastings
+### Metropolis-within-Gibbs
+
+The two ideas combine directly. If $\theta = (\theta_1, \theta_2)$ and $\pi(\theta_1 \mid \theta_2)$ has no convenient sampler while $\pi(\theta_2 \mid \theta_1)$ does, replace only the first Gibbs step by a Metropolis–Hastings update that targets $\pi(\theta_1 \mid \theta_2)$ (evaluated at the *current* $\theta_2$) and leave the second step as an exact conditional draw. Each block transition leaves $\pi$ invariant on its own — the Gibbs argument applies verbatim to any $\pi(\theta_j \mid \theta_{-j})$-invariant transition, not only an exact conditional draw — so the composite sweep leaves the full joint $\pi$ invariant. This "Gibbs where conjugate, Metropolis elsewhere" pattern, iterated one parameter or block at a time, is how most general-purpose Bayesian software before Hamiltonian methods actually worked.
+
+### Example 5: Normal Data with Unknown Mean and Variance, Revisited
+
+This is the model and data of Example 2, now sampled by random-walk Metropolis–Hastings.
 
 $\sigma^2 > 0$ makes a symmetric normal random walk directly on $\sigma^2$ wasteful (many proposals land below zero), so reparametrize $w = \log \sigma^2$, which ranges over all of $\mathbb R$. By the change-of-variables formula, the posterior in $(\mu, w)$ picks up a Jacobian factor $e^w$ relative to the posterior in $(\mu, \sigma^2)$; omitting it targets the wrong distribution.
 
@@ -391,11 +817,7 @@ coherence <- data.frame(
 knitr::kable(coherence, digits = 3, align = c("l", "r", "r", "r", "r"))
 ```
 
-### Metropolis-within-Gibbs
-
-The two ideas combine directly. If $\theta = (\theta_1, \theta_2)$ and $\pi(\theta_1 \mid \theta_2)$ has no convenient sampler while $\pi(\theta_2 \mid \theta_1)$ does, replace only the first Gibbs step by a Metropolis–Hastings update that targets $\pi(\theta_1 \mid \theta_2)$ (evaluated at the *current* $\theta_2$) and leave the second step as an exact conditional draw. Each block transition leaves $\pi$ invariant on its own — the Gibbs argument applies verbatim to any $\pi(\theta_j \mid \theta_{-j})$-invariant transition, not only an exact conditional draw — so the composite sweep leaves the full joint $\pi$ invariant. This "Gibbs where conjugate, Metropolis elsewhere" pattern, iterated one parameter or block at a time, is how most general-purpose Bayesian software before Hamiltonian methods actually worked.
-
-## Hamiltonian Monte Carlo
+## Hamiltonian Monte Carlo and Stan
 
 ### Why random walks struggle
 
@@ -407,7 +829,10 @@ H(\theta, p) = \underbrace{-\log \pi(\theta)}_{\text{potential } U(\theta)} + \u
 $$
 so that the $\theta$-marginal is exactly the target and $p \sim N_d(0, M)$ independently. Physically: a particle at position $\theta$ with momentum $p$ rolling frictionlessly on the potential surface $U(\theta)$. Hamilton's equations move $(\theta,p)$ so as to *conserve* $H$ exactly and are volume-preserving and reversible; discretizing them with the **leapfrog** integrator (step size $\epsilon$, $L$ steps),
 $$
-p \leftarrow p + \tfrac\epsilon2 \nabla\log\pi(\theta), \qquad \theta \leftarrow \theta + \epsilon M^{-1}p, \qquad p \leftarrow p + \tfrac\epsilon2\nabla\log\pi(\theta),
+\begin{aligned}
+p & \leftarrow p + \tfrac\epsilon2 \nabla\log\pi(\theta), \qquad \theta \leftarrow \theta + \epsilon M^{-1}p, \\
+p & \leftarrow p + \tfrac\epsilon2\nabla\log\pi(\theta),
+\end{aligned}
 $$
 keeps volume-preservation and reversibility exactly (negating $p$ and re-running gives back the start) while introducing only an $O(\epsilon^2)$ error in $H$, which a Metropolis accept/reject step then corrects exactly.
 
@@ -438,7 +863,9 @@ hmc <- function(log_pi, grad_log_pi, theta, eps, L, iters, M = diag(length(theta
 }
 ```
 
-### HMC versus random-walk Metropolis on a correlated target
+### Example 6: Bivariate Normal with Correlation 0.98
+
+A strongly correlated bivariate normal is the simplest target on which a random walk struggles. Both samplers below get the same budget of 2,000 iterations and start from the same point.
 
 ```{r}
 #| label: fig-hmc-vs-rw
@@ -482,19 +909,20 @@ lines((0:60) + 0.3, a2, type = "h", lwd = 2, col = "steelblue")
 legend("topright", bty = "n", lwd = 2, col = c("firebrick", "steelblue"), legend = c("random walk", "HMC"))
 ```
 
-### Interactive MCMC Simulators {#sec-hmc-app}
-
 Chi Feng's [MCMC simulators](https://chi-feng.github.io/mcmc-demo/app.html) let you tune the step size and number of leapfrog steps of Hamiltonian Monte Carlo, and compare it with other samplers, to see how they affect its exploration of a correlated target.
 
-## Stan and Probabilistic Programming
 
-### Automating HMC
+### Stan: automating HMC
 
 Every sampler above needed something derived by hand: Gibbs needed full conditionals worked out algebraically; Metropolis–Hastings needed only a target density but still needed step sizes tuned by trial and error; HMC needed an analytic gradient and needed $\epsilon$ and $L$ tuned by hand. **Stan** is a probabilistic programming language that automates all of this: given a model written declaratively (data, parameters, and a log-density), it computes gradients by automatic differentiation and runs an adaptive variant of HMC — the **No-U-Turn Sampler (NUTS)**, which picks a good $L$ on the fly by extending the leapfrog trajectory until it starts to double back — with step size tuned during a warm-up phase. The user never derives a conditional or a gradient.
 
-### The running example, in Stan
+### Where Stan earns its keep
 
-To confirm Stan lands on the same posterior as the Gibbs and MH samplers above, fit the identical normal-mean/variance model with the identical (vague) priors and data:
+The normal-mean/variance model of Examples 2 and 5 is simple enough that Gibbs sampling is not just possible but easy, so Stan's advantage is not visible yet. Its real value shows up on models where hand-deriving conditionals or gradients would be a serious undertaking: hierarchical models with many levels of latent structure, time-series models with an unobserved latent state at every time point, or anything with a non-conjugate likelihood/prior combination. Example 8 gives a small taste of this: the Cauchy model needed a scale-mixture trick and three derivations for Gibbs sampling, but only its model statement in Stan.
+
+### Example 7: Normal Data with Unknown Mean and Variance, in Stan
+
+To confirm Stan lands on the same posterior as the Gibbs and MH samplers of Examples 2 and 5, fit the identical normal-mean/variance model with the identical (vague) priors and data:
 
 ```{r}
 #| label: stan-model-normal
@@ -548,98 +976,360 @@ knitr::kable(three_way, digits = 3, align = c("l", "r", "r", "r", "r"))
 
 The three completely independent implementations — hand-derived conditionals, a hand-tuned random walk, and Stan's automatic NUTS — agree to within Monte Carlo noise, which is exactly the coherence check this book has used throughout: independent methods with no shared code path landing on the same answer is evidence that none of them is wrong.
 
-### Where Stan earns its keep
+### Example 8: Cauchy Data with Unknown Location and Scale, in Stan
 
-The normal-mean/variance model above is simple enough that Gibbs sampling is not just possible but easy, so Stan's advantage is not visible yet. Its real value shows up on models where hand-deriving conditionals or gradients would be a serious undertaking: hierarchical models with many levels of latent structure, time-series models with an unobserved latent state at every time point, or anything with a non-conjugate likelihood/prior combination. A stochastic-volatility model — where a latent log-variance $h_t$ follows its own autoregressive process and each observation's variance is $e^{h_t}$ — is a standard example of this kind: writing a Gibbs sampler for it requires deriving a conditional for every latent $h_t$ given its neighbours, which is neither conjugate nor pleasant, while in Stan it only needs the model written down.
-
-A first, direct transcription of the model — sampling each $h_t$ centred on $\mu + \phi(h_{t-1}-\mu)$ exactly as the model specification reads — compiles and runs, but Stan reports $\hat R$ up to $1.24$, effective sample sizes in the tens out of a thousand draws, and a low-BFMI warning: the chains have not mixed. This is not a bug in Stan but a known geometric pathology (a "funnel": when $\tau$ is small the conditional distribution of each $h_t$ given its neighbours becomes extremely narrow, and a constant leapfrog step size cannot be simultaneously right for the narrow and wide parts of the posterior). The standard fix is a **non-centred reparameterization**: sample standard-normal innovations $h_t^{\text{raw}}$ and reconstruct $h_t$ deterministically,
-$$
-h_t^{\text{raw}} \sim N(0,1), \qquad h_t = \mu + \phi(h_{t-1}-\mu) + \tau\, h_t^{\text{raw}},
-$$
-which moves the awkward $\tau$-dependent scaling out of the sampled parameters and into a deterministic transform — the same idea as the $\log\sigma$ and logit reparameterizations used earlier in this book to keep a sampler's geometry well behaved, applied here to a latent time series instead of a single scale parameter.
+Example 4 needed a page of algebra: a scale-mixture representation, an
+augmented posterior, and three full conditionals. In Stan none of that is
+needed. The model is written exactly as stated in Example 4, with the Cauchy
+likelihood used directly and no latent variances, and NUTS samples the
+two-dimensional posterior of $(\mu, \sigma^2)$ using gradients from
+automatic differentiation. The data and priors are those of Example 4:
+$\mu \sim N(0, 10^2)$, $\sigma^2 \sim \mathrm{IG}(1, 1)$ and the same 30
+observations.
 
 ```{r}
-#| label: stan-model-sv
-stan_sv_code <- "
+#| label: stan-model-cauchy
+stan_cauchy_code <- "
 data {
-  int<lower=0> T;
-  vector[T] y;
+  int<lower=0> n;
+  vector[n] y;
+  real mu0;
+  real<lower=0> tau;
+  real<lower=0> a0;
+  real<lower=0> b0;
 }
 parameters {
   real mu;
-  real<lower=-1,upper=1> phi;
-  real<lower=0.01> tausq;
-  real h0_raw;
-  vector[T] h_raw;
+  real<lower=0> sigma2;
 }
 transformed parameters {
-  real<lower=0> tau = sqrt(tausq);
-  real h0 = mu + tau * h0_raw;
-  vector[T] h;
-  h[1] = mu + phi * (h0 - mu) + tau * h_raw[1];
-  for (t in 2:T)
-    h[t] = mu + phi * (h[t - 1] - mu) + tau * h_raw[t];
+  real<lower=0> sigma = sqrt(sigma2);
 }
 model {
-  mu ~ normal(-10, 5);
-  phi ~ uniform(-1, 1);
-  tausq ~ inv_gamma(2.5, 0.025);
-  h0_raw ~ std_normal();
-  h_raw ~ std_normal();
-  y ~ normal(0, exp(h / 2));
+  mu ~ normal(mu0, tau);
+  sigma2 ~ inv_gamma(a0, b0);
+  y ~ cauchy(mu, sigma);
 }
 "
 ```
 
 ```{r}
-#| label: stan-fit-sv
+#| label: stan-fit-cauchy
 #| cache: true
 #| message: false
-set.seed(6)
-N <- 200; mu_sv <- 3; phi_sv <- 0.3; tau_sv <- 1; h0_sv <- 2
-h <- numeric(N); y <- numeric(N)
-h[1] <- rnorm(1, mu_sv + phi_sv * (h0_sv - mu_sv), tau_sv)
-for (i in 2:N) h[i] <- rnorm(1, mu_sv + phi_sv * (h[i - 1] - mu_sv), tau_sv)
-for (t in 1:N) y[t] <- rnorm(1, 0, exp(h[t] / 2))
-
-fit_sv <- stan(
-    model_code = stan_sv_code, data = list(y = y, T = N),
-    chains = 2, iter = 1000, warmup = 500, seed = 6, refresh = 0
+fit_cauchy_stan <- stan(
+    model_code = stan_cauchy_code,
+    data = list(n = length(y_cauchy), y = y_cauchy, mu0 = 0, tau = 10, a0 = 1, b0 = 1),
+    chains = 4, iter = 2000, warmup = 1000, seed = 8, refresh = 0
 )
 ```
 
 ```{r}
-#| label: fig-stan-sv
-#| echo: !expr knitr::is_html_output()   # code shown in HTML only
-#| fig-width: 10
-#| fig-height: 4
-#| fig-cap: "Shows a stochastic-volatility model fitted with Stan: the simulated data and the posteriors of the two parameters of interest.
-#|   Simulated stochastic-volatility data (left) and posteriors of the
-#|   persistence phi and innovation scale tau under the non-centred
-#|   parameterization (true values 0.3 and 1, red lines): both intervals are
-#|   wide, reflecting genuine weak identification from a single 200-point
-#|   series, but both cover the truth."
-par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
-plot(y, type = "l", col = "steelblue", xlab = "t", ylab = "y", main = "simulated returns")
-sv_summary <- summary(fit_sv, pars = c("mu", "phi", "tau"))$summary
-hist(as.matrix(fit_sv, pars = "phi"), breaks = 30, col = "gray85", border = "white",
-     main = "posterior of phi (true 0.3)", xlab = expression(phi))
-abline(v = phi_sv, col = "firebrick", lwd = 2)
-hist(as.matrix(fit_sv, pars = "tau"), breaks = 30, col = "gray85", border = "white",
-     main = "posterior of tau (true 1)", xlab = expression(tau))
-abline(v = tau_sv, col = "firebrick", lwd = 2)
+#| label: tbl-stan-cauchy
+#| tbl-cap: "Checks Stan's NUTS sampler for the Cauchy model against the data-augmentation Gibbs sampler of Example 4 and the exact grid posterior.
+#|   Posterior means and standard deviations of mu and sigma, same data and priors. Stan samples the Cauchy likelihood directly, without latent variables; all three agree up to Monte Carlo error."
+st_c <- as.matrix(fit_cauchy_stan, pars = c("mu", "sigma"))
+knitr::kable(data.frame(
+    quantity = c("posterior mean of mu", "posterior sd of mu",
+                 "posterior mean of sigma", "posterior sd of sigma"),
+    gibbs = c(mean(draws_cauchy[keep_c, "mu"]), sd(draws_cauchy[keep_c, "mu"]),
+              mean(draws_cauchy[keep_c, "sigma"]), sd(draws_cauchy[keep_c, "sigma"])),
+    stan = c(mean(st_c[, "mu"]), sd(st_c[, "mu"]), mean(st_c[, "sigma"]), sd(st_c[, "sigma"])),
+    exact = c(grid_mean(mu_grid, 1), grid_sd(mu_grid, 1),
+              grid_mean(sg_grid, 2), grid_sd(sg_grid, 2))
+), digits = 3, col.names = c("quantity", "Gibbs (Example 4)", "Stan (NUTS)", "exact (grid)"),
+   align = c("l", "r", "r", "r"))
 ```
 
 ```{r}
-#| label: tbl-stan-sv
-#| tbl-cap: "Reports the convergence diagnostics and posterior summaries of the stochastic-volatility fit.
-#|   Posterior summaries for the stochastic-volatility model's top-level parameters, non-centred parameterization: Rhat near 1 and effective sample sizes in the hundreds indicate the chains have converged and mixed, in contrast to the centred version."
-sv_tbl <- data.frame(variable = rownames(sv_summary), sv_summary[, c("mean", "sd", "Rhat", "n_eff")],
-                      row.names = NULL, check.names = FALSE)
-knitr::kable(sv_tbl, digits = 3, align = c("l", "r", "r", "r", "r"))
+#| label: stan-cauchy-diagnostics
+summary(fit_cauchy_stan, pars = c("mu", "sigma"))$summary[, c("mean", "sd", "n_eff", "Rhat")]
 ```
 
-The syntax above is modern Stan (`=` for deterministic assignment, `~` sampling statements, no deprecated `<-` or `_log` density functions, which older Stan code — including earlier drafts of this example — used and which current Stan releases no longer accept). After the reparameterization, $\hat R \approx 1$ and effective sample sizes in the hundreds confirm the chains have converged; the $95\%$ intervals for $\phi$ and $\tau$ are wide but do contain their true simulated values, which is the honest outcome for a weakly identified latent-state model fit to a single moderate-length series, and a materially better diagnosis than the centred version's confidently-wrong-looking but actually-unconverged chains. That a model no one in this chapter hand-derived a sampler for can be fit — and, just as importantly, checked for convergence — with a few lines of declarative model code is the point of the whole section.
+The three answers agree, and $\hat R \approx 1$ with effective sample sizes
+in the thousands shows that the four chains have mixed. The comparison shows
+the trade-off between the two approaches. The Gibbs sampler of Example 4
+needs no tuning and each iteration is cheap, but it needed the scale-mixture
+trick and three derivations. Stan needed only the model statement, and it
+would work unchanged with a different prior or a Student-$t$ likelihood with
+any degrees of freedom, where the Gibbs derivation would have to be redone.
+
+### Example 9: Logistic Regression with 50 Predictors and 100 Cases
+
+**The problem.** Binary responses $y_1, \ldots, y_n$ depend on $p$ candidate
+predictors through the logistic regression model
+$$
+y_i \mid \alpha, \beta \sim \text{Bernoulli}\big(\text{logit}^{-1}(\alpha + x_i^\top \beta)\big),
+\qquad \text{logit}^{-1}(\eta) = \frac{1}{1 + e^{-\eta}}.
+$$
+Here there are $p = 50$ predictors for only $n = 100$ cases. The predictors
+are standard normal and only two carry signal: the true values are
+$\alpha = 0$, $\beta_1 = 1$, $\beta_2 = -1$ and $\beta_3 = \cdots = \beta_{50} = 0$.
+
+**Why maximum likelihood fails.** With 51 unknowns and only 100 cases, it is
+very likely, and true for these data, that some linear combination
+$\alpha + x_i^\top\beta$ is positive for every case with $y_i = 1$ and negative
+for every case with $y_i = 0$: the data are perfectly **separable**.
+Multiplying such a $\beta$ by a larger and larger constant pushes every fitted
+probability towards its observed $0$ or $1$, so the likelihood keeps
+increasing and the MLE does not exist. `glm` stops after a fixed number of
+iterations with very large coefficients (here up to about $60$ in absolute
+value) and warns that the algorithm did not converge and that fitted
+probabilities are numerically $0$ or $1$.
+
+**A sparse prior.** A Bayesian fit always has a proper posterior, but the prior
+now matters a great deal. A vague prior such as $\beta_j \sim N(0, 2.5^2)$
+lets all 48 null coefficients wander, and their sum swamps the signal. We
+want a prior that says *most coefficients are near 0, but a few may be
+large*. The **horseshoe prior** does this with two levels of scale:
+$$
+\beta_j = \tau\,\lambda_j\, z_j, \qquad z_j \sim N(0, 1), \qquad
+\lambda_j \sim \text{Cauchy}^+(0, 1), \qquad \tau \sim \text{Cauchy}^+(0, 0.1),
+$$
+where $\text{Cauchy}^+$ is the Cauchy distribution restricted to positive
+values. The **global** scale $\tau$ is small, so it shrinks every coefficient
+strongly towards $0$. The **local** scale $\lambda_j$ has a heavy tail, so a
+coefficient that the data support can take a large $\lambda_j$ and escape the
+shrinkage. The intercept gets $\alpha \sim N(0, 5^2)$. Writing $\beta_j$ as a
+product with a standard normal $z_j$ is the non-centred form used for Stan,
+and a smaller step size (`adapt_delta = 0.995`) helps NUTS handle the very
+different scales of $\tau$ and the $\lambda_j$, which otherwise cause many
+divergent transitions. If a handful remain, Stan reports them as a warning;
+with only a few out of 8,000 draws, $\hat R$ near 1 and large effective sample
+sizes, they would not noticeably affect the summaries.
+
+```{r}
+#| label: stan-model-logit
+stan_logit_hs_code <- "
+data {
+  int<lower=0> n;
+  int<lower=1> p;
+  matrix[n, p] X;
+  array[n] int<lower=0, upper=1> y;
+}
+parameters {
+  real alpha;
+  real<lower=0> tau;             // global scale
+  vector<lower=0>[p] lambda;     // local scales
+  vector[p] z;
+}
+transformed parameters {
+  vector[p] beta = tau * lambda .* z;
+}
+model {
+  alpha ~ normal(0, 5);
+  tau ~ cauchy(0, 0.1);
+  lambda ~ cauchy(0, 1);
+  z ~ std_normal();
+  y ~ bernoulli_logit(alpha + X * beta);
+}
+"
+### the same model with a vague normal prior on every coefficient, for comparison
+stan_logit_normal_code <- "
+data {
+  int<lower=0> n;
+  int<lower=1> p;
+  matrix[n, p] X;
+  array[n] int<lower=0, upper=1> y;
+}
+parameters {
+  real alpha;
+  vector[p] beta;
+}
+model {
+  alpha ~ normal(0, 5);
+  beta ~ normal(0, 2.5);
+  y ~ bernoulli_logit(alpha + X * beta);
+}
+"
+```
+
+```{r}
+#| label: stan-fit-logit
+#| cache: true
+#| message: false
+set.seed(2024)
+n_lr <- 100; p_lr <- 50
+X_lr <- matrix(rnorm(n_lr * p_lr), n_lr, p_lr)
+beta_true <- c(1, -1, rep(0, p_lr - 2))
+y_lr <- rbinom(n_lr, 1, plogis(drop(X_lr %*% beta_true)))
+data_lr <- list(n = n_lr, p = p_lr, X = X_lr, y = y_lr)
+fit_logit <- stan(model_code = stan_logit_hs_code, data = data_lr,
+                  chains = 4, iter = 3000, warmup = 1000, seed = 9, refresh = 0,
+                  control = list(adapt_delta = 0.995))
+fit_logit_normal <- stan(model_code = stan_logit_normal_code, data = data_lr,
+                         chains = 4, iter = 2000, warmup = 1000, seed = 9, refresh = 0)
+```
+
+@tbl-stan-logit summarizes the horseshoe posterior of the first ten
+coefficients: the two signals and eight of the 48 nulls.
+
+```{r}
+#| label: tbl-stan-logit
+#| tbl-cap: "Summarizes the posterior distribution of the first ten coefficients of a logistic regression with 50 predictors and 100 cases, under the horseshoe prior. Only the first two coefficients carry signal.
+#|   Posterior mean, standard deviation and 95% credible interval from 8,000 NUTS draws, next to the true value. Rhat near 1 and large effective sample sizes show that the chains have mixed."
+sm_logit <- summary(fit_logit, pars = sprintf("beta[%d]", 1:10))$summary
+knitr::kable(data.frame(
+    coefficient = sprintf("beta[%d]", 1:10),
+    true = beta_true[1:10],
+    mean = sm_logit[, "mean"], sd = sm_logit[, "sd"],
+    q025 = sm_logit[, "2.5%"], q975 = sm_logit[, "97.5%"],
+    n_eff = round(sm_logit[, "n_eff"]), Rhat = sm_logit[, "Rhat"],
+    row.names = NULL),
+    digits = c(0, 0, 3, 3, 3, 3, 0, 3),
+    col.names = c("coefficient", "true", "mean", "sd", "2.5%", "97.5%", "n_eff", "Rhat"),
+    align = c("l", rep("r", 7)))
+```
+
+The null coefficients are shrunk tightly around $0$, with posterior standard
+deviations near $0.1$. The two signals escape the shrinkage: their posterior
+means are close to the true values $1$ and $-1$, and both 95% intervals
+exclude $0$. @fig-stan-logit shows the posterior draws of the two signals and
+two of the nulls.
+
+```{r}
+#| label: fig-stan-logit
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: "Shows the posterior distributions of two signal and two null coefficients in a logistic regression with 50 predictors and 100 cases, under the horseshoe prior.
+#|   Histograms of 8,000 NUTS draws of beta_1 and beta_2 (signals, top) and beta_3 and beta_4
+#|   (nulls, bottom). The red line marks the true value and the dashed line marks 0. The null
+#|   posteriors are concentrated at 0; the signal posteriors are centred near the true values,
+#|   with only a small spike at 0 for beta_1."
+draws_beta <- as.matrix(fit_logit, pars = "beta")
+par(mfrow = c(2, 2), mar = c(4, 4, 2.5, 1))
+for (j in 1:4) {
+    hist(draws_beta[, j], breaks = 60, freq = FALSE, col = "gray80", border = "white",
+         xlim = range(c(quantile(draws_beta[, j], c(0.001, 0.999)), 0, beta_true[j])),
+         main = bquote(beta[.(j)] ~ "(true value" ~ .(beta_true[j]) * ")"),
+         xlab = bquote(beta[.(j)]))
+    abline(v = beta_true[j], col = "firebrick", lwd = 2.5)
+    abline(v = 0, lty = 2)
+}
+```
+
+#### Prediction on test data
+
+To see how well each method predicts, simulate a test set of $m = 1000$ new
+cases from the same design, independently of the training data. For a test
+case with predictors $\tilde x$, the **posterior predictive probability**
+averages the success probability over the posterior:
+$$
+\begin{aligned}
+P(\tilde y = 1 \mid \tilde x, \text{data})
+& = \int \text{logit}^{-1}(\alpha + \tilde x^\top \beta)\, p(\alpha, \beta \mid \text{data})\, d(\alpha, \beta) \\
+& \approx \frac1S \sum_{s=1}^S \text{logit}^{-1}\big(\alpha^{(s)} + \tilde x^\top \beta^{(s)}\big),
+\end{aligned}
+$$
+an average over the $S$ posterior draws. No extra package (such as `brms`) is
+needed: the Stan draws and one matrix product give all $m$ probabilities at
+once. We compare four sets of predicted probabilities $\hat p_i$:
+
+- the posterior predictive probabilities under the horseshoe prior;
+- the same under the vague $N(0, 2.5^2)$ prior;
+- the plug-in probabilities $\text{logit}^{-1}(\hat\alpha + \tilde x^\top\hat\beta)$
+  from `glm`;
+- the true probabilities $\text{logit}^{-1}(\tilde x^\top \beta_{\text{true}})$,
+  the best that any method could do.
+
+Each is scored on the test responses in two ways:
+
+- the **test deviance** $-2\sum_{i=1}^m \log \hat P(\tilde y_i)$, where
+  $\hat P(\tilde y_i) = \hat p_i$ if $\tilde y_i = 1$ and $1 - \hat p_i$ if
+  $\tilde y_i = 0$. It rewards well-calibrated probabilities, and smaller is
+  better. Predicting $\hat p_i = 0.5$ for every case gives
+  $2m\log 2 \approx 1386.3$, a useful baseline;
+- the **error rate** of the classification $\hat y_i = 1\{\hat p_i > 0.5\}$,
+  summarized together with its **confusion matrix** of predicted against
+  actual classes.
+
+```{r}
+#| label: logit-predict
+set.seed(2025)
+m_test <- 1000
+X_test <- matrix(rnorm(m_test * p_lr), m_test, p_lr)
+y_test <- rbinom(m_test, 1, plogis(drop(X_test %*% beta_true)))
+
+### posterior predictive probabilities: average logit^{-1}(alpha + x beta) over the draws
+post_pred <- function(fit) {
+    a <- as.matrix(fit, pars = "alpha")[, 1]
+    b <- as.matrix(fit, pars = "beta")
+    colMeans(plogis(sweep(b %*% t(X_test), 1, a, "+")))      # S x m, then average
+}
+p_hs <- post_pred(fit_logit)
+p_normal <- post_pred(fit_logit_normal)
+
+### maximum likelihood with glm: the data are separable, so glm warns and
+### returns very large coefficients (and one NA); its plug-in probabilities
+fit_glm <- suppressWarnings(glm(y ~ ., family = binomial, data = data.frame(y = y_lr, X_lr)))
+p_glm <- suppressWarnings(predict(fit_glm, newdata = data.frame(X_test), type = "response"))
+
+### the true probabilities, the best any method could do
+p_true <- plogis(drop(X_test %*% beta_true))
+
+### scores: test deviance -2 sum log P(y_i), error rate, confusion matrix
+test_deviance <- function(p, y) -2 * sum(dbinom(y, 1, p, log = TRUE))
+error_rate    <- function(p, y) mean((p > 0.5) != y)
+confusion     <- function(p, y) table(predicted = factor(as.integer(p > 0.5), 0:1), actual = y)
+methods <- list("Bayes, horseshoe prior" = p_hs, "Bayes, N(0, 2.5^2) prior" = p_normal,
+                "glm (MLE)" = p_glm, "true probabilities" = p_true)
+```
+
+```{r}
+#| label: tbl-logit-confusion
+#| tbl-cap: "Summarizes the classifications of 1,000 test cases by each method as confusion matrices.
+#|   One matrix per method, side by side. Rows: predicted class (probability above 0.5); columns
+#|   under each method: actual class."
+### one 2 x 2 matrix per method, placed side by side under a spanner with the method's name
+conf_wide <- data.frame(predicted = c("predicted 0", "predicted 1"))
+for (k in seq_along(methods)) {
+    cm <- confusion(methods[[k]], y_test)
+    conf_wide[[paste0("m", k, "_a0")]] <- cm[, "0"]
+    conf_wide[[paste0("m", k, "_a1")]] <- cm[, "1"]
+}
+tab_conf <- gt::gt(conf_wide, rowname_col = "predicted")
+for (k in seq_along(methods)) {
+    tab_conf <- tab_conf |>
+        gt::tab_spanner(names(methods)[k], c(paste0("m", k, "_a0"), paste0("m", k, "_a1")))
+}
+tab_conf |> gt::cols_label(.list = setNames(
+    as.list(rep(c("actual 0", "actual 1"), length(methods))), names(conf_wide)[-1]))
+```
+
+```{r}
+#| label: tbl-logit-scores
+#| tbl-cap: "Compares the test-set predictions of the Bayesian logistic regressions with those of glm, by test deviance and error rate, when there are as many predictors as cases.
+#|   m = 1,000 test cases. Test deviance is -2 times the sum of the log predicted probabilities of
+#|   the observed responses (smaller is better); predicting 0.5 for every case gives 1386.3. The last
+#|   row uses the true probabilities, the best possible score."
+knitr::kable(data.frame(
+    method = names(methods),
+    deviance = sapply(methods, test_deviance, y = y_test),
+    error = sapply(methods, error_rate, y = y_test), row.names = NULL),
+    digits = c(0, 1, 3), col.names = c("method", "test deviance", "error rate"),
+    align = c("l", "r", "r"))
+```
+
+The comparison is very different from what one sees with few predictors.
+`glm` predicts badly: its error rate of
+`r sprintf("%.3f", error_rate(p_glm, y_test))` is far above the
+`r sprintf("%.3f", error_rate(p_true, y_test))` of the true probabilities, and
+its test deviance of `r sprintf("%.0f", test_deviance(p_glm, y_test))` is about
+`r round(test_deviance(p_glm, y_test) / 1386.3)` times the $1386.3$ of always
+predicting $0.5$. Its fitted probabilities
+are almost all $0$ or $1$, so every wrong prediction costs a huge
+$-2\log \hat P(\tilde y_i)$. A Bayesian fit is not automatically better: with
+the vague normal prior the test deviance,
+`r sprintf("%.0f", test_deviance(p_normal, y_test))`, is also worse than the
+baseline. The horseshoe prior, which encodes the belief that only a few
+predictors matter, reduces the test deviance to
+`r sprintf("%.0f", test_deviance(p_hs, y_test))` and the error rate to
+`r sprintf("%.3f", error_rate(p_hs, y_test))`, against
+`r sprintf("%.0f", test_deviance(p_true, y_test))` and
+`r sprintf("%.3f", error_rate(p_true, y_test))` for the true probabilities. When
+the number of predictors is a large fraction of the number of cases, the prior
+is not a detail to be made as vague as possible but the part of the model that
+makes good prediction possible.
 
 ## Summary
 
@@ -647,6 +1337,6 @@ The syntax above is modern Stan (`=` for deterministic assignment, `~` sampling 
 - **Gibbs sampling** cycles through exact draws from each full conditional; free of tuning, but needs conditionals that are both known and directly sample-able, and data augmentation extends it to models with latent variables.
 - **Metropolis–Hastings** accepts or rejects a proposal from *any* distribution with probability depending on the target-density ratio (times a proposal-symmetry correction); random-walk MH needs a tuned step size, aimed at low autocorrelation rather than high acceptance.
 - **Hamiltonian Monte Carlo** adds momentum and follows gradient-driven trajectories, discretized by the leapfrog integrator and corrected by a Metropolis step, giving distant, nearly independent proposals even on strongly correlated targets — at the cost of needing a gradient and two tuning parameters ($\epsilon$, $L$).
-- **Stan** automates gradient computation and adaptive HMC (NUTS) for essentially any model expressible in its declarative syntax, turning what would otherwise be a substantial hand-derivation (as the stochastic-volatility example shows) into a direct transcription of the model.
+- **Stan** automates gradient computation and adaptive HMC (NUTS) for essentially any model expressible in its declarative syntax, turning what would otherwise be a hand-derivation (as the Cauchy model of Examples 4 and 8 shows) into a direct transcription of the model.
 
 This is the last of the sampling-methods chapters in the book: quadrature (Chapter 8) and Laplace's method (Chapter 9) work in low dimension by grid or by a local Gaussian approximation; rejection and importance sampling (Chapters 10–11) draw independently from a fixed proposal; Gibbs, Metropolis–Hastings, HMC, and Stan (this chapter) let a Markov chain do the work instead, and are, in practice, how most modern Bayesian computation is actually done.
