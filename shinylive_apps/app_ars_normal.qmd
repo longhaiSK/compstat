@@ -1,0 +1,724 @@
+---
+engine: markdown
+title: "Adaptive Rejection Sampling for the Truncated Normal Distribution"
+pagetitle: "ars-shinylive"
+---
+
+<!-- Moved out of chapters/unit10_rejection_sampling.qmd on 2026-09-26 by gen_shinyapps.py, which
+     also lifted the "About the app" notes from that section. The app no
+     longer exists in the book, so THIS FILE IS NOW ITS ONLY COPY --
+     edit it here, and re-render with: quarto render shinylive_apps -->
+
+```{shinylive-r}
+#| standalone: true
+#| viewerHeight: 880
+library(shiny)
+
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
+
+h <- function(x) -x^2 / 2          # log unnormalized N(0,1) density
+hprime <- function(x) -x
+
+build_hull <- function(xs, lb, ub) {
+    xs <- sort(xs)
+    hx <- h(xs); hpx <- hprime(xs)
+    k <- length(xs)
+    z <- numeric(k + 1); z[1] <- lb; z[k + 1] <- ub
+    if (k > 1) for (i in 1:(k - 1)) {
+        z[i + 1] <- (hx[i + 1] - hx[i] - xs[i + 1] * hpx[i + 1] + xs[i] * hpx[i]) /
+            (hpx[i] - hpx[i + 1])
+    }
+    list(x = xs, hx = hx, hp = hpx, z = z)
+}
+
+### log-area under the exponential of a single tangent-line piece, between its
+### breakpoints -- computed entirely in log space so it stays finite even far
+### out in the tail, where exp(hull value) itself would underflow to exactly 0
+log_piece_area <- function(hull, j) {
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+    if (abs(b) < 1e-10) return(val_lo + log(hi - lo))
+    m <- max(val_lo, val_hi); d <- min(val_lo, val_hi)
+    m + log1p(-exp(d - m)) - log(abs(b))
+}
+
+### draw one point from the piecewise-exponential envelope: pick a piece
+### proportional to its area, then invert its (exponential) CDF within it --
+### both steps done on the log scale for the same underflow-safety reason
+sample_hull <- function(hull) {
+    k <- length(hull$x)
+    log_areas <- vapply(seq_len(k), function(j) log_piece_area(hull, j), numeric(1))
+    log_areas[!is.finite(log_areas)] <- -Inf
+    areas <- exp(log_areas - max(log_areas))    # relative areas, safely in (0, 1]
+    logA  <- max(log_areas) + log(sum(areas))   # log of the total area under the envelope
+    j <- sample.int(k, 1, prob = areas)
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    U <- runif(1)
+    if (abs(b) < 1e-10) {
+        x <- lo + U * (hi - lo)
+        logg <- a
+    } else {
+        val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+        m <- max(val_lo, val_hi)
+        val_x <- m + log((1 - U) * exp(val_lo - m) + U * exp(val_hi - m))
+        x <- xj + (val_x - a) / b
+        logg <- val_x
+    }
+    list(x = x, logg = logg, logA = logA)
+}
+
+### piecewise-linear hull value (log scale) at a vector of x's
+hull_val <- function(hull, xgrid) {
+    j <- findInterval(xgrid, hull$z, rightmost.closed = TRUE)
+    j <- pmax(1, pmin(j, length(hull$x)))
+    hull$hx[j] + hull$hp[j] * (xgrid - hull$x[j])
+}
+
+init_hull <- function(lb, ub) {
+    x_init <- sort(unique(pmin(pmax(c(lb + 0.25 * (ub - lb), (lb + ub) / 2,
+                                       ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
+    build_hull(x_init, lb, ub)
+}
+
+### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
+### difference underflows to 0 for windows far out in either tail
+log_pnorm_diff <- function(lb, ub) {
+    if (ub <= 0) {
+        log_pu <- pnorm(ub, log.p = TRUE); log_pl <- pnorm(lb, log.p = TRUE)
+        log_pu + log1p(-exp(log_pl - log_pu))
+    } else if (lb >= 0) {
+        log_su <- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
+        log_sl <- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
+        log_sl + log1p(-exp(log_su - log_sl))
+    } else {
+        log(pnorm(ub) - pnorm(lb))
+    }
+}
+tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
+### E(X | l < X < u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of
+### the two phi values formed on the log scale so that it stays accurate in either tail
+tnorm_mean <- function(lb, ub) {
+    la <- dnorm(lb, log = TRUE); lu <- dnorm(ub, log = TRUE)
+    m <- max(la, lu)
+    if (!is.finite(m)) return(0)
+    sign(la - lu) * exp(m + log(abs(exp(la - m) - exp(lu - m))) - log_pnorm_diff(lb, ub))
+}
+
+### the two panels: log f with its hull, and the histogram of the accepted draws.
+### The plotting window is the whole truncation interval [lb, ub]
+draw_panels <- function(hull, x, lb, ub, target_n, done, last_x, last_accept) {
+    xg <- seq(lb, ub, length.out = 400)
+    hull_log <- hull_val(hull, xg); target_log <- h(xg)
+
+    par(mfrow = c(2, 1), mar = c(4, 4.5, 4, 1), cex = 0.95)   # mfrow alone would shrink text to 0.83
+
+    ## 1: log f and the hull
+    plot(xg, hull_log, type = "l", lwd = 2, col = "steelblue",
+         ylim = range(c(hull_log, target_log)), xlab = "x",
+         ylab = "log density (unnorm.)")
+    title(sprintf("log f(x) = -x^2/2  vs. hull  (%d tangent points)", length(hull$x)), line = 2.4)
+    abline(v = c(lb, ub), col = "darkorange", lty = 2, lwd = 2)
+    lines(xg, target_log, lwd = 2, col = "firebrick")
+    points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
+    abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
+    if (!is.null(last_x)) {
+        points(last_x, h(last_x), pch = if (last_accept) 19 else 4,
+               col = if (last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
+    }
+    ## legend in the top margin, between the title and the plot, so it never covers the curves
+    legend(x = mean(par("usr")[1:2]), y = par("usr")[4], xjust = 0.5, yjust = 0, xpd = NA,
+           horiz = TRUE, bty = "n", cex = 0.85,
+           lwd = c(2, 2, 2, NA, NA), lty = c(1, 1, 2, NA, NA), pch = c(NA, NA, NA, 19, 4),
+           col = c("steelblue", "firebrick", "darkorange", "forestgreen", "black"),
+           legend = c("log hull", "log target", "truncation limits", "last: accepted", "last: rejected"))
+
+    ## 2: histogram of the accepted draws against the truncated normal density
+    fx <- tnorm_density(xg, lb, ub)
+    if (length(x) == 0) {
+        plot(xg, fx, type = "l", lwd = 3, col = "firebrick", xlab = "x", ylab = "density",
+             main = "no samples accepted yet")
+    } else {
+        hx <- hist(x, breaks = seq(lb, ub, length.out = 41), plot = FALSE)
+        plot(hx, freq = FALSE, col = "steelblue", border = "white", xlim = c(lb, ub),
+             ylim = c(0, max(hx$density, fx) * 1.1), xlab = "x",
+             main = sprintf("%d / %d draws%s", length(x), target_n, if (done) "  (done)" else ""))
+        lines(xg, fx, lwd = 3, col = "firebrick")
+    }
+    legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
+}
+
+### log(exp(a) + exp(b)) without overflow
+log_add <- function(a, b) { m <- max(a, b); if (!is.finite(m)) m else m + log(exp(a - m) + exp(b - m)) }
+
+ui <- fluidPage(
+    sidebarLayout(
+        sidebarPanel(width = 4,
+            sliderInput("lim", "truncation interval (l, u)", min = -10, max = 10,
+                        value = c(-2, 2), step = 0.1),
+            numericInput("n", "sample size", value = 200, min = 1, step = 10),
+            ### symbol-only buttons; the title attribute gives each a hover tooltip
+            tags$style(".ctl-btn { font-size: 18px; padding: 2px 0; }"),
+            fluidRow(
+                column(3, tagAppendAttributes(actionButton("play_pause", "▶", width = "100%",
+                                                           class = "ctl-btn"), title = "Play / Pause")),
+                column(3, tagAppendAttributes(actionButton("next_step", "↷", width = "100%",
+                                                           class = "ctl-btn"), title = "Next candidate")),
+                column(3, tagAppendAttributes(actionButton("finish", "⏭", width = "100%",
+                                                           class = "ctl-btn"), title = "Finish: run to the sample size")),
+                column(3, tagAppendAttributes(actionButton("restart", "↺", width = "100%",
+                                                           class = "ctl-btn"), title = "Restart"))),
+            helpText("Each step draws one candidate from the current hull. Accepted points ",
+                     "(green) join the histogram; rejected points (black x) become new tangent ",
+                     "points, tightening the hull. Changing the limits restarts the run."),
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+            h5("Run summary"),
+            tableOutput("tab"),
+            helpText("P and log P are estimated by the mean importance weight over all ",
+                     "proposals, each weighted under the hull that produced it; ",
+                     "E(X) = E(X | l < X < u) by the mean of the accepted draws."),
+            textOutput("status")),
+        mainPanel(width = 8,
+            plotOutput("panels", height = "760px"))
+    )
+)
+
+server <- function(input, output, session) {
+
+    rv <- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
+                         lb = -2, ub = 2, done = FALSE, playing = FALSE,
+                         last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
+
+    reset_run <- function() {
+        lb <- if (!is.null(input$lim)) input$lim[1] else -2
+        ub <- if (!is.null(input$lim)) input$lim[2] else 2
+        if (ub - lb < 0.05) ub <- lb + 0.05      # guard against a degenerate window
+        rv$hull <- init_hull(lb, ub)
+        rv$samples <- numeric(0); rv$tries <- 0
+        rv$lb <- lb; rv$ub <- ub
+        rv$target_n <- if (!is.null(input$n) && !is.na(input$n) && input$n >= 1) input$n else 200
+        rv$done <- FALSE; rv$playing <- FALSE
+        rv$last_x <- NULL; rv$last_accept <- NA
+        rv$logsumw <- -Inf; rv$logsumw2 <- -Inf
+        updateActionButton(session, "play_pause", label = "▶")
+    }
+    isolate(reset_run())
+
+    ### one ARS step; works on plain values so Finish can loop without touching
+    ### the reactive values on every iteration. Also returns the log importance
+    ### weight of the proposal under the envelope that generated it:
+    ### w = f(x) / g_t(x) with g_t = envelope / (its area), so log w = log f - log envelope + log area
+    ars_step <- function(hull, lb, ub) {
+        d <- sample_hull(hull)
+        logf <- h(d$x)
+        accept <- log(runif(1)) < logf - d$logg
+        if (!accept) hull <- build_hull(sort(c(hull$x, d$x)), lb, ub)
+        list(x = d$x, accept = accept, hull = hull, lw = logf - d$logg + d$logA)
+    }
+
+    finish_check <- function() {
+        if (length(rv$samples) >= rv$target_n) {
+            rv$done <- TRUE; rv$playing <- FALSE
+            updateActionButton(session, "play_pause", label = "▶")
+        }
+    }
+
+    do_step <- function() {
+        if (rv$done) return(invisible(NULL))
+        s <- ars_step(rv$hull, rv$lb, rv$ub)
+        rv$tries <- rv$tries + 1
+        rv$hull <- s$hull
+        rv$logsumw <- log_add(rv$logsumw, s$lw)
+        rv$logsumw2 <- log_add(rv$logsumw2, 2 * s$lw)    # running sum of w^2, for the standard error
+        rv$last_x <- s$x; rv$last_accept <- s$accept
+        if (s$accept) rv$samples <- c(rv$samples, s$x)
+        finish_check()
+    }
+
+    observeEvent(input$lim, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$restart, { reset_run() })
+
+    observeEvent(input$n, {
+        req(input$n)
+        rv$target_n <- input$n
+        if (length(rv$samples) < rv$target_n) rv$done <- FALSE
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$play_pause, {
+        if (rv$done) return()
+        rv$playing <- !rv$playing
+        updateActionButton(session, "play_pause", label = if (rv$playing) "⏸" else "▶")
+    })
+
+    observeEvent(input$next_step, {
+        rv$playing <- FALSE
+        updateActionButton(session, "play_pause", label = "▶")
+        do_step()
+    })
+
+    observeEvent(input$finish, {
+        if (rv$done) return()
+        hull <- rv$hull; lb <- rv$lb; ub <- rv$ub; tries <- rv$tries
+        lsw <- rv$logsumw; lsw2 <- rv$logsumw2
+        need <- rv$target_n - length(rv$samples)
+        acc <- numeric(need); n_acc <- 0; last <- NULL
+        while (n_acc < need) {
+            s <- ars_step(hull, lb, ub); tries <- tries + 1; hull <- s$hull; last <- s
+            lsw <- log_add(lsw, s$lw); lsw2 <- log_add(lsw2, 2 * s$lw)
+            if (s$accept) { n_acc <- n_acc + 1; acc[n_acc] <- s$x }
+        }
+        rv$hull <- hull; rv$samples <- c(rv$samples, acc); rv$tries <- tries
+        rv$logsumw <- lsw; rv$logsumw2 <- lsw2
+        rv$last_x <- last$x; rv$last_accept <- last$accept
+        finish_check()
+    })
+
+    ### auto-advance one step every 120 ms while playing
+    observe({
+        if (isTRUE(rv$playing) && !rv$done) {
+            invalidateLater(120, session)
+            isolate(do_step())
+        }
+    })
+
+    ### P(l < X < u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l < X < u), and
+    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.
+    ### The standard error uses the sample variance of the weights (an approximation, since the
+    ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
+    output$tab <- renderTable({
+        fmt  <- function(lp) if (lp > -700) sprintf("%.4g", exp(lp)) else sprintf("exp(%.4f)", lp)   # probability
+        flog <- function(lp) sprintf("%.4f", lp)                                                     # log probability
+        log_true <- log_pnorm_diff(rv$lb, rv$ub)
+        T <- rv$tries
+        p_col <- c("-", "-", "-"); lp_col <- c("-", "-", "-"); m_col <- c("-", "-", "-")
+        ### mean of X: the accepted draws are exact iid draws from the truncated normal,
+        ### so their sample mean and a t-type interval estimate E(X | l < X < u)
+        ns <- length(rv$samples)
+        if (ns >= 2) {
+            xbar <- mean(rv$samples); se <- sd(rv$samples) / sqrt(ns)
+            m_col <- sprintf("%.4f", c(xbar, xbar - 1.96 * se, xbar + 1.96 * se))
+        }
+        if (T >= 2) {
+            log_m  <- rv$logsumw - log(T)                          # log of the mean weight
+            rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
+            log_est <- log_m - 0.5 * log(2 * pi)
+            lo <- log_est + log(max(1 - 1.96 * rel_se, 1e-12)); hi <- log_est + log1p(1.96 * rel_se)
+            p_col  <- c(fmt(log_est), fmt(lo), fmt(hi))
+            lp_col <- c(flog(log_est), flog(lo), flog(hi))
+        }
+        data.frame(
+            ` ` = c("true", "estimate", "95% CI lower", "95% CI upper"),
+            `P(l < X < u)` = c(fmt(log_true), p_col),
+            `log P` = c(flog(log_true), lp_col),
+            `E(X)` = c(sprintf("%.4f", tnorm_mean(rv$lb, rv$ub)), m_col),
+            check.names = FALSE)
+    }, striped = TRUE, align = "llll", width = "100%")
+
+    output$status <- renderText({
+        n <- length(rv$samples)
+        sprintf("%d / %d accepted, %d proposals, acceptance %s, %d tangent points",
+                n, rv$target_n, rv$tries,
+                if (rv$tries > 0) sprintf("%.1f%%", 100 * n / rv$tries) else "-",
+                length(rv$hull$x))
+    })
+
+    output$panels <- renderPlot({
+        draw_panels(rv$hull, rv$samples, rv$lb, rv$ub, rv$target_n, rv$done,
+                    rv$last_x, rv$last_accept)
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## About the app
+
+Shows how adaptive rejection sampling improves its envelope automatically, so that it becomes more efficient as sampling proceeds. The app above reimplements the same idea directly — start with a few tangent lines to $\log f$, sample from the piecewise-exponential envelope they define, and whenever a candidate is *rejected*, add it as a new tangent point and rebuild the hull — one candidate at a time, so every step of the mechanism is visible. The controls sit in the left sidebar: **▶/⏸** plays or pauses, **↷** advances a single candidate, **⏭** runs straight to the target sample size, and **↺** restarts.
+
+The `ars` package above is a black box: it returns samples but not the
+sequence of hulls it built along the way. The top panel
+shows $\log f$ against the current hull (in log scale the hull is exactly
+piecewise-*linear*, since it is built from tangent lines), marking the most
+recent candidate as accepted (green dot) or rejected (black x, becoming a
+new tangent point). The bottom panel is a histogram of the accepted draws so
+far against the true truncated normal density. Controls: the target sample
+size, and the truncation interval $[l, u]$, set with a two-handled slider
+from $-10$ to $10$ (changing the interval restarts the run).
+
+**Estimating a probability with the varying envelope.** Besides producing exact draws from the truncated normal, the run gives an estimate of the normal probability $P(l<X<u)$ for $X\sim N(0,1)$, shown in the run summary in the sidebar next to the true value, with a 95% confidence interval. Write $f(x)=e^{-x^2/2}$ on $(l,u)$, so that $Z=\int_l^u f(x)\,dx=\sqrt{2\pi}\,P(l<X<u)$. At proposal $t$ the envelope is $e_t(x)\ge f(x)$, with area $A_t=\int e_t$, and the candidate is drawn from the normalized envelope $g_t=e_t/A_t$. The envelope $g_t$ changes whenever a rejection adds a tangent point, so the proposal varies from draw to draw. Importance sampling still works if each candidate is weighted by the proposal that actually generated it:
+$$w_t=\frac{f(X_t)}{g_t(X_t)}=A_t\,\frac{f(X_t)}{e_t(X_t)},\qquad \hat Z=\frac1T\sum_{t=1}^T w_t,\qquad \widehat{P}(l<X<u)=\frac{\hat Z}{\sqrt{2\pi}} .$$
+Conditional on the past, $g_t$ is fixed, so $E[w_t\mid \text{past}]=\int_l^u f=Z$ for every $t$: each weight is unbiased for $Z$ whatever the envelope is, and $\hat Z$ is an average of martingale differences around $Z$. It would be wrong to weight all the draws by the final envelope, because that would use information from later draws. All $T$ proposals are used, rejected ones included (a rejected candidate is still a draw from $g_t$ with a weight; it just also tightens the hull for the next step). The weights are bounded, $0\le w_t\le A_t$ since $f\le e_t$, so the variance is finite. As the hull tightens, $e_t\to f$ and $A_t\to Z$, so every weight approaches $Z$ and the estimate becomes exact, which is why it improves with the number of tangent points. The interval is $\hat P\,(1\pm1.96\,\widehat{\mathrm{se}}_{\rm rel})$, where $\widehat{\mathrm{se}}_{\rm rel}=\sqrt{s_w^2/T}\big/\bar w$ is computed from the sample variance $s_w^2$ of the weights. This is the usual importance-sampling standard error; because the proposals vary it is an approximation (the weights are martingale differences, not independent), but it is accurate once the hull has stopped changing much, and it shrinks quickly as the envelope tightens. The weights are accumulated on the log scale, so the estimate stays finite even for windows far out in the tail, where it is shown as $\exp(\log P)$.
+
+:::: {.callout-note collapse="true" title="R source for this app"}
+
+````r
+library(shiny)
+
+### renderPlot replacement: Safari 27 (WebKit) cannot hold the call stack of
+### shiny::renderPlot in webR ("Maximum call stack size exceeded"), so draw with
+### renderImage instead, which nests about 45 fewer R calls
+renderPlot <- function(expr, width = "auto", height = "auto", res = 72, ...,
+                       env = parent.frame(), quoted = FALSE) {
+    func <- shiny::exprToFunction(expr, env, quoted)
+    shiny::renderImage({
+        info <- shiny::getCurrentOutputInfo()
+        w  <- if (is.numeric(width))  width  else info$width()
+        h  <- if (is.numeric(height)) height else info$height()
+        shiny::req(w > 0, h > 0)
+        pr <- shiny::getDefaultReactiveDomain()$clientData$pixelratio
+        if (is.null(pr)) pr <- 1
+        f   <- tempfile(fileext = ".png")
+        dev <- shiny:::startPNG(f, w * pr, h * pr, res = res * pr)
+        on.exit(grDevices::dev.off(dev), add = TRUE)
+        grDevices::dev.control(displaylist = "enable")
+        v <- withVisible(func())
+        if (v$visible) print(v$value)
+        list(src = f, contentType = "image/png", width = w, height = h,
+             coordmap = shiny:::getCoordmap(v$value, w * pr, h * pr, res * pr))
+    }, deleteFile = TRUE)
+}
+
+h <- function(x) -x^2 / 2          # log unnormalized N(0,1) density
+hprime <- function(x) -x
+
+build_hull <- function(xs, lb, ub) {
+    xs <- sort(xs)
+    hx <- h(xs); hpx <- hprime(xs)
+    k <- length(xs)
+    z <- numeric(k + 1); z[1] <- lb; z[k + 1] <- ub
+    if (k > 1) for (i in 1:(k - 1)) {
+        z[i + 1] <- (hx[i + 1] - hx[i] - xs[i + 1] * hpx[i + 1] + xs[i] * hpx[i]) /
+            (hpx[i] - hpx[i + 1])
+    }
+    list(x = xs, hx = hx, hp = hpx, z = z)
+}
+
+### log-area under the exponential of a single tangent-line piece, between its
+### breakpoints -- computed entirely in log space so it stays finite even far
+### out in the tail, where exp(hull value) itself would underflow to exactly 0
+log_piece_area <- function(hull, j) {
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+    if (abs(b) < 1e-10) return(val_lo + log(hi - lo))
+    m <- max(val_lo, val_hi); d <- min(val_lo, val_hi)
+    m + log1p(-exp(d - m)) - log(abs(b))
+}
+
+### draw one point from the piecewise-exponential envelope: pick a piece
+### proportional to its area, then invert its (exponential) CDF within it --
+### both steps done on the log scale for the same underflow-safety reason
+sample_hull <- function(hull) {
+    k <- length(hull$x)
+    log_areas <- vapply(seq_len(k), function(j) log_piece_area(hull, j), numeric(1))
+    log_areas[!is.finite(log_areas)] <- -Inf
+    areas <- exp(log_areas - max(log_areas))    # relative areas, safely in (0, 1]
+    logA  <- max(log_areas) + log(sum(areas))   # log of the total area under the envelope
+    j <- sample.int(k, 1, prob = areas)
+    a <- hull$hx[j]; b <- hull$hp[j]; xj <- hull$x[j]
+    lo <- hull$z[j]; hi <- hull$z[j + 1]
+    U <- runif(1)
+    if (abs(b) < 1e-10) {
+        x <- lo + U * (hi - lo)
+        logg <- a
+    } else {
+        val_lo <- a + b * (lo - xj); val_hi <- a + b * (hi - xj)
+        m <- max(val_lo, val_hi)
+        val_x <- m + log((1 - U) * exp(val_lo - m) + U * exp(val_hi - m))
+        x <- xj + (val_x - a) / b
+        logg <- val_x
+    }
+    list(x = x, logg = logg, logA = logA)
+}
+
+### piecewise-linear hull value (log scale) at a vector of x's
+hull_val <- function(hull, xgrid) {
+    j <- findInterval(xgrid, hull$z, rightmost.closed = TRUE)
+    j <- pmax(1, pmin(j, length(hull$x)))
+    hull$hx[j] + hull$hp[j] * (xgrid - hull$x[j])
+}
+
+init_hull <- function(lb, ub) {
+    x_init <- sort(unique(pmin(pmax(c(lb + 0.25 * (ub - lb), (lb + ub) / 2,
+                                       ub - 0.25 * (ub - lb)), lb + 1e-6), ub - 1e-6)))
+    build_hull(x_init, lb, ub)
+}
+
+### log(pnorm(ub) - pnorm(lb)), numerically stable even when the naive
+### difference underflows to 0 for windows far out in either tail
+log_pnorm_diff <- function(lb, ub) {
+    if (ub <= 0) {
+        log_pu <- pnorm(ub, log.p = TRUE); log_pl <- pnorm(lb, log.p = TRUE)
+        log_pu + log1p(-exp(log_pl - log_pu))
+    } else if (lb >= 0) {
+        log_su <- pnorm(ub, lower.tail = FALSE, log.p = TRUE)
+        log_sl <- pnorm(lb, lower.tail = FALSE, log.p = TRUE)
+        log_sl + log1p(-exp(log_su - log_sl))
+    } else {
+        log(pnorm(ub) - pnorm(lb))
+    }
+}
+tnorm_density <- function(x, lb, ub) exp(dnorm(x, log = TRUE) - log_pnorm_diff(lb, ub))
+
+### E(X | l < X < u) = {phi(l) - phi(u)} / {Phi(u) - Phi(l)}, with the difference of
+### the two phi values formed on the log scale so that it stays accurate in either tail
+tnorm_mean <- function(lb, ub) {
+    la <- dnorm(lb, log = TRUE); lu <- dnorm(ub, log = TRUE)
+    m <- max(la, lu)
+    if (!is.finite(m)) return(0)
+    sign(la - lu) * exp(m + log(abs(exp(la - m) - exp(lu - m))) - log_pnorm_diff(lb, ub))
+}
+
+### the two panels: log f with its hull, and the histogram of the accepted draws.
+### The plotting window is the whole truncation interval [lb, ub]
+draw_panels <- function(hull, x, lb, ub, target_n, done, last_x, last_accept) {
+    xg <- seq(lb, ub, length.out = 400)
+    hull_log <- hull_val(hull, xg); target_log <- h(xg)
+
+    par(mfrow = c(2, 1), mar = c(4, 4.5, 4, 1), cex = 0.95)   # mfrow alone would shrink text to 0.83
+
+    ## 1: log f and the hull
+    plot(xg, hull_log, type = "l", lwd = 2, col = "steelblue",
+         ylim = range(c(hull_log, target_log)), xlab = "x",
+         ylab = "log density (unnorm.)")
+    title(sprintf("log f(x) = -x^2/2  vs. hull  (%d tangent points)", length(hull$x)), line = 2.4)
+    abline(v = c(lb, ub), col = "darkorange", lty = 2, lwd = 2)
+    lines(xg, target_log, lwd = 2, col = "firebrick")
+    points(hull$x, hull$hx, pch = 19, col = "gray20", cex = 0.9)
+    abline(v = hull$z[-c(1, length(hull$z))], col = adjustcolor("gray40", 0.4), lty = 3)
+    if (!is.null(last_x)) {
+        points(last_x, h(last_x), pch = if (last_accept) 19 else 4,
+               col = if (last_accept) "forestgreen" else "black", cex = 1.6, lwd = 2)
+    }
+    ## legend in the top margin, between the title and the plot, so it never covers the curves
+    legend(x = mean(par("usr")[1:2]), y = par("usr")[4], xjust = 0.5, yjust = 0, xpd = NA,
+           horiz = TRUE, bty = "n", cex = 0.85,
+           lwd = c(2, 2, 2, NA, NA), lty = c(1, 1, 2, NA, NA), pch = c(NA, NA, NA, 19, 4),
+           col = c("steelblue", "firebrick", "darkorange", "forestgreen", "black"),
+           legend = c("log hull", "log target", "truncation limits", "last: accepted", "last: rejected"))
+
+    ## 2: histogram of the accepted draws against the truncated normal density
+    fx <- tnorm_density(xg, lb, ub)
+    if (length(x) == 0) {
+        plot(xg, fx, type = "l", lwd = 3, col = "firebrick", xlab = "x", ylab = "density",
+             main = "no samples accepted yet")
+    } else {
+        hx <- hist(x, breaks = seq(lb, ub, length.out = 41), plot = FALSE)
+        plot(hx, freq = FALSE, col = "steelblue", border = "white", xlim = c(lb, ub),
+             ylim = c(0, max(hx$density, fx) * 1.1), xlab = "x",
+             main = sprintf("%d / %d draws%s", length(x), target_n, if (done) "  (done)" else ""))
+        lines(xg, fx, lwd = 3, col = "firebrick")
+    }
+    legend("topright", bty = "n", lwd = 3, col = "firebrick", legend = "true truncated-normal density")
+}
+
+### log(exp(a) + exp(b)) without overflow
+log_add <- function(a, b) { m <- max(a, b); if (!is.finite(m)) m else m + log(exp(a - m) + exp(b - m)) }
+
+ui <- fluidPage(
+    sidebarLayout(
+        sidebarPanel(width = 4,
+            sliderInput("lim", "truncation interval (l, u)", min = -10, max = 10,
+                        value = c(-2, 2), step = 0.1),
+            numericInput("n", "sample size", value = 200, min = 1, step = 10),
+            ### symbol-only buttons; the title attribute gives each a hover tooltip
+            tags$style(".ctl-btn { font-size: 18px; padding: 2px 0; }"),
+            fluidRow(
+                column(3, tagAppendAttributes(actionButton("play_pause", "▶", width = "100%",
+                                                           class = "ctl-btn"), title = "Play / Pause")),
+                column(3, tagAppendAttributes(actionButton("next_step", "↷", width = "100%",
+                                                           class = "ctl-btn"), title = "Next candidate")),
+                column(3, tagAppendAttributes(actionButton("finish", "⏭", width = "100%",
+                                                           class = "ctl-btn"), title = "Finish: run to the sample size")),
+                column(3, tagAppendAttributes(actionButton("restart", "↺", width = "100%",
+                                                           class = "ctl-btn"), title = "Restart"))),
+            helpText("Each step draws one candidate from the current hull. Accepted points ",
+                     "(green) join the histogram; rejected points (black x) become new tangent ",
+                     "points, tightening the hull. Changing the limits restarts the run."),
+            tags$style("#tab td, #tab th { white-space: nowrap; }"),
+            h5("Run summary"),
+            tableOutput("tab"),
+            helpText("P and log P are estimated by the mean importance weight over all ",
+                     "proposals, each weighted under the hull that produced it; ",
+                     "E(X) = E(X | l < X < u) by the mean of the accepted draws."),
+            textOutput("status")),
+        mainPanel(width = 8,
+            plotOutput("panels", height = "760px"))
+    )
+)
+
+server <- function(input, output, session) {
+
+    rv <- reactiveValues(hull = NULL, samples = numeric(0), tries = 0, target_n = 200,
+                         lb = -2, ub = 2, done = FALSE, playing = FALSE,
+                         last_x = NULL, last_accept = NA, logsumw = -Inf, logsumw2 = -Inf)
+
+    reset_run <- function() {
+        lb <- if (!is.null(input$lim)) input$lim[1] else -2
+        ub <- if (!is.null(input$lim)) input$lim[2] else 2
+        if (ub - lb < 0.05) ub <- lb + 0.05      # guard against a degenerate window
+        rv$hull <- init_hull(lb, ub)
+        rv$samples <- numeric(0); rv$tries <- 0
+        rv$lb <- lb; rv$ub <- ub
+        rv$target_n <- if (!is.null(input$n) && !is.na(input$n) && input$n >= 1) input$n else 200
+        rv$done <- FALSE; rv$playing <- FALSE
+        rv$last_x <- NULL; rv$last_accept <- NA
+        rv$logsumw <- -Inf; rv$logsumw2 <- -Inf
+        updateActionButton(session, "play_pause", label = "▶")
+    }
+    isolate(reset_run())
+
+    ### one ARS step; works on plain values so Finish can loop without touching
+    ### the reactive values on every iteration. Also returns the log importance
+    ### weight of the proposal under the envelope that generated it:
+    ### w = f(x) / g_t(x) with g_t = envelope / (its area), so log w = log f - log envelope + log area
+    ars_step <- function(hull, lb, ub) {
+        d <- sample_hull(hull)
+        logf <- h(d$x)
+        accept <- log(runif(1)) < logf - d$logg
+        if (!accept) hull <- build_hull(sort(c(hull$x, d$x)), lb, ub)
+        list(x = d$x, accept = accept, hull = hull, lw = logf - d$logg + d$logA)
+    }
+
+    finish_check <- function() {
+        if (length(rv$samples) >= rv$target_n) {
+            rv$done <- TRUE; rv$playing <- FALSE
+            updateActionButton(session, "play_pause", label = "▶")
+        }
+    }
+
+    do_step <- function() {
+        if (rv$done) return(invisible(NULL))
+        s <- ars_step(rv$hull, rv$lb, rv$ub)
+        rv$tries <- rv$tries + 1
+        rv$hull <- s$hull
+        rv$logsumw <- log_add(rv$logsumw, s$lw)
+        rv$logsumw2 <- log_add(rv$logsumw2, 2 * s$lw)    # running sum of w^2, for the standard error
+        rv$last_x <- s$x; rv$last_accept <- s$accept
+        if (s$accept) rv$samples <- c(rv$samples, s$x)
+        finish_check()
+    }
+
+    observeEvent(input$lim, { reset_run() }, ignoreInit = TRUE)
+    observeEvent(input$restart, { reset_run() })
+
+    observeEvent(input$n, {
+        req(input$n)
+        rv$target_n <- input$n
+        if (length(rv$samples) < rv$target_n) rv$done <- FALSE
+    }, ignoreInit = TRUE)
+
+    observeEvent(input$play_pause, {
+        if (rv$done) return()
+        rv$playing <- !rv$playing
+        updateActionButton(session, "play_pause", label = if (rv$playing) "⏸" else "▶")
+    })
+
+    observeEvent(input$next_step, {
+        rv$playing <- FALSE
+        updateActionButton(session, "play_pause", label = "▶")
+        do_step()
+    })
+
+    observeEvent(input$finish, {
+        if (rv$done) return()
+        hull <- rv$hull; lb <- rv$lb; ub <- rv$ub; tries <- rv$tries
+        lsw <- rv$logsumw; lsw2 <- rv$logsumw2
+        need <- rv$target_n - length(rv$samples)
+        acc <- numeric(need); n_acc <- 0; last <- NULL
+        while (n_acc < need) {
+            s <- ars_step(hull, lb, ub); tries <- tries + 1; hull <- s$hull; last <- s
+            lsw <- log_add(lsw, s$lw); lsw2 <- log_add(lsw2, 2 * s$lw)
+            if (s$accept) { n_acc <- n_acc + 1; acc[n_acc] <- s$x }
+        }
+        rv$hull <- hull; rv$samples <- c(rv$samples, acc); rv$tries <- tries
+        rv$logsumw <- lsw; rv$logsumw2 <- lsw2
+        rv$last_x <- last$x; rv$last_accept <- last$accept
+        finish_check()
+    })
+
+    ### auto-advance one step every 120 ms while playing
+    observe({
+        if (isTRUE(rv$playing) && !rv$done) {
+            invalidateLater(120, session)
+            isolate(do_step())
+        }
+    })
+
+    ### P(l < X < u) for X ~ N(0,1): Z = integral of exp(-x^2/2) over (l, u) = sqrt(2 pi) P(l < X < u), and
+    ### the mean of the importance weights of ALL proposals (each under its own envelope) estimates Z.
+    ### The standard error uses the sample variance of the weights (an approximation, since the
+    ### weights come from a varying sequence of proposals), so the interval is estimate * (1 +- 1.96 se_rel)
+    output$tab <- renderTable({
+        fmt  <- function(lp) if (lp > -700) sprintf("%.4g", exp(lp)) else sprintf("exp(%.4f)", lp)   # probability
+        flog <- function(lp) sprintf("%.4f", lp)                                                     # log probability
+        log_true <- log_pnorm_diff(rv$lb, rv$ub)
+        T <- rv$tries
+        p_col <- c("-", "-", "-"); lp_col <- c("-", "-", "-"); m_col <- c("-", "-", "-")
+        ### mean of X: the accepted draws are exact iid draws from the truncated normal,
+        ### so their sample mean and a t-type interval estimate E(X | l < X < u)
+        ns <- length(rv$samples)
+        if (ns >= 2) {
+            xbar <- mean(rv$samples); se <- sd(rv$samples) / sqrt(ns)
+            m_col <- sprintf("%.4f", c(xbar, xbar - 1.96 * se, xbar + 1.96 * se))
+        }
+        if (T >= 2) {
+            log_m  <- rv$logsumw - log(T)                          # log of the mean weight
+            rel_se <- sqrt(max(expm1(rv$logsumw2 - log(T) - 2 * log_m), 0) / T)
+            log_est <- log_m - 0.5 * log(2 * pi)
+            lo <- log_est + log(max(1 - 1.96 * rel_se, 1e-12)); hi <- log_est + log1p(1.96 * rel_se)
+            p_col  <- c(fmt(log_est), fmt(lo), fmt(hi))
+            lp_col <- c(flog(log_est), flog(lo), flog(hi))
+        }
+        data.frame(
+            ` ` = c("true", "estimate", "95% CI lower", "95% CI upper"),
+            `P(l < X < u)` = c(fmt(log_true), p_col),
+            `log P` = c(flog(log_true), lp_col),
+            `E(X)` = c(sprintf("%.4f", tnorm_mean(rv$lb, rv$ub)), m_col),
+            check.names = FALSE)
+    }, striped = TRUE, align = "llll", width = "100%")
+
+    output$status <- renderText({
+        n <- length(rv$samples)
+        sprintf("%d / %d accepted, %d proposals, acceptance %s, %d tangent points",
+                n, rv$target_n, rv$tries,
+                if (rv$tries > 0) sprintf("%.1f%%", 100 * n / rv$tries) else "-",
+                length(rv$hull$x))
+    })
+
+    output$panels <- renderPlot({
+        draw_panels(rv$hull, rv$samples, rv$lb, rv$ub, rv$target_n, rv$done,
+                    rv$last_x, rv$last_accept)
+    })
+}
+
+shinyApp(ui, server)
+````
+
+::::
+
+This app accompanies *[Rejection Sampling](../compstat_book/chapters/unit10_rejection_sampling.html#ars-app)* in the book.

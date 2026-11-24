@@ -32,48 +32,151 @@ repeat*.
 Suppose we can find a function $g(x)$ such that
 
 - $g(x) \ge f(x)$ for every $x$ — an **envelope** of $f$, and
-- we can sample from the normalized density $g(x)/\!\int g(x)\,dx$.
+- we can sample from the normalized density $g(x)/A_g$, where
+  $A_g = \int g(x)\,dx$.
 
 Neither $f$ nor $g$ needs to be normalized: $f$ may be an unnormalized
-posterior and $g$ a scaled density $M\,g_0(x)$ for a sampler $g_0$ we already
-have. The overall acceptance rate of the algorithm below turns out to be the
-ratio of the two areas,
+posterior with unknown area $A_f = \int f(x)\,dx$, and $g$ a scaled density
+$M\,g_0(x)$ for a sampler $g_0$ we already have. We will see that the
+acceptance rate of the algorithm is $A_f/A_g$. So the design problem is
+finding a $g$ that is both easy to sample and close to $f$.
+
+### Uniform points under a curve
+
+Rejection sampling rests on one fact about points spread uniformly under the
+graph of a function. For a function $h \ge 0$ with finite area
+$A_h = \int h(x)\,dx$, write the region under its graph as
 $$
-P(\text{accept}) = \frac{\int f(x)\,dx}{\int g(x)\,dx},
+S_h = \{(x, v): 0 < v < h(x)\}.
 $$
-so a tight envelope wastes few draws and a loose one wastes many — the entire
-design problem is finding a $g$ that is both easy to sample and close to $f$.
+The area of $S_h$ is $A_h$, so a point $(X, V)$ **uniform on $S_h$** has joint
+density $1/A_h$ on $S_h$ and $0$ elsewhere.
 
-### The algorithm
+::: {#thm-uniform-under-curve}
+## Uniform under a curve
 
-**Input**: target $f$, envelope $g \ge f$ with a sampler for
-$g(x)/\!\int g(x)\,dx$. For each draw needed, repeat until acceptance:
+Let $h \ge 0$ with $0 < A_h = \int h(x)\,dx < \infty$.
 
-1. Draw $x \sim g(x)/\!\int g(x)\,dx$.
-2. Compute $r = f(x)/g(x)$.
-3. Draw $U \sim \text{Unif}(0,1)$.
-4. If $U < r$, accept $x$; otherwise return to step 1.
+(a) If $(X, V)$ is uniform on $S_h$, then the marginal density of $X$ is
+    $h(x)/A_h$.
 
-Only the ratio $f/g$ is ever evaluated, so unknown normalizing constants in
-$f$ (and in $g$) cancel automatically as long as the *versions actually used*
-satisfy $g \ge f$. The number of proposals needed per accepted draw is
-geometric with mean $1/P(\text{accept})$.
+(b) Conversely, if $X$ has density $h(x)/A_h$ and, given $X$,
+    $V \sim \text{Unif}(0, h(X))$, then $(X, V)$ is uniform on $S_h$.
+:::
 
-### An equivalent geometric picture
+::: {.proof}
+(a) Integrate the joint density over $v$. For fixed $x$, the point $(x, v)$
+lies in $S_h$ exactly when $0 < v < h(x)$, so
+$$
+p_X(x) = \int_0^{h(x)} \frac{1}{A_h}\,dv = \frac{h(x)}{A_h}.
+$$
 
-An illuminating restatement: draw $X \sim g$, then draw a height
-$V \sim \text{Unif}(0, g(X))$ (equivalently $V = U\,g(X)$), and accept $X$ if
-$V < f(X)$. This is the same algorithm, since
-$V < f(X) \iff U < f(X)/g(X)$, but it exposes *why* rejection sampling works:
+(b) The joint density is the marginal of $X$ times the conditional of $V$
+given $X$:
+$$
+p(x, v) = \frac{h(x)}{A_h}\cdot\frac{1}{h(x)}\,\mathbb{1}\{0<v<h(x)\}
+= \frac{1}{A_h}\,\mathbb{1}\{(x, v) \in S_h\},
+$$
+which is the uniform density on $S_h$.
+:::
 
-- Steps "draw $X\sim g$, then $V\sim\text{Unif}(0,g(X))$" place $(X,V)$
-  **uniformly** in the region under $g$, $G = \{(x,v): 0<v<g(x)\}$.
-- Keeping only points with $v < f(x)$ restricts to the sub-region under $f$,
-  $F = \{(x,v): 0<v<f(x)\} \subset G$.
-- A uniform point on $G$, conditioned on landing in $F$, is uniform on $F$.
-  The $x$-coordinate of a uniform point on $F$ has density proportional to
-  the *height* of $F$ at $x$, which is $f(x)$. That is exactly a draw from
-  $f/\!\int f$.
+Part (a) says the density of $X$ at $x$ is proportional to the **height** of
+the region at $x$: a tall column holds more points than a short one. Part (b)
+gives a way to fill $S_h$ uniformly using a sampler for $h/A_h$.
+@fig-uniform-under-curve illustrates both parts with the Laplace-shaped
+function $g(x) = e^{1/2-|x|}$, which has area $A_g = 2e^{1/2}$.
+
+```{r}
+#| label: fig-uniform-under-curve
+#| fig-width: 10
+#| fig-height: 3.5
+#| fig-cap: "Illustrates the theorem that a point uniform under the graph of g has marginal density proportional to g, and conversely.
+#|   Left: uniform points in the box $[-6,6]\\times[0, e^{1/2}]$, kept when they fall under
+#|   $g(x) = e^{1/2-|x|}$, so they are uniform on $S_g$. Middle: the histogram of their
+#|   $x$-coordinates matches $g(x)/A_g$, as in part (a). Right: points made the other way, by
+#|   drawing $X$ from $g/A_g$ and then $V$ uniform on $(0, g(X))$, as in part (b). They fill $S_g$
+#|   in the same uniform way as the left panel."
+g_demo <- function(x) exp(0.5 - abs(x))
+A_g <- 2 * exp(0.5)                      # area under g
+xs <- seq(-6, 6, length.out = 500)
+### sampler for the normalized g, a Laplace(0, 1) density, by inverse CDF
+rlaplace <- function(n) { u <- runif(n); ifelse(u < 0.5, log(2 * u), -log(2 * (1 - u))) }
+
+set.seed(2)
+### part (a): uniform points in a box, kept if under g
+nb <- 30000
+xb <- runif(nb, -6, 6); vb <- runif(nb, 0, exp(0.5))
+keep <- vb < g_demo(xb); xa <- xb[keep]; va <- vb[keep]
+### part (b): X ~ g / A_g, then V | X ~ Unif(0, g(X))
+nshow <- 800
+xr <- rlaplace(nshow); vr <- runif(nshow) * g_demo(xr)
+
+par(mfrow = c(1, 3), mar = c(4, 4, 2.2, 1))
+plot(xs, g_demo(xs), type = "l", lwd = 3, col = "steelblue", ylim = c(0, 1.7),
+     xlab = "x", ylab = "v", main = "(a) uniform on S_g, from a box")
+points(xa[1:nshow], va[1:nshow], pch = 19, cex = 0.45, col = adjustcolor("black", 0.6))
+hist(xa, breaks = seq(-6, 6, by = 0.3), freq = FALSE, col = "grey75", border = "white",
+     xlab = "x", main = "(a) histogram of X vs g(x) / A_g")
+lines(xs, g_demo(xs) / A_g, lwd = 3, col = "steelblue")
+plot(xs, g_demo(xs), type = "l", lwd = 3, col = "steelblue", ylim = c(0, 1.7),
+     xlab = "x", ylab = "v", main = "(b) X ~ g / A_g, V | X ~ Unif(0, g(X))")
+points(xr, vr, pch = 19, cex = 0.45, col = adjustcolor("black", 0.6))
+```
+
+### The algorithm in two forms
+
+**Form 1 (ratio form).** For each draw needed, repeat until acceptance:
+
+1. Draw $X \sim g(x)/A_g$.
+2. Draw $U \sim \text{Unif}(0,1)$.
+3. If $U < f(X)/g(X)$, accept $X$; otherwise return to step 1.
+
+**Form 2 (geometric form).** For each draw needed, repeat until acceptance:
+
+1. Draw $X \sim g(x)/A_g$.
+2. Draw $V \sim \text{Unif}(0, g(X))$, e.g. $V = U\,g(X)$ with
+   $U \sim \text{Unif}(0,1)$.
+3. If $V < f(X)$, i.e. the point $(X, V)$ lies in $S_f$, accept $X$;
+   otherwise return to step 1.
+
+The two forms are the same algorithm, since with $V = U\,g(X)$,
+$$
+V < f(X) \iff U < \frac{f(X)}{g(X)}.
+$$
+Form 1 is how the sampler is usually coded. Form 2 explains why it works,
+as shown next. Both evaluate $f$ and $g$ only at the proposed point, so
+unknown normalizing constants in $f$ (and in $g$) do not matter, as long as
+the functions actually used satisfy $g \ge f$.
+
+### Why the retained points have density $f$
+
+By part (b) of @thm-uniform-under-curve, steps 1–2 of Form 2 make $(X, V)$
+uniform on $S_g$. Because $g \ge f$, the region $S_f$ lies inside $S_g$.
+Step 3 keeps the point only when it lands in $S_f$. So for any set
+$B \subseteq S_f$,
+$$
+P\{(X, V) \in B \mid \text{accept}\}
+= \frac{P\{(X, V) \in B\}}{P\{(X, V) \in S_f\}}
+= \frac{\text{area}(B)/A_g}{A_f/A_g}
+= \frac{\text{area}(B)}{A_f}.
+$$
+This says a retained $(X, V)$ is **uniform on $S_f$**. By part (a) of
+@thm-uniform-under-curve with $h = f$, the retained $X$ has density
+$f(x)/A_f$, the normalized target. The draw is exact, not approximate.
+
+The same calculation gives the cost. Each proposal is accepted with
+probability
+$$
+P(\text{accept}) = P\{(X, V) \in S_f\} = \frac{A_f}{A_g},
+$$
+the ratio of the two areas. Proposals are independent, so the number needed
+per accepted draw is geometric with mean $A_g/A_f$. A tight envelope wastes
+few proposals and a loose one wastes many.
+
+@fig-envelope-scatter shows the whole picture for the standard normal target
+$f(x) = e^{-x^2/2}$ under the same Laplace envelope $g$. Here $A_f =
+\sqrt{2\pi} \approx 2.507$ and $A_g = 2e^{1/2} \approx 3.297$, so about
+$76\%$ of proposals are accepted.
 
 ```{r}
 #| label: fig-envelope-scatter
@@ -86,7 +189,6 @@ $V < f(X) \iff U < f(X)/g(X)$, but it exposes *why* rejection sampling works:
 #|   (red, under $f$ too) are uniformly distributed under $f$, so their
 #|   $x$-coordinates are draws from the normalized $f$."
 f_demo <- function(x) exp(-x^2 / 2)
-g_demo <- function(x) exp(0.5 - abs(x))
 xs <- seq(-6, 6, length.out = 500)
 
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
@@ -99,7 +201,6 @@ legend("topright", bty = "n", fill = adjustcolor(c("steelblue", "firebrick"), 0.
 
 set.seed(1)
 N <- 600
-rlaplace <- function(n) { u <- runif(n); ifelse(u < 0.5, log(2 * u), -log(2 * (1 - u))) }
 xp <- rlaplace(N); vp <- runif(N) * g_demo(xp); acc <- vp < f_demo(xp)
 plot(xs, g_demo(xs), type = "l", lwd = 3, col = "steelblue", ylim = c(0, 1.75), xlab = "x", ylab = "v")
 lines(xs, f_demo(xs), lwd = 3, col = "firebrick")
@@ -112,16 +213,34 @@ legend("topright", bty = "n", pch = c(19, 4), col = c("firebrick", "gray40"),
 ## Example 1: Sampling a Normal from a Laplace Envelope
 
 The figure above already uses a concrete, closed-form example worth stating
-in full, because it is simple enough to check every claim exactly. The target
-is the unnormalized standard normal density $f(x) = e^{-x^2/2}$. Take
-$g_0(x) = \tfrac12 e^{-|x|}$, the standard Laplace (double-exponential)
-density, which is trivial to sample by inversion. Since
-$e^{-x^2/2} \le e^{1/2-|x|}$ for all $x$ (equality exactly at $|x| = 1$, where
-the two curves in the figure touch), the envelope
+in full, because it is simple enough to check every claim exactly.
+
+**Target.** The unnormalized standard normal density
 $$
-g(x) = 2e^{1/2}\,g_0(x) = e^{1/2 - |x|} \ \ge\ f(x)
+f(x) = e^{-x^2/2}, \qquad x \in \mathbb{R}, \qquad A_f = \sqrt{2\pi}.
 $$
-is valid, and the exact acceptance rate is
+
+**Envelope.** A scaled Laplace (double-exponential) density
+$$
+g(x) = e^{1/2 - |x|} = 2e^{1/2}\,g_0(x), \qquad g_0(x) = \tfrac12 e^{-|x|},
+\qquad A_g = 2e^{1/2}.
+$$
+The normalized envelope $g_0$ is the standard Laplace density, which is
+sampled by inversion (`rlaplace` above).
+
+::: {.proof}
+**$g \ge f$ for every $x$.** Compare the logs:
+$$
+\log g(x) - \log f(x) = \tfrac12 - |x| + \tfrac{x^2}{2}
+= \tfrac12\big(|x|^2 - 2|x| + 1\big) = \tfrac12\big(|x| - 1\big)^2 \ \ge\ 0,
+$$
+with equality exactly at $|x| = 1$, where the two curves in the figure touch.
+The constant $e^{1/2}$ is the smallest that works: with $e^{a - |x|}$ the gap
+is $\tfrac12(|x|-1)^2 + a - \tfrac12$, which is negative at $|x| = 1$ when
+$a < \tfrac12$.
+:::
+
+The exact acceptance rate is
 $$
 P(\text{accept}) = \frac{\int f(x)\,dx}{\int g(x)\,dx}
  = \frac{\sqrt{2\pi}}{2e^{1/2}} \approx 0.760.
@@ -152,34 +271,77 @@ knitr::kable(data.frame(
 Roughly 3 in 4 proposals are kept — a tight, efficient envelope, and the
 benchmark against which the next example's Cauchy envelope should be judged.
 
-### Shinylive App for Rejection Sampling for Normal with Laplace Envelope {#sec-rejection-app}
-
-There is a [shinylive app](../../shinylive_apps/app_rejection.html) to show how the tightness of the envelope determines the efficiency of rejection sampling: a looser envelope still gives exact draws but rejects more of them.
+[]{#rejection-app}A [shinylive app](../../shinylive_apps/app_rejection.html) shows how the tightness of the envelope determines the efficiency of rejection sampling: a looser envelope still gives exact draws but rejects more of them.
 
 ## Example 2: Sampling a Gamma Distribution
 
 The Laplace envelope above was designed to match a normal target. A
 different target needs a different envelope. Here is one built for
-$\text{Gamma}(\alpha, 1)$, $\alpha > 1$, whose unnormalized log-density is
-$(\alpha-1)\log x - x$.
+$\text{Gamma}(\alpha, 1)$ with $\alpha > 1$. Write $m = \alpha - 1 > 0$ for
+the mode and $c = 2\alpha - 1 = 2m + 1$.
+
+**Target.** The unnormalized Gamma density (the kernel, without $1/\Gamma(\alpha)$)
+$$
+f(x) = x^{\alpha-1}e^{-x} = x^m e^{-x}, \qquad x > 0,
+$$
+with area $A_f = \Gamma(\alpha)$ and maximum $f(m) = m^m e^{-m}$ at the mode.
+
+**Envelope.** A Cauchy-shaped curve centred at the mode, scaled to touch $f$
+there:
+$$
+g(x) = \frac{m^m e^{-m}}{1 + (x - m)^2/c}, \qquad x \in \mathbb{R}.
+$$
+Normalized, $g$ is the density of $m + \sqrt{c}\,C$ with $C$ standard Cauchy,
+so sampling $g$ needs only `rcauchy`. Its area is
+$A_g = m^m e^{-m}\,\pi\sqrt{c}$. The heavy Cauchy tails, decaying like
+$x^{-2}$, are what let $g$ stay above the exponentially decaying $f$ for
+large $x$. A normal-shaped envelope would eventually fall below it.
+
+::: {.proof}
+**$g \ge f$ for every $x > 0$.** For $x \le 0$ there is nothing to show,
+since $f = 0$ there. For $x > 0$ consider the log gap
+$$
+D(x) = \log g(x) - \log f(x) = m\log m - m - \log\!\Big(1 + \frac{(x-m)^2}{c}\Big) - m\log x + x.
+$$
+Clearly $D(m) = 0$. Differentiating,
+$$
+D'(x) = 1 - \frac{m}{x} - \frac{2(x-m)}{c + (x-m)^2}
+= (x - m)\left[\frac{1}{x} - \frac{2}{c + (x-m)^2}\right]
+= \frac{(x-m)\,\big[c + (x-m)^2 - 2x\big]}{x\,\big(c + (x-m)^2\big)}.
+$$
+With $c = 2m + 1$ the bracket is a perfect square:
+$c + (x-m)^2 - 2x = (x-m)^2 - 2(x-m) + 1 = (x - m - 1)^2 \ge 0$. So
+$$
+D'(x) = \frac{(x-m)(x-m-1)^2}{x\,\big(c + (x-m)^2\big)},
+$$
+which has the sign of $x - m$. Hence $D$ decreases on $(0, m)$ and increases
+on $(m, \infty)$, its minimum is $D(m) = 0$, and $D(x) \ge 0$, i.e.
+$g(x) \ge f(x)$, for all $x > 0$. This also shows where the scale
+$c = 2\alpha - 1$ comes from: it is the value that turns the bracket into a
+square.
+:::
+
+The acceptance rate is therefore
+$$
+P(\text{accept}) = \frac{A_f}{A_g} = \frac{\Gamma(\alpha)}{\pi\sqrt{2\alpha-1}\;(\alpha-1)^{\alpha-1}e^{-(\alpha-1)}}.
+$$
+It is $e/(\pi\sqrt 3) \approx 0.50$ at $\alpha = 2$, and by Stirling's formula
+it rises to $1/\sqrt{\pi} \approx 0.564$ as $\alpha \to \infty$.
 
 ```{r}
 #| label: gamma-envelope-fns
-### log of a function that is (for alpha > 2) always above the Gamma(alpha, 1) log-density
+### log Gamma kernel f(x) = x^(alpha-1) exp(-x), without 1/Gamma(alpha)
+log_f_gamma <- function(x, alpha) (alpha - 1) * log(x) - x
+### log of the Cauchy-shaped envelope g, which touches f at the mode alpha - 1
 log_g_gamma <- function(x, alpha) {
     (alpha - 1) * (log(alpha - 1) - 1) - log(1 + (x - (alpha - 1))^2 / (2 * alpha - 1))
 }
 ```
 
-### Where the envelope comes from
+### Checking the envelope numerically
 
-`log_g_gamma` is not an arbitrary formula. Up to an additive constant that
-depends only on $\alpha$, it is the log-density of a **rescaled, shifted
-Cauchy** distribution: writing $Y = (\alpha-1) + \sqrt{2\alpha-1}\,C$ for a
-standard Cauchy $C$, a change of variables gives
-$\log f_Y(y) = -\log\pi - \tfrac12\log(2\alpha-1) - \log\!\big(1 + (y-(\alpha-1))^2/(2\alpha-1)\big)$,
-which differs from `log_g_gamma(y, alpha)` only by a term that does not
-depend on $y$. We can check this numerically rather than take it on faith:
+The proof uses the **unnormalized** $f$, and this matters. Up to a constant,
+`log_g_gamma` is the log-density of $m + \sqrt{c}\,C$:
 
 ```{r}
 #| label: verify-cauchy-link
@@ -190,26 +352,33 @@ log_f_Y <- dcauchy((x_check - (alpha_check - 1)) / sqrt(2 * alpha_check - 1), lo
 range(log_g_gamma(x_check, alpha_check) - log_f_Y)   # constant across x confirms the claim
 ```
 
-So sampling the envelope is just sampling a (rescaled) Cauchy, and the
-constant in `log_g_gamma` was chosen so that $g$ touches the Gamma density
-exactly at the shared mode $x = \alpha - 1$. Whether $g$ stays *above* the
-Gamma density everywhere else is a separate question, and the docstring's
-claim "alpha must be > 2" is a claim about exactly that:
+@tbl-envelope-threshold computes the minimum gap $\min_x \{\log g(x) - \log f(x)\}$
+on a fine grid, both for the kernel $f$ used in the proof and for the
+normalized density `dgamma` $= f/\Gamma(\alpha)$.
 
 ```{r}
 #| label: tbl-envelope-threshold
-#| tbl-cap: "Checks that a proposed envelope really lies above the target density, which rejection sampling requires, for several parameter values.
-#|   Minimum of log g(x) - log f(x) over x > 0, for several alpha. Negative means the envelope is violated somewhere."
-alphas_check <- c(1.1, 1.5, 1.9, 1.99, 2.0, 2.01, 2.1, 2.5, 3, 4.5)
+#| tbl-cap: "Checks that the Cauchy envelope lies above the Gamma target, and shows that this depends on which version of the target is used.
+#|   Minimum of log g(x) - log f(x) over x > 0, for several alpha. Negative means the envelope is violated somewhere.
+#|   Against the kernel x^(alpha-1) exp(-x) the gap is never negative, as proved. Against the normalized
+#|   density it is -log Gamma(alpha), which is negative for 1 < alpha < 2 because Gamma(alpha) < 1 there."
+alphas_check <- c(1.1, 1.5, 1.9, 2.0, 2.5, 3, 4.5, 10)
 xv <- seq(1e-6, 60, length.out = 2e4)
-gaps <- vapply(alphas_check, function(a) min(log_g_gamma(xv, a) - dgamma(xv, a, log = TRUE)), numeric(1))
-knitr::kable(data.frame(alpha = alphas_check, min_log_gap = gaps, envelope_valid = gaps >= 0), digits = 5)
+gap_kernel <- vapply(alphas_check, function(a) min(log_g_gamma(xv, a) - log_f_gamma(xv, a)), numeric(1))
+gap_dgamma <- vapply(alphas_check, function(a) min(log_g_gamma(xv, a) - dgamma(xv, a, log = TRUE)), numeric(1))
+knitr::kable(data.frame(alpha = alphas_check, gap_kernel = gap_kernel, gap_dgamma = gap_dgamma),
+             digits = 5, col.names = c("alpha", "min gap vs kernel f", "min gap vs dgamma"))
 ```
 
-The gap is exactly $0$ at $\alpha = 2$ and negative below it: the Cauchy-based
-envelope is tangent to the Gamma density at $\alpha = 2$ and crosses below it
-for smaller $\alpha$, so $\alpha > 2$ is precisely the validity condition, not
-a conservative rule of thumb.
+The gap against the kernel is $0$ for every $\alpha$, attained at the mode,
+exactly as the proof says. Against `dgamma` it equals $-\log\Gamma(\alpha)$.
+That is negative for $1 < \alpha < 2$, so $g$ would *not* cover the normalized
+density there. For $\alpha > 2$ it is positive, so $g$ still covers it but
+with a wasted factor $\Gamma(\alpha)$, and the acceptance rate drops to
+$1/A_g$ instead of $\Gamma(\alpha)/A_g$. The lesson is the one stated with
+the algorithm: the inequality $g \ge f$ must hold for the functions
+*actually used* in the ratio $f/g$. Here the right choice is the kernel,
+which needs no $\Gamma(\alpha)$ at all.
 
 ### Sampling function
 
@@ -223,11 +392,12 @@ only the shortfall.
 sample_gamma_rej <- function(n, alpha, max_tries = 2e6) {
     out <- numeric(0); tries <- 0
     while (length(out) < n) {
-        if (tries > max_tries) stop("acceptance rate too low for this alpha: envelope is too loose")
+        if (tries > max_tries) stop("acceptance rate too low: envelope is too loose")
         m <- n - length(out)
         x <- rcauchy(m) * sqrt(2 * alpha - 1) + (alpha - 1)
         tries <- tries + m
-        keep <- log(runif(m)) < dgamma(x, shape = alpha, log = TRUE) - log_g_gamma(x, alpha)
+        x <- x[x > 0]                              # f = 0 for x <= 0: always rejected
+        keep <- log(runif(length(x))) < log_f_gamma(x, alpha) - log_g_gamma(x, alpha)
         out <- c(out, x[keep])
     }
     structure(out[seq_len(n)], accept.rate = n / tries)
@@ -239,18 +409,20 @@ sample_gamma_rej <- function(n, alpha, max_tries = 2e6) {
 ```{r}
 #| label: tbl-gamma-tests
 #| tbl-cap: "Shows how the efficiency of the Gamma rejection sampler, measured by its acceptance rate, changes with the shape parameter.
-#|   Acceptance rate falls sharply as alpha grows: the Cauchy envelope
-#|   is tuned to match curvature at alpha = 2 and gets looser as the Gamma
-#|   density becomes more Gaussian-shaped further from that point."
+#|   The simulated acceptance rate matches the exact rate A_f / A_g. It rises slowly with alpha
+#|   towards 1/sqrt(pi) = 0.564, and the KS statistics show no departure from the Gamma distribution."
+acc_theory <- function(a) exp(lgamma(a) - log(pi) - 0.5 * log(2 * a - 1) - (a - 1) * (log(a - 1) - 1))
 set.seed(3)
-alphas_test <- c(2.1, 2.5, 4.5)
+alphas_test <- c(1.2, 2.5, 4.5, 20)
 gamma_tests <- lapply(alphas_test, function(a) sample_gamma_rej(2000, a))
 knitr::kable(data.frame(
     alpha = alphas_test,
+    accept_theory = acc_theory(alphas_test),
     accept_rate = vapply(gamma_tests, attr, numeric(1), "accept.rate"),
     ks_stat = mapply(function(x, a) suppressWarnings(ks.test(x, "pgamma", a))$statistic,
                       gamma_tests, alphas_test)
-), digits = 4, col.names = c("alpha", "acceptance rate", "KS statistic vs true Gamma"))
+), digits = 4, col.names = c("alpha", "exact acceptance", "simulated acceptance",
+                             "KS statistic vs true Gamma"))
 ```
 
 ```{r}
@@ -272,10 +444,12 @@ for (i in 1:3) {
 ```
 
 The Q-Q plots confirm exactness at every $\alpha$: rejection sampling never
-trades accuracy for speed, only speed changes. Efficient random-number
-generators for the Gamma distribution (as used inside `rgamma` itself) use
-envelopes that stay tight across a much wider range of $\alpha$; see Marsaglia
-& Tsang (2000, *ACM TOMS*) for the algorithm R actually uses.
+trades accuracy for speed, only speed changes. About half of all proposals
+are rejected for any $\alpha$, so this envelope is less efficient than the
+Laplace envelope of Example 1. Efficient random-number generators for the
+Gamma distribution (as used inside `rgamma` itself) use envelopes that are
+much tighter; see Marsaglia & Tsang (2000, *ACM TOMS*) for the algorithm R
+actually uses.
 
 ### Shinylive App for Rejection Sampling from a Gamma Density with a Cauchy Envelope {#sec-gamma-rejection-app}
 
@@ -306,6 +480,19 @@ their slopes (the log-density's derivative), with no hand-crafted formula.
 Because $g$ is piecewise-exponential, both its normalizing integral and its
 inverse CDF are closed-form on each piece, so sampling from $g$ is cheap.
 
+::: {.proof}
+**The tangent-line inequality.** Let $h = \log f$ be concave and
+differentiable on an interval, and let $x_j$ and $x$ be two points in it. For
+$t \in (0, 1]$, concavity gives
+$h\big(x_j + t(x - x_j)\big) \ge (1-t)\,h(x_j) + t\,h(x)$, which rearranges to
+$$
+\frac{h\big(x_j + t(x - x_j)\big) - h(x_j)}{t} \ \ge\ h(x) - h(x_j).
+$$
+Letting $t \to 0$, the left side tends to $h'(x_j)(x - x_j)$, so
+$h(x) \le h(x_j) + h'(x_j)(x - x_j) = \ell_j(x)$. This holds for every $j$,
+so $h(x) \le \min_j \ell_j(x) = \log g(x)$ and $f \le g$.
+:::
+
 ### The adaptive algorithm
 
 **Adaptive rejection sampling** (Gilks & Wild, 1992) refines the hull as it
@@ -323,15 +510,62 @@ derivative are required (a derivative-free variant uses secants in place of
 tangents). The `ars` package implements this for any user-supplied
 log-concave `f`.
 
-### Example 3: Truncated Normal
+## Example 3: Truncated Normal by Adaptive Rejection Sampling
 
 The standard normal is log-concave ($\log f(x) = -x^2/2$ is concave), and
 truncating to $[l, u]$ only shrinks the domain — it cannot break concavity —
 so a truncated normal is log-concave too, and `ars` applies to it directly.
+Explicitly, for $l < u$ (either may be infinite):
+
+**Target.**
+$$
+f(x) = e^{-x^2/2}\,\mathbb{1}\{l < x < u\}, \qquad h(x) = \log f(x) = -\tfrac{x^2}{2} \ \text{ on } (l, u).
+$$
+
+**Envelope (ARS).** With tangent points $x_1 < \cdots < x_k$ in $[l, u]$, the
+tangent at $x_j$ is
+$$
+\ell_j(x) = -\tfrac{x_j^2}{2} - x_j(x - x_j) = \tfrac{x_j^2}{2} - x_j x.
+$$
+Adjacent tangents $\ell_j$ and $\ell_{j+1}$ cross where
+$\tfrac{x_j^2}{2} - x_j z = \tfrac{x_{j+1}^2}{2} - x_{j+1} z$, that is, at the
+midpoint
+$$
+z_j = \frac{x_j + x_{j+1}}{2}, \qquad j = 1, \ldots, k-1.
+$$
+The envelope uses tangent $j$ between $z_{j-1}$ and $z_j$, with $z_0 = l$ and
+$z_k = u$:
+$$
+g(x) =
+\begin{cases}
+\exp\big\{\tfrac{x_1^2}{2} - x_1 x\big\}, & l < x \le z_1, \\[4pt]
+\exp\big\{\tfrac{x_2^2}{2} - x_2 x\big\}, & z_1 < x \le z_2, \\[4pt]
+\qquad\vdots & \qquad\vdots \\[4pt]
+\exp\big\{\tfrac{x_k^2}{2} - x_k x\big\}, & z_{k-1} < x < u.
+\end{cases}
+$$
+Each piece is an exponential function of $x$, so $g$ is easy to integrate and
+to sample piece by piece.
+
+::: {.proof}
+**$g \ge f$.** On the piece $z_{j-1} < x \le z_j$, $\log g(x) = \ell_j(x)$, and
+$$
+\ell_j(x) - h(x) = \tfrac{x_j^2}{2} - x_j x + \tfrac{x^2}{2} = \tfrac12 (x - x_j)^2 \ \ge\ 0.
+$$
+So $\log g \ge h$ on every piece, i.e. $g \ge f$ on $(l, u)$. This is the
+tangent-line inequality above, verified directly. (This $g$ is the same as
+the hull $\min_j \ell_j$: since $\ell_j(x) - \ell_{j+1}(x) = (x_{j+1} - x_j)(x - z_j)$,
+tangent $j$ lies below tangent $j+1$ exactly when $x \le z_j$, so on each
+piece the tangent in use is the lowest one.)
+:::
+
 This makes it a clean test case for comparing ARS against the most obvious
 alternative: sample the *untruncated* $N(0,1)$ and throw away anything
 outside $[l, u]$. That naive sampler is itself a (trivial) rejection
-sampler, with envelope $g$ equal to the untruncated normal, so it is exactly
+sampler, with envelope $g(x) = e^{-x^2/2}$ on all of $\mathbb{R}$. Here
+$g \ge f$ because $f = g\cdot\mathbb{1}\{l<x<u\}$, and the ratio $f/g$ is $1$
+inside $(l, u)$ and $0$ outside, so "accept if $U < f/g$" just means
+"keep $x$ if it lands in $(l, u)$". It is exactly
 correct — but its acceptance rate is just $P(l<Z<u)$, which collapses to
 essentially $0$ once $[l, u]$ sits out in the tail. ARS has no such
 weakness: its hull is built from the *truncated* target from the start, so
@@ -424,9 +658,228 @@ for (w in windows) {
 }
 ```
 
-### Shinylive App for Computing Normal Probability with Adaptive Rejection Sampling {#sec-ars-app}
+[]{#ars-app}A [shinylive app](../../shinylive_apps/app_ars_normal.html) runs this truncated normal example step by step. It shows how adaptive rejection sampling improves its envelope automatically, so that it becomes more efficient as sampling proceeds.
 
-There is a [shinylive app](../../shinylive_apps/app_ars.html) to show how adaptive rejection sampling improves its envelope automatically, so that it becomes more efficient as sampling proceeds.
+## Example 4: Gamma Distribution by ARS on $\log X$ {#sec-ars-loggamma}
+
+The Gamma$(\alpha, 1)$ log density $(\alpha-1)\log x - x$ has second
+derivative $-(\alpha-1)/x^2$, so it is concave only when $\alpha \ge 1$. For
+$\alpha < 1$ the density is not log-concave (it rises to $\infty$ at $x=0$)
+and ARS cannot be applied to $X$ directly. A change of variable fixes this.
+Let $Y = \log X$. By the Jacobian $dx/dy = e^y$, $Y$ has density
+$$
+f_Y(y) \propto \exp\{h(y)\}, \qquad h(y) = \alpha y - e^y,
+$$
+with $h'(y) = \alpha - e^y$ and $h''(y) = -e^y < 0$. So $\log f_Y$ is concave
+for **every** $\alpha > 0$.
+
+**Target.** For $X$ truncated to $(l, u)$, with $a = \log l$ and $b = \log u$
+(so $a = -\infty$ when $l = 0$ and $b = \infty$ when $u = \infty$),
+$$
+f(y) = \exp\{\alpha y - e^y\}\,\mathbb{1}\{a < y < b\}.
+$$
+
+**Envelope (ARS).** With tangent points $y_1 < \cdots < y_k$ in $(a, b)$, the
+tangent at $y_j$ is
+$$
+\ell_j(y) = h(y_j) + h'(y_j)(y - y_j) = (\alpha - e^{y_j})\,y + e^{y_j}(y_j - 1),
+$$
+using $h(y_j) - y_j h'(y_j) = e^{y_j}(y_j - 1)$. Adjacent tangents $\ell_j$ and
+$\ell_{j+1}$ cross at
+$$
+z_j = \frac{e^{y_{j+1}}(y_{j+1} - 1) - e^{y_j}(y_j - 1)}{e^{y_{j+1}} - e^{y_j}},
+\qquad j = 1, \ldots, k-1.
+$$
+The envelope uses tangent $j$ between $z_{j-1}$ and $z_j$, with $z_0 = a$ and
+$z_k = b$:
+$$
+g(y) =
+\begin{cases}
+\exp\big\{(\alpha - e^{y_1})\,y + e^{y_1}(y_1 - 1)\big\}, & a < y \le z_1, \\[4pt]
+\exp\big\{(\alpha - e^{y_2})\,y + e^{y_2}(y_2 - 1)\big\}, & z_1 < y \le z_2, \\[4pt]
+\qquad\vdots & \qquad\vdots \\[4pt]
+\exp\big\{(\alpha - e^{y_k})\,y + e^{y_k}(y_k - 1)\big\}, & z_{k-1} < y < b.
+\end{cases}
+$$
+Each piece is an exponential function of $y$. If $a = -\infty$, the first
+piece must rise with slope $\alpha - e^{y_1} > 0$, i.e. $y_1 < \log\alpha$, so
+that $g$ decays to the left. If $b = \infty$, the last piece must fall, i.e.
+$y_k > \log\alpha$. Otherwise $g$ has infinite area and cannot be
+normalized.
+
+::: {.proof}
+**$g \ge f$.** On the piece $z_{j-1} < y \le z_j$, $\log g(y) = \ell_j(y)$, and
+$$
+\ell_j(y) - h(y) = e^{y} - e^{y_j} - e^{y_j}(y - y_j)
+= e^{y_j}\big(e^{t} - 1 - t\big), \qquad t = y - y_j,
+$$
+which is $\ge 0$ because $e^t \ge 1 + t$ for all $t$. So $\log g \ge h$ on every
+piece, i.e. $g \ge f$ on $(a, b)$. (As in Example 3, this $g$ is the same as
+the hull $\min_j \ell_j$: since
+$\ell_j(y) - \ell_{j+1}(y) = (e^{y_{j+1}} - e^{y_j})(y - z_j)$, tangent $j$ lies
+below tangent $j+1$ exactly when $y \le z_j$.)
+:::
+
+ARS can sample $Y$, and $X = e^Y$ is then an exact
+Gamma draw. Truncating $X$ to $(l, u)$ just truncates $Y$ to
+$(\log l, \log u)$, which keeps $h$ concave. With $l = 0$ the lower end is
+$-\infty$, and the left tail of $Y$ is long when $\alpha$ is small: $h(y)
+\approx \alpha y$ there, an exponential tail with the slow rate $\alpha$.
+
+It is worth writing ARS out in full here. The `ars` package fails on this
+target when $\alpha < 1$. For $\alpha = 0.3$ its draws of $\log X$ have
+mean about $-5.3$ (over several seeds) instead of the true $E(\log X) =
+\psi(0.3) = -3.50$, where $\psi$ is the digamma function. For $\alpha = 0.05$
+it prints repeated internal errors (`ifault = 5`) and still returns biased
+draws. Both problems seem to come from the long, nearly linear left tail of
+$h$. The sampler below follows the three steps of the adaptive
+algorithm above. Every rejected point becomes a new tangent. All areas and
+inverse CDFs are computed on the log scale, so a piece with very little
+mass cannot overflow or underflow. The squeeze test is left out for clarity,
+so every proposal costs one evaluation of $h$.
+
+```{r}
+#| label: ars-loggamma-fns
+### tangent-line hull for a concave h on (a, b); a = -Inf and/or b = Inf allowed.
+### z holds the piece boundaries: a, the tangent intersections, b
+build_hull <- function(ys, h, hprime, a, b) {
+    ys <- sort(unique(ys)); hy <- h(ys); hpy <- hprime(ys); k <- length(ys)
+    z <- c(a, numeric(k - 1), b)
+    for (i in seq_len(k - 1))
+        z[i + 1] <- (hy[i + 1] - hy[i] - ys[i + 1] * hpy[i + 1] + ys[i] * hpy[i]) /
+                    (hpy[i] - hpy[i + 1])
+    list(x = ys, hx = hy, hp = hpy, z = z)
+}
+
+### hull value at the two ends of each piece (-Inf at an infinite end,
+### where the tangent slopes downhill), and log area under exp(piece)
+piece_ends <- function(hull) {
+    k <- length(hull$x)
+    lo <- hull$hx + hull$hp * (hull$z[1:k] - hull$x)
+    hi <- hull$hx + hull$hp * (hull$z[2:(k + 1)] - hull$x)
+    lo[is.infinite(hull$z[1:k])] <- -Inf; hi[is.infinite(hull$z[2:(k + 1)])] <- -Inf
+    cbind(lo, hi)
+}
+log_areas <- function(hull, v) {
+    m <- pmax(v[, 1], v[, 2]); d <- pmin(v[, 1], v[, 2])
+    flat <- abs(hull$hp) < 1e-10
+    ifelse(flat, v[, 1] + log(diff(hull$z)), m + log1p(-exp(d - m)) - log(abs(hull$hp)))
+}
+
+### one draw from the normalized envelope: pick a piece in proportion to its
+### area, then invert that piece's exponential CDF (on the log scale)
+sample_hull <- function(hull) {
+    v <- piece_ends(hull); la <- log_areas(hull, v)
+    j <- sample.int(length(la), 1, prob = exp(la - max(la)))
+    U <- runif(1)
+    if (abs(hull$hp[j]) < 1e-10) {
+        y <- hull$z[j] + U * (hull$z[j + 1] - hull$z[j]); logg <- hull$hx[j]
+    } else {
+        m <- max(v[j, ])
+        logg <- m + log((1 - U) * exp(v[j, 1] - m) + U * exp(v[j, 2] - m))
+        y <- hull$x[j] + (logg - hull$hx[j]) / hull$hp[j]
+    }
+    c(y = unname(y), logg = unname(logg))
+}
+
+### ARS for Y = log X, X ~ Gamma(alpha, 1) truncated to (l, u):
+### h(y) = alpha*y - exp(y) is concave for every alpha > 0
+ars_loggamma <- function(n, alpha, l = 0, u = Inf) {
+    a <- log(l); b <- log(u); m <- log(alpha)       # m = mode of h
+    h <- function(y) alpha * y - exp(y)
+    hprime <- function(y) alpha - exp(y)
+    ### starting points: an infinite end needs a tangent sloping downhill
+    ### towards it, i.e. a point left of the mode if a = -Inf, right if b = Inf
+    lo <- if (is.finite(a)) a else min(b, m) - 1
+    hi <- if (is.finite(b)) b else max(a, m) + 1
+    hull <- build_hull(lo + (hi - lo) * c(0.1, 0.5, 0.9), h, hprime, a, b)
+    y <- numeric(n); got <- 0; proposed <- 0
+    while (got < n) {
+        d <- sample_hull(hull); proposed <- proposed + 1
+        if (log(runif(1)) <= h(d["y"]) - d["logg"]) {
+            got <- got + 1; y[got] <- d["y"]
+        } else {                                   # rejected: add a tangent there
+            hull <- build_hull(c(hull$x, d["y"]), h, hprime, a, b)
+        }
+    }
+    list(x = exp(y), y = y, accept = n / proposed, tangents = length(hull$x))
+}
+```
+
+@tbl-ars-loggamma checks the sampler on shapes well below and above $1$, with
+and without truncation. The true truncated mean comes from the identity
+$x\,\text{dgamma}(x;\alpha) = \alpha\,\text{dgamma}(x;\alpha+1)$, which gives
+$$
+E(X \mid l < X < u) = \alpha\,\frac{P_{\alpha+1}(l, u)}{P_\alpha(l, u)},
+\qquad P_\alpha(l, u) = P(l < X < u),\ X \sim \text{Gamma}(\alpha, 1).
+$$
+
+```{r}
+#| label: tbl-ars-loggamma
+#| tbl-cap: "Verifies the ARS sampler on log X for truncated Gamma distributions, including shapes below 1 where the Gamma density itself is not log-concave.
+#|   Each row uses 5,000 draws. The acceptance rate stays above 99% after only
+#|   a dozen or two tangents, the sample means match the exact truncated means,
+#|   and the Kolmogorov-Smirnov p-values show no departure from the target."
+### P(l < X < u) for X ~ Gamma(alpha, 1)
+p_trunc <- function(alpha, l, u) pgamma(u, alpha) - pgamma(l, alpha)
+lg_cases <- list(c(0.05, 0, Inf), c(0.3, 0, Inf), c(0.3, 1, Inf), c(0.5, 0, 2),
+                 c(2, 0.5, 3), c(5, 0, 1), c(1, 15, Inf))
+set.seed(11)
+lg_tab <- t(sapply(lg_cases, function(cc) {
+    alpha <- cc[1]; l <- cc[2]; u <- cc[3]
+    r <- ars_loggamma(5000, alpha, l, u)
+    F_tr <- function(q) (pgamma(pmin(pmax(q, l), u), alpha) - pgamma(l, alpha)) /
+        p_trunc(alpha, l, u)
+    c(alpha = alpha, l = l, u = u, accept = r$accept, tangents = r$tangents,
+      true_mean = alpha * p_trunc(alpha + 1, l, u) / p_trunc(alpha, l, u),
+      sample_mean = mean(r$x), ks_p = ks.test(r$x, F_tr)$p.value)
+}))
+knitr::kable(lg_tab, digits = c(2, 2, 2, 4, 0, 4, 4, 3),
+             col.names = c("alpha", "l", "u", "acceptance", "tangents",
+                           "true E(X)", "sample mean", "KS p-value"))
+```
+
+@fig-ars-loggamma shows the draws for three of these cases on both scales.
+On the $y$ scale every target is a smooth log-concave curve, even for
+$\alpha = 0.3$, where the density of $X$ (bottom left) has a pole at $0$.
+Truncation at $l = 1$ (middle) or to $(0.5, 3)$ (right) only cuts the
+$y$-density at $\log l$ and $\log u$.
+
+```{r}
+#| label: fig-ars-loggamma
+#| fig-width: 10
+#| fig-height: 6.2
+#| fig-cap: "Verifies that sampling Y = log X by adaptive rejection sampling and returning X = exp(Y) gives exact draws from the truncated Gamma distribution, including for shapes below 1.
+#|   Top: histograms of the ARS draws of Y = log X against the true log-concave
+#|   density of Y (red). Bottom: the same draws transformed to X = exp(Y),
+#|   against the truncated Gamma density. The bottom-left density has a pole at 0
+#|   and is not log-concave, but the density of Y above it is."
+fig_cases <- list(c(0.3, 0, Inf), c(0.3, 1, Inf), c(2, 0.5, 3))
+set.seed(12)
+draws <- lapply(fig_cases, function(cc) ars_loggamma(5000, cc[1], cc[2], cc[3]))
+lab <- function(cc) sprintf("alpha = %g, (l, u) = (%g, %g)", cc[1], cc[2], cc[3])
+par(mfrow = c(2, 3), mar = c(4, 4, 2.2, 1))
+for (i in 1:3) {
+    cc <- fig_cases[[i]]; P <- p_trunc(cc[1], cc[2], cc[3])
+    hist(draws[[i]]$y, breaks = 30, freq = FALSE, col = "steelblue", border = "white",
+         main = lab(cc), xlab = "y = log x", cex.main = 0.95)
+    curve(exp(cc[1] * x - exp(x) - lgamma(cc[1])) / P, add = TRUE, lwd = 3,
+          col = "firebrick", n = 400)
+}
+for (i in 1:3) {
+    cc <- fig_cases[[i]]; P <- p_trunc(cc[1], cc[2], cc[3]); x <- draws[[i]]$x
+    xmax <- quantile(x, 0.99)          # crop the long right tail for display
+    hist(x, breaks = c(seq(cc[2], xmax, length.out = 30), max(x)), freq = FALSE,
+         xlim = c(cc[2], xmax), col = "grey60", border = "white",
+         main = lab(cc), xlab = "x = exp(y)", cex.main = 0.95)
+    curve(dgamma(x, cc[1]) / P, from = max(cc[2], 1e-3), to = xmax, add = TRUE,
+          lwd = 3, col = "firebrick", n = 400)
+}
+```
+
+### Shinylive App for Sampling a Gamma Distribution by ARS on $\log X$ {#sec-ars-loggamma-app}
+
+There is a [shinylive app](../../shinylive_apps/app_ars-loggamma.html) that runs this sampler one proposal at a time. You choose $\alpha \in (0, 5]$ and a truncation interval $(l, u)$. The app shows the tangent hull adapting to $h(y)$, and the histograms of $Y$ and $X = e^Y$ filling in. A sidebar table compares the running estimates of $E(\log X)$ and $E(X)$ with their exact values.
 
 ## Summary
 
@@ -441,6 +894,10 @@ There is a [shinylive app](../../shinylive_apps/app_ars.html) to show how adapti
 - Adaptive rejection sampling automates envelope construction for any
   log-concave target via tangent lines to $\log f$, tightening the envelope
   on every rejection.
+- A target that is not log-concave can often be made so by a change of
+  variable: the Gamma density with $\alpha < 1$ is not log-concave, but
+  the density of $\log X$ is for every $\alpha$, so ARS on $\log X$
+  followed by $X = e^Y$ gives exact Gamma draws.
 - Limitations: an envelope with a bounded ratio $g/f$ may not exist when $f$
   has heavier tails than any convenient $g$, and in high dimensions the
   acceptance rate of a product envelope typically decays exponentially with

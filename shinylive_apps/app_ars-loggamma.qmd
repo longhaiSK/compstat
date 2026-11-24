@@ -1,6 +1,6 @@
 ---
 engine: markdown
-title: "Sampling a Gamma Distribution by Adaptive Rejection Sampling on log X"
+title: "Adaptive Rejection Sampling on log X for the Truncated Gamma Distribution"
 pagetitle: "ars-loggamma-shinylive"
 ---
 
@@ -175,10 +175,13 @@ q_logx <- function(p, tg) {
     y
 }
 
+### plotting windows are capped at |value| <= AXIS_MAX
+AXIS_MAX <- 15
 ### plotting window for y: the truncation limits where finite, otherwise the
-### 0.1% / 99.9% quantiles of the (truncated) distribution of log X
-y_window <- function(tg) c(if (is.finite(tg$a)) tg$a else q_logx(0.001, tg),
-                           if (is.finite(tg$b)) tg$b else q_logx(0.999, tg))
+### 0.1% / 99.9% quantiles of the (truncated) distribution of log X,
+### then cut to [-AXIS_MAX, AXIS_MAX]
+y_window <- function(tg) c(max(if (is.finite(tg$a)) tg$a else q_logx(0.001, tg), -AXIS_MAX),
+                           min(if (is.finite(tg$b)) tg$b else q_logx(0.999, tg),  AXIS_MAX))
 
 trunc_label <- function(tg) {
     if (tg$l == 0 && !is.finite(tg$u)) "" else
@@ -240,6 +243,7 @@ draw_panels <- function(tg, hull, y, target_n, done, last_y, last_accept) {
     ## 3: histogram of X = e^Y against the Gamma density
     xmin <- tg$l
     xmax <- if (is.finite(tg$u)) tg$u else exp(q_logx(0.995, tg))
+    if (xmin < AXIS_MAX) xmax <- min(xmax, AXIS_MAX)        # cap at AXIS_MAX unless l is beyond it
     xg <- seq(xmin + (xmax - xmin) / 1000, xmax - (xmax - xmin) / 1000, length.out = 500)
     fx <- dGamma_tr(xg, tg)
     cap <- max(fx[xg >= xmin + (xmax - xmin) / 40])        # density at 0 is infinite when alpha < 1
@@ -425,7 +429,7 @@ This is strictly concave for **every** $\alpha>0$: the troublesome term $(\alpha
 
 **The hull.** Where an end of the interval is infinite, the outermost piece of the envelope is infinite too, and it has finite area only if its tangent slopes down towards that end. The starting tangent points are chosen to guarantee this: with no truncation they are the mode $y^*=\log\alpha$ and $y^*\pm1$, so $h'>0$ at the leftmost point and $h'<0$ at the rightmost; with one finite end, the points run from near that end to one unit beyond the mode on the open side; with both ends finite they are at the quarter points, since every piece on a bounded interval is integrable. Without a lower limit, the left tail of $Y$ is exactly linear on the log scale, with slope $\alpha$, so the hull fits it almost perfectly; for small $\alpha$ this tail is very long, which is the log-scale picture of the Gamma density piling up near $x=0$.
 
-**Panels.** Top: $h(y)$ (red) and the current hull (blue) on the window shown, which is the truncation interval where it is finite and otherwise runs to the 0.1% or 99.9% quantile of $Y$; it also shows the tangent points, the breakpoints between hull pieces (dotted), the truncation limits (orange) and the most recent candidate, accepted (green dot) or rejected (black x, which becomes a new tangent point). Middle: the histogram of the accepted $Y$ against the density of $\log X$, $f_Y(y)=e^{\alpha y-e^y}/\{\Gamma(\alpha)\,P(l<X<u)\}$ on $(\log l,\log u)$. Bottom: the histogram of $X=e^Y$ against the truncated Gamma density. For $\alpha<1$ and $l=0$ the density is infinite at $0$ and most of the draws fall in the first bin, while the same draws are spread out and easy to compare on the log scale.
+**Panels.** Top: $h(y)$ (red) and the current hull (blue) on the window shown, which is the truncation interval where it is finite and otherwise runs to the 0.1% or 99.9% quantile of $Y$, cut to $[-15, 15]$ (the $x$-axis of the bottom panel is likewise cut at $15$); it also shows the tangent points, the breakpoints between hull pieces (dotted), the truncation limits (orange) and the most recent candidate, accepted (green dot) or rejected (black x, which becomes a new tangent point). Middle: the histogram of the accepted $Y$ against the density of $\log X$, $f_Y(y)=e^{\alpha y-e^y}/\{\Gamma(\alpha)\,P(l<X<u)\}$ on $(\log l,\log u)$. Bottom: the histogram of $X=e^Y$ against the truncated Gamma density. For $\alpha<1$ and $l=0$ the density is infinite at $0$ and most of the draws fall in the first bin, while the same draws are spread out and easy to compare on the log scale.
 
 **Run summary** (in the sidebar, below the controls). The sample means of $\log X$ and $X$ with 95% intervals, against their exact values: $E(X\mid l<X<u)=\alpha\,P_{\alpha+1}(l,u)/P_{\alpha}(l,u)$, where $P_a(l,u)$ is the probability of $(l,u)$ under $\text{Gamma}(a,1)$, and $E(\log X\mid l<X<u)$ by numerical integration (it equals the digamma function $\psi(\alpha)$ without truncation). The status line gives the acceptance rate, which approaches 100% as tangent points accumulate.
 
@@ -598,10 +602,13 @@ q_logx <- function(p, tg) {
     y
 }
 
+### plotting windows are capped at |value| <= AXIS_MAX
+AXIS_MAX <- 15
 ### plotting window for y: the truncation limits where finite, otherwise the
-### 0.1% / 99.9% quantiles of the (truncated) distribution of log X
-y_window <- function(tg) c(if (is.finite(tg$a)) tg$a else q_logx(0.001, tg),
-                           if (is.finite(tg$b)) tg$b else q_logx(0.999, tg))
+### 0.1% / 99.9% quantiles of the (truncated) distribution of log X,
+### then cut to [-AXIS_MAX, AXIS_MAX]
+y_window <- function(tg) c(max(if (is.finite(tg$a)) tg$a else q_logx(0.001, tg), -AXIS_MAX),
+                           min(if (is.finite(tg$b)) tg$b else q_logx(0.999, tg),  AXIS_MAX))
 
 trunc_label <- function(tg) {
     if (tg$l == 0 && !is.finite(tg$u)) "" else
@@ -663,6 +670,7 @@ draw_panels <- function(tg, hull, y, target_n, done, last_y, last_accept) {
     ## 3: histogram of X = e^Y against the Gamma density
     xmin <- tg$l
     xmax <- if (is.finite(tg$u)) tg$u else exp(q_logx(0.995, tg))
+    if (xmin < AXIS_MAX) xmax <- min(xmax, AXIS_MAX)        # cap at AXIS_MAX unless l is beyond it
     xg <- seq(xmin + (xmax - xmin) / 1000, xmax - (xmax - xmin) / 1000, length.out = 500)
     fx <- dGamma_tr(xg, tg)
     cap <- max(fx[xg >= xmin + (xmax - xmin) / 40])        # density at 0 is infinite when alpha < 1
@@ -832,4 +840,4 @@ shinyApp(ui, server)
 
 ::::
 
-This app accompanies *[Rejection Sampling](../compstat_book/chapters/unit10_rejection_sampling.html#sec-ars-app)* in the book.
+This app accompanies *[Rejection Sampling](../compstat_book/chapters/unit10_rejection_sampling.html#sec-ars-loggamma-app)* in the book.
