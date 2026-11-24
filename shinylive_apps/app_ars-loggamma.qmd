@@ -141,11 +141,11 @@ log_ptrunc <- function(l, u, alpha) {
 ### normalized (truncated) densities of Y = log X and of X, zero outside the interval
 dlogGamma_tr <- function(y, tg) {
     d <- exp(tg$alpha * y - exp(y) - lgamma(tg$alpha) - log_ptrunc(tg$l, tg$u, tg$alpha))
-    ifelse(y > tg$a & y < tg$b, d, 0)
+    ifelse(y >= tg$a & y <= tg$b, d, 0)
 }
 dGamma_tr <- function(x, tg) {
     d <- exp(dgamma(x, tg$alpha, log = TRUE) - log_ptrunc(tg$l, tg$u, tg$alpha))
-    ifelse(x > tg$l & x < tg$u, d, 0)
+    ifelse(x >= tg$l & x <= tg$u, d, 0)
 }
 
 ### exact means: E(X) = alpha P_{alpha+1}(l, u) / P_alpha(l, u); E(log X) by integration
@@ -164,10 +164,10 @@ q_logx <- function(p, tg) {
     al <- tg$alpha; lP <- log_ptrunc(tg$l, tg$u, al)
     if (tg$l > qgamma(0.5, al)) {               # work with upper tails
         s1 <- pgamma(tg$l, al, lower.tail = FALSE, log.p = TRUE)
-        x <- qgamma(s1 + log1p(-p * exp(lP - s1)), al, lower.tail = FALSE, log.p = TRUE)
+        x <- qgamma(s1 + log1p(-p * exp(lP - s1)), al, lower.tail = FALSE, log.p = TRUE)  # log{S(l) - p P(l, u)}
     } else {
         f1 <- pgamma(tg$l, al, log.p = TRUE)
-        lt <- if (is.finite(f1)) f1 + log1p(p * expm1(lP - f1)) else log(p) + lP
+        lt <- if (is.finite(f1)) f1 + log1p(p * exp(lP - f1)) else log(p) + lP   # log{F(l) + p P(l, u)}
         x <- qgamma(lt, al, log.p = TRUE)
     }
     y <- log(x)
@@ -267,13 +267,17 @@ ui <- fluidPage(
             sliderInput("lim", "truncation (l, u) for X; u = 20 means ∞",
                         min = 0, max = U_MAX, value = c(0, U_MAX), step = 0.1),
             numericInput("n", "sample size", value = 1000, min = 10, step = 100),
+            ### symbol-only buttons; the title attribute gives each a hover tooltip
+            tags$style(".ctl-btn { font-size: 18px; padding: 2px 0; }"),
             fluidRow(
-                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
-                column(6, actionButton("next_step", "Next ↷", width = "100%"))),
-            div(style = "height: 6px;"),
-            fluidRow(
-                column(6, actionButton("finish", "Finish", width = "100%")),
-                column(6, actionButton("restart", "↺ Restart", width = "100%"))),
+                column(3, tagAppendAttributes(actionButton("play_pause", "▶", width = "100%",
+                                                           class = "ctl-btn"), title = "Play / Pause")),
+                column(3, tagAppendAttributes(actionButton("next_step", "↷", width = "100%",
+                                                           class = "ctl-btn"), title = "Next candidate")),
+                column(3, tagAppendAttributes(actionButton("finish", "⏭", width = "100%",
+                                                           class = "ctl-btn"), title = "Finish: run to the sample size")),
+                column(3, tagAppendAttributes(actionButton("restart", "↺", width = "100%",
+                                                           class = "ctl-btn"), title = "Restart"))),
             helpText("ARS runs on Y = log X, whose log density α y − e^y is concave for every ",
                      "α > 0; each accepted Y is returned as X = e^Y. Rejected candidates (black x) ",
                      "become new tangent points. Changing a setting restarts the run."),
@@ -303,7 +307,7 @@ server <- function(input, output, session) {
         rv$target_n <- max(10, round(valid_pos(input$n, 1000)))
         rv$done <- FALSE; rv$playing <- FALSE
         rv$last_y <- NULL; rv$last_accept <- NA
-        updateActionButton(session, "play_pause", label = "▶ Play")
+        updateActionButton(session, "play_pause", label = "▶")
     }
     isolate(reset_run())
 
@@ -319,7 +323,7 @@ server <- function(input, output, session) {
     finish_check <- function() {
         if (length(rv$y) >= rv$target_n) {
             rv$done <- TRUE; rv$playing <- FALSE
-            updateActionButton(session, "play_pause", label = "▶ Play")
+            updateActionButton(session, "play_pause", label = "▶")
         }
     }
 
@@ -340,12 +344,12 @@ server <- function(input, output, session) {
         if (rv$done) return()
         rv$playing <- !rv$playing
         updateActionButton(session, "play_pause",
-                           label = if (rv$playing) "⏸ Pause" else "▶ Play")
+                           label = if (rv$playing) "⏸" else "▶")
     })
 
     observeEvent(input$next_step, {
         rv$playing <- FALSE
-        updateActionButton(session, "play_pause", label = "▶ Play")
+        updateActionButton(session, "play_pause", label = "▶")
         do_step()
     })
 
@@ -425,7 +429,7 @@ This is strictly concave for **every** $\alpha>0$: the troublesome term $(\alpha
 
 **Run summary** (in the sidebar, below the controls). The sample means of $\log X$ and $X$ with 95% intervals, against their exact values: $E(X\mid l<X<u)=\alpha\,P_{\alpha+1}(l,u)/P_{\alpha}(l,u)$, where $P_a(l,u)$ is the probability of $(l,u)$ under $\text{Gamma}(a,1)$, and $E(\log X\mid l<X<u)$ by numerical integration (it equals the digamma function $\psi(\alpha)$ without truncation). The status line gives the acceptance rate, which approaches 100% as tangent points accumulate.
 
-**Controls.** Shape $\alpha$ (0.05 to 5), the truncation interval, and the target sample size; changing any of them restarts the run. **Next** advances one candidate, **Play** advances automatically, and **Finish** runs to the target sample size at once.
+**Controls.** Shape $\alpha$ (0.05 to 5), the truncation interval, and the target sample size; changing any of them restarts the run. The buttons are ▶ (play, which turns into ⏸ to pause) to advance automatically, ↷ to advance one candidate, ⏭ to run to the target sample size at once, and ↺ to restart; hovering over a button shows its name.
 
 :::: {.callout-note collapse="true" title="R source for this app"}
 
@@ -560,11 +564,11 @@ log_ptrunc <- function(l, u, alpha) {
 ### normalized (truncated) densities of Y = log X and of X, zero outside the interval
 dlogGamma_tr <- function(y, tg) {
     d <- exp(tg$alpha * y - exp(y) - lgamma(tg$alpha) - log_ptrunc(tg$l, tg$u, tg$alpha))
-    ifelse(y > tg$a & y < tg$b, d, 0)
+    ifelse(y >= tg$a & y <= tg$b, d, 0)
 }
 dGamma_tr <- function(x, tg) {
     d <- exp(dgamma(x, tg$alpha, log = TRUE) - log_ptrunc(tg$l, tg$u, tg$alpha))
-    ifelse(x > tg$l & x < tg$u, d, 0)
+    ifelse(x >= tg$l & x <= tg$u, d, 0)
 }
 
 ### exact means: E(X) = alpha P_{alpha+1}(l, u) / P_alpha(l, u); E(log X) by integration
@@ -583,10 +587,10 @@ q_logx <- function(p, tg) {
     al <- tg$alpha; lP <- log_ptrunc(tg$l, tg$u, al)
     if (tg$l > qgamma(0.5, al)) {               # work with upper tails
         s1 <- pgamma(tg$l, al, lower.tail = FALSE, log.p = TRUE)
-        x <- qgamma(s1 + log1p(-p * exp(lP - s1)), al, lower.tail = FALSE, log.p = TRUE)
+        x <- qgamma(s1 + log1p(-p * exp(lP - s1)), al, lower.tail = FALSE, log.p = TRUE)  # log{S(l) - p P(l, u)}
     } else {
         f1 <- pgamma(tg$l, al, log.p = TRUE)
-        lt <- if (is.finite(f1)) f1 + log1p(p * expm1(lP - f1)) else log(p) + lP
+        lt <- if (is.finite(f1)) f1 + log1p(p * exp(lP - f1)) else log(p) + lP   # log{F(l) + p P(l, u)}
         x <- qgamma(lt, al, log.p = TRUE)
     }
     y <- log(x)
@@ -686,13 +690,17 @@ ui <- fluidPage(
             sliderInput("lim", "truncation (l, u) for X; u = 20 means ∞",
                         min = 0, max = U_MAX, value = c(0, U_MAX), step = 0.1),
             numericInput("n", "sample size", value = 1000, min = 10, step = 100),
+            ### symbol-only buttons; the title attribute gives each a hover tooltip
+            tags$style(".ctl-btn { font-size: 18px; padding: 2px 0; }"),
             fluidRow(
-                column(6, actionButton("play_pause", "▶ Play", width = "100%")),
-                column(6, actionButton("next_step", "Next ↷", width = "100%"))),
-            div(style = "height: 6px;"),
-            fluidRow(
-                column(6, actionButton("finish", "Finish", width = "100%")),
-                column(6, actionButton("restart", "↺ Restart", width = "100%"))),
+                column(3, tagAppendAttributes(actionButton("play_pause", "▶", width = "100%",
+                                                           class = "ctl-btn"), title = "Play / Pause")),
+                column(3, tagAppendAttributes(actionButton("next_step", "↷", width = "100%",
+                                                           class = "ctl-btn"), title = "Next candidate")),
+                column(3, tagAppendAttributes(actionButton("finish", "⏭", width = "100%",
+                                                           class = "ctl-btn"), title = "Finish: run to the sample size")),
+                column(3, tagAppendAttributes(actionButton("restart", "↺", width = "100%",
+                                                           class = "ctl-btn"), title = "Restart"))),
             helpText("ARS runs on Y = log X, whose log density α y − e^y is concave for every ",
                      "α > 0; each accepted Y is returned as X = e^Y. Rejected candidates (black x) ",
                      "become new tangent points. Changing a setting restarts the run."),
@@ -722,7 +730,7 @@ server <- function(input, output, session) {
         rv$target_n <- max(10, round(valid_pos(input$n, 1000)))
         rv$done <- FALSE; rv$playing <- FALSE
         rv$last_y <- NULL; rv$last_accept <- NA
-        updateActionButton(session, "play_pause", label = "▶ Play")
+        updateActionButton(session, "play_pause", label = "▶")
     }
     isolate(reset_run())
 
@@ -738,7 +746,7 @@ server <- function(input, output, session) {
     finish_check <- function() {
         if (length(rv$y) >= rv$target_n) {
             rv$done <- TRUE; rv$playing <- FALSE
-            updateActionButton(session, "play_pause", label = "▶ Play")
+            updateActionButton(session, "play_pause", label = "▶")
         }
     }
 
@@ -759,12 +767,12 @@ server <- function(input, output, session) {
         if (rv$done) return()
         rv$playing <- !rv$playing
         updateActionButton(session, "play_pause",
-                           label = if (rv$playing) "⏸ Pause" else "▶ Play")
+                           label = if (rv$playing) "⏸" else "▶")
     })
 
     observeEvent(input$next_step, {
         rv$playing <- FALSE
-        updateActionButton(session, "play_pause", label = "▶ Play")
+        updateActionButton(session, "play_pause", label = "▶")
         do_step()
     })
 
