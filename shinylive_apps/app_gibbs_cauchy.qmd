@@ -38,25 +38,26 @@ a_0 <- 1; b_0 <- 1                                      # prior: sigma^2 ~ Inver
 
 ui <- fluidPage(
     wellPanel(
+        tags$strong("Data"),
         fluidRow(
+            column(3, sliderInput("n_obs", "number of observations", min = 5, max = 200, value = 30, step = 5)),
+            column(3, sliderInput("mu_true", "true location mu", min = -10, max = 10, value = 2, step = 0.5)),
+            column(3, sliderInput("sig_true", "true scale sigma", min = 0.2, max = 5, value = 1, step = 0.1)),
+            column(3, div(style = "margin-top: 25px;",
+                actionButton("new", "New data", width = "100%")))),
+        tags$strong("MCMC sampling"),
+        fluidRow(
+            column(3, sliderInput("N", "number of Gibbs iterations", min = 50, max = 5000, value = 500, step = 50)),
+            column(3, sliderInput("mu_init", "starting value of mu", min = -20, max = 20, value = -10, step = 1)),
+            column(3, sliderInput("sig_init", "starting value of sigma", min = 0.2, max = 10, value = 6, step = 0.2)),
             column(3,
-                sliderInput("n_obs", "number of observations", min = 5, max = 200, value = 30, step = 5),
-                sliderInput("N", "number of Gibbs iterations", min = 50, max = 5000, value = 500, step = 50)),
-            column(3,
-                sliderInput("mu_true", "true location mu", min = -10, max = 10, value = 2, step = 0.5),
-                sliderInput("sig_true", "true scale sigma", min = 0.2, max = 5, value = 1, step = 0.1)),
-            column(3,
-                sliderInput("mu_init", "starting value of mu", min = -20, max = 20, value = -10, step = 1),
-                sliderInput("sig_init", "starting value of sigma", min = 0.2, max = 10, value = 6, step = 0.2)),
-            column(3,
-                sliderInput("speed", "iterations per tick", min = 1, max = 50, value = 1, step = 1),
                 checkboxInput("sub", "show each Gibbs step", TRUE),
-                actionButton("new", "New data", width = "100%"))),
-        fluidRow(
-            column(3, actionButton("play", "▶ Play", width = "100%")),
-            column(3, actionButton("next_step", "Next ↷", width = "100%")),
-            column(3, actionButton("end", "End ⏭", width = "100%")),
-            column(3, actionButton("restart", "↺ Restart", width = "100%")))
+                tags$style(".ctl-btn { font-size: 16px; padding: 2px 10px; }"),
+                div(class = "btn-group", role = "group",
+                    tagAppendAttributes(actionButton("play", "▶", class = "ctl-btn btn-sm"), title = "Play / Pause"),
+                    tagAppendAttributes(actionButton("next_step", "↷", class = "ctl-btn btn-sm"), title = "Next step"),
+                    tagAppendAttributes(actionButton("end", "⏭", class = "ctl-btn btn-sm"), title = "End: run to the last iteration"),
+                    tagAppendAttributes(actionButton("restart", "↺", class = "ctl-btn btn-sm"), title = "Restart"))))
     ),
     fluidRow(
         column(7,
@@ -133,7 +134,7 @@ server <- function(input, output, session) {
         rv$path[1, ] <- c(input$mu_init, input$sig_init, 0); rv$np <- 1
         rv$last <- "start"
         rv$playing <- FALSE
-        updateActionButton(session, "play", label = "▶ Play")
+        updateActionButton(session, "play", label = "▶")
         set.seed(1000 + input$new)
     }
 
@@ -177,22 +178,22 @@ server <- function(input, output, session) {
     observeEvent(input$play, {
         if (finished()) return()
         rv$playing <- !rv$playing
-        updateActionButton(session, "play", label = if (rv$playing) "⏸ Pause" else "▶ Play")
+        updateActionButton(session, "play", label = if (rv$playing) "⏸" else "▶")
     })
     observeEvent(input$next_step, {
-        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play")
+        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶")
         if (isTRUE(input$sub)) step_one() else step_iter()
     })
     observeEvent(input$end, {
-        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play")
+        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶")
         while (!finished()) step_iter()
     })
     observe({
         if (isTRUE(rv$playing)) {
             invalidateLater(150, session)
             isolate({
-                if (isTRUE(input$sub)) step_one() else for (k in seq_len(input$speed)) step_iter()
-                if (finished()) { rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play") }
+                if (isTRUE(input$sub)) step_one() else step_iter()
+                if (finished()) { rv$playing <- FALSE; updateActionButton(session, "play", label = "▶") }
             })
         }
     })
@@ -299,7 +300,7 @@ with $\mu_0=0$, $\tau=10$, $a_0=b_0=1$. One Gibbs iteration draws $v$ given $(\m
 * *Bottom:* trace plots of $\mu$ and $\sigma$, with the exact posterior means (red dashed lines).
 * *Table:* for $\mu$ and for $\sigma$, the posterior mean, standard deviation and 95% credible interval, computed exactly on the grid and from the Gibbs draws so far (after discarding the first 20% as burn-in), next to the maximum likelihood estimate of the Cauchy model, its standard error and its 95% Wald interval. The MLE and its standard error come from the observed information at the maximum, and the interval for $\sigma$ is formed on the log scale and transformed back so that it stays positive. The prior is weak, so the posterior is centred near the MLE, but the posterior (and the Gibbs draws) account for the uncertainty without the normal approximation: the credible interval for $\sigma$ is asymmetric, and for small samples the Wald intervals are noticeably different.
 
-**Controls.** **Play** and **Pause** advance the sampler automatically, **Next** advances by one step, **End** runs to the last iteration and **Restart** starts the chain again. With "show each Gibbs step" ticked, Play and Next move one sub-step at a time (update $v$, then $\mu$, then $\sigma$); with it unticked they move by whole iterations, and "iterations per tick" sets how many iterations Play takes at each tick. Changing the data, the number of iterations or the starting values restarts the chain.
+**Controls.** The buttons ▶/⏸ (play/pause), ↷ (next), ⏭ (end) and ↺ (restart) advance the sampler automatically, advance it by one step, run it to the last iteration and start the chain again. With "show each Gibbs step" ticked, play and next move one sub-step at a time (update $v$, then $\mu$, then $\sigma$); with it unticked they move by whole iterations. Changing the data, the number of iterations or the starting values restarts the chain.
 
 **What to try.** The axes of the plane plot and of the traces are fixed to the exact posterior mean $\pm3$ posterior standard deviations, so a starting value far from it (the default is $\mu=-10,\sigma=6$) is outside the view and the first few staircases enter from the edge. Then set the number of iterations to a few thousand and press End to see the chain mix and the table agree. Add outliers by increasing the sample size (a Cauchy sample always has some) and compare their $v_i$ with those of the observations near $\mu$.
 
@@ -337,25 +338,26 @@ a_0 <- 1; b_0 <- 1                                      # prior: sigma^2 ~ Inver
 
 ui <- fluidPage(
     wellPanel(
+        tags$strong("Data"),
         fluidRow(
+            column(3, sliderInput("n_obs", "number of observations", min = 5, max = 200, value = 30, step = 5)),
+            column(3, sliderInput("mu_true", "true location mu", min = -10, max = 10, value = 2, step = 0.5)),
+            column(3, sliderInput("sig_true", "true scale sigma", min = 0.2, max = 5, value = 1, step = 0.1)),
+            column(3, div(style = "margin-top: 25px;",
+                actionButton("new", "New data", width = "100%")))),
+        tags$strong("MCMC sampling"),
+        fluidRow(
+            column(3, sliderInput("N", "number of Gibbs iterations", min = 50, max = 5000, value = 500, step = 50)),
+            column(3, sliderInput("mu_init", "starting value of mu", min = -20, max = 20, value = -10, step = 1)),
+            column(3, sliderInput("sig_init", "starting value of sigma", min = 0.2, max = 10, value = 6, step = 0.2)),
             column(3,
-                sliderInput("n_obs", "number of observations", min = 5, max = 200, value = 30, step = 5),
-                sliderInput("N", "number of Gibbs iterations", min = 50, max = 5000, value = 500, step = 50)),
-            column(3,
-                sliderInput("mu_true", "true location mu", min = -10, max = 10, value = 2, step = 0.5),
-                sliderInput("sig_true", "true scale sigma", min = 0.2, max = 5, value = 1, step = 0.1)),
-            column(3,
-                sliderInput("mu_init", "starting value of mu", min = -20, max = 20, value = -10, step = 1),
-                sliderInput("sig_init", "starting value of sigma", min = 0.2, max = 10, value = 6, step = 0.2)),
-            column(3,
-                sliderInput("speed", "iterations per tick", min = 1, max = 50, value = 1, step = 1),
                 checkboxInput("sub", "show each Gibbs step", TRUE),
-                actionButton("new", "New data", width = "100%"))),
-        fluidRow(
-            column(3, actionButton("play", "▶ Play", width = "100%")),
-            column(3, actionButton("next_step", "Next ↷", width = "100%")),
-            column(3, actionButton("end", "End ⏭", width = "100%")),
-            column(3, actionButton("restart", "↺ Restart", width = "100%")))
+                tags$style(".ctl-btn { font-size: 16px; padding: 2px 10px; }"),
+                div(class = "btn-group", role = "group",
+                    tagAppendAttributes(actionButton("play", "▶", class = "ctl-btn btn-sm"), title = "Play / Pause"),
+                    tagAppendAttributes(actionButton("next_step", "↷", class = "ctl-btn btn-sm"), title = "Next step"),
+                    tagAppendAttributes(actionButton("end", "⏭", class = "ctl-btn btn-sm"), title = "End: run to the last iteration"),
+                    tagAppendAttributes(actionButton("restart", "↺", class = "ctl-btn btn-sm"), title = "Restart"))))
     ),
     fluidRow(
         column(7,
@@ -432,7 +434,7 @@ server <- function(input, output, session) {
         rv$path[1, ] <- c(input$mu_init, input$sig_init, 0); rv$np <- 1
         rv$last <- "start"
         rv$playing <- FALSE
-        updateActionButton(session, "play", label = "▶ Play")
+        updateActionButton(session, "play", label = "▶")
         set.seed(1000 + input$new)
     }
 
@@ -476,22 +478,22 @@ server <- function(input, output, session) {
     observeEvent(input$play, {
         if (finished()) return()
         rv$playing <- !rv$playing
-        updateActionButton(session, "play", label = if (rv$playing) "⏸ Pause" else "▶ Play")
+        updateActionButton(session, "play", label = if (rv$playing) "⏸" else "▶")
     })
     observeEvent(input$next_step, {
-        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play")
+        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶")
         if (isTRUE(input$sub)) step_one() else step_iter()
     })
     observeEvent(input$end, {
-        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play")
+        rv$playing <- FALSE; updateActionButton(session, "play", label = "▶")
         while (!finished()) step_iter()
     })
     observe({
         if (isTRUE(rv$playing)) {
             invalidateLater(150, session)
             isolate({
-                if (isTRUE(input$sub)) step_one() else for (k in seq_len(input$speed)) step_iter()
-                if (finished()) { rv$playing <- FALSE; updateActionButton(session, "play", label = "▶ Play") }
+                if (isTRUE(input$sub)) step_one() else step_iter()
+                if (finished()) { rv$playing <- FALSE; updateActionButton(session, "play", label = "▶") }
             })
         }
     })
