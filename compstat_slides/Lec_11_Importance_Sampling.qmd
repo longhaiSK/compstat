@@ -113,28 +113,13 @@ $$
 
 If $w_s\approx$ constant (proposal shaped like the target), $\tilde w_s = 1/S$ and $S_{\text{eff}} = S$: full efficiency. If one weight dominates, $S_{\text{eff}}\approx1$: only one draw is doing any work.
 
-**Variance heuristic**: $\operatorname{Var}_g(\hat A)\approx\operatorname{Var}_f(a)/S_{\text{eff}}$, the same form as for an iid sample of size $S_{\text{eff}}$ from $f$ itself.
+**Variance heuristic**: $\operatorname{Var}_g(\hat A)\approx\operatorname{Var}_f(a)/S_{\text{eff}}$, the same form as for an iid sample of size $S_{\text{eff}}$ from $f$ itself. $S_{\text{eff}}$ estimates the population quantity $S_{\text{eff}}^\star = S/E_g[(w^\star)^2]$, where $w^\star = \frac{f/C_f}{g/C_g}$ is the weight normalized so that $E_g[w^\star]=1$.
 
 The catch, central to this lecture: $S_{\text{eff}}$ is computed **only from the weights actually observed**. A proposal that never visits the part of $\theta$-space where $f$ and $g$ disagree most will report a reassuring $S_{\text{eff}}$ while being badly wrong.
 
-## Where the ESS Formula Comes From {.smaller}
-
-Write $\hat A = \overline N/\overline D$ with $N_s = w_s a(\theta_s)$, $D_s = w_s$. The delta method gives
-$$
-\operatorname{Var}_g(\hat A) \approx \frac{1}{S}E_g\!\bigl[w^{2}(a-A)^{2}\bigr] = \frac{1}{S}E_f\!\bigl[w(a-A)^{2}\bigr],
-$$
-using $E_g[w\,h] = E_f[h]$. If $w$ varies little across the support of $(a-A)^2$, this factors as $E_g[w^2]\operatorname{Var}_f(a)/S$, giving
-$$
-\operatorname{Var}_g(\hat A) \approx \frac{\operatorname{Var}_f(a)}{S_{\text{eff}}^{\star}}, \qquad S_{\text{eff}}^{\star} := \frac{S}{E_g[w^{2}]}
-$$
-
-$S_{\text{eff}}^{\star}$ is a property of $f$ and $g$ alone — independent of $a$ or the sample — and it is the metric that reveals pathologies (missed modes, heavy tails) even when the *observed* $S_{\text{eff}}$ looks fine.
-
-Plugging in sample moments, $\frac{1}{S}\sum w_s$ for $E_g[w]$ and $\frac{1}{S}\sum w_s^2$ for $E_g[w^2]$, turns $S_{\text{eff}}^\star$ into **Kish's formula** $(\sum w_s)^2/\sum w_s^2 = 1/\sum\tilde w_s^2$ — a principled plug-in estimator, not an ad hoc heuristic.
-
 ## Limitations of the ESS Diagnostic {.smaller}
 
-Kish's approximation is not uniformly precise. With $f=N(0,1)$, $g=N(0,2^2)$, $a(\theta)=\theta^2$, $S=4000$:
+The variance heuristic is not uniformly precise. With $f=N(0,1)$, $g=N(0,2^2)$, $a(\theta)=\theta^2$, $S=4000$:
 
 - empirical $\operatorname{Var}(\hat A)\approx 3.15\times10^{-4}$, matching exact delta-method calculations
 
@@ -142,7 +127,175 @@ Kish's approximation is not uniformly precise. With $f=N(0,1)$, $g=N(0,2^2)$, $a
 
 More critically: $\widehat{S_{\text{eff}}}$ is computed **only from the observed weights**. If the proposal never explores where $f$ and $g$ disagree most, the estimator reports a falsely reassuring $\widehat{S_{\text{eff}}}$ and masks a severe sampling inadequacy — the subject of Examples 1 and 2 below.
 
-# 3. Example 1: Same Support, but a Mode Is Missed
+# 3. An Illustrative Example: The Volume of a Set
+
+## Illustrative Example: The Volume of a Set {.smaller}
+
+Take two indicator functions with $A\subseteq B\subset\mathbb{R}^d$:
+$$
+f(\theta) = I_A(\theta), \qquad g(\theta) = I_B(\theta),
+\qquad
+C_f = \int I_A(\theta)\,d\theta = |A|, \qquad C_g = |B|.
+$$
+
+The target $f/C_f$ is the uniform distribution on $A$; the proposal $g/C_g$ is the uniform distribution on $B$, which is easy to sample when $B$ is a box. **Problem:** estimate the volume $C_f=|A|$, with $|B|$ known.
+
+Draw $\theta_1,\ldots,\theta_S\overset{iid}{\sim}\mathrm{Unif}(B)$. The weight is an indicator variable,
+$$
+w_s = \frac{f(\theta_s)}{g(\theta_s)} = I_A(\theta_s) =
+\begin{cases} 1, & \theta_s\in A,\\ 0, & \theta_s\in B\setminus A,\end{cases}
+\qquad w_s\sim\mathrm{Bernoulli}(p),\quad p = \frac{|A|}{|B|}.
+$$
+
+So the importance sampling estimator is "hit-or-miss" Monte Carlo:
+$$
+\widehat{C_f} = |B|\cdot\frac1S\sum_{s=1}^S I_A(\theta_s) = |B|\,\frac{N_A}{S},
+\qquad N_A = \#\{s:\theta_s\in A\}\sim\mathrm{Binomial}(S,p).
+$$
+
+## Illustrative Example (Continued): The Picture {.smaller}
+
+```{r}
+#| label: fig-nested-AB
+#| fig-width: 10
+#| fig-height: 4.6
+local({
+set.seed(3)
+rA <- function(t) 0.30 + 0.07 * sin(3 * t) + 0.05 * cos(2 * t)   # boundary of A (polar, about the centre)
+ctr <- c(0.5, 0.5); S <- 300
+x <- runif(S); y <- runif(S)                                       # theta_s ~ Unif(B), B = unit square
+t <- atan2(y - ctr[2], x - ctr[1])
+hit <- sqrt((x - ctr[1])^2 + (y - ctr[2])^2) <= rA(t)              # w_s = I_A(theta_s)
+tt <- seq(0, 2 * pi, length.out = 400)
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+plot(NA, xlim = c(0, 1.9), ylim = c(0, 1), asp = 1, axes = FALSE, xlab = "", ylab = "")
+rect(0, 0, 1, 1, col = "grey95", border = "black", lwd = 2)
+polygon(ctr[1] + rA(tt) * cos(tt), ctr[2] + rA(tt) * sin(tt), col = "#cfe2f3", border = "steelblue4", lwd = 2)
+points(x[!hit], y[!hit], pch = 1, col = "grey45", cex = 0.8)
+points(x[hit], y[hit], pch = 19, col = "steelblue4", cex = 0.8)
+text(0.5, 0.5, "A", cex = 2.2, font = 3, col = "steelblue4")
+text(0.06, 0.94, "B", cex = 2.2, font = 3)
+legend(1.05, 0.95, bty = "n", cex = 1.25, pch = c(19, 1), col = c("steelblue4", "grey45"),
+       legend = c(sprintf("hit:  w = 1   (N_A = %d)", sum(hit)),
+                  sprintf("miss: w = 0   (%d)", sum(!hit))))
+text(1.08, 0.45, adj = 0, cex = 1.25,
+     sprintf("S = %d draws, |B| = 1\nestimate of |A| = N_A / S = %.3f", S, mean(hit)))
+text(1.08, 0.22, adj = 0, cex = 1.25, sprintf("true |A| = %.3f", integrate(function(t) rA(t)^2 / 2, 0, 2 * pi)$value))
+})
+```
+
+Draws are uniform on $B$; each one either lands in $A$ (weight $1$) or not (weight $0$). The fraction of hits estimates $p=|A|/|B|$, and multiplying by the known $|B|$ gives $\widehat{C_f}=|B|\,N_A/S$.
+
+## Illustrative Example (Continued): Variance {.smaller}
+
+$\widehat{C_f}$ is unbiased, and its variance is available in closed form:
+$$
+\operatorname{Var}\bigl(\widehat{C_f}\bigr) = |B|^2\,\frac{p(1-p)}{S},
+\qquad
+\frac{\operatorname{sd}(\widehat{C_f})}{C_f} = \sqrt{\frac{1-p}{p\,S}}.
+$$
+
+This follows from $N_A\sim\mathrm{Binomial}(S,p)$ alone. The relative error grows without bound as $p=|A|/|B|\to0$: to reach $1\%$ relative error we need
+$$
+S \approx 10^4\,\frac{1-p}{p},
+$$
+i.e. about $3\times10^3$ draws when $A$ is a disc in a square ($p=\pi/4$), but about $10^8$ when $p=10^{-4}$.
+
+## Illustrative Example (Continued): ESS {.smaller}
+
+The normalized weights $w^\star = \dfrac{f/C_f}{g/C_g} = \dfrac{I_A}{p}$ have $E_g[w^\star]=1$ and $E_g[(w^\star)^2] = \dfrac1p$, so
+$$
+S_{\text{eff}}^\star = \frac{S}{E_g[(w^\star)^2]} = S\,p = S\,\frac{|A|}{|B|},
+\qquad
+\widehat{S_{\text{eff}}} = \frac{\left(\sum_s w_s\right)^2}{\sum_s w_s^2} = \frac{N_A^2}{N_A} = N_A .
+$$
+
+- The ESS is exactly the number of hits in $A$, and $E(N_A) = Sp = S_{\text{eff}}^\star$. The relative variance on the previous slide is $(1-p)/S_{\text{eff}}^\star$: the cost is set by $p=|A|/|B|$.
+- The weighted sample is the rejection sample: hits get weight $1/N_A$, misses $0$. So $\hat A$ averages $a$ over the $N_A$ hits and $\operatorname{Var}(\hat A\mid N_A) = \operatorname{Var}_f(a)/N_A$: the ESS heuristic is exact here.
+
+## Numerical Example: Area of a Crescent {.smaller}
+
+$A = D_1\setminus D_2$: $D_1$ is the unit disk at the origin, $D_2$ a disk of radius $r_2=0.9$ centred at $(0.3,0)$. Testing $\theta\in A$ is one line of code, but areas of such Boolean combinations of shapes (constructive solid geometry, as in CAD software) have no elementary formula in general. Two circles still have a closed form, used only to check the estimates.
+
+Two proposals $B\supseteq A$: a generous box $[-2,2]^2$ ($p=|A|/16\approx0.056$) and the disk $D_1$ itself ($p=|A|/\pi\approx0.286$).
+
+```{r}
+#| label: crescent-functions
+#| echo: true
+r1 <- 1; r2 <- 0.9; d <- 0.3
+in_A <- function(x, y) (x^2 + y^2 <= r1^2) & ((x - d)^2 + y^2 > r2^2)
+circle_intersection_area <- function(r1, r2, d) {          # exact, for checking only
+    r1^2 * acos((d^2 + r1^2 - r2^2) / (2 * d * r1)) +
+    r2^2 * acos((d^2 + r2^2 - r1^2) / (2 * d * r2)) -
+    0.5 * sqrt((-d + r1 + r2) * (d + r1 - r2) * (d - r1 + r2) * (d + r1 + r2))
+}
+area_true <- pi * r1^2 - circle_intersection_area(r1, r2, d)
+xlim <- c(-2, 2); ylim <- c(-2, 2)
+crescent_is <- function(proposal, S, seed) {
+    set.seed(seed)
+    if (proposal == "box") {
+        x <- runif(S, xlim[1], xlim[2]); y <- runif(S, ylim[1], ylim[2])
+        g <- 1 / ((xlim[2] - xlim[1]) * (ylim[2] - ylim[1]))   # g = I_B / |B|
+    } else {
+        rr <- r1 * sqrt(runif(S)); th <- runif(S, 0, 2 * pi)
+        x <- rr * cos(th); y <- rr * sin(th)
+        g <- 1 / (pi * r1^2)
+    }
+    w <- in_A(x, y) / g                                        # = |B| I_A(theta_s)
+    list(x = x, y = y, hit = in_A(x, y),
+         estimate = mean(w), me = 1.96 * sd(w) / sqrt(S), ess = ess(w))
+}
+```
+
+## Numerical Example (Continued): The Darts {.smaller}
+
+```{r}
+#| label: fig-crescent-darts
+#| echo: true
+#| fig-width: 10
+#| fig-height: 5
+res_box_vis  <- crescent_is("box",  1500, seed = 1)
+res_disk_vis <- crescent_is("disk", 1500, seed = 1)
+theta_seq <- seq(0, 2 * pi, length.out = 200)
+par(mfrow = c(1, 2))
+plot(res_box_vis$x, res_box_vis$y, asp = 1, pch = 20,
+     col = ifelse(res_box_vis$hit, "steelblue", "tomato"), xlab = "x", ylab = "y",
+     main = paste(sum(res_box_vis$hit), "of 1500 hit A (box)"))
+rect(xlim[1], ylim[1], xlim[2], ylim[2], border = "black", lwd = 2)
+lines(r1 * cos(theta_seq), r1 * sin(theta_seq), lwd = 2)
+lines(d + r2 * cos(theta_seq), r2 * sin(theta_seq), lwd = 2)
+plot(res_disk_vis$x, res_disk_vis$y, asp = 1, pch = 20,
+     col = ifelse(res_disk_vis$hit, "steelblue", "tomato"), xlab = "x", ylab = "y",
+     xlim = xlim, ylim = ylim, main = paste(sum(res_disk_vis$hit), "of 1500 hit A (disk)"))
+lines(r1 * cos(theta_seq), r1 * sin(theta_seq), lwd = 2)
+lines(d + r2 * cos(theta_seq), r2 * sin(theta_seq), lwd = 2)
+par(mfrow = c(1, 1))
+```
+
+Blue darts land in $A$ (weight $|B|$), red darts miss (weight $0$).
+
+## Numerical Example (Continued): Results {.smaller}
+
+```{r}
+#| label: tbl-crescent-is
+#| echo: true
+S <- 5000
+res_box  <- crescent_is("box",  S, seed = 1)
+res_disk <- crescent_is("disk", S, seed = 1)
+knitr::kable(data.frame(
+    proposal = c("Bounding box (naive)", "Disk $D_1$ (importance)"),
+    truth    = rep(area_true, 2),
+    estimate = c(res_box$estimate, res_disk$estimate),
+    ME       = c(res_box$me, res_disk$me),
+    ess_pct  = 100 * c(res_box$ess, res_disk$ess) / S
+), digits = 4, col.names = c("Proposal $g$", "True area", "Estimate", "M.E.", "ESS %"))
+```
+
+- Both proposals are unbiased: importance sampling never needs $A$'s shape, only a $B$ that covers it.
+- The ESS % is the hit rate $\approx p=|A|/|B|$, exactly as the general formula predicts: about 5.6% for the box and 28.6% for $D_1$.
+- The relative variance $(1-p)/(Sp)$ is about $6.7$ times smaller for the disk, so the margin of error drops by $\sqrt{6.7}\approx2.6$ (0.103 vs 0.039). A box that is too generous costs precision, not correctness.
+
+# 4. Example 1: Same Support, but a Mode Is Missed
 
 ## Example 1: Same Support, but a Mode Is Missed,
 $$
@@ -236,7 +389,7 @@ legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
 The observed effective sample size reports near-perfect efficiency. The **exact** effective fraction $1/E_g(w^2)$ is smaller by forty orders of magnitude — a property of $f,g$ alone, invisible to any single sample. The variance is finite at $\sigma=1$ (it diverges only for $\sigma\le1/\sqrt2$), so the estimator is consistent — it would just need $S\sim10^{43}$ to look normal.
 
 
-# 4. Example 2: Tail Probability of a Student-$t$ Distribution
+# 5. Example 2: Tail Probability of a Student-$t$ Distribution
 
 ## Example 2: Tail Probability of a Student-$t$ Distribution
 
@@ -332,7 +485,7 @@ A finite interval is well-behaved at any $\nu$; $c_2=\infty$ reproduces the dive
 
 - **Large $\sigma$**: one draw's weight can dominate, $S_{\text{eff}}$ collapses toward $1$ — visibly unreliable, an improvement on invisibly unreliable
 
-# 5. Example 3: Marginal Likelihood via Importance Sampling
+# 6. Example 3: Marginal Likelihood via Importance Sampling
 
 ## Example 3: Marginal Likelihood via Importance Sampling
 
@@ -445,7 +598,7 @@ Laplace-shaped: tight interval centred on truth at every $n$, $S_{\text{eff}}$ n
 
 Sorted, normalized weights, largest first, one panel per proposal (their scales differ by orders of magnitude) — a good proposal gives a flat curve near $1/S$; a bad one falls off a cliff.
 
-# 6. Advanced Applications of Importance Sampling
+# 7. Advanced Applications of Importance Sampling
 
 ## Free Energy and the Marginal Likelihood
 
