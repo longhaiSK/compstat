@@ -168,6 +168,47 @@ for (n in c(5, 100)) { y <- rpois(n, 3); a1 <- alpha + sum(y); b1 <- beta + n
                      legend = c("exact posterior", "Laplace approximation")) }
 ```
 
+## Two Parameters: Unknown Mean and SD {.smaller}
+
+$y_i \overset{iid}{\sim} N(\mu,\sigma^2)$, $w=\log\sigma$, priors $\mu, w \sim N(0,5^2)$. Contours of $\log f(\mu,w)-\log f(\hat\theta)$ (red) and its quadratic approximation $-\tfrac12(\theta-\hat\theta)^\top H(\theta-\hat\theta)$ (green, dashed) at levels $-r^2/2$, $r=1,\ldots,4$.
+
+```{r}
+#| fig-width: 10
+#| fig-height: 4.6
+local({
+  sig_mu <- 5; sig_w <- 5
+  log_f2 <- function(mu, w, y) {
+    n <- length(y)
+    -n / 2 * log(2 * pi) - n * w -
+      exp(-2 * w) * (sum((y - mean(y))^2) + n * (mean(y) - mu)^2) / 2 +
+      dnorm(mu, 0, sig_mu, log = TRUE) + dnorm(w, 0, sig_w, log = TRUE)
+  }
+  lev <- -(1:4)^2 / 2
+  par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.5, 1))
+  set.seed(11)
+  for (n in c(10, 100)) {
+    y  <- 1 + 2 * rnorm(n)
+    op <- optim(c(mean(y), log(sd(y))), function(th) -log_f2(th[1], th[2], y),
+                method = "BFGS", hessian = TRUE)
+    th <- op$par; H <- op$hessian; S <- solve(H)
+    g1 <- th[1] + seq(-5.2, 5.2, length.out = 200) * sqrt(S[1, 1])
+    g2 <- th[2] + seq(-5.2, 6.5, length.out = 200) * sqrt(S[2, 2])
+    true <- outer(g1, g2, log_f2, y = y) + op$value
+    D1 <- outer(g1 - th[1], rep(1, 200)); D2 <- outer(rep(1, 200), g2 - th[2])
+    quad <- -(H[1, 1] * D1^2 + 2 * H[1, 2] * D1 * D2 + H[2, 2] * D2^2) / 2
+    contour(g1, g2, true, levels = lev, col = "firebrick", lwd = 2, labcex = 0.8,
+            xlab = TeX(r"($\mu$)"), ylab = TeX(r"($w = \log\sigma$)"), main = paste0("n = ", n))
+    contour(g1, g2, quad, levels = lev, drawlabels = FALSE, col = "seagreen", lwd = 2, lty = 2,
+            add = TRUE)
+    points(th[1], th[2], pch = 4, cex = 1.6, lwd = 2)
+  }
+  legend("bottomright", bty = "n", lwd = 2, lty = c(1, 2), col = c("firebrick", "seagreen"),
+         legend = c("true log f", "quadratic approx."), cex = 0.9)
+})
+```
+
+At $n=10$ the true contours bend into a banana (heavier tail towards large $\sigma$); at $n=100$ they are nearly elliptical.
+
 ## When Laplace Works Well, and When It Does Not
 
 **Works well**
