@@ -66,9 +66,9 @@ is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
     v    <- exp(logw - m)
     Chat <- mean(v) * exp(m)
     se   <- sd(v) / sqrt(S) * exp(m)
-    wn   <- v / sum(v)
+    wn   <- v / mean(v)                  # normalized weights, mean 1
 
-    list(X = X, wn = wn, Chat = Chat, se = se, ess = 1 / sum(wn^2),
+    list(X = X, wn = wn, Chat = Chat, se = se, ess = S / mean(wn^2),
          truth = pt(c2, df) - pt(c1, df))
 }
 
@@ -154,16 +154,16 @@ server <- function(input, output, session) {
         if (input$logw) {
             wl <- c(max(min(wn[wn > 0]), 1e-12), max(wn))
             plot(X, wn, type = "n", log = "y", ylim = wl, xlim = c(lo, hi),
-                 xlab = "x", ylab = "normalized weight (log scale)")
+                 xlab = "x", ylab = "normalized weight, mean 1 (log scale)")
             segments(X, wl[1], X, wn, col = adjustcolor("grey50", 0.6))
         } else {
             plot(X, wn, type = "n", ylim = c(0, max(wn) * 1.08),
-                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight")
+                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight, mean 1")
             segments(X, 0, X, wn, col = adjustcolor("grey50", 0.6))
         }
-        abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
+        abline(h = 1, lty = 2, col = "darkgreen", lwd = 2)
         legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lty = 2, lwd = 2, col = "darkgreen", legend = "1 / S  (perfectly balanced weights)")
+               lty = 2, lwd = 2, col = "darkgreen", legend = "1  (perfectly balanced weights)")
     })
 
     output$tab <- renderTable({
@@ -176,7 +176,7 @@ server <- function(input, output, session) {
                       sprintf("(%.5g, %.5g)", lwr, upr),
                       if (lwr <= s$truth && s$truth <= upr) "yes" else "no",
                       sprintf("%.1f", s$ess), sprintf("%.2f", 100 * s$ess / s$S),
-                      sprintf("%.1f", 100 * max(s$wn))))
+                      sprintf("%.1f", 100 * max(s$wn) / s$S)))
     }, striped = TRUE, align = "ll", width = "100%")
 }
 
@@ -206,7 +206,7 @@ The app above puts $c_{1}$, $c_{2}$, $\mu$, $\sigma$ and the target's degrees
 of freedom $\nu$ under slider control (a checkbox sends $c_{2}$ to $\infty$),
 and displays, on a common $x$-axis: the two truncated densities
 with a rug of the draws, and the normalized importance weights
-$\tilde w_{i}=w_{i}/\sum_{j}w_{j}$ at the sampled points. The table beside
+$\hat w^\star_{i}=w_{i}\big/\tfrac1S\sum_{j}w_{j}$ (mean 1) at the sampled points. The table beside
 the plots reports the true $P(c_{1}<X<c_{2})$, the estimate, its nominal 95%
 interval and whether the interval covers the truth, the effective sample size
 and the largest weight.
@@ -292,9 +292,9 @@ is_t_interval <- function(S, df, c1, c2, mu, sigma, seed = NULL) {
     v    <- exp(logw - m)
     Chat <- mean(v) * exp(m)
     se   <- sd(v) / sqrt(S) * exp(m)
-    wn   <- v / sum(v)
+    wn   <- v / mean(v)                  # normalized weights, mean 1
 
-    list(X = X, wn = wn, Chat = Chat, se = se, ess = 1 / sum(wn^2),
+    list(X = X, wn = wn, Chat = Chat, se = se, ess = S / mean(wn^2),
          truth = pt(c2, df) - pt(c1, df))
 }
 
@@ -380,16 +380,16 @@ server <- function(input, output, session) {
         if (input$logw) {
             wl <- c(max(min(wn[wn > 0]), 1e-12), max(wn))
             plot(X, wn, type = "n", log = "y", ylim = wl, xlim = c(lo, hi),
-                 xlab = "x", ylab = "normalized weight (log scale)")
+                 xlab = "x", ylab = "normalized weight, mean 1 (log scale)")
             segments(X, wl[1], X, wn, col = adjustcolor("grey50", 0.6))
         } else {
             plot(X, wn, type = "n", ylim = c(0, max(wn) * 1.08),
-                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight")
+                 xlim = c(lo, hi), xlab = "x", ylab = "normalized weight, mean 1")
             segments(X, 0, X, wn, col = adjustcolor("grey50", 0.6))
         }
-        abline(h = 1 / s$S, lty = 2, col = "darkgreen", lwd = 2)
+        abline(h = 1, lty = 2, col = "darkgreen", lwd = 2)
         legend("topright", inset = c(0.02, 0.05), bty = "n", cex = 1.05,
-               lty = 2, lwd = 2, col = "darkgreen", legend = "1 / S  (perfectly balanced weights)")
+               lty = 2, lwd = 2, col = "darkgreen", legend = "1  (perfectly balanced weights)")
     })
 
     output$tab <- renderTable({
@@ -402,7 +402,7 @@ server <- function(input, output, session) {
                       sprintf("(%.5g, %.5g)", lwr, upr),
                       if (lwr <= s$truth && s$truth <= upr) "yes" else "no",
                       sprintf("%.1f", s$ess), sprintf("%.2f", 100 * s$ess / s$S),
-                      sprintf("%.1f", 100 * max(s$wn))))
+                      sprintf("%.1f", 100 * max(s$wn) / s$S)))
     }, striped = TRUE, align = "ll", width = "100%")
 }
 

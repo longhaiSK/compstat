@@ -56,7 +56,7 @@ $$
 \{\theta: g(\theta)>0\}\ \supseteq\ \{\theta: f(\theta)>0\}.
 $$
 
-Otherwise part of $f(\theta)$ is never visited and the estimate is biased (Example 2).
+Otherwise part of $f(\theta)$ is never visited and the estimate is biased (Example 3).
 
 ## Picture: Areas and Weights
 
@@ -166,9 +166,9 @@ The variance heuristic is not uniformly precise. With $f(\theta)$ the $N(0,1)$ d
 
 More critically: $\widehat{n_{\text{eff}}}$ is computed **only from the observed weights**. If the proposal never explores where $f(\theta)$ and $g(\theta)$ disagree most, the estimator reports a falsely reassuring $\widehat{n_{\text{eff}}}$ and masks a severe sampling inadequacy — the subject of Examples 1 and 2 below.
 
-# 3. An Illustrative Example: The Volume of a Set
+# 3. Example 1: The Volume of a Set
 
-## Illustrative Example: The Volume of a Set {.smaller}
+## Example 1: The Volume of a Set {.smaller}
 
 Take two indicator functions with $A\subseteq B\subset\mathbb{R}^d$:
 $$
@@ -192,7 +192,7 @@ $$
 \qquad N_A = \#\{i:\theta_i\in A\}\sim\mathrm{Binomial}(n,p).
 $$
 
-## Illustrative Example (Continued): The Picture {.smaller}
+## Example 1 (Continued): The Picture {.smaller}
 
 ```{r}
 #| label: fig-nested-AB
@@ -225,7 +225,7 @@ text(1.08, 0.22, adj = 0, cex = 1.25, sprintf("true |A| = %.3f", integrate(funct
 
 Draws are uniform on $B$; each one either lands in $A$ (weight $1$) or not (weight $0$). The fraction of hits estimates $p=|A|/|B|$, and multiplying by the known $|B|$ gives $\widehat{C_f}=|B|\,N_A/n$.
 
-## Illustrative Example (Continued): Variance {.smaller}
+## Example 1 (Continued): Variance {.smaller}
 
 $\widehat{C_f}=|B|\,N_A/n$ is unbiased. With $N_A\sim\mathrm{Binomial}(n,p)$ and $|B| = C_f/p$,
 $$
@@ -240,9 +240,17 @@ $$
 
 For a fixed target ($C_f$ fixed), $(1-p)/p$ decreases in $p$: the larger $p=|A|/|B|$, i.e. *the tighter the proposal $B$ fits $A$, the smaller the variance.*
 
-## Illustrative Example (Continued): ESS {.smaller}
+## Example 1 (Continued): ESS {.smaller}
 
-The normalized weights $w^\star(\theta) = \dfrac{f(\theta)/C_f}{g(\theta)/C_g} = \dfrac{I_A(\theta)}{p}$ have $E_g[w^\star(\theta)]=1$ and $E_g[w^\star(\theta)^2] = 1/p$, so
+The normalized weights and their moments are
+$$
+w^\star(\theta) = \frac{f(\theta)/C_f}{g(\theta)/C_g} = \frac{I_A(\theta)}{p},
+\qquad
+E_g[w^\star(\theta)] = 1,
+\qquad
+E_g[w^\star(\theta)^2] = \frac{1}{p},
+$$
+so
 $$
 n_{\text{eff}}^\star = \frac{n}{E_g[w^\star(\theta)^2]} = n\,p = n\,\frac{|A|}{|B|},
 \qquad
@@ -251,7 +259,7 @@ $$
 
 - The ESS is exactly the number of hits in $A$, and $E(N_A) = np = n_{\text{eff}}^\star$.
 
-## Illustrative Example (Continued): What $n_{\text{eff}}$ Means {.smaller}
+## Example 1 (Continued): What $n_{\text{eff}}$ Means {.smaller}
 
 $n_{\text{eff}}$ compares with an iid sample **from $f(\theta)/C_f$**, which can estimate expectations $E_f[a(\theta)]$ but not $C_f$. So use a simple $a(\theta)$: take $D\subseteq A$ and $a(\theta)=I_D(\theta)$, with
 $$
@@ -263,13 +271,20 @@ $$
 \hat q_A = \frac{\#\{\theta_i\in D\}}{m}, \qquad \operatorname{Var}(\hat q_A) = \frac{q(1-q)}{m}.
 $$
 
-- **$\hat q_B$, importance sample of size $n$ from $\mathrm{Unif}(B)$**: hits get $\hat w^\star_i = n/N_A$, misses $0$, so
+- **$\hat q_B$, importance sample of size $n$ from $\mathrm{Unif}(B)$**: the normalized weights and the estimate are
 $$
-\hat q_B = \frac1n\sum_{i=1}^n I_D(\theta_i)\,\hat w^\star_i = \frac{N_D}{N_A},
+\begin{aligned}
+\hat w^\star_i &= \frac{w_i}{\frac1n\sum_{j=1}^n w_j} =
+\begin{cases}
+n/N_A, & \theta_i\in A,\\
+0, & \theta_i\notin A,
+\end{cases}\\[4pt]
+\hat q_B &= \frac1n\sum_{i=1}^n I_D(\theta_i)\,\hat w^\star_i = \frac{N_D}{N_A},
 \qquad N_D = \#\{\theta_i\in D\}.
+\end{aligned}
 $$
 
-## Illustrative Example (Continued): $\operatorname{Var}(\hat q_B)$ {.smaller}
+## Example 1 (Continued): $\operatorname{Var}(\hat q_B)$ {.smaller}
 
 Given $N_A$, the hits are iid $\mathrm{Unif}(A)$, so $N_D\mid N_A\sim\mathrm{Binomial}(N_A,q)$:
 $$
@@ -372,9 +387,135 @@ knitr::kable(data.frame(
 - The ESS % is the hit rate $\approx p=|A|/|B|$, exactly as the general formula predicts: about 5.6% for the box and 28.6% for $D_1$.
 - The relative variance $(1-p)/(np)$ is about $6.7$ times smaller for the disk, so the margin of error drops by $\sqrt{6.7}\approx2.6$ (0.103 vs 0.039). A box that is too generous costs precision, not correctness.
 
-# 4. Example 1: Same Support, but a Mode Is Missed
+# 4. Example 2: Tail Probability of a Student-$t$ Distribution
 
-## Example 1: Same Support, but a Mode Is Missed,
+## Example 2: Tail Probability of a Student-$t$ Distribution
+
+The target is a standard Student-$t_\nu$: $\nu=1$ is the Cauchy, $\nu\to\infty$ recovers the normal — $\nu$ is a **tuning parameter of the target's tail weight**. Goal: $P(c_1<X<c_2)$ for a finite interval $(c_1,c_2)$, from a truncated-normal proposal sampled by adaptive rejection sampling (ARS).
+
+$\log\varphi$ is concave, and restricting to $(c_1,c_2)$ preserves concavity, so the `ars` package applies directly to the *proposal*.
+
+```{r}
+#| label: rtnorm-ars
+#| echo: true
+rtnorm_ars <- function(n, mu = 0, sigma = 1, lo = 0, hi = Inf) {
+    logf   <- function(x) dnorm(x, mu, sigma, log = TRUE)
+    fprima <- function(x) -(x - mu) / sigma^2
+    if (is.finite(hi)) {
+        x0 <- lo + (hi - lo) * c(0.1, 0.5, 0.9)
+    } else {
+        right <- max(mu, lo) + 3 * sigma
+        x0 <- sort(unique(c(lo + 0.1 * sigma, max(lo + 0.2 * sigma, mu + 1e-6), right)))
+    }
+    ars(n, f = logf, fprima = fprima, x = x0,
+        lb = TRUE, xlb = lo, ub = is.finite(hi), xub = if (is.finite(hi)) hi else 0)
+}
+```
+
+The target $\log f_{t_\nu}$ is **not concave** at any finite $\nu$ — convex out in the tails, concave everywhere only in the $\nu\to\infty$ limit — so ARS cannot sample it directly. The truncated-normal proposal is a substitute, which is exactly why the sample needs importance weights.
+
+## Example 2 (Continued): The Estimator {.smaller}
+
+Target and proposal, both **unnormalized** — the $t_\nu$ and $N(\mu,\sigma^2)$ densities cut off outside $(c_1,c_2)$:
+$$
+f(x) = \begin{cases} f_{t_\nu}(x), & c_1<x<c_2,\\ 0, & \text{otherwise,}\end{cases}
+\qquad
+g(x) = \begin{cases} \dfrac{1}{\sigma\sqrt{2\pi}}\,e^{-(x-\mu)^2/(2\sigma^2)}, & c_1<x<c_2,\\ 0, & \text{otherwise,}\end{cases}
+$$
+with normalizing constants ($C_g$ is known):
+$$
+C_f = \int f(x)\,dx = P(c_1<X<c_2), \qquad
+C_g = \int g(x)\,dx = \Phi\!\left(\tfrac{c_2-\mu}{\sigma}\right)-\Phi\!\left(\tfrac{c_1-\mu}{\sigma}\right).
+$$
+Draw $X_1,\ldots,X_{n}\sim g(x)/C_g$ (the truncated normal), weight by $w(x)=f(x)/g(x)$, and scale by $C_g$:
+$$
+\widehat{C_f} = C_g\cdot\frac1n\sum_{i=1}^n w(X_i),
+$$
+unbiased for $C_f$ for *any* $g(x)$ positive wherever $f(x)$ is — regardless of $c_1,c_2,\mu,\sigma,\nu$.
+
+## Example 2 (Continued): The Picture
+
+```{r}
+#| label: fig-t-is-fg
+#| fig-width: 8
+#| fig-height: 5
+nu <- 1; mu <- 0; sigma <- 1; c1 <- 1
+draw_fg <- function(c2, xmax, main) {
+    hi <- min(c2, xmax)
+    xs <- seq(-1, xmax, length.out = 1500)
+    xin <- seq(c1, hi, length.out = 800)
+    ft <- dt(xs, nu); gn <- dnorm(xs, mu, sigma)
+    plot(xs, ft, type = "n", ylim = c(0, max(ft, gn) * 1.05),
+         xlab = "x", ylab = "unnormalized density", main = main)
+    lines(xs, ft, col = adjustcolor("firebrick", 0.35), lty = 3, lwd = 2)
+    lines(xs, gn, col = adjustcolor("royalblue", 0.35), lty = 3, lwd = 2)
+    polygon(c(c1, xin, hi), c(0, dt(xin, nu), 0), col = adjustcolor("firebrick", 0.15), border = NA)
+    polygon(c(c1, xin, hi), c(0, dnorm(xin, mu, sigma), 0), col = adjustcolor("royalblue", 0.15), border = NA)
+    lines(xin, dt(xin, nu), col = "firebrick", lwd = 4)
+    lines(xin, dnorm(xin, mu, sigma), col = "royalblue", lwd = 4)
+    abline(v = c(c1, if (is.finite(c2)) c2), lty = 2, col = "grey40")
+    legend("topright", bg = "white", box.col = NA, lwd = c(4, 4, 2), lty = c(1, 1, 3),
+           col = c("firebrick", "royalblue", "grey60"),
+           legend = TeX(c(r"($f(x)$: $t_\nu$ on $(c_1,c_2)$)",
+                          r"($g(x)$: $N(\mu,\sigma^2)$ on $(c_1,c_2)$)",
+                          r"(dotted: cut-off parts)")))
+}
+par(mar = c(4.5, 4.5, 3, 1))
+draw_fg(3, 5, TeX(r"($(c_1,c_2)=(1,3)$)"))
+```
+
+Here $\nu=1$ (Cauchy), $\mu=0$, $\sigma=1$. The shaded areas are $C_f$ (red) and $C_g$ (blue); outside $(c_1,c_2)$ both are cut off (dotted).
+
+## Example 2 (Continued): `is_t_interval()`
+
+```{r}
+#| label: is-t-interval
+#| echo: true
+is_t_interval <- function(n, df, c1, c2, mu, sigma, seed = NULL) {
+    if (!is.null(seed)) set.seed(seed)
+    X <- rtnorm_ars(n, mu, sigma, c1, c2)
+
+    Cg   <- pnorm(c2, mu, sigma) - pnorm(c1, mu, sigma)    # known C_g
+    logw <- dt(X, df, log = TRUE) - dnorm(X, mu, sigma, log = TRUE)   # f/g, unnormalized g
+
+    m    <- max(logw); v <- exp(logw - m)
+    Chat <- Cg * mean(v) * exp(m); se <- Cg * sd(v) / sqrt(n) * exp(m)
+    wn   <- v / mean(v)                                    # hat w*_i, mean 1
+
+    list(X = X, wn = wn, Chat = Chat, se = se, ess = n / mean(wn^2),
+         truth = pt(c2, df) - pt(c1, df))
+}
+```
+
+```{r}
+#| label: tbl-is-t-examples
+#| echo: true
+settings <- data.frame(df = c(1, 10, 1, 10), c1 = c(1, 1, -1, -1), c2 = c(3, 3, 2, 2))
+res <- lapply(seq_len(nrow(settings)), function(i) with(settings[i, ],
+    is_t_interval(n = 5000, df = df, c1 = c1, c2 = c2, mu = 0, sigma = 1, seed = 1)))
+
+knitr::kable(data.frame(
+    df = settings$df, c1 = settings$c1,
+    c2 = settings$c2,
+    truth = sapply(res, `[[`, "truth"), estimate = sapply(res, `[[`, "Chat"),
+    se = sapply(res, `[[`, "se"), ess_pct = 100 * sapply(res, `[[`, "ess") / 5000
+), digits = 4, col.names = c("df", "c1", "c2", "truth", "estimate", "s.e.", "ESS %"))
+```
+
+Every estimate is within a couple of standard errors of the truth, at heavy ($\nu=1$) and light ($\nu=10$) tails alike.
+
+
+## Example 2 (Continued):Observations {.smaller}
+
+- **Default settings**: raising $n$ improves the estimate at the usual $1/\sqrt n$ rate, and the 95% interval covers about as often as claimed
+
+- **Small $\sigma$, or $\mu$ far outside $(c_1,c_2)$**: draws pile up wherever the proposal has mass, weights nearly equal, $n_{\text{eff}}$ stays high, estimate can still miss badly
+
+- **Large $\sigma$**: one draw's weight can dominate, $n_{\text{eff}}$ collapses toward $1$ — visibly unreliable, an improvement on invisibly unreliable
+
+# 5. Example 3: Same Support, but a Mode Is Missed
+
+## Example 3: Same Support, but a Mode Is Missed,
 $$
 f(\theta) = \tfrac12\varphi(\theta+d) + \tfrac12\varphi(\theta-d), \qquad
 g_{\sigma}(\theta) = \tfrac{1}{\sigma}\varphi\!\left(\tfrac{\theta+d}{\sigma}\right),
@@ -391,7 +532,7 @@ $$
 
 so every observed weight is nearly equal, $\hat w^\star_i\approx1$ and $n_{\text{eff}}\approx n$, while $\widehat{C_f/C_g}\approx\tfrac12$ (truth $1$) and $\hat E_f(\theta)\approx-d$ (truth $0$). The draws that would expose the error carry $w(\theta)\approx\tfrac12e^{2d\theta}\gg1$ near $\theta=+d$ and have probability $\Phi(-2d)\approx10^{-23}$ under $g_1$: they never appear.
 
-## Example 1 (Continued): The Figure
+## Example 3 (Continued): The Figure
 
 ```{r}
 #| label: fig-missed-mode
@@ -424,12 +565,12 @@ th   <- rnorm(n, -d, sg)
 logw <- log_f(th, d) - dnorm(th, -d, sg, log = TRUE)
 mx   <- max(logw); v <- exp(logw - mx)
 Chat <- mean(v) * exp(mx); se <- sd(v) / sqrt(n) * exp(mx)
-wn   <- v / sum(v); ess_obs <- 1 / sum(wn^2)
-Ehat <- sum(wn * th); ess_x <- 100 * exp(-log_Ew2(d, sg))
+wn   <- v / mean(v); ess_obs <- n / mean(wn^2)      # wn = hat w*_i, mean 1
+Ehat <- mean(wn * th); ess_x <- 100 * exp(-log_Ew2(d, sg))
 
 xr <- range(c(th, -d - 4, d + 4)); xs <- seq(xr[1], xr[2], length.out = 1000)
 fx <- exp(log_f(xs, d)); gx <- dnorm(xs, -d, sg)
-lwc <- log_f(xs, d) - dnorm(xs, -d, sg, log = TRUE) - (mx + log(sum(v)))
+lwc <- log_f(xs, d) - dnorm(xs, -d, sg, log = TRUE) - (mx + log(mean(v)))
 
 layout(matrix(1:2, 2), heights = c(3, 2))
 par(mar = c(0.4, 5, 3, 1))
@@ -451,14 +592,14 @@ legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
 par(mar = c(4.5, 5, 0.4, 1))
 wl <- c(min(wn) / 5, max(wn) * 5)
 plot(th, wn, type = "n", log = "y", ylim = wl, xlim = xr,
-     xlab = expression(theta), ylab = "normalized weight (log scale)")
+     xlab = expression(theta), ylab = expression(hat(w)^"*" * " (log scale)"))
 lines(xs, exp(pmin(lwc, 700)), lwd = 2, col = "grey25")
 segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
-abline(h = 1 / n, lty = 2, col = "grey55", lwd = 2)
+abline(h = 1, lty = 2, col = "grey55", lwd = 2)
 legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
        lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA), col = c("grey55", "grey25", NA, NA),
        legend = TeX(c(
-           r"($1/n$)", r"(normalized weight function)",
+           r"($1$)", r"(normalized weight $w^{*}(\theta)$)",
            sprintf(r"(observed $n_{eff}$ = %.1f%% of n)", 100 * ess_obs / n),
            sprintf(r"(exact $n_{eff}$ = %.3g%% of n)", ess_x))))
 ```
@@ -466,105 +607,9 @@ legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
 The observed effective sample size reports near-perfect efficiency. The **exact** effective fraction $1/E_g(w(\theta)^2)$ is smaller by forty orders of magnitude — a property of $f(\theta),g(\theta)$ alone, invisible to any single sample. The variance is finite at $\sigma=1$ (it diverges only for $\sigma\le1/\sqrt2$), so the estimator is consistent — it would just need $n\sim10^{43}$ to look normal.
 
 
-# 5. Example 2: Tail Probability of a Student-$t$ Distribution
+# 6. Example 4: Marginal Likelihood via Importance Sampling
 
-## Example 2: Tail Probability of a Student-$t$ Distribution
-
-The target is a standard Student-$t_\nu$: $\nu=1$ is the Cauchy, $\nu\to\infty$ recovers the normal — $\nu$ is a **tuning parameter of the target's tail weight**. Goal: $P(c_1<X<c_2)$ for an interval $(c_1,c_2)$, possibly one-sided ($c_2=\infty$), from a truncated-normal proposal sampled by adaptive rejection sampling (ARS).
-
-$\log\varphi$ is concave, and restricting to $(c_1,c_2)$ preserves concavity, so the `ars` package applies directly to the *proposal*.
-
-```{r}
-#| label: rtnorm-ars
-#| echo: true
-rtnorm_ars <- function(n, mu = 0, sigma = 1, lo = 0, hi = Inf) {
-    logf   <- function(x) dnorm(x, mu, sigma, log = TRUE)
-    fprima <- function(x) -(x - mu) / sigma^2
-    if (is.finite(hi)) {
-        x0 <- lo + (hi - lo) * c(0.1, 0.5, 0.9)
-    } else {
-        right <- max(mu, lo) + 3 * sigma
-        x0 <- sort(unique(c(lo + 0.1 * sigma, max(lo + 0.2 * sigma, mu + 1e-6), right)))
-    }
-    ars(n, f = logf, fprima = fprima, x = x0,
-        lb = TRUE, xlb = lo, ub = is.finite(hi), xub = if (is.finite(hi)) hi else 0)
-}
-```
-
-The target $\log f_{t_\nu}$ is **not concave** at any finite $\nu$ — convex out in the tails, concave everywhere only in the $\nu\to\infty$ limit — so ARS cannot sample it directly. The truncated-normal proposal is a substitute, which is exactly why the sample needs importance weights.
-
-## Example 2 (Continued): The Estimator
-
-Let $g(x)$ be the normalized truncated normal density on $(c_1,c_2)$, $f(x)=f_{t_\nu}(x)I(c_1<x<c_2)$. Draw $X_1,\ldots,X_{n}\sim g(x)$, weight by $w(x)=f(x)/g(x)$, average:
-$$
-\widehat C = \frac1n\sum_{i=1}^n w(X_i),
-$$
-unbiased for $C_f=P(c_1<X<c_2)$ for *any* $g(x)$ positive wherever $f(x)$ is — regardless of $c_1,c_2,\mu,\sigma,\nu$.
-
-## Example 2 (Continued): When Its Variance Is Infinite {.smaller}
-
-*Precision* is a different question:
-$$
-\operatorname{Var}_g\bigl(w(X)\bigr) = \int_{c_1}^{c_2}\frac{f_{t_\nu}(x)^2}{g(x)}\,dx - C_f^2
-$$
-
-- **$c_2$ finite**: $f(x),g(x)$ share the same bounded interval, $f(x)/g(x)$ is bounded on it, the integral is finite — well-behaved at *any* $\nu$.
-
-- **$c_2\to\infty$**: $f_{t_\nu}(x)^2$ decays only polynomially ($\propto x^{-2(\nu+1)}$), $g(x)$'s Gaussian tail decays much faster — the integrand grows without bound and the integral **diverges**, for every $\mu,\sigma$ and every finite $\nu$.
-
-$n_{\text{eff}}$ need not warn you which regime you are in.
-
-## Example 2 (Continued): `is_t_interval()`
-
-```{r}
-#| label: is-t-interval
-#| echo: true
-is_t_interval <- function(n, df, c1, c2, mu, sigma, seed = NULL) {
-    if (!is.null(seed)) set.seed(seed)
-    X <- rtnorm_ars(n, mu, sigma, c1, c2)
-
-    lZ   <- log(pnorm(c2, mu, sigma) - pnorm(c1, mu, sigma))
-    logw <- dt(X, df, log = TRUE) - (dnorm(X, mu, sigma, log = TRUE) - lZ)
-
-    m    <- max(logw); v <- exp(logw - m)
-    Chat <- mean(v) * exp(m); se <- sd(v) / sqrt(n) * exp(m)
-    wn   <- v / sum(v)
-
-    list(X = X, wn = wn, Chat = Chat, se = se, ess = 1 / sum(wn^2),
-         truth = pt(c2, df) - pt(c1, df))
-}
-```
-
-```{r}
-#| label: tbl-is-t-examples
-#| echo: true
-settings <- data.frame(df = c(1, 10, 1, 30), c1 = c(1, 1, 1, 1), c2 = c(3, 3, Inf, Inf))
-res <- lapply(seq_len(nrow(settings)), function(i) with(settings[i, ],
-    is_t_interval(n = 5000, df = df, c1 = c1, c2 = c2, mu = 0, sigma = 1, seed = 1)))
-
-knitr::kable(data.frame(
-    df = settings$df, c1 = settings$c1,
-    c2 = ifelse(is.finite(settings$c2), as.character(settings$c2), "Inf"),
-    truth = sapply(res, `[[`, "truth"), estimate = sapply(res, `[[`, "Chat"),
-    se = sapply(res, `[[`, "se"), ess_pct = 100 * sapply(res, `[[`, "ess") / 5000
-), digits = 4, col.names = c("df", "c1", "c2", "truth", "estimate", "s.e.", "ESS %"))
-```
-
-A finite interval is well-behaved at any $\nu$; $c_2=\infty$ reproduces the divergence — badly at $\nu=1$, only *deceptively* well at $\nu=30$.
-
-
-## Example 2 (Continued):Observations {.smaller}
-
-- **$c_2$ finite (default)**: weights have finite variance; raising $n$ improves the estimate at the usual $1/\sqrt n$ rate, and the 95% interval covers about as often as claimed
-
-- **Check "$c_2=\infty$"**: reproduces the divergent case. Raising $n$ no longer shrinks a variance that doesn't exist; repeated *New sample* draws swing far more than the SE admits. Large $\nu$ can still look fine by chance; small $\nu$ (Cauchy) bites often — but $n_{\text{eff}}$ warns you either way only sometimes
-- **Small $\sigma$, or $\mu$ far outside $(c_1,c_2)$**: draws pile up wherever the proposal has mass, weights nearly equal, $n_{\text{eff}}$ stays high, estimate can still miss badly
-
-- **Large $\sigma$**: one draw's weight can dominate, $n_{\text{eff}}$ collapses toward $1$ — visibly unreliable, an improvement on invisibly unreliable
-
-# 6. Example 3: Marginal Likelihood via Importance Sampling
-
-## Example 3: Marginal Likelihood via Importance Sampling
+## Example 4: Marginal Likelihood via Importance Sampling
 
 Model: unknown mean $\mu$ and $w=\log\sigma^2$, independent normal priors. Importance sampling estimates $P(y)=\int L(\theta)\pi(\theta)\,d\theta$ with a built-in diagnostic ($n_{\text{eff}}$).
 
@@ -576,7 +621,7 @@ $$
 
 Contrast: sampling directly from the (wide, uninformative) **prior** is importance sampling with $g(\theta)=\pi(\theta)$ and weights $L(\theta_i)$ — a "good story" versus a proposal built with no information about where the likelihood actually lives.
 
-## Example 3 (Continued): Implementation {.smaller}
+## Example 4 (Continued): Implementation {.smaller}
 
 ```{r}
 #| label: marlik-functions
@@ -610,7 +655,7 @@ log_marlik_imps <- function(x, mu_0, sigma_mu, w_0, sigma_w, n) {
 }
 ```
 
-## Example 3 (Continued): Implementation (2) {.smaller}
+## Example 4 (Continued): Implementation (2) {.smaller}
 
 ```{r}
 #| label: marlik-functions-2
@@ -641,7 +686,7 @@ log_marlik_grid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n_grid = 400, width
 
 `log_marlik_grid()` supplies ground truth by quadrature — a midpoint grid centred and scaled by the Laplace fit, vectorized via the sufficient statistic $\sum(x-\mu)^2$.
 
-## Example 3 (Continued): Results Across Sample Sizes {.smaller}
+## Example 4 (Continued): Results Across Sample Sizes {.smaller}
 
 ```{r}
 #| label: tbl-marlik-merged
@@ -671,9 +716,9 @@ knitr::kable(merged_tbl, align = "r")
 
 Laplace-shaped: tight interval centred on truth at every $m$, $n_{\text{eff}}$ near nominal. Prior sampling degrades monotonically as the posterior concentrates at rate $m^{-1/2}$ while the prior stays put — $n_{\text{eff}}$ falls to a fraction of one percent, and its (still sometimes-covering) interval is only as trustworthy as those few dominant draws.
 
-## Example 3 (Continued): What to Look For
+## Example 4 (Continued): What to Look For
 
-Sorted, normalized weights, largest first, one panel per proposal (their scales differ by orders of magnitude) — a good proposal gives a flat curve near $1/n$; a bad one falls off a cliff.
+Sorted, normalized weights, largest first, one panel per proposal (their scales differ by orders of magnitude) — a good proposal gives a flat curve near $1$ (the $\hat w^\star_i$ have mean 1); a bad one falls off a cliff.
 
 # 7. Advanced Applications of Importance Sampling
 
@@ -696,7 +741,7 @@ $$
 P(y) = \frac{C_f}{C_g} = E_\pi\big[L(\theta)\big] \approx \frac1n\sum_{i=1}^n L(\theta_i), \qquad \theta_i\sim\pi
 $$
 
-$-\log P(y)$ is the free energy of the posterior. "Prior sampling" is exactly Example 1's failure in disguise: the prior is diffuse, the likelihood a narrow spike, weights are $L(\theta_i)$, and almost all prior draws carry negligible weight — jumping straight from $\beta=0$ to $\beta=1$ asks one importance-sampling step to bridge the *entire* temperature range at once.
+$-\log P(y)$ is the free energy of the posterior. "Prior sampling" is exactly Example 3's failure in disguise: the prior is diffuse, the likelihood a narrow spike, weights are $L(\theta_i)$, and almost all prior draws carry negligible weight — jumping straight from $\beta=0$ to $\beta=1$ asks one importance-sampling step to bridge the *entire* temperature range at once.
 
 ## Stepping Stones: Many Small Jumps Instead of One Big One {.smaller}
 
@@ -737,7 +782,7 @@ over draws from the *full* posterior (Gelfand, Dey & Chang, 1992) — one weight
 
 ## When It Works, and When It Breaks {.smaller}
 
-The full posterior is **narrower** than any leave-one-out posterior (it has one more observation), so $g(\theta)$ has lighter tails than $f(\theta)$: the *heavy-tailed-weight* failure from Example 2, not the missed-mode failure from Example 1. Typical points: the two posteriors nearly coincide, weights stable. Influential points (outliers, high leverage): $1/p(y_j\mid\theta_i)$ can have infinite variance, and the estimate is dominated by a few draws.
+The full posterior is **narrower** than any leave-one-out posterior (it has one more observation), so $g(\theta)$ has lighter tails than $f(\theta)$: a *heavy-tailed-weight* failure, not the missed-mode failure from Example 3. Typical points: the two posteriors nearly coincide, weights stable. Influential points (outliers, high leverage): $1/p(y_j\mid\theta_i)$ can have infinite variance, and the estimate is dominated by a few draws.
 
 **Diagnostics and fixes**: report $n_{\text{eff}}$ *per observation*; **Pareto-smoothed importance sampling** (Vehtari, Gelman & Gabry, 2017) fits a generalized Pareto distribution to the largest weights and uses the shape $\hat k$ as a diagnostic ($\hat k>0.7$ unreliable); fall back to exact refitting only for the flagged observations.
 
@@ -753,7 +798,7 @@ only the support condition $\{\theta: g(\theta)>0\}\supseteq\{\theta: f(\theta)>
 
 ## Summary (2/2)
 
-- A proposal that misses a mode or part of the support fails **silently** (Example 1): observed weights look healthy while the estimate is badly wrong, and no amount of extra sampling fixes it — $n_{\text{eff}}$ diagnoses only the *noisy* failure, never the silent one
+- A proposal that misses a mode or part of the support fails **silently** (Example 3): observed weights look healthy while the estimate is badly wrong, and no amount of extra sampling fixes it — $n_{\text{eff}}$ diagnoses only the *noisy* failure, never the silent one
 
 - The marginal likelihood: a Laplace-shaped proposal stays efficient as data accumulate and the posterior sharpens; the prior does not
 - Advanced uses: normalizing-constant ratios (free energy, marginal likelihood) via tempering/stepping-stones; leave-one-out cross-validation from full-posterior draws with $w_i=1/p(y_i\mid\theta)$, diagnosed per observation by Pareto-smoothed importance sampling
