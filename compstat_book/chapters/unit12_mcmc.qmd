@@ -20,7 +20,7 @@ rstan_options(auto_write = TRUE)
 
 The last two chapters drew from a **fixed** proposal $g$: an envelope for rejection sampling, an importance distribution for reweighting. Both work well when $g$ can be made to resemble the target $f$ over its whole support, but in more than a handful of dimensions no fixed $g$ does — the target occupies an ever-thinner sliver of the space $g$ covers, exactly the curse of dimensionality met already for quadrature grids. **Markov chain Monte Carlo (MCMC)** answers this differently: instead of one global proposal, build a **random process** $\theta^{(0)}, \theta^{(1)}, \theta^{(2)}, \ldots$ that moves *locally* — each step depends only on where the chain currently is — and is engineered so that, after enough steps, $\theta^{(t)}$ is (approximately) distributed as the target $f$. The price is that consecutive draws are dependent and the guarantee is only asymptotic; the payoff is that the same local-move idea scales to any dimension.
 
-This chapter develops the Markov chain theory that makes this work, then builds three increasingly automatic ways to construct such a chain — Gibbs sampling, Metropolis–Hastings, and Hamiltonian Monte Carlo — and ends with Stan, which automates the last of these for essentially arbitrary models. Each method is presented first as theory, followed by one or more examples, each named after the problem it solves.
+This chapter develops the Markov chain theory that makes this work, then builds three increasingly automatic ways to construct such a chain — Gibbs sampling, Metropolis–Hastings, and Hamiltonian Monte Carlo — and ends with Stan, which automates the last of these for essentially arbitrary models. Each method is presented first as theory, followed by one or more examples, each named after the problem it solves. A final section applies Stan to a practical problem, a sparse logistic regression with as many predictors as cases, and compares it with `glm` and the LASSO.
 
 ## Markov Chains
 
@@ -1228,9 +1228,13 @@ trick and three derivations. Stan needed only the model statement, and it
 would work unchanged with a different prior or a Student-$t$ likelihood with
 any degrees of freedom, where the Gibbs derivation would have to be redone.
 
-### Example 10: Logistic Regression with 50 Predictors and 100 Cases
+## A Final Practical Example: Sparse Logistic Regression
 
-**The problem.** Binary responses $y_1, \ldots, y_n$ depend on $p$ candidate
+The examples so far were chosen to show how each sampler works, on models small enough to check against an exact answer. This section puts the pieces together on a problem where Bayesian computation earns its place in practice: a logistic regression with as many unknowns as there are cases, where maximum likelihood breaks down, the prior decides the quality of the answer, and Stan makes the fit routine. The posterior is compared with two standard non-Bayesian fits, `glm` and the LASSO, on new test data.
+
+### The problem
+
+Binary responses $y_1, \ldots, y_n$ depend on $p$ candidate
 predictors through the logistic regression model
 $$
 y_i \mid \alpha, \beta \sim \text{Bernoulli}\big(\text{logit}^{-1}(\alpha + x_i^\top \beta)\big),
@@ -1240,7 +1244,9 @@ Here there are $p = 50$ predictors for only $n = 100$ cases. The predictors
 are standard normal and only two carry signal: the true values are
 $\alpha = 0$, $\beta_1 = 1$, $\beta_2 = -1$ and $\beta_3 = \cdots = \beta_{50} = 0$.
 
-**Why maximum likelihood fails.** With 51 unknowns and only 100 cases, it is
+### Why maximum likelihood fails
+
+With 51 unknowns and only 100 cases, it is
 very likely, and true for these data, that some linear combination
 $\alpha + x_i^\top\beta$ is positive for every case with $y_i = 1$ and negative
 for every case with $y_i = 0$: the data are perfectly **separable**.
@@ -1251,7 +1257,9 @@ iterations with very large coefficients (here up to about $60$ in absolute
 value) and warns that the algorithm did not converge and that fitted
 probabilities are numerically $0$ or $1$.
 
-**A sparse prior.** A Bayesian fit always has a proper posterior, but the prior
+### A sparse prior: the horseshoe
+
+A Bayesian fit always has a proper posterior, but the prior
 now matters a great deal. A vague prior such as $\beta_j \sim N(0, 2.5^2)$
 lets all 48 null coefficients wander, and their sum swamps the signal. We
 want a prior that says *most coefficients are near 0, but a few may be
@@ -1271,6 +1279,10 @@ different scales of $\tau$ and the $\lambda_j$, which otherwise cause many
 divergent transitions. If a handful remain, Stan reports them as a warning;
 with only a few out of 8,000 draws, $\hat R$ near 1 and large effective sample
 sizes, they would not noticeably affect the summaries.
+
+### Fitting in Stan
+
+The horseshoe model in Stan, and the same model with the vague normal prior for comparison:
 
 ```{r}
 #| label: stan-model-logit
@@ -1335,6 +1347,8 @@ fit_logit_normal <- stan(model_code = stan_logit_normal_code, data = data_lr,
                          chains = 4, iter = 2000, warmup = 1000, seed = 9, refresh = 0)
 ```
 
+### The horseshoe posterior
+
 @tbl-stan-logit summarizes the horseshoe posterior of the first ten
 coefficients: the two signals and eight of the 48 nulls.
 
@@ -1382,7 +1396,7 @@ for (j in 1:4) {
 }
 ```
 
-#### Prediction on test data
+### Prediction on test data
 
 To see how well each method predicts, simulate a test set of $m = 1000$ new
 cases from the same design, independently of the training data. For a test
@@ -1511,7 +1525,7 @@ the number of predictors is a large fraction of the number of cases, the prior
 is not a detail to be made as vague as possible but the part of the model that
 makes good prediction possible.
 
-#### What `glm` and the LASSO estimate
+### What `glm` and the LASSO estimate
 
 The test-set scores are explained by the fitted coefficients. @tbl-glm-coef shows
 the maximum-likelihood fit of the first ten coefficients, with Wald 95%
@@ -1586,5 +1600,6 @@ signals escape the shrinkage.
 - **Metropolis–Hastings** accepts or rejects a proposal from *any* distribution with probability depending on the target-density ratio (times a proposal-symmetry correction); random-walk MH needs a tuned step size, aimed at low autocorrelation rather than high acceptance.
 - **Hamiltonian Monte Carlo** adds momentum and follows gradient-driven trajectories, discretized by the leapfrog integrator and corrected by a Metropolis step, giving distant, nearly independent proposals even on strongly correlated targets — at the cost of needing a gradient and two tuning parameters ($\epsilon$, $L$).
 - **Stan** automates gradient computation and adaptive HMC (NUTS) for essentially any model expressible in its declarative syntax, turning what would otherwise be a hand-derivation (as the Cauchy model of Examples 4 and 9 shows) into a direct transcription of the model.
+- In the **sparse logistic regression** with as many predictors as cases, maximum likelihood fails on separable data and the LASSO over-shrinks the signals, while the horseshoe posterior, fitted by Stan, comes closest to the true probabilities: when the data are thin, the prior is part of what makes good prediction possible.
 
 This is the last of the sampling-methods chapters in the book: quadrature (Chapter 8) and Laplace's method (Chapter 9) work in low dimension by grid or by a local Gaussian approximation; rejection and importance sampling (Chapters 10–11) draw independently from a fixed proposal; Gibbs, Metropolis–Hastings, HMC, and Stan (this chapter) let a Markov chain do the work instead, and are, in practice, how most modern Bayesian computation is actually done.
