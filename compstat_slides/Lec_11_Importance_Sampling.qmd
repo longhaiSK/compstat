@@ -26,14 +26,14 @@ Rejection sampling turns draws from an envelope $g(\theta)\ge f(\theta)$ into ex
 
 Two integrals with respect to an **unnormalized** function $f(\theta)$, e.g. $f(\theta) = \pi(\theta)L(\theta)$:
 
-1. A posterior expectation.
-$$
-A = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta} = E_f\big[a(\theta)\big], \qquad \theta\sim\frac{f(\theta)}{C_f}
-$$
-
-2. The normalizing constant (marginal likelihood).
+1. The normalizing constant (marginal likelihood).
 $$
 C_f = \int f(\theta)\,d\theta.
+$$
+
+2. A posterior expectation.
+$$
+A = \frac{\int a(\theta)\,f(\theta)\,d\theta}{\int f(\theta)\,d\theta} = E_f\big[a(\theta)\big], \qquad \theta\sim\frac{f(\theta)}{C_f}
 $$
 
 Plain Monte Carlo needs draws from $f(\theta)/C_f$, which we cannot produce. Rejection sampling needs an envelope $g(\theta)\ge f(\theta)$, which may be hard to find or very wasteful.
@@ -454,17 +454,29 @@ draw_fg <- function(c2, xmax, main) {
     lines(xin, dt(xin, nu), col = "firebrick", lwd = 4)
     lines(xin, dnorm(xin, mu, sigma), col = "royalblue", lwd = 4)
     abline(v = c(c1, if (is.finite(c2)) c2), lty = 2, col = "grey40")
-    legend("topright", bg = "white", box.col = NA, lwd = c(4, 4, 2), lty = c(1, 1, 3),
-           col = c("firebrick", "royalblue", "grey60"),
+    ## 10 draws from g(x)/C_g (truncated normal, inverse CDF) and their weights
+    set.seed(48)
+    xp <- qnorm(runif(10, pnorm(c1, mu, sigma), pnorm(hi, mu, sigma)), mu, sigma)
+    w  <- dt(xp, nu) / dnorm(xp, mu, sigma)
+    ytop <- max(ft, gn) * 1.05; sc <- 0.5 * ytop / max(w)
+    segments(xp, 0, xp, w * sc, col = "darkgreen", lwd = 2)
+    points(xp, w * sc, pch = 19, col = "darkgreen")
+    points(xp, rep(0, 10), pch = 17, cex = 1.2, xpd = NA)
+    wt <- pretty(c(0, max(w)))
+    axis(4, at = wt * sc, labels = wt, las = 1, col.axis = "darkgreen", col = "darkgreen")
+    mtext(TeX(r"($w(x) = f(x)/g(x)$)"), side = 4, line = 2.8, col = "darkgreen")
+    legend("topright", bg = "white", box.col = NA, lwd = c(4, 4, 2, 3), lty = c(1, 1, 3, 1),
+           col = c("firebrick", "royalblue", "grey60", "darkgreen"),
            legend = TeX(c(r"($f(x)$: $t_\nu$ on $(c_1,c_2)$)",
                           r"($g(x)$: $N(\mu,\sigma^2)$ on $(c_1,c_2)$)",
-                          r"(dotted: cut-off parts)")))
+                          r"(dotted: cut-off parts)",
+                          r"(weight $w(x)$ (right axis))")))
 }
-par(mar = c(4.5, 4.5, 3, 1))
+par(mar = c(4.5, 4.5, 3, 4.5))
 draw_fg(3, 5, TeX(r"($(c_1,c_2)=(1,3)$)"))
 ```
 
-Here $\nu=1$ (Cauchy), $\mu=0$, $\sigma=1$. The shaded areas are $C_f$ (red) and $C_g$ (blue); outside $(c_1,c_2)$ both are cut off (dotted).
+Here $\nu=1$ (Cauchy), $\mu=0$, $\sigma=1$. The shaded areas are $C_f$ (red) and $C_g$ (blue); outside $(c_1,c_2)$ both are cut off (dotted). Green: 10 draws from $g(x)/C_g$ and their weights $w(x)$ — draws are dense near $c_1$ where $g$ is high and get small weights there; the rare draws on the right carry large weights.
 
 ## Example 2 (Continued): `is_t_interval()`
 
@@ -536,8 +548,8 @@ so every observed weight is nearly equal, $\hat w^\star_i\approx1$ and $n_{\text
 
 ```{r}
 #| label: fig-missed-mode
-#| fig-width: 9
-#| fig-height: 7
+#| fig-width: 10
+#| fig-height: 5.6
 d <- 5; sg <- 1; n <- 2000
 set.seed(11)
 
@@ -568,40 +580,36 @@ Chat <- mean(v) * exp(mx); se <- sd(v) / sqrt(n) * exp(mx)
 wn   <- v / mean(v); ess_obs <- n / mean(wn^2)      # wn = hat w*_i, mean 1
 Ehat <- mean(wn * th); ess_x <- 100 * exp(-log_Ew2(d, sg))
 
-xr <- range(c(th, -d - 4, d + 4)); xs <- seq(xr[1], xr[2], length.out = 1000)
+xs <- seq(-9, 9, length.out = 1000)
 fx <- exp(log_f(xs, d)); gx <- dnorm(xs, -d, sg)
-lwc <- log_f(xs, d) - dnorm(xs, -d, sg, log = TRUE) - (mx + log(mean(v)))
+ytop <- max(fx, gx) * 1.05
 
-layout(matrix(1:2, 2), heights = c(3, 2))
-par(mar = c(0.4, 5, 3, 1))
-yl <- c(1e-10, max(fx, gx) * 2)
-plot(xs, fx, type = "n", log = "y", ylim = yl, xlim = xr, xaxt = "n",
-     xlab = "", ylab = "density (log scale)",
-     main = "bimodal target and a proposal centred on one mode")
-lines(xs, fx, lwd = 4, col = "red"); lines(xs, gx, lwd = 3, col = "grey60")
-rug(th, col = adjustcolor("grey45", 0.35))
-legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
-       lwd = c(4, 3, NA, NA, NA), col = c("grey25", "grey60", NA, NA, NA),
-       legend = TeX(c(
-           r"(target $f$)",
-           sprintf(r"(proposal $g$, sd $= %.2f$)", sg),
-           sprintf(r"($C_f/C_g$: true 1, est. %.3f)", Chat),
-           sprintf(r"(95%% CI $(%.3f, %.3f)$)", Chat - 1.96 * se, Chat + 1.96 * se),
-           sprintf(r"($E_f(\theta)$: true 0, est. %.2f)", Ehat))))
+set.seed(48); tp <- rnorm(10, -d, sg)                 # 10 draws from g to display
+wp <- exp(log_f(tp, d) - dnorm(tp, -d, sg, log = TRUE))
+sc <- 0.5 * ytop / max(1, wp)                         # w = 1 reaches half the y-axis
 
-par(mar = c(4.5, 5, 0.4, 1))
-wl <- c(min(wn) / 5, max(wn) * 5)
-plot(th, wn, type = "n", log = "y", ylim = wl, xlim = xr,
-     xlab = expression(theta), ylab = expression(hat(w)^"*" * " (log scale)"))
-lines(xs, exp(pmin(lwc, 700)), lwd = 2, col = "grey25")
-segments(th, wl[1], th, wn, col = adjustcolor("grey45", 0.5))
-abline(h = 1, lty = 2, col = "grey55", lwd = 2)
-legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
-       lty = c(2, 1, NA, NA), lwd = c(2, 2, NA, NA), col = c("grey55", "grey25", NA, NA),
-       legend = TeX(c(
-           r"($1$)", r"(normalized weight $w^{*}(\theta)$)",
-           sprintf(r"(observed $n_{eff}$ = %.1f%% of n)", 100 * ess_obs / n),
-           sprintf(r"(exact $n_{eff}$ = %.3g%% of n)", ess_x))))
+par(mar = c(4.5, 4.5, 3, 4.5), cex = 1.15)
+plot(xs, fx, type = "n", ylim = c(0, ytop), yaxs = "i", xlab = expression(theta),
+     ylab = "density", main = "bimodal target and a proposal centred on one mode")
+polygon(c(xs, rev(xs)), c(gx, 0 * xs), col = adjustcolor("royalblue", 0.20), border = NA)
+polygon(c(xs, rev(xs)), c(fx, 0 * xs), col = adjustcolor("firebrick", 0.20), border = NA)
+lines(xs, gx, col = "royalblue", lwd = 4); lines(xs, fx, col = "firebrick", lwd = 4)
+segments(tp, 0, tp, wp * sc, col = "darkgreen", lwd = 2)
+points(tp, wp * sc, pch = 19, col = "darkgreen")
+points(tp, rep(0, 10), pch = 17, cex = 1.2, xpd = NA)
+wt <- pretty(c(0, max(1, wp)))
+axis(4, at = wt * sc, labels = wt, las = 1, col.axis = "darkgreen", col = "darkgreen")
+mtext(TeX(r"($w(\theta) = f(\theta)/g(\theta)$)"), side = 4, line = 2.8, col = "darkgreen")
+legend("topright", bty = "n", lwd = c(4, 4, 2), col = c("firebrick", "royalblue", "darkgreen"),
+       legend = TeX(c(r"(target $f(\theta)$)", sprintf(r"(proposal $g(\theta)$, sd $= %.0f$)", sg),
+                      r"(10 draws and weights $w(\theta_i)$)")))
+legend(-3.7, ytop * 0.8, bty = "n", text.col = "navy", cex = 0.9,
+       legend = TeX(c(sprintf(r"(with $n = %d$ draws:)", n),
+           sprintf(r"($C_f/C_g$: true 1, est. %.3f, 95%% CI $(%.3f, %.3f)$)", Chat,
+                   Chat - 1.96 * se, Chat + 1.96 * se),
+           sprintf(r"($E_f(\theta)$: true 0, est. %.2f)", Ehat),
+           sprintf(r"(observed $n_{eff}$ = %.1f%% of n; exact $n_{eff}$ = %.3g%% of n)",
+                   100 * ess_obs / n, ess_x))))
 ```
 
 The observed effective sample size reports near-perfect efficiency. The **exact** effective fraction $1/E_g(w(\theta)^2)$ is smaller by forty orders of magnitude — a property of $f(\theta),g(\theta)$ alone, invisible to any single sample. The variance is finite at $\sigma=1$ (it diverges only for $\sigma\le1/\sqrt2$), so the estimator is consistent — it would just need $n\sim10^{43}$ to look normal.
@@ -609,17 +617,50 @@ The observed effective sample size reports near-perfect efficiency. The **exact*
 
 # 6. Example 4: Marginal Likelihood via Importance Sampling
 
-## Example 4: Marginal Likelihood via Importance Sampling
+## Example 4: Marginal Likelihood via Importance Sampling {.smaller}
 
-Model: unknown mean $\mu$ and $w=\log\sigma^2$, independent normal priors. Importance sampling estimates $P(y)=\int L(\theta)\pi(\theta)\,d\theta$ with a built-in diagnostic ($n_{\text{eff}}$).
-
-Take $g(\mu,w)$ to be the **Gaussian approximation to the posterior** from a Laplace fit: mode $(\hat\mu,\hat w)$, $g(\mu,w)$ the $N_2\big((\hat\mu,\hat w), H^{-1}\big)$ density for $H$ the Hessian of $-\log[L\pi]$ at the mode:
+Data $y_1,\ldots,y_m\sim N(\mu,\sigma^2)$, $\theta=(\mu,w)$ with $w=\log\sigma^2$, independent normal priors. The **target** is prior $\times$ likelihood, with $C_f=P(y)$, the marginal likelihood:
 $$
-\widehat{P(y)} = \frac1n\sum_{i=1}^n w_i, \qquad
-w_i = \frac{L(\theta_i)\pi(\theta_i)}{g(\theta_i)}, \qquad \theta_i\sim g(\theta).
+f(\mu,w) = N(\mu\mid\mu_0,\sigma_\mu^2)\;N(w\mid w_0,\sigma_w^2)\;\prod_{k=1}^m N\big(y_k\mid\mu,\,e^{w}\big).
 $$
+The **proposal** is the Gaussian (Laplace) approximation at the mode $(\hat\mu,\hat w)$ of $f$, with $H = -\nabla^2\log f(\hat\mu,\hat w)$:
+$$
+g(\mu,w) = N_2\big((\mu,w)\,\big|\,(\hat\mu,\hat w),\,H^{-1}\big).
+$$
+Since $C_g=1$, $\;\widehat{P(y)} = \frac1n\sum_{i=1}^n f(\theta_i)/g(\theta_i)$ with $\theta_i\sim g(\theta)$. Contrast: the **prior** as proposal, $g(\theta)=\pi(\theta)$, gives weights $L(\theta_i)$.
 
-Contrast: sampling directly from the (wide, uninformative) **prior** is importance sampling with $g(\theta)=\pi(\theta)$ and weights $L(\theta_i)$ — a "good story" versus a proposal built with no information about where the likelihood actually lives.
+## Example 4 (Continued): The Contours of $f$ and $g$
+
+```{r}
+#| label: fig-marlik-contours
+#| fig-width: 9
+#| fig-height: 5.6
+local({
+set.seed(2); m <- 5; y <- rnorm(m)
+mu0 <- 0; smu <- 5; w0 <- 0; sw <- 5
+logf <- function(mu, w) dnorm(mu, mu0, smu, log = TRUE) + dnorm(w, w0, sw, log = TRUE) +
+    sapply(seq_along(mu), function(i) sum(dnorm(y, mu[i], exp(w[i] / 2), log = TRUE)))
+fit <- optim(c(mean(y), log(var(y))), function(t) -logf(t[1], t[2]), hessian = TRUE)
+md <- fit$par; S <- solve(fit$hessian)
+mus <- seq(md[1] - 3.2, md[1] + 3.2, length.out = 260)
+ws  <- seq(md[2] - 2.8, md[2] + 5.0, length.out = 260)
+G   <- expand.grid(mu = mus, w = ws)
+lf  <- matrix(logf(G$mu, G$w), length(mus)) ; lf <- lf - max(lf)
+Si  <- solve(S); D <- cbind(G$mu - md[1], G$w - md[2])
+lg  <- matrix(-0.5 * rowSums((D %*% Si) * D), length(mus))
+lev <- -qchisq(c(0.5, 0.9, 0.99), 2) / 2       # same density levels for both
+par(mar = c(4.5, 4.5, 1, 1), cex = 1.2)
+plot(NA, xlim = range(mus), ylim = range(ws), xlab = expression(mu),
+     ylab = expression(w == log ~ sigma^2))
+contour(mus, ws, lg, levels = lev, drawlabels = FALSE, col = "royalblue", lwd = 2.5, add = TRUE)
+contour(mus, ws, lf, levels = lev, drawlabels = FALSE, col = "firebrick", lwd = 2.5, add = TRUE)
+points(md[1], md[2], pch = 3, cex = 1.6, lwd = 2)
+legend("topright", bty = "n", lwd = 2.5, col = c("firebrick", "royalblue"),
+       legend = c("target f (posterior)", "proposal g (Laplace)"))
+})
+```
+
+With $m=5$ observations the posterior is skewed in $w=\log\sigma^2$ (long upper tail), so its contours are not the ellipses of the quadratic approximation $g(\theta)$. The weights $f/g$ correct for that difference; as $m$ grows, $f$ becomes more Gaussian and $g$ fits better.
 
 ## Example 4 (Continued): Implementation {.smaller}
 
@@ -688,6 +729,8 @@ log_marlik_grid <- function(x, mu_0, sigma_mu, w_0, sigma_w, n_grid = 400, width
 
 ## Example 4 (Continued): Results Across Sample Sizes {.smaller}
 
+::: {style="font-size: 75%; white-space: nowrap;"}
+
 ```{r}
 #| label: tbl-marlik-merged
 #| echo: true
@@ -714,77 +757,87 @@ names(merged_tbl) <- c("m", "truth", "Laplace: est.", "Laplace: 95% CI", "Laplac
 knitr::kable(merged_tbl, align = "r")
 ```
 
+:::
+
 Laplace-shaped: tight interval centred on truth at every $m$, $n_{\text{eff}}$ near nominal. Prior sampling degrades monotonically as the posterior concentrates at rate $m^{-1/2}$ while the prior stays put — $n_{\text{eff}}$ falls to a fraction of one percent, and its (still sometimes-covering) interval is only as trustworthy as those few dominant draws.
-
-## Example 4 (Continued): What to Look For
-
-Sorted, normalized weights, largest first, one panel per proposal (their scales differ by orders of magnitude) — a good proposal gives a flat curve near $1$ (the $\hat w^\star_i$ have mean 1); a bad one falls off a cliff.
 
 # 7. Advanced Applications of Importance Sampling
 
-## Free Energy and the Marginal Likelihood
+## Free Energy and the Marginal Likelihood {.smaller}
 
-A system with energy $U(x)$ at inverse temperature $\beta$ has.
+A system with energy $U(x)$ at inverse temperature $\beta$ has normalizing constant (partition function) and free energy
 $$
 Z(\beta) = \int e^{-\beta U(x)}\,dx, \qquad F(\beta) = -\frac1\beta\log Z(\beta).
 $$
-
-Importance sampling from $\beta_0$ to $\beta_1$ with $g(x)=e^{-\beta_0U(x)}$, $f(x)=e^{-\beta_1U(x)}$, $w(x)=e^{-(\beta_1-\beta_0)U(x)}$:
+Importance sampling with $g(x)=e^{-\beta_0U(x)}$, $f(x)=e^{-\beta_1U(x)}$, $w(x)=e^{-(\beta_1-\beta_0)U(x)}$ gives
 $$
 \frac{Z(\beta_1)}{Z(\beta_0)} = E_{\beta_0}\Big[e^{-(\beta_1-\beta_0)U(x)}\Big].
 $$
-
-## The Bayesian Analogue {.smaller}
-
-$U(\theta)=-\log L(\theta)$, $g(\theta)=\pi(\theta)$ (prior, $\beta_0=0$), $f(\theta)=L(\theta)\pi(\theta)$ (posterior, $\beta_1=1$):
+**Bayesian analogue:** $U(\theta)=-\log L(\theta)$, $g(\theta)=\pi(\theta)$ ($\beta_0=0$), $f(\theta)=L(\theta)\pi(\theta)$ ($\beta_1=1$):
 $$
-P(y) = \frac{C_f}{C_g} = E_\pi\big[L(\theta)\big] \approx \frac1n\sum_{i=1}^n L(\theta_i), \qquad \theta_i\sim\pi
+P(y) = \frac{C_f}{C_g} = E_\pi\big[L(\theta)\big] \approx \frac1n\sum_{i=1}^n L(\theta_i), \qquad \theta_i\sim\pi(\theta).
 $$
-
-$-\log P(y)$ is the free energy of the posterior. "Prior sampling" is exactly Example 3's failure in disguise: the prior is diffuse, the likelihood a narrow spike, weights are $L(\theta_i)$, and almost all prior draws carry negligible weight — jumping straight from $\beta=0$ to $\beta=1$ asks one importance-sampling step to bridge the *entire* temperature range at once.
+One jump from prior to posterior is the "prior sampling" of Example 4: almost all prior draws get negligible weight.
 
 ## Stepping Stones: Many Small Jumps Instead of One Big One {.smaller}
 
-Chain intermediate temperatures $\beta_0=0<\beta_1<\cdots<\beta_K=1$:
+Chain temperatures $0=\beta_0<\beta_1<\cdots<\beta_K=1$ and estimate each factor by importance sampling from $\beta_{k-1}$ to $\beta_k$:
 $$
-\frac{Z(1)}{Z(0)} = \prod_{k=1}^K \frac{Z(\beta_k)}{Z(\beta_{k-1})}, \qquad
-\log Z(1)-\log Z(0) = \sum_{k=1}^K \log\frac{Z(\beta_k)}{Z(\beta_{k-1})}.
-$$
-
-Each factor is its own small importance-sampling problem: sample from the tempered distribution at $\beta_{k-1}$, weight by $e^{-(\beta_k-\beta_{k-1})U(\theta)}$. If temperatures are close together, $g_{\beta_{k-1}}$ and $f_{\beta_k}$ nearly coincide and every step is a good-story proposal with near-constant weights — the same principle as building an envelope from many well-fitting pieces rather than one loose one.
-
-This chain is a **stepping-stones** estimator — a discretization of thermodynamic integration, and the schedule idea behind simulated annealing and parallel tempering. The prior-vs-posterior mismatch has not gone away; spreading it over many small, well-matched steps rather than absorbing it in one large jump is what makes tempering-based samplers practical where a direct jump is not.
-
-## Bayesian Leave-One-Out Cross-Validation
-
-The Bayesian analogue of a cross-validation fold is the **leave-one-out predictive density**,
-$$
-p(y_j\mid y_{-j}) = \int p(y_j\mid\theta)\,p(\theta\mid y_{-j})\,d\theta,
+\frac{Z(1)}{Z(0)} = \prod_{k=1}^K \frac{Z(\beta_k)}{Z(\beta_{k-1})}.
 $$
 
-the posterior predictive density for $y_j$ under the posterior that never saw $y_j$. Refitting the model once per left-out observation is exactly the cost importance sampling is suited to avoid.
+```{r}
+#| label: fig-stepping-stones
+#| fig-width: 10
+#| fig-height: 4.2
+local({
+base <- function(t) 0.30 + 0.07 * sin(3 * t) + 0.05 * cos(2 * t)  # same blob shape as Example 1
+sc   <- c(1, 0.55, 0.30)                                           # A_1, A_2, A_3 = A
+ctr  <- list(c(0.50, 0.50), c(0.56, 0.54), c(0.60, 0.56))
+area <- sapply(sc, function(k) integrate(function(t) (k * base(t))^2 / 2, 0, 2 * pi)$value)
+ar   <- c(1, area)                                                 # |A_0| = |B| = 1
+cols <- c("grey92", "#d9e8f5", "#9cc3e6", "#4a86c5")
+tt <- seq(0, 2 * pi, length.out = 400)
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+plot(NA, xlim = c(0, 2.05), ylim = c(0, 1), asp = 1, axes = FALSE, xlab = "", ylab = "")
+rect(0, 0, 1, 1, col = cols[1], border = "black", lwd = 2)
+for (k in 1:3) {
+    r <- sc[k] * base(tt)
+    polygon(ctr[[k]][1] + r * cos(tt), ctr[[k]][2] + r * sin(tt), col = cols[k + 1],
+            border = "steelblue4", lwd = 2)
+}
+text(0.07, 0.93, expression(A[0] == B), cex = 1.6, adj = 0)
+text(0.27, 0.30, expression(A[1]), cex = 1.6)
+text(0.47, 0.44, expression(A[2]), cex = 1.6)
+text(ctr[[3]][1], ctr[[3]][2], expression(A[3] == A), cex = 1.3, col = "white")
+y0 <- 0.86
+text(1.08, y0, adj = 0, cex = 1.3, "one big jump:")
+text(1.12, y0 - 0.09, adj = 0, cex = 1.3,
+     TeX(sprintf(r"($p = |A|/|B| = %.3f$)", ar[4])))
+text(1.08, y0 - 0.25, adj = 0, cex = 1.3, "three small jumps:")
+for (k in 1:3)
+    text(1.12, y0 - 0.25 - 0.09 * k, adj = 0, cex = 1.3,
+         TeX(sprintf(r"($p_%d = |A_%d|/|A_%d| = %.2f$)", k, k, k - 1, ar[k + 1] / ar[k])))
+text(1.08, y0 - 0.70, adj = 0, cex = 1.3, TeX(r"($p = p_1 \, p_2 \, p_3$)"))
+})
+```
 
-## Reusing the Full Posterior as the Proposal {.smaller}
+## Bayesian Leave-One-Out Cross-Validation {.smaller}
 
-Take $g(\theta)=p(\theta\mid y)$, the **full** posterior (already available from one fit), as the proposal for the leave-one-out posterior $f(\theta)=p(\theta\mid y_{-j})$. Since $p(\theta\mid y)\propto p(y_j\mid\theta)\,p(\theta\mid y_{-j})$,
+Goal: the leave-one-out predictive density $p(y_j\mid y_{-j}) = \int p(y_j\mid\theta)\,p(\theta\mid y_{-j})\,d\theta$ for every $j$, without refitting the model once per observation.
+
+With prior $\pi(\theta)$ and independent observations $y_1,\ldots,y_m$, both posteriors are prior $\times$ likelihood (unnormalized):
+
+- **Target**, the posterior without $y_j$: $\;f(\theta) = \pi(\theta)\prod_{k\ne j} p(y_k\mid\theta)$.
+- **Proposal**, the full posterior, whose draws $\theta_1,\ldots,\theta_n$ we already have: $\;g(\theta) = \pi(\theta)\prod_{k=1}^{m} p(y_k\mid\theta)$.
+- **Weight**:
 $$
-f(\theta) = p(\theta\mid y_{-j}) \propto \frac{p(\theta\mid y)}{p(y_j\mid\theta)}, \qquad
-w_j(\theta) = \frac{f(\theta)}{g(\theta)} \propto \frac{1}{p(y_j\mid\theta)}.
+w_j(\theta) = \frac{f(\theta)}{g(\theta)} = \frac{\pi(\theta)\prod_{k\ne j} p(y_k\mid\theta)}{\pi(\theta)\prod_{k=1}^{m} p(y_k\mid\theta)} = \frac{1}{p(y_j\mid\theta)},
 $$
-
-The self-normalized estimator with $a(\theta)=p(y_j\mid\theta)$ collapses to a **harmonic mean**:
+so the estimate is a harmonic mean of the likelihood of $y_j$ over the full-posterior draws:
 $$
-\hat p(y_j\mid y_{-j}) = \frac{\sum_i p(y_j\mid\theta_i)\,w_j(\theta_i)}{\sum_i w_j(\theta_i)}
-= \frac{n}{\sum_{i=1}^n 1/p(y_j\mid\theta_i)},
+\hat p(y_j\mid y_{-j}) = \frac{\sum_i p(y_j\mid\theta_i)\,w_j(\theta_i)}{\sum_i w_j(\theta_i)} = \frac{n}{\sum_{i=1}^n 1/p(y_j\mid\theta_i)}.
 $$
-
-over draws from the *full* posterior (Gelfand, Dey & Chang, 1992) — one weighted average per left-out observation, all reusing the same $n$ draws from a single fit.
-
-## When It Works, and When It Breaks {.smaller}
-
-The full posterior is **narrower** than any leave-one-out posterior (it has one more observation), so $g(\theta)$ has lighter tails than $f(\theta)$: a *heavy-tailed-weight* failure, not the missed-mode failure from Example 3. Typical points: the two posteriors nearly coincide, weights stable. Influential points (outliers, high leverage): $1/p(y_j\mid\theta_i)$ can have infinite variance, and the estimate is dominated by a few draws.
-
-**Diagnostics and fixes**: report $n_{\text{eff}}$ *per observation*; **Pareto-smoothed importance sampling** (Vehtari, Gelman & Gabry, 2017) fits a generalized Pareto distribution to the largest weights and uses the shape $\hat k$ as a diagnostic ($\hat k>0.7$ unreliable); fall back to exact refitting only for the flagged observations.
 
 ## Summary (1/2)
 
@@ -801,4 +854,4 @@ only the support condition $\{\theta: g(\theta)>0\}\supseteq\{\theta: f(\theta)>
 - A proposal that misses a mode or part of the support fails **silently** (Example 3): observed weights look healthy while the estimate is badly wrong, and no amount of extra sampling fixes it — $n_{\text{eff}}$ diagnoses only the *noisy* failure, never the silent one
 
 - The marginal likelihood: a Laplace-shaped proposal stays efficient as data accumulate and the posterior sharpens; the prior does not
-- Advanced uses: normalizing-constant ratios (free energy, marginal likelihood) via tempering/stepping-stones; leave-one-out cross-validation from full-posterior draws with $w_i=1/p(y_i\mid\theta)$, diagnosed per observation by Pareto-smoothed importance sampling
+- Advanced uses: normalizing-constant ratios (free energy, marginal likelihood) via tempering/stepping-stones; leave-one-out cross-validation from full-posterior draws with $w_j(\theta)=1/p(y_j\mid\theta)$
