@@ -22,7 +22,7 @@ log_ess <- function(lw) exp(2 * log_sum_exp(lw) - log_sum_exp(2 * lw))
 
 ## The Goal {.smaller}
 
-Rejection sampling turns draws from an envelope $g\ge f$ into exact draws from $f$, but every rejected proposal is wasted — and in the tails of a poor envelope, almost every proposal is rejected.
+Rejection sampling turns draws from an envelope $g(\theta)\ge f(\theta)$ into exact draws from $f(\theta)$, but every rejected proposal is wasted — and in the tails of a poor envelope, almost every proposal is rejected.
 
 Two integrals with respect to an **unnormalized** function $f(\theta)$, e.g. $f(\theta) = \pi(\theta)L(\theta)$:
 
@@ -36,27 +36,27 @@ $$
 C_f = \int f(\theta)\,d\theta.
 $$
 
-Plain Monte Carlo needs draws from $f/C_f$, which we cannot produce. Rejection sampling needs an envelope $g\ge f$, which may be hard to find or very wasteful.
+Plain Monte Carlo needs draws from $f(\theta)/C_f$, which we cannot produce. Rejection sampling needs an envelope $g(\theta)\ge f(\theta)$, which may be hard to find or very wasteful.
 
 ## The Idea: Reweighting {.smaller}
 
-**Importance sampling** keeps every proposal instead of discarding most of them: draw from an easier function $g$ and attach a *weight* that corrects for sampling from the wrong distribution. Nothing is ever thrown away, and no envelope condition $g\ge f$ is required — the price is that the sample is no longer an exact iid sample from $f$, only a *weighted* one.
+**Importance sampling** keeps every proposal instead of discarding most of them: draw from an easier function $g(\theta)$ and attach a *weight* that corrects for sampling from the wrong distribution. Nothing is ever thrown away, and no envelope condition $g(\theta)\ge f(\theta)$ is required — the price is that the sample is no longer an exact iid sample from $f(\theta)$, only a *weighted* one.
 
-- Draw $\theta\sim g(\theta)/C_g$, where $g$ is another (possibly unnormalized) function we can sample from
+- Draw $\theta\sim g(\theta)/C_g$, where $g(\theta)$ is another (possibly unnormalized) function we can sample from
 
 - Attach the **importance weight**,
 $$
 w(\theta) = \frac{f(\theta)}{g(\theta)}
 $$
 
-- Hope that $w(\theta)\approx$ constant, i.e. $g$ has roughly the shape of $f$
+- Hope that $w(\theta)\approx$ constant, i.e. $g(\theta)$ has roughly the shape of $f(\theta)$
 
-**Requirement on $g$**: wherever $f$ is positive, $g$ must be positive too,
+**Requirement on $g(\theta)$**: wherever $f(\theta)$ is positive, $g(\theta)$ must be positive too,
 $$
 \{\theta: g(\theta)>0\}\ \supseteq\ \{\theta: f(\theta)>0\}.
 $$
 
-Otherwise part of $f$ is never visited and the estimate is biased (Example 2).
+Otherwise part of $f(\theta)$ is never visited and the estimate is biased (Example 2).
 
 ## Picture: Areas and Weights
 
@@ -96,7 +96,7 @@ legend("topleft", bty = "n",
        col = c(NA, NA, "black", "darkgreen"))
 ```
 
-Draws $\theta_i$ come from $g$ (blue); each carries weight $w(\theta_i)=f(\theta_i)/g(\theta_i)$ (green). Where $f$ rises above $g$ the weights are large, where $g$ dominates they are small; the average weight estimates the area ratio $C_f/C_g$.
+Draws $\theta_i$ come from $g(\theta)$ (blue); each carries weight $w(\theta_i)=f(\theta_i)/g(\theta_i)$ (green). Where $f(\theta)$ rises above $g(\theta)$ the weights are large, where $g(\theta)$ dominates they are small; the average weight estimates the area ratio $C_f/C_g$.
 
 # 2. The Importance Reweighting Formula
 
@@ -120,11 +120,11 @@ E_f\big[a(\theta)\big] &= \frac{\int a(\theta)\,f(\theta)\,d\theta}{C_f}
 \end{aligned}
 $$
 
-The division by $g$ is legitimate only on $\{g>0\}$, hence the support requirement.
+The division by $g(\theta)$ is legitimate only on $\{\theta: g(\theta)>0\}$, hence the support requirement.
 
 ## The Estimators {.smaller}
 
-Draw $\theta_1,\ldots,\theta_n \overset{iid}{\sim} g/C_g$ and compute $w_i = w(\theta_i) = f(\theta_i)/g(\theta_i)$.
+Draw $\theta_1,\ldots,\theta_n \overset{iid}{\sim} g(\theta)/C_g$ and compute $w_i = w(\theta_i) = f(\theta_i)/g(\theta_i)$.
 
 **Ratio of normalizing constants, and $C_f$ itself when $C_g$ is known**
 $$
@@ -137,34 +137,34 @@ Both are unbiased; with a normalized proposal ($C_g=1$), $\hat C_f$ is just the 
 **Self-normalized expectation**
 $$
 \hat A = \frac{\frac1n\sum_i a(\theta_i)\,w_i}{\frac1n\sum_i w_i}
-= \sum_{i=1}^n a(\theta_i)\,\tilde w_i, \qquad
-\tilde w_i = \frac{w_i}{\sum_{j=1}^n w_j}, \quad \sum_i\tilde w_i = 1
+= \frac1n\sum_{i=1}^n a(\theta_i)\,\hat w^\star_i, \qquad
+\hat w^\star_i = \frac{w_i}{\frac1n\sum_{j=1}^n w_j}, \quad \frac1n\sum_i\hat w^\star_i = 1
 $$
 
-$\tilde w_i$ turns the proposal sample into a **weighted sample from $f$**; unknown constants in $f$ and $g$ cancel. It is a ratio of two averages, so it is biased with bias $O(1/n)$, but consistent.
+$\hat w^\star_i$ estimates the normalized weight $w^\star(\theta_i)$ (below) and turns the proposal sample into a **weighted sample from $f(\theta)$**; unknown constants in $f(\theta)$ and $g(\theta)$ cancel. It is a ratio of two averages, so it is biased with bias $O(1/n)$, but consistent.
 
 ## Effective Sample Size
 
 How many "equally informative" draws is a weighted sample worth?.
 $$
-n_{\text{eff}} = \frac{1}{\sum_{i=1}^n \tilde w_i^2}.
+n_{\text{eff}} = \frac{n}{\frac1n\sum_{i=1}^n (\hat w^\star_i)^2} = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2}.
 $$
 
-If $w_i\approx$ constant (proposal shaped like the target), $\tilde w_i = 1/n$ and $n_{\text{eff}} = n$: full efficiency. If one weight dominates, $n_{\text{eff}}\approx1$: only one draw is doing any work.
+If $w_i\approx$ constant (proposal shaped like the target), $\hat w^\star_i = 1$ and $n_{\text{eff}} = n$: full efficiency. If one weight dominates, $n_{\text{eff}}\approx1$: only one draw is doing any work.
 
-**Variance heuristic**: $\operatorname{Var}_g(\hat A)\approx\operatorname{Var}_f(a)/n_{\text{eff}}$, the same form as for an iid sample of size $n_{\text{eff}}$ from $f$ itself. $n_{\text{eff}}$ estimates the population quantity $n_{\text{eff}}^\star = n/E_g[(w^\star)^2]$, where $w^\star = \frac{f/C_f}{g/C_g}$ is the weight normalized so that $E_g[w^\star]=1$.
+**Variance heuristic**: $\operatorname{Var}_g(\hat A)\approx\operatorname{Var}_f(a(\theta))/n_{\text{eff}}$, the same form as for an iid sample of size $n_{\text{eff}}$ from $f(\theta)$ itself. $n_{\text{eff}}$ estimates the population quantity $n_{\text{eff}}^\star = n/E_g[w^\star(\theta)^2]$, where $w^\star(\theta) = \frac{f(\theta)/C_f}{g(\theta)/C_g}$ is the weight normalized so that $E_g[w^\star(\theta)]=1$.
 
-The catch, central to this lecture: $n_{\text{eff}}$ is computed **only from the weights actually observed**. A proposal that never visits the part of $\theta$-space where $f$ and $g$ disagree most will report a reassuring $n_{\text{eff}}$ while being badly wrong.
+The catch, central to this lecture: $n_{\text{eff}}$ is computed **only from the weights actually observed**. A proposal that never visits the part of $\theta$-space where $f(\theta)$ and $g(\theta)$ disagree most will report a reassuring $n_{\text{eff}}$ while being badly wrong.
 
 ## Limitations of the ESS Diagnostic {.smaller}
 
-The variance heuristic is not uniformly precise. With $f=N(0,1)$, $g=N(0,2^2)$, $a(\theta)=\theta^2$, $n=4000$:
+The variance heuristic is not uniformly precise. With $f(\theta)$ the $N(0,1)$ density, $g(\theta)$ the $N(0,2^2)$ density, $a(\theta)=\theta^2$, $n=4000$:
 
 - empirical $\operatorname{Var}(\hat A)\approx 3.15\times10^{-4}$, matching exact delta-method calculations
 
-- but $\operatorname{Var}_f(a)/n_{\text{eff}}^\star \approx 7.56\times10^{-4}$ — over twice as large, because $w$ and $(a-A)^2$ are negatively correlated here
+- but $\operatorname{Var}_f(a(\theta))/n_{\text{eff}}^\star \approx 7.56\times10^{-4}$ — over twice as large, because $w(\theta)$ and $(a(\theta)-A)^2$ are negatively correlated here
 
-More critically: $\widehat{n_{\text{eff}}}$ is computed **only from the observed weights**. If the proposal never explores where $f$ and $g$ disagree most, the estimator reports a falsely reassuring $\widehat{n_{\text{eff}}}$ and masks a severe sampling inadequacy — the subject of Examples 1 and 2 below.
+More critically: $\widehat{n_{\text{eff}}}$ is computed **only from the observed weights**. If the proposal never explores where $f(\theta)$ and $g(\theta)$ disagree most, the estimator reports a falsely reassuring $\widehat{n_{\text{eff}}}$ and masks a severe sampling inadequacy — the subject of Examples 1 and 2 below.
 
 # 3. An Illustrative Example: The Volume of a Set
 
@@ -177,7 +177,7 @@ f(\theta) = I_A(\theta), \qquad g(\theta) = I_B(\theta),
 C_f = \int I_A(\theta)\,d\theta = |A|, \qquad C_g = |B|.
 $$
 
-The target $f/C_f$ is the uniform distribution on $A$; the proposal $g/C_g$ is the uniform distribution on $B$, which is easy to sample when $B$ is a box. **Problem:** estimate the volume $C_f=|A|$, with $|B|$ known.
+The target $f(\theta)/C_f$ is the uniform distribution on $A$; the proposal $g(\theta)/C_g$ is the uniform distribution on $B$, which is easy to sample when $B$ is a box. **Problem:** estimate the volume $C_f=|A|$, with $|B|$ known.
 
 Draw $\theta_1,\ldots,\theta_n\overset{iid}{\sim}\mathrm{Unif}(B)$. The weight is an indicator variable,
 $$
@@ -234,29 +234,61 @@ $$
 &= \frac{|B|^2}{n^2}\operatorname{Var}(N_A) = \frac{|B|^2}{n^2}\,n\,p(1-p)
 = |B|^2\,\frac{p(1-p)}{n} \\[4pt]
 &= \frac{C_f^2}{p^2}\cdot\frac{p(1-p)}{n}
-= C_f^2\times\frac1n\cdot\frac{1-p}{p},
-\qquad
-\frac{\operatorname{sd}(\widehat{C_f})}{C_f} = \sqrt{\frac{1-p}{p\,n}}.
+= C_f^2\times\frac1n\cdot\frac{1-p}{p}.
 \end{aligned}
 $$
 
-For a fixed target ($C_f$ fixed), $(1-p)/p$ decreases in $p$: **the larger $p=|A|/|B|$, i.e. the tighter the proposal $B$ fits $A$, the smaller the variance.** The relative error grows without bound as $p=|A|/|B|\to0$: to reach $1\%$ relative error we need
-$$
-n \approx 10^4\,\frac{1-p}{p},
-$$
-i.e. about $3\times10^3$ draws when $A$ is a disc in a square ($p=\pi/4$), but about $10^8$ when $p=10^{-4}$.
+For a fixed target ($C_f$ fixed), $(1-p)/p$ decreases in $p$: the larger $p=|A|/|B|$, i.e. *the tighter the proposal $B$ fits $A$, the smaller the variance.*
 
 ## Illustrative Example (Continued): ESS {.smaller}
 
-The normalized weights $w^\star = \dfrac{f/C_f}{g/C_g} = \dfrac{I_A}{p}$ have $E_g[w^\star]=1$ and $E_g[(w^\star)^2] = \dfrac1p$, so
+The normalized weights $w^\star(\theta) = \dfrac{f(\theta)/C_f}{g(\theta)/C_g} = \dfrac{I_A(\theta)}{p}$ have $E_g[w^\star(\theta)]=1$ and $E_g[w^\star(\theta)^2] = 1/p$, so
 $$
-n_{\text{eff}}^\star = \frac{n}{E_g[(w^\star)^2]} = n\,p = n\,\frac{|A|}{|B|},
+n_{\text{eff}}^\star = \frac{n}{E_g[w^\star(\theta)^2]} = n\,p = n\,\frac{|A|}{|B|},
 \qquad
 \widehat{n_{\text{eff}}} = \frac{\left(\sum_i w_i\right)^2}{\sum_i w_i^2} = \frac{N_A^2}{N_A} = N_A .
 $$
 
-- The ESS is exactly the number of hits in $A$, and $E(N_A) = np = n_{\text{eff}}^\star$. The relative variance on the previous slide is $(1-p)/n_{\text{eff}}^\star$: the cost is set by $p=|A|/|B|$.
-- The weighted sample is the rejection sample: hits get weight $1/N_A$, misses $0$. So $\hat A$ averages $a$ over the $N_A$ hits and $\operatorname{Var}(\hat A\mid N_A) = \operatorname{Var}_f(a)/N_A$: the ESS heuristic is exact here.
+- The ESS is exactly the number of hits in $A$, and $E(N_A) = np = n_{\text{eff}}^\star$.
+
+## Illustrative Example (Continued): What $n_{\text{eff}}$ Means {.smaller}
+
+$n_{\text{eff}}$ compares with an iid sample **from $f(\theta)/C_f$**, which can estimate expectations $E_f[a(\theta)]$ but not $C_f$. So use a simple $a(\theta)$: take $D\subseteq A$ and $a(\theta)=I_D(\theta)$, with
+$$
+E_f[a(\theta)] = q = \frac{|D|}{|A|} \quad\text{(the fraction of $A$ lying in $D$).}
+$$
+
+- **$\hat q_A$, iid sample of size $m$ from $\mathrm{Unif}(A)$** (direct sampling from $f(\theta)/C_f$):
+$$
+\hat q_A = \frac{\#\{\theta_i\in D\}}{m}, \qquad \operatorname{Var}(\hat q_A) = \frac{q(1-q)}{m}.
+$$
+
+- **$\hat q_B$, importance sample of size $n$ from $\mathrm{Unif}(B)$**: hits get $\hat w^\star_i = n/N_A$, misses $0$, so
+$$
+\hat q_B = \frac1n\sum_{i=1}^n I_D(\theta_i)\,\hat w^\star_i = \frac{N_D}{N_A},
+\qquad N_D = \#\{\theta_i\in D\}.
+$$
+
+## Illustrative Example (Continued): $\operatorname{Var}(\hat q_B)$ {.smaller}
+
+Given $N_A$, the hits are iid $\mathrm{Unif}(A)$, so $N_D\mid N_A\sim\mathrm{Binomial}(N_A,q)$:
+$$
+E(\hat q_B\mid N_A) = q, \qquad \operatorname{Var}(\hat q_B\mid N_A) = \frac{q(1-q)}{N_A}.
+$$
+
+By the law of total variance, with $N_A\sim\mathrm{Binomial}(n,p)$ (conditioning on $N_A\ge1$),
+$$
+\begin{aligned}
+\operatorname{Var}(\hat q_B)
+&= E\big[\operatorname{Var}(\hat q_B\mid N_A)\big] + \operatorname{Var}\big[E(\hat q_B\mid N_A)\big]
+= q(1-q)\,E\Big[\frac{1}{N_A}\Big] + \underbrace{\operatorname{Var}(q)}_{=\,0} \\[4pt]
+&= q(1-q)\,E\Big[\frac{1}{N_A}\Big] \;\approx\; \frac{q(1-q)}{np},
+\end{aligned}
+$$
+since $E[1/N_A]\approx 1/(np)$ for large $np$. Compared with $\operatorname{Var}(\hat q_A) = q(1-q)/m$:
+
+- **Given $N_A$**, $\hat q_B$ matches $\hat q_A$ with $m = N_A = \widehat{n_{\text{eff}}}$ exactly (misses contribute nothing).
+- **On average**, it matches $\hat q_A$ with $m = np = n_{\text{eff}}^\star = n/E_g[w^\star(\theta)^2]$.
 
 ## Numerical Example: Area of a Crescent {.smaller}
 
@@ -357,7 +389,7 @@ w(\theta) = \tfrac12 + \tfrac12\,\frac{\varphi(\theta-d)}{\varphi(\theta+d)}
           = \tfrac12 + \tfrac12 e^{2d\theta} \;\approx\; \tfrac12,
 $$
 
-so every observed weight is nearly equal, $\tilde w_i\approx1/n$ and $n_{\text{eff}}\approx n$, while $\widehat{C_f/C_g}\approx\tfrac12$ (truth $1$) and $\hat E_f(\theta)\approx-d$ (truth $0$). The draws that would expose the error carry $w\approx\tfrac12e^{2d\theta}\gg1$ near $\theta=+d$ and have probability $\Phi(-2d)\approx10^{-23}$ under $g_1$: they never appear.
+so every observed weight is nearly equal, $\hat w^\star_i\approx1$ and $n_{\text{eff}}\approx n$, while $\widehat{C_f/C_g}\approx\tfrac12$ (truth $1$) and $\hat E_f(\theta)\approx-d$ (truth $0$). The draws that would expose the error carry $w(\theta)\approx\tfrac12e^{2d\theta}\gg1$ near $\theta=+d$ and have probability $\Phi(-2d)\approx10^{-23}$ under $g_1$: they never appear.
 
 ## Example 1 (Continued): The Figure
 
@@ -431,7 +463,7 @@ legend("bottomright", bty = "n", cex = 1.0, text.col = "navy",
            sprintf(r"(exact $n_{eff}$ = %.3g%% of n)", ess_x))))
 ```
 
-The observed effective sample size reports near-perfect efficiency. The **exact** effective fraction $1/E_g(w^2)$ is smaller by forty orders of magnitude — a property of $f,g$ alone, invisible to any single sample. The variance is finite at $\sigma=1$ (it diverges only for $\sigma\le1/\sqrt2$), so the estimator is consistent — it would just need $n\sim10^{43}$ to look normal.
+The observed effective sample size reports near-perfect efficiency. The **exact** effective fraction $1/E_g(w(\theta)^2)$ is smaller by forty orders of magnitude — a property of $f(\theta),g(\theta)$ alone, invisible to any single sample. The variance is finite at $\sigma=1$ (it diverges only for $\sigma\le1/\sqrt2$), so the estimator is consistent — it would just need $n\sim10^{43}$ to look normal.
 
 
 # 5. Example 2: Tail Probability of a Student-$t$ Distribution
@@ -463,11 +495,11 @@ The target $\log f_{t_\nu}$ is **not concave** at any finite $\nu$ — convex ou
 
 ## Example 2 (Continued): The Estimator
 
-Let $g$ be the normalized truncated normal on $(c_1,c_2)$, $f(x)=f_{t_\nu}(x)I(c_1<x<c_2)$. Draw $X_1,\ldots,X_{n}\sim g$, weight by $w=f/g$, average:
+Let $g(x)$ be the normalized truncated normal density on $(c_1,c_2)$, $f(x)=f_{t_\nu}(x)I(c_1<x<c_2)$. Draw $X_1,\ldots,X_{n}\sim g(x)$, weight by $w(x)=f(x)/g(x)$, average:
 $$
 \widehat C = \frac1n\sum_{i=1}^n w(X_i),
 $$
-unbiased for $C_f=P(c_1<X<c_2)$ for *any* $g$ positive wherever $f$ is — regardless of $c_1,c_2,\mu,\sigma,\nu$.
+unbiased for $C_f=P(c_1<X<c_2)$ for *any* $g(x)$ positive wherever $f(x)$ is — regardless of $c_1,c_2,\mu,\sigma,\nu$.
 
 ## Example 2 (Continued): When Its Variance Is Infinite {.smaller}
 
@@ -476,9 +508,9 @@ $$
 \operatorname{Var}_g\bigl(w(X)\bigr) = \int_{c_1}^{c_2}\frac{f_{t_\nu}(x)^2}{g(x)}\,dx - C_f^2
 $$
 
-- **$c_2$ finite**: $f,g$ share the same bounded interval, $f/g$ is bounded on it, the integral is finite — well-behaved at *any* $\nu$.
+- **$c_2$ finite**: $f(x),g(x)$ share the same bounded interval, $f(x)/g(x)$ is bounded on it, the integral is finite — well-behaved at *any* $\nu$.
 
-- **$c_2\to\infty$**: $f_{t_\nu}(x)^2$ decays only polynomially ($\propto x^{-2(\nu+1)}$), $g$'s Gaussian tail decays much faster — the integrand grows without bound and the integral **diverges**, for every $\mu,\sigma$ and every finite $\nu$.
+- **$c_2\to\infty$**: $f_{t_\nu}(x)^2$ decays only polynomially ($\propto x^{-2(\nu+1)}$), $g(x)$'s Gaussian tail decays much faster — the integrand grows without bound and the integral **diverges**, for every $\mu,\sigma$ and every finite $\nu$.
 
 $n_{\text{eff}}$ need not warn you which regime you are in.
 
@@ -536,13 +568,13 @@ A finite interval is well-behaved at any $\nu$; $c_2=\infty$ reproduces the dive
 
 Model: unknown mean $\mu$ and $w=\log\sigma^2$, independent normal priors. Importance sampling estimates $P(y)=\int L(\theta)\pi(\theta)\,d\theta$ with a built-in diagnostic ($n_{\text{eff}}$).
 
-Take $g(\mu,w)$ to be the **Gaussian approximation to the posterior** from a Laplace fit: mode $(\hat\mu,\hat w)$, $g=N_2\big((\hat\mu,\hat w), H^{-1}\big)$ for $H$ the Hessian of $-\log[L\pi]$ at the mode:
+Take $g(\mu,w)$ to be the **Gaussian approximation to the posterior** from a Laplace fit: mode $(\hat\mu,\hat w)$, $g(\mu,w)$ the $N_2\big((\hat\mu,\hat w), H^{-1}\big)$ density for $H$ the Hessian of $-\log[L\pi]$ at the mode:
 $$
 \widehat{P(y)} = \frac1n\sum_{i=1}^n w_i, \qquad
-w_i = \frac{L(\theta_i)\pi(\theta_i)}{g(\theta_i)}, \qquad \theta_i\sim g.
+w_i = \frac{L(\theta_i)\pi(\theta_i)}{g(\theta_i)}, \qquad \theta_i\sim g(\theta).
 $$
 
-Contrast: sampling directly from the (wide, uninformative) **prior** is importance sampling with $g=\pi$ and weights $L(\theta_i)$ — a "good story" versus a proposal built with no information about where the likelihood actually lives.
+Contrast: sampling directly from the (wide, uninformative) **prior** is importance sampling with $g(\theta)=\pi(\theta)$ and weights $L(\theta_i)$ — a "good story" versus a proposal built with no information about where the likelihood actually lives.
 
 ## Example 3 (Continued): Implementation {.smaller}
 
@@ -652,14 +684,14 @@ $$
 Z(\beta) = \int e^{-\beta U(x)}\,dx, \qquad F(\beta) = -\frac1\beta\log Z(\beta).
 $$
 
-Importance sampling from $\beta_0$ to $\beta_1$ with $g=e^{-\beta_0U}$, $f=e^{-\beta_1U}$, $w(x)=e^{-(\beta_1-\beta_0)U(x)}$:
+Importance sampling from $\beta_0$ to $\beta_1$ with $g(x)=e^{-\beta_0U(x)}$, $f(x)=e^{-\beta_1U(x)}$, $w(x)=e^{-(\beta_1-\beta_0)U(x)}$:
 $$
 \frac{Z(\beta_1)}{Z(\beta_0)} = E_{\beta_0}\Big[e^{-(\beta_1-\beta_0)U(x)}\Big].
 $$
 
 ## The Bayesian Analogue {.smaller}
 
-$U(\theta)=-\log L(\theta)$, $g=\pi(\theta)$ (prior, $\beta_0=0$), $f=L(\theta)\pi(\theta)$ (posterior, $\beta_1=1$):
+$U(\theta)=-\log L(\theta)$, $g(\theta)=\pi(\theta)$ (prior, $\beta_0=0$), $f(\theta)=L(\theta)\pi(\theta)$ (posterior, $\beta_1=1$):
 $$
 P(y) = \frac{C_f}{C_g} = E_\pi\big[L(\theta)\big] \approx \frac1n\sum_{i=1}^n L(\theta_i), \qquad \theta_i\sim\pi
 $$
@@ -705,17 +737,17 @@ over draws from the *full* posterior (Gelfand, Dey & Chang, 1992) — one weight
 
 ## When It Works, and When It Breaks {.smaller}
 
-The full posterior is **narrower** than any leave-one-out posterior (it has one more observation), so $g$ has lighter tails than $f$: the *heavy-tailed-weight* failure from Example 2, not the missed-mode failure from Example 1. Typical points: the two posteriors nearly coincide, weights stable. Influential points (outliers, high leverage): $1/p(y_j\mid\theta_i)$ can have infinite variance, and the estimate is dominated by a few draws.
+The full posterior is **narrower** than any leave-one-out posterior (it has one more observation), so $g(\theta)$ has lighter tails than $f(\theta)$: the *heavy-tailed-weight* failure from Example 2, not the missed-mode failure from Example 1. Typical points: the two posteriors nearly coincide, weights stable. Influential points (outliers, high leverage): $1/p(y_j\mid\theta_i)$ can have infinite variance, and the estimate is dominated by a few draws.
 
 **Diagnostics and fixes**: report $n_{\text{eff}}$ *per observation*; **Pareto-smoothed importance sampling** (Vehtari, Gelman & Gabry, 2017) fits a generalized Pareto distribution to the largest weights and uses the shape $\hat k$ as a diagnostic ($\hat k>0.7$ unreliable); fall back to exact refitting only for the flagged observations.
 
 ## Summary (1/2)
 
-- Importance sampling reweights draws from a proposal $g$ by $w(\theta)=f(\theta)/g(\theta)$ instead of accepting/rejecting them:
+- Importance sampling reweights draws from a proposal $g(\theta)$ by $w(\theta)=f(\theta)/g(\theta)$ instead of accepting/rejecting them:
 $$
-\widehat{C_f/C_g} = \frac1n\sum_i w_i, \qquad \hat A = \sum_i a(\theta_i)\,\tilde w_i, \quad \tilde w_i = \frac{w_i}{\sum_j w_j},
+\widehat{C_f/C_g} = \frac1n\sum_i w_i, \qquad \hat A = \frac1n\sum_i a(\theta_i)\,\hat w^\star_i, \quad \hat w^\star_i = \frac{w_i}{\frac1n\sum_j w_j},
 $$
-only the support condition $\{g>0\}\supseteq\{f>0\}$ is required, not an envelope $g\ge f$
+only the support condition $\{\theta: g(\theta)>0\}\supseteq\{\theta: f(\theta)>0\}$ is required, not an envelope $g(\theta)\ge f(\theta)$
 
 - A good proposal shaped like the target on its support gives near-constant weights and $n_{\text{eff}}\approx n$ (Examples 2 and 3), and a single weighted sample can answer several questions about the same target
 
