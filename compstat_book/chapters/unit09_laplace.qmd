@@ -361,6 +361,53 @@ actually is and builds its approximation *around that point*, so it
 automatically "recentres" itself for every $\mu$ — the same fix Unit08
 proposed by hand for quadrature, done here for free by the optimizer.
 
+**What the quadratic approximation looks like in two dimensions.** In this example $\log f(\mu)$ is exactly a quadratic in $\mu$, so its quadratic approximation, $\log f(\hat\mu_L) - \tfrac12 H(\mu-\hat\mu_L)^2$, is not an approximation at all, which is why Laplace is exact here. That is no longer true once the variance is unknown too. Let the data be $y_1,\ldots,y_n\overset{iid}{\sim}N(\mu,\sigma^2)$ with $w=\log\sigma$, priors $\mu\sim N(0,5^2)$ and $w\sim N(0,5^2)$, and $f(\mu,w)=L(\mu,w)\,\pi(\mu)\,\pi(w)$ (the model of @sec-laplace-mean-sd-app). With $\hat\theta=(\hat\mu,\hat w)$ the mode of $f$ and $H$ the $2\times2$ Hessian of $-\log f$ there, Laplace replaces
+$$
+\log f(\theta) \quad\text{by}\quad \log f(\hat\theta) - \tfrac12(\theta-\hat\theta)^\top H\,(\theta-\hat\theta), \qquad \theta=(\mu,w),
+$$
+whose contours are ellipses. @fig-laplace-2d-contours compares the contours of the two at the same levels, for simulated data with true $\mu=1$, $\sigma=2$.
+
+```{r}
+#| label: fig-laplace-2d-contours
+#| echo: !expr knitr::is_html_output()   # code shown in HTML only
+#| fig-width: 10
+#| fig-height: 4.6
+#| fig-cap: 'Shows where the quadratic (Laplace) approximation of a two-parameter log posterior is accurate and where it is not.
+#|   Contours of $\log f(\mu, w) - \log f(\hat\theta)$ (red, solid) and of its quadratic approximation $-\tfrac12(\theta - \hat\theta)^\top H\,(\theta - \hat\theta)$ (green, dashed) at the levels $-r^2/2$ for $r = 1, 2, 3, 4$, for $n = 10$ (left) and $n = 100$ (right) observations from $N(1, 2^2)$, with $w = \log\sigma$ and priors $\mu \sim N(0, 5^2)$, $w \sim N(0, 5^2)$. The cross marks the mode $\hat\theta$. Near the mode the two sets of contours agree; further out the true contours are bent into a banana, rising in $w$ as $\mu$ moves away from the mode, while the quadratic approximation keeps them elliptical. The disagreement is large at $n = 10$ and much smaller at $n = 100$.'
+local({
+  sig_mu <- 5; sig_w <- 5                         # prior sds of mu and w = log(sigma)
+  log_f2 <- function(mu, w, y) {                  # log L(mu, w) + log pi(mu) + log pi(w)
+    n <- length(y)
+    -n / 2 * log(2 * pi) - n * w -
+      exp(-2 * w) * (sum((y - mean(y))^2) + n * (mean(y) - mu)^2) / 2 +
+      dnorm(mu, 0, sig_mu, log = TRUE) + dnorm(w, 0, sig_w, log = TRUE)
+  }
+  lev <- -(1:4)^2 / 2                             # contour levels -r^2/2, r = 1, ..., 4
+  par(mfrow = c(1, 2), mar = c(4.2, 4.2, 2.5, 1))
+  set.seed(11)
+  for (n in c(10, 100)) {
+    y  <- 1 + 2 * rnorm(n)
+    op <- optim(c(mean(y), log(sd(y))), function(th) -log_f2(th[1], th[2], y),
+                method = "BFGS", hessian = TRUE)
+    th <- op$par; H <- op$hessian; S <- solve(H)
+    g1 <- th[1] + seq(-5.2, 5.2, length.out = 200) * sqrt(S[1, 1])
+    g2 <- th[2] + seq(-5.2, 6.5, length.out = 200) * sqrt(S[2, 2])
+    true <- outer(g1, g2, log_f2, y = y) + op$value         # log f - log f(theta_hat)
+    D1 <- outer(g1 - th[1], rep(1, 200)); D2 <- outer(rep(1, 200), g2 - th[2])
+    quad <- -(H[1, 1] * D1^2 + 2 * H[1, 2] * D1 * D2 + H[2, 2] * D2^2) / 2
+    contour(g1, g2, true, levels = lev, col = "firebrick", lwd = 2, labcex = 0.8,
+            xlab = expression(mu), ylab = expression(w == log ~ sigma), main = paste0("n = ", n))
+    contour(g1, g2, quad, levels = lev, drawlabels = FALSE, col = "seagreen", lwd = 2, lty = 2,
+            add = TRUE)
+    points(th[1], th[2], pch = 4, cex = 1.6, lwd = 2)
+  }
+  legend("bottomright", bty = "n", lwd = 2, lty = c(1, 2), col = c("firebrick", "seagreen"),
+         legend = c("true log f", "quadratic approx."), cex = 0.9)
+})
+```
+
+At $n=10$ the inner contour ($r=1$), which holds most of the posterior mass, is matched well, but the outer contours of $\log f$ form a banana: when $\mu$ is far from $\bar y$, the data are best explained by a larger $\sigma$, so the ridge of $f$ curves upward in $w$, and the posterior has a heavier tail towards large $w$ than the ellipse allows. At $n=100$ the curvature at the mode is $10$ times larger and the region where $f$ has appreciable mass shrinks to a neighbourhood where the quadratic expansion is accurate, so the two sets of contours nearly coincide. This is the $O(1/n)$ accuracy of Laplace seen in picture form, and the reason the Laplace-adapted rule of @sec-laplace-mean-sd-app still has a small error in this model.
+
 ## Quadrature Adapted by the Laplace Approximation {#sec-laplace-adapted-quadrature}
 
 A fixed logistic transform ($u=1/(1+e^{-\mu})$) fails when the posterior mass moves far from $\mu=0$. The remedy is to let the Laplace approximation tell the quadrature rule where to look. Laplace approximates the posterior by $N(\hat\mu_L, s_L^2)$, where $\hat\mu_L$ is the mode of $f$ and $s_L=1/\sqrt{H}$ with $H$ the second derivative of $-\log f$ at $\hat\mu_L$. The Laplace-adapted midpoint rule below places its grid points according to this normal distribution, so it follows the posterior wherever it sits.

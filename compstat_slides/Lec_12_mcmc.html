@@ -10,7 +10,7 @@
   <meta name="generator" content="quarto-1.9.37">
 
   <meta name="author" content="Longhai Li">
-  <meta name="dcterms.date" content="2026-11-04">
+  <meta name="dcterms.date" content="2026-11-27">
   <title>MCMC-slides</title>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -227,7 +227,7 @@ Longhai Li
 </div>
 </div>
 
-  <p class="date">2026-11-04</p>
+  <p class="date">2026-11-27</p>
 </section>
 <section>
 <section id="markov-chains" class="title-slide slide level1 center">
@@ -236,212 +236,603 @@ Longhai Li
 </section>
 <section id="goal" class="slide level2">
 <h2>Goal</h2>
-<p>Draw <span class="math inline">\theta_1,\theta_2,\ldots,\theta_n\sim f</span> for a target <span class="math inline">f</span> (typically a posterior known up to a constant), then use <span class="math inline">\frac1n\sum_i a(\theta_i)</span>.</p>
+<p>Draw <span class="math inline">\theta_1,\theta_2,\ldots,\theta_n\sim \pi</span> for a target <span class="math inline">\pi</span> (typically a posterior known up to a constant), then estimate <span class="math inline">E_\pi[a(\theta)]</span> by <span class="math inline">\frac1n\sum_i a(\theta_i)</span>.</p>
 <ul>
-<li>Rejection sampling and importance sampling use a <strong>fixed</strong> proposal <span class="math inline">g</span>; in high dimensions no fixed <span class="math inline">g</span> resembles <span class="math inline">f</span>, and they collapse</li>
-<li>MCMC instead builds a <strong>random process</strong> <span class="math inline">\theta_1,\theta_2,\theta_3,\ldots</span> that moves locally, and is designed so that, eventually, each <span class="math inline">\theta_i</span> is distributed as <span class="math inline">f</span></li>
-<li>The draws are <strong>dependent</strong>, and only correct <strong>in the limit</strong>; the price for working in any dimension</li>
+<li>Rejection sampling and importance sampling use a <strong>fixed</strong> proposal <span class="math inline">g</span>; in high dimensions no fixed <span class="math inline">g</span> resembles <span class="math inline">\pi</span>, and they collapse</li>
+<li>MCMC instead builds a <strong>random process</strong> <span class="math inline">\theta_0,\theta_1,\theta_2,\ldots</span> that moves <strong>locally</strong>, each step depending only on the current state, designed so that eventually <span class="math inline">\theta_i</span> is distributed as <span class="math inline">\pi</span></li>
+<li>The draws are <strong>dependent</strong>, and only correct <strong>in the limit</strong>; this is the price for a method that works in any dimension</li>
 </ul>
 <p>We first need a little theory of Markov chains.</p>
 </section>
-<section id="markov-chains-and-transition-distributions" class="slide level2">
-<h2>Markov Chains and Transition Distributions</h2>
-<p><strong>Definition.</strong> <span class="math inline">\{\theta_i: i = 0,1,2,\ldots\}</span> is a <strong>Markov chain</strong> if the future depends on the past only through the present: <span class="math display">P(\theta_i\mid\theta_0,\theta_1,\ldots,\theta_{i-1}) = P(\theta_i\mid\theta_{i-1})</span></p>
-<p>We write <span class="math inline">T(\theta_i\mid\theta_{i-1})</span>, or <span class="math inline">T(\theta_{i-1}\to\theta_i)</span>, and call it the <strong>transition distribution</strong> (a matrix for a finite state space, a conditional density for a continuous one).</p>
+<section id="definitions" class="slide level2 smaller">
+<h2>Definitions</h2>
+<p><strong>Markov chain.</strong> <span class="math inline">\{\theta_i: i = 0,1,2,\ldots\}</span> is a Markov chain if the future depends on the past only through the present: <span class="math display">P(\theta_i\mid\theta_0,\theta_1,\ldots,\theta_{i-1}) = T(\theta_i\mid\theta_{i-1})</span></p>
+<p><strong>Transition distribution.</strong> <span class="math inline">T(\theta'\mid\theta)</span>, also written <span class="math inline">T(\theta\to\theta')</span>, is the distribution of the next state given the current one; it does not depend on <span class="math inline">i</span>. For a finite state space it is a matrix, <span class="math inline">T_{jk} = P(\theta_i = k\mid\theta_{i-1} = j)</span>, with rows summing to 1.</p>
 <p><span class="math display">\theta_0 \xrightarrow{\ T(\theta_1\mid\theta_0)\ } \theta_1 \xrightarrow{\ T(\theta_2\mid\theta_1)\ } \theta_2 \xrightarrow{\ \ } \cdots</span></p>
-<p>A chain is specified by a starting value (or distribution) <span class="math inline">\theta_0</span> and <span class="math inline">T</span>; simulating it means drawing <span class="math inline">\theta_i\sim T(\cdot\mid\theta_{i-1})</span> repeatedly.</p>
+<p>A chain is specified by a starting value <span class="math inline">\theta_0</span> and <span class="math inline">T</span>; simulating it means drawing <span class="math inline">\theta_i\sim T(\cdot\mid\theta_{i-1})</span> repeatedly.</p>
+<p><strong>Equilibrium distribution.</strong> <span class="math inline">\pi</span> is the equilibrium (limiting) distribution of the chain if, for <strong>every</strong> start <span class="math inline">\theta_0</span>, <span class="math display">\lim_{n\to\infty} P(\theta_n = \theta\mid\theta_0) = \pi(\theta).</span> After many steps the chain forgets where it started.</p>
+<p><strong>The MCMC question</strong>: given a target <span class="math inline">\pi</span>, <em>design</em> a <span class="math inline">T</span> whose equilibrium distribution is <span class="math inline">\pi</span>.</p>
 </section>
-<section id="example-a-three-state-chain" class="slide level2">
-<h2>Example: A Three-State Chain</h2>
-<p>State space <span class="math inline">\{0,1,2\}</span>. From each state, stay with probability <span class="math inline">0.1</span>, move to each of the other two states with probability <span class="math inline">0.45</span>: <span class="math display">T = \begin{pmatrix} 0.1 &amp; 0.45 &amp; 0.45\\ 0.45 &amp; 0.1 &amp; 0.45\\ 0.45 &amp; 0.45 &amp; 0.1\end{pmatrix}, \qquad T_{jk} = P(\theta_i = k\mid\theta_{i-1} = j)</span></p>
-<div class="cell" data-layout-align="center">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href=""></a>simulate_chain <span class="ot">&lt;-</span> <span class="cf">function</span>(T, theta0, n) {</span>
-<span id="cb3-2"><a href=""></a>  theta <span class="ot">&lt;-</span> <span class="fu">integer</span>(n <span class="sc">+</span> <span class="dv">1</span>); theta[<span class="dv">1</span>] <span class="ot">&lt;-</span> theta0</span>
-<span id="cb3-3"><a href=""></a>  <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>(n <span class="sc">+</span> <span class="dv">1</span>)) theta[i] <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">seq_len</span>(<span class="fu">ncol</span>(T)), <span class="dv">1</span>, <span class="at">prob =</span> T[theta[i <span class="sc">-</span> <span class="dv">1</span>], ])</span>
-<span id="cb3-4"><a href=""></a>  theta <span class="sc">-</span> <span class="dv">1</span> }                                                  <span class="co"># states 0, 1, 2</span></span>
-<span id="cb3-5"><a href=""></a>T3 <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="fl">0.1</span>, <span class="fl">0.45</span>, <span class="fl">0.45</span>, <span class="fl">0.45</span>, <span class="fl">0.1</span>, <span class="fl">0.45</span>, <span class="fl">0.45</span>, <span class="fl">0.45</span>, <span class="fl">0.1</span>), <span class="dv">3</span>, <span class="at">byrow =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb3-6"><a href=""></a>th <span class="ot">&lt;-</span> <span class="fu">simulate_chain</span>(T3, <span class="at">theta0 =</span> <span class="dv">1</span>, <span class="at">n =</span> <span class="dv">10000</span>)</span>
-<span id="cb3-7"><a href=""></a><span class="fu">head</span>(th, <span class="dv">20</span>); <span class="fu">table</span>(th) <span class="sc">/</span> <span class="fu">length</span>(th)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code> [1] 0 1 2 0 2 1 2 1 2 1 2 0 2 2 1 0 2 0 1 0</code></pre>
-</div>
-<div class="cell-output cell-output-stdout">
-<pre><code>th
-        0         1         2 
-0.3274673 0.3410659 0.3314669 </code></pre>
-</div>
-</div>
-<p>Whatever the start, the long-run frequencies are <span class="math inline">(1/3,1/3,1/3)</span>.</p>
-</section>
-<section id="example-a-three-state-chain-continued" class="slide level2">
-<h2>Example: A Three-State Chain (Continued)</h2>
-
-<img data-src="Lec_12_mcmc_files/figure-revealjs/example-a-three-state-2-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
-<section id="convergence-and-the-equilibrium-distribution" class="slide level2">
-<h2>Convergence and the Equilibrium Distribution</h2>
-<p>Under regularity conditions (next slide), for <strong>every</strong> starting value <span class="math inline">\theta_0</span>, <span class="math display">\lim_{n\to\infty} P(\theta_n = \theta\mid\theta_0) = \pi(\theta)</span></p>
-<p><span class="math inline">\pi</span> is the <strong>equilibrium</strong> (stationary, limiting) <strong>distribution</strong> of the chain: after many steps the chain forgets where it started, and the marginal distribution of <span class="math inline">\theta_n</span> settles at <span class="math inline">\pi</span>.</p>
-<p>For the three-state chain, <span class="math inline">P(\theta_n = \cdot\mid\theta_0 = 0)</span> is the first row of <span class="math inline">T^n</span>:</p>
-<div class="cell" data-layout-align="center">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href=""></a>Tn <span class="ot">&lt;-</span> <span class="fu">diag</span>(<span class="dv">3</span>); <span class="cf">for</span> (n <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">6</span>) { Tn <span class="ot">&lt;-</span> Tn <span class="sc">%*%</span> T3; <span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"n = %d:  %s</span><span class="sc">\n</span><span class="st">"</span>, n, <span class="fu">paste</span>(<span class="fu">round</span>(Tn[<span class="dv">1</span>, ], <span class="dv">4</span>), <span class="at">collapse =</span> <span class="st">"  "</span>))) }</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>n = 1:  0.1  0.45  0.45
-n = 2:  0.415  0.2925  0.2925
-n = 3:  0.3048  0.3476  0.3476
-n = 4:  0.3433  0.3283  0.3283
-n = 5:  0.3298  0.3351  0.3351
-n = 6:  0.3346  0.3327  0.3327</code></pre>
-</div>
-</div>
-</section>
-<section id="convergence-continued" class="slide level2">
-<h2>Convergence (Continued)</h2>
-<p><span class="math inline">P(\theta_n = k\mid\theta_0 = 0)</span> for <span class="math inline">k = 0,1,2</span> as a function of <span class="math inline">n</span>. Starting from state <span class="math inline">0</span> with certainty, the distribution converges geometrically to <span class="math inline">\pi = (1/3,1/3,1/3)</span>.</p>
-
-<img data-src="Lec_12_mcmc_files/figure-revealjs/convergence-continued-1.png" class="quarto-figure quarto-figure-center r-stretch" width="864"></section>
 <section id="invariance-condition" class="slide level2">
 <h2>Invariance Condition</h2>
-<p><span class="math inline">\pi(\theta)</span> a distribution, <span class="math inline">T(\cdot,\cdot)</span> a transition. We say <strong><span class="math inline">T</span> leaves <span class="math inline">\pi</span> invariant</strong> if <span class="math display">\int \pi(\theta)\,T(\theta,\theta^T)\,d\theta = \pi(\theta^T) \qquad\text{for all }\theta^T</span></p>
-<p>(for a finite state space, <span class="math inline">\pi^\top T = \pi^\top</span>: <span class="math inline">\pi</span> is a left eigenvector of <span class="math inline">T</span> with eigenvalue 1).</p>
-<p><strong>Meaning</strong>: if <span class="math inline">\theta\sim\pi</span> and <span class="math inline">\theta^T\sim T(\theta,\cdot)</span>, then <span class="math inline">\theta^T\sim\pi</span>. One step of the chain applied to a <span class="math inline">\pi</span>-distributed input returns a <span class="math inline">\pi</span>-distributed output: <span class="math inline">\pi</span> is a <strong>fixed point</strong> of <span class="math inline">T</span>.</p>
-<p>Invariance is what makes <span class="math inline">\pi</span> a candidate equilibrium: once the chain reaches <span class="math inline">\pi</span>, it stays there. Check for the three-state chain: <span class="math display">\big(\tfrac13,\tfrac13,\tfrac13\big)\,T = \big(\tfrac13(0.1+0.45+0.45),\ \ldots\big) = \big(\tfrac13,\tfrac13,\tfrac13\big)</span></p>
+<p><span class="math inline">\pi</span> is an <strong>invariant</strong> (stationary) distribution of <span class="math inline">T</span> if <span class="math display">\int \pi(\theta)\,T(\theta\to\theta')\,d\theta = \pi(\theta') \qquad\text{for all }\theta'</span></p>
+<p>For a finite state space: <span class="math inline">\sum_\theta \pi(\theta)\,T(\theta\to\theta') = \pi(\theta')</span>, i.e.&nbsp;<span class="math inline">\pi^\top T = \pi^\top</span>.</p>
+<p><strong>Meaning</strong>: if <span class="math inline">\theta\sim\pi</span> and <span class="math inline">\theta'\sim T(\theta\to\cdot)</span>, then <span class="math inline">\theta'\sim\pi</span>. One step of the chain applied to a <span class="math inline">\pi</span>-distributed input returns a <span class="math inline">\pi</span>-distributed output: <span class="math inline">\pi</span> is a <strong>fixed point</strong> of <span class="math inline">T</span>.</p>
+<p>Invariance is what makes <span class="math inline">\pi</span> a candidate equilibrium: once the chain reaches <span class="math inline">\pi</span>, it stays there.</p>
+<p>It is a <strong>global</strong> condition: it involves summing (integrating) over all <span class="math inline">\theta</span>, which is awkward to check directly for a proposed <span class="math inline">T</span>.</p>
 </section>
 <section id="invariance-continued" class="slide level2">
 <h2>Invariance (Continued)</h2>
-<p>Points <span class="math inline">\theta_1,\theta_2,\theta_3,\ldots</span> drawn from <span class="math inline">\pi</span> (top), each moved one step by <span class="math inline">T</span> (arrows). The moved points <span class="math inline">\theta_1^T,\theta_2^T,\ldots</span> (bottom) are again distributed as <span class="math inline">\pi</span>.</p>
+<p>Points <span class="math inline">\theta_1,\theta_2,\ldots</span> drawn from <span class="math inline">\pi = N(0,1)</span> (top), each moved one step by <span class="math inline">T</span> (arrows), here <span class="math inline">\theta' = 0.6\,\theta + 0.8\,Z</span>. The moved points <span class="math inline">\theta_1',\theta_2',\ldots</span> (bottom) are again distributed as <span class="math inline">\pi</span>.</p>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/invariance-continued-1.png" class="quarto-figure quarto-figure-center r-stretch" width="864"></section>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/invariance-picture-1.png" class="quarto-figure quarto-figure-center r-stretch" width="864"></section>
+<section id="reversibility-detailed-balance-condition" class="slide level2 smaller">
+<h2>Reversibility (Detailed Balance) Condition</h2>
+<p><span class="math inline">T</span> is <strong>reversible</strong> with respect to <span class="math inline">\pi</span>, or satisfies <strong>detailed balance</strong>, if <span class="math display">\pi(\theta)\,T(\theta\to\theta') = \pi(\theta')\,T(\theta'\to\theta) \qquad\text{for all }\theta,\theta'</span></p>
+<ul>
+<li>The probability flow <span class="math inline">\theta\to\theta'</span> equals the flow back; at equilibrium the chain looks the same run forwards or backwards</li>
+<li><span class="math inline">T</span> itself need <strong>not</strong> be symmetric, only the flow weighted by <span class="math inline">\pi</span>; a <strong>local</strong> condition, checked pair by pair</li>
+</ul>
+<p><strong>Theorem.</strong> Detailed balance <span class="math inline">\Longrightarrow</span> invariance.</p>
+<p><strong>Proof.</strong> Sum (integrate) both sides over <span class="math inline">\theta</span>: <span class="math display">\int\pi(\theta)\,T(\theta\to\theta')\,d\theta = \int\pi(\theta')\,T(\theta'\to\theta)\,d\theta
+= \pi(\theta')\underbrace{\int T(\theta'\to\theta)\,d\theta}_{=\,1} = \pi(\theta'). \qquad\blacksquare</span></p>
+<p><strong>Use</strong>: to find an invariant distribution of a given <span class="math inline">T</span>, solve the pairwise equations for <span class="math inline">\pi</span>; to design <span class="math inline">T</span> for a given <span class="math inline">\pi</span> (Gibbs, MH, HMC), make the pairwise equations hold.</p>
+</section>
 <section id="when-does-the-chain-converge-to-pi" class="slide level2 smaller">
 <h2>When Does the Chain Converge to <span class="math inline">\pi</span>?</h2>
-<p>Given a target <span class="math inline">\pi</span>, design a transition <span class="math inline">T</span> such that</p>
+<p>Invariance alone is not enough: a chain that never moves leaves every distribution invariant. If</p>
 <ol type="1">
-<li><strong>Invariance</strong>: <span class="math inline">T</span> leaves <span class="math inline">\pi</span> invariant</li>
-<li><strong>Aperiodicity</strong>: the chain does not cycle deterministically (e.g.&nbsp;<span class="math inline">1\to2\to3\to1\to\cdots</span> never converges, it oscillates)</li>
-<li><strong>Irreducibility</strong>: every state can be reached from every other state (a chain that splits into non-communicating pieces, or one that never moves, converges to something that depends on where it started)</li>
+<li><strong>Invariance</strong>: <span class="math inline">T</span> leaves <span class="math inline">\pi</span> invariant (e.g.&nbsp;by detailed balance)</li>
+<li><strong>Aperiodicity</strong>: the chain does not cycle deterministically (e.g.&nbsp;<span class="math inline">1\to2\to3\to1\to\cdots</span> never settles, it oscillates)</li>
+<li><strong>Irreducibility</strong>: every state can be reached from every other state</li>
 </ol>
-<p>Then, for any <span class="math inline">\theta_0</span>, <span class="math inline">\theta_n\to\pi</span> in distribution, and ergodic averages converge: <span class="math display">\frac1n\sum_{i=1}^n a(\theta_i)\ \longrightarrow\ E_\pi\big[a(\theta)\big]</span></p>
-<p><strong>Practice</strong>: simulate <span class="math inline">T</span> long enough, discard the initial portion (<strong>burn-in</strong>), and treat the remaining <span class="math inline">\theta_i</span> as (dependent) draws from <span class="math inline">\pi</span>.</p>
+<p>then, for any <span class="math inline">\theta_0</span>, <span class="math inline">\theta_n\to\pi</span> in distribution (<span class="math inline">\pi</span> is the equilibrium distribution), and ergodic averages converge: <span class="math display">\frac1n\sum_{i=1}^n a(\theta_i)\ \longrightarrow\ E_\pi\big[a(\theta)\big]</span></p>
+<p><strong>Practice</strong>: simulate <span class="math inline">T</span> long enough, discard an initial <strong>burn-in</strong>, and treat the remaining <span class="math inline">\theta_i</span> as (dependent) draws from <span class="math inline">\pi</span>.</p>
 </section>
 <section id="when-does-the-chain-converge-continued" class="slide level2">
 <h2>When Does the Chain Converge (Continued)</h2>
+<p>Left: periodic, the chain oscillates forever. Middle: reducible, the long-run behaviour depends on which piece the chain starts in. Right: irreducible and aperiodic (self-loops break any cycle).</p>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/when-does-the-chain-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
-<section id="detailed-balance-reversibility" class="slide level2 smaller">
-<h2>Detailed Balance (Reversibility)</h2>
-<p><span class="math inline">T</span> satisfies <strong>detailed balance</strong> with respect to <span class="math inline">\pi</span> if <span class="math display">\pi(\theta)\,T(\theta,\theta^T) = \pi(\theta^T)\,T(\theta^T,\theta) \qquad\text{for all }\theta,\theta^T</span></p>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/convergence-conditions-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section></section>
+<section>
+<section id="example-1-random-walks-on-a-cycle-and-on-a-segment" class="title-slide slide level1 center">
+<h1>Example 1: Random Walks on a Cycle and on a Segment</h1>
+
+</section>
+<section id="example-1-two-random-walks-on-ten-states" class="slide level2 smaller">
+<h2>Example 1: Two Random Walks on Ten States</h2>
+<p>Two chains on the states <span class="math inline">\{0,1,\ldots,9\}</span> that differ only in their transition rules:</p>
 <ul>
-<li>The flow of probability from <span class="math inline">\theta</span> to <span class="math inline">\theta^T</span> equals the flow back: the chain looks the same run forwards or backwards (“reversible”)</li>
-<li>Note: this does <strong>not</strong> say <span class="math inline">T(\theta,\theta^T) = T(\theta^T,\theta)</span>; the transition itself need not be symmetric, only the flow weighted by <span class="math inline">\pi</span></li>
+<li><strong>Cyclic walk</strong> (states on a circle): move forward (clockwise) with probability <span class="math inline">0.45</span>, backward with probability <span class="math inline">0.45</span>, stay with probability <span class="math inline">0.1</span>. Forward from <span class="math inline">9</span> wraps to <span class="math inline">0</span>; backward from <span class="math inline">0</span> wraps to <span class="math inline">9</span>.</li>
+<li><strong>Reflecting walk</strong> (states on a segment): move forward with probability <span class="math inline">0.4</span>, backward with probability <span class="math inline">0.2</span>, stay with probability <span class="math inline">0.4</span>. At <span class="math inline">0</span>, “backward” stays at <span class="math inline">0</span>; at <span class="math inline">9</span>, “forward” stays at <span class="math inline">9</span>.</li>
 </ul>
-<p><strong>Theorem.</strong> Detailed balance <span class="math inline">\Longrightarrow</span> invariance.</p>
-<p><strong>Proof.</strong> Integrate both sides over <span class="math inline">\theta</span>: <span class="math display">\int\pi(\theta)\,T(\theta,\theta^T)\,d\theta = \int\pi(\theta^T)\,T(\theta^T,\theta)\,d\theta
-= \pi(\theta^T)\underbrace{\int T(\theta^T,\theta)\,d\theta}_{=\,1} = \pi(\theta^T). \qquad\blacksquare</span></p>
-<p>Detailed balance is a <strong>local</strong> condition, checked pair by pair; that is what makes it the standard tool for constructing MCMC transitions.</p>
-</section></section>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-two-walks-diagram-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section>
+<section id="example-1-transition-matrices" class="slide level2 smaller">
+<h2>Example 1: Transition Matrices</h2>
+<p><strong>Cyclic walk</strong> (indices mod 10): <span class="math display">T_{\text{cyc}}(i\to i+1) = 0.45,\qquad T_{\text{cyc}}(i\to i-1) = 0.45,\qquad T_{\text{cyc}}(i\to i) = 0.1</span></p>
+<p><strong>Reflecting walk</strong>: <span class="math display">
+T_{\text{refl}} = \begin{pmatrix}
+0.6 &amp; 0.4 &amp;        &amp;        &amp;        \\
+0.2 &amp; 0.4 &amp; 0.4    &amp;        &amp;        \\
+    &amp; \ddots &amp; \ddots &amp; \ddots &amp;     \\
+    &amp;        &amp; 0.2    &amp; 0.4    &amp; 0.4 \\
+    &amp;        &amp;        &amp; 0.2    &amp; 0.8
+\end{pmatrix}
+\quad\text{(rows and columns } 0,1,\ldots,9\text{; blank entries are } 0)
+</span></p>
+<p>In both chains a state can only move to itself or a neighbour, so <span class="math inline">T(i\to j) = 0</span> when <span class="math inline">|i-j|\ge 2</span> (except the wrap-around pair <span class="math inline">\{0,9\}</span> of the cyclic walk).</p>
+<p><strong>Consequence for detailed balance</strong>: for pairs that are not neighbours both sides are <span class="math inline">0</span>, and for <span class="math inline">i = j</span> the condition is trivial. Only the <strong>neighbouring pairs</strong> <span class="math inline">(i, i+1)</span> need to be checked.</p>
+</section>
+<section id="example-1-equilibrium-of-the-cyclic-walk" class="slide level2 smaller">
+<h2>Example 1: Equilibrium of the Cyclic Walk</h2>
+<p>Detailed balance for each neighbouring pair <span class="math inline">(i, i+1)</span>, <span class="math inline">i = 0,\ldots,9</span> (with <span class="math inline">10\equiv0</span>): <span class="math display">\pi(i)\,T(i\to i+1) = \pi(i+1)\,T(i+1\to i)
+\ \Longleftrightarrow\
+0.45\,\pi(i) = 0.45\,\pi(i+1)
+\ \Longleftrightarrow\
+\pi(i+1) = \pi(i)</span></p>
+<p>Going around the circle, <span class="math inline">\pi(0) = \pi(1) = \cdots = \pi(9)</span>, and normalizing, <span class="math display">\boxed{\ \pi_{\text{cyc}}(i) = \frac{1}{10},\qquad i = 0,1,\ldots,9\ }</span></p>
+<ul>
+<li>The equations are consistent around the cycle (the ratio after a full turn is <span class="math inline">1</span>), so this <span class="math inline">\pi</span> satisfies detailed balance and, by the theorem, is invariant</li>
+<li><strong>Irreducible</strong>: every state is reached from every other by moving around the circle</li>
+<li><strong>Aperiodic</strong>: the chain can stay put (probability <span class="math inline">0.1</span>)</li>
+</ul>
+<p>Hence the cyclic walk converges to the <strong>uniform</strong> distribution from any start. Every state has the same local picture, so the equilibrium treats them all alike.</p>
+</section>
+<section id="example-1-equilibrium-of-the-reflecting-walk" class="slide level2 smaller">
+<h2>Example 1: Equilibrium of the Reflecting Walk</h2>
+<p>Detailed balance for each neighbouring pair <span class="math inline">(i, i+1)</span>, <span class="math inline">i = 0,\ldots,8</span>: <span class="math display">\pi(i)\,T(i\to i+1) = \pi(i+1)\,T(i+1\to i)
+\ \Longleftrightarrow\
+0.4\,\pi(i) = 0.2\,\pi(i+1)
+\ \Longleftrightarrow\
+\pi(i+1) = 2\,\pi(i)</span></p>
+<p>So <span class="math inline">\pi(i) = 2^i\pi(0)</span>. Normalizing with <span class="math inline">\sum_{i=0}^9 2^i = 2^{10}-1 = 1023</span>, <span class="math display">\boxed{\ \pi_{\text{refl}}(i) = \frac{2^i}{1023},\qquad i = 0,1,\ldots,9\ }</span></p>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<colgroup>
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+<col style="width: 9%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">state</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">9</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">pi</td>
+<td style="text-align: right;">0.001</td>
+<td style="text-align: right;">0.002</td>
+<td style="text-align: right;">0.004</td>
+<td style="text-align: right;">0.008</td>
+<td style="text-align: right;">0.016</td>
+<td style="text-align: right;">0.031</td>
+<td style="text-align: right;">0.063</td>
+<td style="text-align: right;">0.125</td>
+<td style="text-align: right;">0.250</td>
+<td style="text-align: right;">0.500</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<ul>
+<li>The boundary self-loops (<span class="math inline">0.6</span> at <span class="math inline">0</span>, <span class="math inline">0.8</span> at <span class="math inline">9</span>) never enter the equations; irreducible and aperiodic as before, so this is the equilibrium</li>
+<li>The ratio <span class="math inline">0.4/0.2 = 2</span> pushes mass right and the wall at <span class="math inline">9</span> keeps it there: half the time at <span class="math inline">9</span>, a quarter at <span class="math inline">8</span>, …</li>
+</ul>
+</section>
+<section id="remark-reversibility-is-sufficient-not-necessary" class="slide level2 smaller">
+<h2>Remark: Reversibility Is Sufficient, Not Necessary</h2>
+<p>Put the reflecting walk’s probabilities on the <strong>cycle</strong>: forward <span class="math inline">0.4</span>, backward <span class="math inline">0.2</span>, stay <span class="math inline">0.4</span>, with wrap-around.</p>
+<ul>
+<li>Detailed balance would require <span class="math inline">\pi(i+1) = 2\pi(i)</span> for <strong>all</strong> ten pairs around the circle, so <span class="math inline">\pi(0) = 2^{10}\pi(0)</span>: impossible. <strong>No</strong> distribution satisfies detailed balance; the chain is not reversible</li>
+<li>Yet the uniform distribution is still <strong>invariant</strong>. Each column of <span class="math inline">T</span> sums to <span class="math inline">1</span>: state <span class="math inline">j</span> is entered from <span class="math inline">j-1</span> (prob. <span class="math inline">0.4</span>), from <span class="math inline">j+1</span> (prob. <span class="math inline">0.2</span>) and from itself (prob. <span class="math inline">0.4</span>), so <span class="math display">\sum_i \tfrac1{10}\,T(i\to j) = \tfrac1{10}(0.4 + 0.2 + 0.4) = \tfrac1{10}</span></li>
+<li>At equilibrium the chain circulates clockwise forever: there is a net flow around the cycle, but the distribution does not change</li>
+</ul>
+<p>So the drift alone does not concentrate the mass; the <strong>wall</strong> at <span class="math inline">9</span> does. Different boundary rules give completely different equilibria.</p>
+<p>MCMC algorithms are almost always built to be reversible, because detailed balance is a pairwise condition that is easy to verify.</p>
+</section>
+<section id="example-1-simulation" class="slide level2 smaller">
+<h2>Example 1: Simulation</h2>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href=""></a>sim_cyclic_walk <span class="ot">&lt;-</span> <span class="cf">function</span>(ini, iters, <span class="at">n =</span> <span class="dv">10</span>) {</span>
+<span id="cb3-2"><a href=""></a>    forward  <span class="ot">&lt;-</span> <span class="cf">function</span>(i) <span class="cf">if</span> (i <span class="sc">==</span> n <span class="sc">-</span> <span class="dv">1</span>) <span class="dv">0</span> <span class="cf">else</span> i <span class="sc">+</span> <span class="dv">1</span>          <span class="co"># 9 wraps to 0</span></span>
+<span id="cb3-3"><a href=""></a>    backward <span class="ot">&lt;-</span> <span class="cf">function</span>(i) <span class="cf">if</span> (i <span class="sc">==</span> <span class="dv">0</span>) n <span class="sc">-</span> <span class="dv">1</span> <span class="cf">else</span> i <span class="sc">-</span> <span class="dv">1</span>          <span class="co"># 0 wraps to 9</span></span>
+<span id="cb3-4"><a href=""></a>    mc <span class="ot">&lt;-</span> <span class="fu">integer</span>(iters <span class="sc">+</span> <span class="dv">1</span>); mc[<span class="dv">1</span>] <span class="ot">&lt;-</span> ini</span>
+<span id="cb3-5"><a href=""></a>    <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>(iters <span class="sc">+</span> <span class="dv">1</span>)) {</span>
+<span id="cb3-6"><a href=""></a>        u <span class="ot">&lt;-</span> <span class="fu">runif</span>(<span class="dv">1</span>)</span>
+<span id="cb3-7"><a href=""></a>        mc[i] <span class="ot">&lt;-</span> <span class="cf">if</span> (u <span class="sc">&lt;</span> <span class="fl">0.45</span>) <span class="fu">forward</span>(mc[i <span class="sc">-</span> <span class="dv">1</span>]) <span class="cf">else</span> <span class="cf">if</span> (u <span class="sc">&gt;</span> <span class="fl">0.55</span>) <span class="fu">backward</span>(mc[i <span class="sc">-</span> <span class="dv">1</span>]) <span class="cf">else</span> mc[i <span class="sc">-</span> <span class="dv">1</span>]</span>
+<span id="cb3-8"><a href=""></a>    }</span>
+<span id="cb3-9"><a href=""></a>    mc</span>
+<span id="cb3-10"><a href=""></a>}</span>
+<span id="cb3-11"><a href=""></a>sim_reflecting_walk <span class="ot">&lt;-</span> <span class="cf">function</span>(ini, iters, <span class="at">n =</span> <span class="dv">10</span>) {</span>
+<span id="cb3-12"><a href=""></a>    forward  <span class="ot">&lt;-</span> <span class="cf">function</span>(i) <span class="cf">if</span> (i <span class="sc">==</span> n <span class="sc">-</span> <span class="dv">1</span>) n <span class="sc">-</span> <span class="dv">1</span> <span class="cf">else</span> i <span class="sc">+</span> <span class="dv">1</span>      <span class="co"># 9 stays at 9</span></span>
+<span id="cb3-13"><a href=""></a>    backward <span class="ot">&lt;-</span> <span class="cf">function</span>(i) <span class="cf">if</span> (i <span class="sc">==</span> <span class="dv">0</span>) <span class="dv">0</span> <span class="cf">else</span> i <span class="sc">-</span> <span class="dv">1</span>              <span class="co"># 0 stays at 0</span></span>
+<span id="cb3-14"><a href=""></a>    mc <span class="ot">&lt;-</span> <span class="fu">integer</span>(iters <span class="sc">+</span> <span class="dv">1</span>); mc[<span class="dv">1</span>] <span class="ot">&lt;-</span> ini</span>
+<span id="cb3-15"><a href=""></a>    <span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">2</span><span class="sc">:</span>(iters <span class="sc">+</span> <span class="dv">1</span>)) {</span>
+<span id="cb3-16"><a href=""></a>        u <span class="ot">&lt;-</span> <span class="fu">runif</span>(<span class="dv">1</span>)</span>
+<span id="cb3-17"><a href=""></a>        mc[i] <span class="ot">&lt;-</span> <span class="cf">if</span> (u <span class="sc">&lt;</span> <span class="fl">0.4</span>) <span class="fu">forward</span>(mc[i <span class="sc">-</span> <span class="dv">1</span>]) <span class="cf">else</span> <span class="cf">if</span> (u <span class="sc">&gt;</span> <span class="fl">0.8</span>) <span class="fu">backward</span>(mc[i <span class="sc">-</span> <span class="dv">1</span>]) <span class="cf">else</span> mc[i <span class="sc">-</span> <span class="dv">1</span>]</span>
+<span id="cb3-18"><a href=""></a>    }</span>
+<span id="cb3-19"><a href=""></a>    mc</span>
+<span id="cb3-20"><a href=""></a>}</span>
+<span id="cb3-21"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">1</span>)</span>
+<span id="cb3-22"><a href=""></a>cyc  <span class="ot">&lt;-</span> <span class="fu">sim_cyclic_walk</span>(<span class="dv">2</span>, <span class="dv">20000</span>)</span>
+<span id="cb3-23"><a href=""></a>refl <span class="ot">&lt;-</span> <span class="fu">sim_reflecting_walk</span>(<span class="dv">2</span>, <span class="dv">20000</span>)</span>
+<span id="cb3-24"><a href=""></a>pi_cyc <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="dv">1</span> <span class="sc">/</span> <span class="dv">10</span>, <span class="dv">10</span>); pi_refl <span class="ot">&lt;-</span> <span class="dv">2</span><span class="sc">^</span>(<span class="dv">0</span><span class="sc">:</span><span class="dv">9</span>) <span class="sc">/</span> <span class="dv">1023</span>              <span class="co"># from detailed balance</span></span>
+<span id="cb3-25"><a href=""></a>freq <span class="ot">&lt;-</span> <span class="cf">function</span>(mc) <span class="fu">as.vector</span>(<span class="fu">table</span>(<span class="fu">factor</span>(mc[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>)], <span class="at">levels =</span> <span class="dv">0</span><span class="sc">:</span><span class="dv">9</span>))) <span class="sc">/</span> <span class="fu">length</span>(mc[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>)])</span>
+<span id="cb3-26"><a href=""></a>tab <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="at">cyc_freq =</span> <span class="fu">freq</span>(cyc), pi_cyc, <span class="at">refl_freq =</span> <span class="fu">freq</span>(refl), pi_refl); <span class="fu">colnames</span>(tab) <span class="ot">&lt;-</span> <span class="dv">0</span><span class="sc">:</span><span class="dv">9</span></span>
+<span id="cb3-27"><a href=""></a><span class="fu">round</span>(tab, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>              0     1     2     3     4     5     6     7     8     9
+cyc_freq  0.100 0.101 0.103 0.103 0.099 0.099 0.099 0.099 0.098 0.099
+pi_cyc    0.100 0.100 0.100 0.100 0.100 0.100 0.100 0.100 0.100 0.100
+refl_freq 0.000 0.001 0.002 0.005 0.012 0.030 0.056 0.124 0.255 0.515
+pi_refl   0.001 0.002 0.004 0.008 0.016 0.031 0.063 0.125 0.250 0.500</code></pre>
+</div>
+</div>
+</section>
+<section id="example-1-long-run-frequencies-versus-pi" class="slide level2">
+<h2>Example 1: Long-Run Frequencies versus <span class="math inline">\pi</span></h2>
+<p>One chain of each kind, started at state <span class="math inline">2</span>, run for <span class="math inline">20{,}000</span> steps (first <span class="math inline">200</span> discarded). Bars: observed frequencies; points: <span class="math inline">\pi</span> from detailed balance.</p>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-two-walks-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section>
+<section id="example-1-convergence-from-any-start" class="slide level2">
+<h2>Example 1: Convergence from Any Start</h2>
+<p><span class="math inline">5{,}000</span> independent chains, all started at state <span class="math inline">0</span>. The distribution of <span class="math inline">\theta_n</span> across chains approaches <span class="math inline">\pi</span> (points) as <span class="math inline">n</span> grows, which is the definition of the equilibrium distribution.</p>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-walks-n-step-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section></section>
 <section>
 <section id="gibbs-sampling" class="title-slide slide level1 center">
 <h1>2. Gibbs Sampling</h1>
 
 </section>
-<section id="example-posterior-of-a-normal-sample" class="slide level2 smaller">
-<h2>Example: Posterior of a Normal Sample</h2>
-<p><span class="math display">x_1,\ldots,x_n\mid\mu,\sigma^2 \overset{iid}{\sim} N(\mu,\sigma^2), \qquad
-\mu\sim N(\mu_0,\sigma_0^2), \qquad \sigma^2\sim\text{IG}\Big(a_0 = \tfrac\alpha2,\ \lambda_0 = \tfrac{\alpha w}{2}\Big)</span></p>
-<p>Inverse gamma: <span class="math inline">\sigma^2\sim\text{IG}(a_0,\lambda_0)</span> means <span class="math inline">1/\sigma^2\sim\text{Gamma}(a_0,\lambda_0)</span>, with density <span class="math inline">p(\sigma^2)\propto(\sigma^2)^{-(a_0+1)}\,e^{-\lambda_0/\sigma^2}</span> (<span class="math inline">a_0</span> shape, <span class="math inline">\lambda_0</span> scale; the extra <span class="math inline">1/(\sigma^2)^2</span> relative to the gamma kernel is the Jacobian of <span class="math inline">\tau = 1/\sigma^2</span>).</p>
-<p>Prior for <span class="math inline">\mu</span>: <span class="math inline">p(\mu)\propto e^{-(\mu-\mu_0)^2/(2\sigma_0^2)}</span>. Likelihood: <span class="math display">L(\mu,\sigma^2;x) = \prod_{i=1}^n\frac{1}{\sqrt{2\pi}\sigma}e^{-(x_i-\mu)^2/(2\sigma^2)} \propto (\sigma^2)^{-n/2}\exp\Big\{-\sum_{i=1}^n\frac{(x_i-\mu)^2}{2\sigma^2}\Big\}</span></p>
-<p><strong>Joint posterior</strong> <span class="math display">P(\mu,\sigma^2\mid x)\propto e^{-\frac{(\mu-\mu_0)^2}{2\sigma_0^2}}\cdot(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\sigma^2)^{-n/2}e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)}</span></p>
-<p>Two-dimensional, no closed form for the normalizing constant, but each <strong>conditional</strong> is standard.</p>
+<section id="the-gibbs-sampler" class="slide level2 smaller">
+<h2>The Gibbs Sampler</h2>
+<p><span class="math inline">\theta = (\theta_1,\theta_2)</span>, and both full conditionals <span class="math inline">\pi(\theta_1\mid\theta_2)</span> and <span class="math inline">\pi(\theta_2\mid\theta_1)</span> can be sampled directly, although the joint <span class="math inline">\pi(\theta_1,\theta_2)</span> cannot. Repeat for <span class="math inline">t = 1,2,\ldots</span>: <span class="math display">\theta_1^{(t)}\sim\pi\big(\theta_1\mid\theta_2^{(t-1)}\big), \qquad \theta_2^{(t)}\sim\pi\big(\theta_2\mid\theta_1^{(t)}\big)</span></p>
+<p>Each step replaces one coordinate by a draw from its full conditional given the <strong>current</strong> values of the others.</p>
+<p><strong>Why it works.</strong> Each half-step leaves <span class="math inline">\pi</span> invariant: if <span class="math inline">(\theta_1,\theta_2)\sim\pi</span>, then <span class="math inline">\theta_2\sim\pi(\theta_2)</span> (its marginal), and replacing <span class="math inline">\theta_1</span> by a fresh draw from <span class="math inline">\pi(\theta_1\mid\theta_2)</span> gives a pair with joint density <span class="math display">\pi(\theta_2)\,\pi(\theta_1\mid\theta_2) = \pi(\theta_1,\theta_2).</span> Cycling through both coordinates keeps <span class="math inline">\pi</span> invariant; with everywhere-positive full conditionals the chain is irreducible and aperiodic.</p>
+<ul>
+<li>No proposal, no acceptance step, no tuning</li>
+<li>Requires full conditionals that can be sampled; conjugate structure gives them for free</li>
+<li>Strong posterior correlation between coordinates slows mixing</li>
+</ul>
 </section>
-<section id="full-conditional-of-mu" class="slide level2 smaller">
-<h2>Full Conditional of <span class="math inline">\mu</span></h2>
-<p>Keep only factors involving <span class="math inline">\mu</span> and complete the square, using <span class="math inline">\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2</span>: <span class="math display">
+<section id="data-augmentation" class="slide level2 smaller">
+<h2>Data Augmentation</h2>
+<p>If the target <span class="math inline">\pi(\theta)</span> is awkward but is the marginal of a joint density over <span class="math inline">\theta</span> and extra unknowns <span class="math inline">z</span>, <span class="math display">\pi(\theta) = \int\pi(\theta,z)\,dz,</span> then a Gibbs sampler on <span class="math inline">(\theta,z)</span> that alternates <span class="math display">z\sim\pi(z\mid\theta), \qquad \theta\sim\pi(\theta\mid z)</span> has <span class="math inline">\pi(\theta,z)</span> as its invariant distribution. Its <span class="math inline">\theta</span>-coordinates are draws from <span class="math inline">\pi(\theta)</span>; the <span class="math inline">z</span>’s are simply discarded.</p>
+<p>This pays off when the conditionals given <span class="math inline">z</span> are standard even though <span class="math inline">\pi(\theta)</span> is not. The <span class="math inline">z</span> may be</p>
+<ul>
+<li>real missing data: exact values hidden by censoring (Example 3)</li>
+<li>a purely mathematical device: a latent variance per observation turns a Cauchy likelihood into a normal one (Example 4)</li>
+</ul>
+</section></section>
+<section>
+<section id="example-2-normal-data-with-unknown-mean-and-variance" class="title-slide slide level1 center">
+<h1>Example 2: Normal Data with Unknown Mean and Variance</h1>
+
+</section>
+<section id="example-2-the-model" class="slide level2 smaller">
+<h2>Example 2: The Model</h2>
+<div class="columns">
+<div class="column" style="width:62%;">
+<p><span class="math display">x_1,\ldots,x_n\mid\mu,\sigma^2 \overset{iid}{\sim} N(\mu,\sigma^2), \qquad
+\mu\sim N(\mu_0,\sigma_0^2), \qquad \sigma^2\sim\text{IG}(a_0,\lambda_0)</span></p>
+<p>Inverse gamma: <span class="math inline">1/\sigma^2\sim\text{Gamma}(a_0,\lambda_0)</span>, with density <span class="math inline">p(\sigma^2)\propto(\sigma^2)^{-(a_0+1)}\,e^{-\lambda_0/\sigma^2}</span>.</p>
+<p><strong>Joint posterior</strong> <span class="math display">
 \begin{aligned}
-P(\mu\mid\sigma^2,x) &amp;\propto \exp\Big\{-\frac{\mu^2-2\mu\mu_0}{2\sigma_0^2}\Big\}\exp\Big\{-\frac{n\mu^2-2n\mu\bar x}{2\sigma^2}\Big\} \\
-&amp;= \exp\Big\{-\frac12\Big[\Big(\frac1{\sigma_0^2}+\frac n{\sigma^2}\Big)\mu^2 - 2\Big(\frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}\Big)\mu\Big]\Big\}
+P(\mu,\sigma^2\mid x)\ \propto\ &amp; e^{-(\mu-\mu_0)^2/(2\sigma_0^2)}\cdot(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2} \\
+&amp;\times(\sigma^2)^{-n/2}\exp\Big\{-\sum_{i=1}^n\frac{(x_i-\mu)^2}{2\sigma^2}\Big\}
 \end{aligned}
 </span></p>
-<p>Matching with <span class="math inline">N(m,v)</span>, whose kernel is <span class="math inline">\exp\{-\tfrac12(\mu^2/v - 2m\mu/v)\}</span>: <span class="math display">\mu\mid\sigma^2,x\ \sim\ N(m,v), \qquad
+<p>Two-dimensional, no closed-form normalizing constant, but each <strong>conditional</strong> is standard.</p>
+<p><strong>Graph</strong>: squares are fixed hyperparameters, open circles unknowns, shaded circles data; the plate repeats <span class="math inline">x_i</span>. A node’s full conditional depends only on its parents, children and children’s other parents.</p>
+</div><div class="column" style="width:38%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="Lec_12_mcmc_files/figure-revealjs/plot-dag-normal-1.png" class="quarto-figure quarto-figure-center" width="432"></p>
+</figure>
+</div>
+</div>
+</div>
+</div></div>
+</section>
+<section id="example-2-full-conditional-of-mu" class="slide level2 smaller">
+<h2>Example 2: Full Conditional of <span class="math inline">\mu</span></h2>
+<p>Keep only factors involving <span class="math inline">\mu</span> and expand <span class="math inline">\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2</span>: <span class="math display">
+P(\mu\mid\sigma^2,x) \propto \exp\Big\{-\frac12\Big[\Big(\frac1{\sigma_0^2}+\frac n{\sigma^2}\Big)\mu^2 - 2\Big(\frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}\Big)\mu\Big]\Big\}
+</span></p>
+<p>Matching with the <span class="math inline">N(m,v)</span> kernel <span class="math inline">\exp\{-\tfrac12(\mu^2/v - 2m\mu/v)\}</span>: <span class="math display">\mu\mid\sigma^2,x\ \sim\ N(m,v), \qquad
 \frac1v = \frac1{\sigma_0^2}+\frac n{\sigma^2}, \qquad
 \frac mv = \frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}</span></p>
 <ul>
-<li><span class="math inline">m = \dfrac{\mu_0/\sigma_0^2 + n\bar x/\sigma^2}{1/\sigma_0^2 + n/\sigma^2}</span>: precision-weighted average of prior mean and sample mean; <span class="math inline">n/\sigma^2</span> is the <strong>weight of the data</strong></li>
-<li>As <span class="math inline">n\to\infty</span>: <span class="math inline">m\to\bar x</span> and <span class="math inline">v\approx\sigma^2/n</span></li>
+<li><span class="math inline">m</span> is a precision-weighted average of the prior mean and the sample mean; <span class="math inline">n/\sigma^2</span> is the <strong>weight of the data</strong></li>
+<li>As <span class="math inline">n\to\infty</span>: <span class="math inline">m\to\bar x</span> and <span class="math inline">v\approx\sigma^2/n</span>; the prior is overwhelmed</li>
 </ul>
 </section>
-<section id="full-conditional-of-sigma2" class="slide level2 smaller">
-<h2>Full Conditional of <span class="math inline">\sigma^2</span></h2>
+<section id="example-2-full-conditional-of-sigma2" class="slide level2 smaller">
+<h2>Example 2: Full Conditional of <span class="math inline">\sigma^2</span></h2>
 <p>Keep only factors involving <span class="math inline">\sigma^2</span>: <span class="math display">
 \begin{aligned}
 P(\sigma^2\mid\mu,x) &amp;\propto(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\sigma^2)^{-n/2}e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)} \\
 &amp;= (\sigma^2)^{-\left(\frac n2+a_0+1\right)}\exp\Big\{-\frac{\lambda_0+\frac12\sum_i(x_i-\mu)^2}{\sigma^2}\Big\}
 \end{aligned}
 </span></p>
-<p>which is again an inverse gamma kernel: <span class="math display">\sigma^2\mid\mu,x\ \sim\ \text{IG}\Big(\frac n2+a_0,\ \frac12\sum_{i=1}^n(x_i-\mu)^2+\lambda_0\Big)
-= \text{IG}\Big(\frac{n+\alpha}{2},\ \frac{\alpha w+\sum_i(x_i-\mu)^2}{2}\Big)</span></p>
+<p>again an inverse gamma kernel: <span class="math display">\sigma^2\mid\mu,x\ \sim\ \text{IG}\Big(\frac n2+a_0,\ \frac12\sum_{i=1}^n(x_i-\mu)^2+\lambda_0\Big)</span></p>
 <ul>
-<li>Shape: prior “sample size” <span class="math inline">\alpha</span> plus <span class="math inline">n</span>; scale: prior “sum of squares” <span class="math inline">\alpha w</span> plus the data sum of squares</li>
+<li>The prior contributes <span class="math inline">a_0</span> to the shape and <span class="math inline">\lambda_0</span> to the sum of squares; the data add <span class="math inline">n/2</span> and <span class="math inline">\frac12\sum_i(x_i-\mu)^2</span></li>
 <li>To draw: <span class="math inline">\tau\sim\text{Gamma}(\text{shape},\text{rate})</span> with the same two numbers, then <span class="math inline">\sigma^2 = 1/\tau</span></li>
 </ul>
 </section>
-<section id="the-gibbs-sampler" class="slide level2">
-<h2>The Gibbs Sampler</h2>
-<p>Starting from <span class="math inline">(\mu^{(0)},(\sigma^2)^{(0)})</span>, repeat for <span class="math inline">t = 1,2,\ldots</span>:</p>
-<ol type="1">
-<li>Draw <span class="math inline">\mu^{(t)}\sim P\big(\mu\mid(\sigma^2)^{(t-1)},x\big)</span></li>
-<li>Draw <span class="math inline">(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid\mu^{(t)},x\big)</span></li>
-</ol>
-<p>Each step replaces one coordinate by a draw from its full conditional given the <strong>current</strong> values of the others.</p>
-<p><strong>Why it works.</strong> A step that draws <span class="math inline">\theta_j\sim\pi(\theta_j\mid\theta_{-j})</span> leaves <span class="math inline">\pi</span> invariant: if <span class="math inline">(\theta_j,\theta_{-j})\sim\pi</span>, then <span class="math inline">\theta_{-j}\sim\pi(\theta_{-j})</span>, and replacing <span class="math inline">\theta_j</span> by a draw from <span class="math inline">\pi(\theta_j\mid\theta_{-j})</span> gives a pair with joint density <span class="math inline">\pi(\theta_{-j})\pi(\theta_j\mid\theta_{-j}) = \pi</span>. Cycling through all coordinates keeps <span class="math inline">\pi</span> invariant; with positive full conditionals the chain is irreducible and aperiodic.</p>
-<ul>
-<li>No tuning parameters, no rejections</li>
-<li>Requires full conditionals that can be sampled; conjugate structure gives them for free</li>
-<li>Strong posterior correlation between coordinates slows mixing</li>
-</ul>
-</section>
-<section id="the-gibbs-sampler-continued" class="slide level2">
-<h2>The Gibbs Sampler (Continued)</h2>
+<section id="example-2-implementation" class="slide level2">
+<h2>Example 2: Implementation</h2>
+<p>In the code, <code>sigma0</code> is the prior <strong>variance</strong> <span class="math inline">\sigma_0^2</span>, and <span class="math inline">\text{IG}(a_0,\lambda_0)</span> is written as <span class="math inline">a_0 = \alpha/2</span>, <span class="math inline">\lambda_0 = \alpha w/2</span>.</p>
 <div class="cell" data-layout-align="center">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href=""></a>x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">20</span>, <span class="dv">5</span>, <span class="dv">2</span>); n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); xbar <span class="ot">&lt;-</span> <span class="fu">mean</span>(x)</span>
-<span id="cb8-2"><a href=""></a>mu0 <span class="ot">&lt;-</span> <span class="dv">0</span>; s02 <span class="ot">&lt;-</span> <span class="dv">100</span>; a0 <span class="ot">&lt;-</span> <span class="dv">1</span>; lam0 <span class="ot">&lt;-</span> <span class="dv">1</span>                        <span class="co"># prior: N(0, 10^2), IG(1, 1)</span></span>
-<span id="cb8-3"><a href=""></a>gibbs <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, <span class="at">mu =</span> <span class="dv">0</span>, <span class="at">s2 =</span> <span class="dv">1</span>) {</span>
-<span id="cb8-4"><a href=""></a>  out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, iters, <span class="dv">2</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"s2"</span>)))</span>
-<span id="cb8-5"><a href=""></a>  <span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>iters) {</span>
-<span id="cb8-6"><a href=""></a>    v  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> (<span class="dv">1</span> <span class="sc">/</span> s02 <span class="sc">+</span> n <span class="sc">/</span> s2); m <span class="ot">&lt;-</span> v <span class="sc">*</span> (mu0 <span class="sc">/</span> s02 <span class="sc">+</span> n <span class="sc">*</span> xbar <span class="sc">/</span> s2)</span>
-<span id="cb8-7"><a href=""></a>    mu <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, m, <span class="fu">sqrt</span>(v))</span>
-<span id="cb8-8"><a href=""></a>    s2 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, <span class="at">shape =</span> n <span class="sc">/</span> <span class="dv">2</span> <span class="sc">+</span> a0, <span class="at">rate =</span> <span class="fu">sum</span>((x <span class="sc">-</span> mu)<span class="sc">^</span><span class="dv">2</span>) <span class="sc">/</span> <span class="dv">2</span> <span class="sc">+</span> lam0)</span>
-<span id="cb8-9"><a href=""></a>    out[t, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(mu, s2) }</span>
-<span id="cb8-10"><a href=""></a>  out }</span>
-<span id="cb8-11"><a href=""></a>draws <span class="ot">&lt;-</span> <span class="fu">gibbs</span>(<span class="dv">5000</span>, <span class="at">mu =</span> <span class="dv">20</span>, <span class="at">s2 =</span> <span class="dv">50</span>)                          <span class="co"># deliberately poor start</span></span>
-<span id="cb8-12"><a href=""></a><span class="fu">round</span>(<span class="fu">rbind</span>(<span class="at">posterior_mean =</span> <span class="fu">colMeans</span>(draws[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>), ]), <span class="at">posterior_sd =</span> <span class="fu">apply</span>(draws[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>), ], <span class="dv">2</span>, sd)), <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>                  mu    s2
-posterior_mean 5.902 5.273
-posterior_sd   0.508 1.784</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href=""></a>gibbs_norm <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, x, mu0, sigma0, alpha, w, <span class="at">mu_init =</span> <span class="dv">0</span>, <span class="at">s2_init =</span> <span class="dv">1</span>) {</span>
+<span id="cb5-2"><a href=""></a>    n <span class="ot">&lt;-</span> <span class="fu">length</span>(x); sumx <span class="ot">&lt;-</span> <span class="fu">sum</span>(x)</span>
+<span id="cb5-3"><a href=""></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iters, <span class="dv">2</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"s2"</span>)))</span>
+<span id="cb5-4"><a href=""></a>    mu <span class="ot">&lt;-</span> mu_init; s2 <span class="ot">&lt;-</span> s2_init</span>
+<span id="cb5-5"><a href=""></a>    <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(iters)) {</span>
+<span id="cb5-6"><a href=""></a>        v  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> (n <span class="sc">/</span> s2 <span class="sc">+</span> <span class="dv">1</span> <span class="sc">/</span> sigma0)</span>
+<span id="cb5-7"><a href=""></a>        mu <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, (sumx <span class="sc">/</span> s2 <span class="sc">+</span> mu0 <span class="sc">/</span> sigma0) <span class="sc">*</span> v, <span class="fu">sqrt</span>(v))</span>
+<span id="cb5-8"><a href=""></a>        s2 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, (alpha <span class="sc">+</span> n) <span class="sc">/</span> <span class="dv">2</span>, (alpha <span class="sc">*</span> w <span class="sc">+</span> <span class="fu">sum</span>((x <span class="sc">-</span> mu)<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">/</span> <span class="dv">2</span>)</span>
+<span id="cb5-9"><a href=""></a>        out[t, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(mu, s2)</span>
+<span id="cb5-10"><a href=""></a>    }</span>
+<span id="cb5-11"><a href=""></a>    out</span>
+<span id="cb5-12"><a href=""></a>}</span>
+<span id="cb5-13"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">2</span>)</span>
+<span id="cb5-14"><a href=""></a>x <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">50</span>, <span class="dv">10</span>, <span class="dv">2</span>)                                           <span class="co"># 50 observations from N(10, 2^2)</span></span>
+<span id="cb5-15"><a href=""></a>draws_gibbs <span class="ot">&lt;-</span> <span class="fu">gibbs_norm</span>(<span class="dv">10000</span>, x, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">sigma0 =</span> <span class="fl">1e10</span>, <span class="at">alpha =</span> <span class="fl">1e-5</span>, <span class="at">w =</span> <span class="fl">1e-5</span>)   <span class="co"># vague prior</span></span>
+<span id="cb5-16"><a href=""></a>burn <span class="ot">&lt;-</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">200</span></span>
+<span id="cb5-17"><a href=""></a>mu_g <span class="ot">&lt;-</span> draws_gibbs[<span class="sc">-</span>burn, <span class="st">"mu"</span>]; sd_g <span class="ot">&lt;-</span> <span class="fu">sqrt</span>(draws_gibbs[<span class="sc">-</span>burn, <span class="st">"s2"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-2-results" class="slide level2">
+<h2>Example 2: Results</h2>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-gibbs-demo-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"><div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">parameter</th>
+<th style="text-align: right;">mean</th>
+<th style="text-align: right;">sd</th>
+<th style="text-align: right;">2.5%</th>
+<th style="text-align: right;">97.5%</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">mu</td>
+<td style="text-align: right;">10.141</td>
+<td style="text-align: right;">0.330</td>
+<td style="text-align: right;">9.489</td>
+<td style="text-align: right;">10.791</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sigma</td>
+<td style="text-align: right;">2.293</td>
+<td style="text-align: right;">0.239</td>
+<td style="text-align: right;">1.885</td>
+<td style="text-align: right;">2.809</td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 </section>
-<section id="the-gibbs-sampler-continued-1" class="slide level2">
-<h2>The Gibbs Sampler (Continued)</h2>
-<p>Left: the first 30 Gibbs moves on the joint posterior (contours). Each move is horizontal or vertical, since one coordinate changes at a time. Right: trace plots showing the burn-in from the poor start.</p>
+<section id="example-2-the-gibbs-path" class="slide level2">
+<h2>Example 2: The Gibbs Path</h2>
+<p>Left: the first 30 Gibbs moves on the joint posterior (contours), from a poor start. Each move is horizontal or vertical, since one coordinate changes at a time. Right: trace plots of the first 100 iterations.</p>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/the-gibbs-sampler-continued-2-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
-<section id="data-augmentation-rounded-observations" class="slide level2">
-<h2>Data Augmentation: Rounded Observations</h2>
-<p>Suppose we observe only <span class="math inline">y_i = \lfloor x_i\rfloor</span> (e.g.&nbsp;ages in whole years), with <span class="math inline">x_i\sim N(\mu,\sigma^2)</span> latent. Treat <span class="math inline">x_1,\ldots,x_n</span> as extra unknowns and Gibbs-sample all three blocks. Repeat:</p>
-<ol type="1">
-<li><span class="math inline">x_i^{(t)}\sim P\big(x_i\mid\mu^{(t-1)},(\sigma^2)^{(t-1)},y_i\big)</span>, for <span class="math inline">i = 1,\ldots,n</span></li>
-<li><span class="math inline">\mu^{(t)}\sim P\big(\mu\mid x^{(t)},(\sigma^2)^{(t-1)}\big)</span></li>
-<li><span class="math inline">(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid x^{(t)},\mu^{(t)}\big)</span></li>
-</ol>
-<p>Steps 2–3 are the conditionals already derived, applied to the imputed <span class="math inline">x</span>. For step 1, <span class="math display">P(x_i\mid\mu,\sigma^2,y_i) = \frac{P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)}{\int P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)\,dx_i}
-= \frac{P(x_i\mid\mu,\sigma^2)}{\int_{y_i}^{y_i+1}P(x_i\mid\mu,\sigma^2)\,dx_i}, \qquad x_i\in[y_i,y_i+1)</span></p>
-<p>a normal truncated to <span class="math inline">[y_i,y_i+1)</span>, drawn by inversion: <span class="math inline">x_i = \mu + \sigma\,\Phi^{-1}\big(U\big)</span> with <span class="math inline">U\sim\text{Unif}\big(\Phi(\tfrac{y_i-\mu}\sigma),\Phi(\tfrac{y_i+1-\mu}\sigma)\big)</span>.</p>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-gibbs-path-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section></section>
+<section>
+<section id="example-3-interval-censored-normal-data" class="title-slide slide level1 center">
+<h1>Example 3: Interval-Censored Normal Data</h1>
+
 </section>
-<section id="data-augmentation-continued" class="slide level2">
-<h2>Data Augmentation (Continued)</h2>
-<p>The conditional of a latent <span class="math inline">x_i</span> is the <span class="math inline">N(\mu,\sigma^2)</span> density restricted to the unit interval <span class="math inline">[y_i,y_i+1)</span> and renormalized.</p>
+<section id="example-3-the-problem" class="slide level2 smaller">
+<h2>Example 3: The Problem</h2>
+<p><span class="math inline">x_1,\ldots,x_n\mid\mu,\sigma^2\overset{iid}{\sim}N(\mu,\sigma^2)</span> with the priors of Example 2, but not every <span class="math inline">x_i</span> is seen exactly. For each unit we observe <span class="math inline">(I_i,\delta_i)</span>:</p>
+<ul>
+<li><span class="math inline">\delta_i = 1</span>: <span class="math inline">x_i</span> is <strong>not censored</strong>, observed exactly, <span class="math inline">I_i = \{x_i\}</span></li>
+<li><span class="math inline">\delta_i = 0</span>: <span class="math inline">x_i</span> is <strong>censored</strong>, we only learn an interval <span class="math inline">I_i = [a_i,b_i)</span> containing it; bounded (a value known to the decade) or open-ended, <span class="math inline">b_i = \infty</span> (right censoring)</li>
+</ul>
+<p>The <span class="math inline">\delta_i</span> are independent of the <span class="math inline">x_i</span> and of <span class="math inline">(\mu,\sigma^2)</span>, so the likelihood is <span class="math display">
+L(\mu,\sigma^2) = \prod_{i:\,\delta_i = 1}\frac1\sigma\,\varphi\Big(\frac{x_i-\mu}\sigma\Big)
+\times\prod_{i:\,\delta_i = 0}\Big[\Phi\Big(\frac{b_i-\mu}\sigma\Big)-\Phi\Big(\frac{a_i-\mu}\sigma\Big)\Big]
+</span></p>
+<p>The products of <span class="math inline">\Phi</span> differences make the posterior non-standard: neither conditional of <span class="math inline">\mu</span> nor of <span class="math inline">\sigma^2</span> is normal or inverse gamma.</p>
+</section>
+<section id="example-3-data-augmentation" class="slide level2 smaller">
+<h2>Example 3: Data Augmentation</h2>
+<div class="columns">
+<div class="column" style="width:62%;">
+<p>Treat the censored <span class="math inline">x_i</span> as extra unknowns.</p>
+<ul>
+<li>Given all <span class="math inline">x_i</span>, the data are complete: the conditionals of <span class="math inline">\mu</span> and <span class="math inline">\sigma^2</span> are exactly those of Example 2</li>
+<li>Given <span class="math inline">(\mu,\sigma^2)</span>, a censored <span class="math inline">x_i</span> has density <span class="math inline">\propto N(\mu,\sigma^2)\times I(x_i\in I_i)</span>: <span class="math display">x_i\mid\mu,\sigma^2,I_i,\delta_i = 0\ \sim\ N(\mu,\sigma^2)\text{ truncated to }[a_i,b_i)</span></li>
+</ul>
+<p>One Gibbs iteration: <span class="math display">
+\begin{aligned}
+x_i^{(t)} &amp;\sim P\big(x_i\mid\mu^{(t-1)},\sigma^{2(t-1)},I_i,\delta_i\big)\quad(\text{censored }i)\\
+\mu^{(t)} &amp;\sim P\big(\mu\mid x^{(t)},\sigma^{2(t-1)}\big),\qquad
+\sigma^{2(t)}\sim P\big(\sigma^2\mid x^{(t)},\mu^{(t)}\big)
+\end{aligned}
+</span></p>
+<p>Integrating <span class="math inline">x_i</span> out gives back the likelihood: <span class="math inline">\int_{a_i}^{b_i}\sigma^{-1}\varphi((x-\mu)/\sigma)\,dx</span> is the <span class="math inline">\Phi</span> difference.</p>
+</div><div class="column" style="width:38%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="Lec_12_mcmc_files/figure-revealjs/plot-dag-censored-1.png" class="quarto-figure quarto-figure-center" width="432"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><span class="math inline">x_i</span> is now unknown; the observed <span class="math inline">I_i</span> and <span class="math inline">\delta_i</span> are shaded squares. <span class="math inline">\delta_i</span> has no arrows: it carries no information about <span class="math inline">(\mu,\sigma^2)</span>.</p>
+</div></div>
+</section>
+<section id="example-3-the-sampler" class="slide level2">
+<h2>Example 3: The Sampler</h2>
+<p>Each interval is stored as its endpoints <code>a</code>, <code>b</code>, with <code>a = b = x</code> for an uncensored unit; <code>truncnorm::rtruncnorm</code> also handles <span class="math inline">b_i = \infty</span>.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href=""></a>gibbs_norm_censored <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, a, b, delta, mu0, sigma0, alpha, w) {</span>
+<span id="cb6-2"><a href=""></a>    n <span class="ot">&lt;-</span> <span class="fu">length</span>(a); cens <span class="ot">&lt;-</span> delta <span class="sc">==</span> <span class="dv">0</span></span>
+<span id="cb6-3"><a href=""></a>    x <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(cens, <span class="fu">pmin</span>(a <span class="sc">+</span> <span class="dv">1</span>, b), a)     <span class="co"># start: exact values, or a point in the interval</span></span>
+<span id="cb6-4"><a href=""></a>    mu <span class="ot">&lt;-</span> <span class="fu">mean</span>(x); s2 <span class="ot">&lt;-</span> <span class="fu">var</span>(x)</span>
+<span id="cb6-5"><a href=""></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iters, <span class="dv">2</span>)</span>
+<span id="cb6-6"><a href=""></a>    <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(iters)) {</span>
+<span id="cb6-7"><a href=""></a>        <span class="do">### censored units: x_i | mu, sigma^2 ~ N(mu, sigma^2) truncated to [a_i, b_i)</span></span>
+<span id="cb6-8"><a href=""></a>        x[cens] <span class="ot">&lt;-</span> <span class="fu">rtruncnorm</span>(<span class="fu">sum</span>(cens), <span class="at">a =</span> a[cens], <span class="at">b =</span> b[cens], <span class="at">mean =</span> mu, <span class="at">sd =</span> <span class="fu">sqrt</span>(s2))</span>
+<span id="cb6-9"><a href=""></a>        <span class="do">### complete-data conditionals of Example 2</span></span>
+<span id="cb6-10"><a href=""></a>        v  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> (n <span class="sc">/</span> s2 <span class="sc">+</span> <span class="dv">1</span> <span class="sc">/</span> sigma0)</span>
+<span id="cb6-11"><a href=""></a>        mu <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, (<span class="fu">sum</span>(x) <span class="sc">/</span> s2 <span class="sc">+</span> mu0 <span class="sc">/</span> sigma0) <span class="sc">*</span> v, <span class="fu">sqrt</span>(v))</span>
+<span id="cb6-12"><a href=""></a>        s2 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, (alpha <span class="sc">+</span> n) <span class="sc">/</span> <span class="dv">2</span>, (alpha <span class="sc">*</span> w <span class="sc">+</span> <span class="fu">sum</span>((x <span class="sc">-</span> mu)<span class="sc">^</span><span class="dv">2</span>)) <span class="sc">/</span> <span class="dv">2</span>)</span>
+<span id="cb6-13"><a href=""></a>        out[t, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(mu, s2)</span>
+<span id="cb6-14"><a href=""></a>    }</span>
+<span id="cb6-15"><a href=""></a>    <span class="fu">list</span>(<span class="at">mu =</span> out[, <span class="dv">1</span>], <span class="at">sd =</span> <span class="fu">sqrt</span>(out[, <span class="dv">2</span>]))</span>
+<span id="cb6-16"><a href=""></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-3-results" class="slide level2 smaller">
+<h2>Example 3: Results</h2>
+<p><span class="math inline">n = 200</span> values from <span class="math inline">N(100,40^2)</span>. Each is observed exactly with probability <span class="math inline">0.3</span>; otherwise values above <span class="math inline">150</span> are only known to be at least <span class="math inline">150</span> (<span class="math inline">I_i = [150,\infty)</span>), and the rest only to the decade, <span class="math inline">I_i = [10k,10k+10)</span>.</p>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<colgroup>
+<col style="width: 35%">
+<col style="width: 13%">
+<col style="width: 19%">
+<col style="width: 31%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">truth</th>
+<th style="text-align: right;">naive (lower ends)</th>
+<th style="text-align: right;">posterior mean (95% interval)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">exact / interval / right-censored</td>
+<td style="text-align: right;">70 / 121 / 9</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">mu</td>
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">96.88</td>
+<td style="text-align: right;">100.74 (95.27, 106.17)</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sigma</td>
+<td style="text-align: right;">40</td>
+<td style="text-align: right;">38.00</td>
+<td style="text-align: right;">39.19 (35.50, 43.46)</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Treating each censored value as the lower end of its interval biases both estimates downward. The augmented Gibbs sampler recovers <span class="math inline">\mu</span> and <span class="math inline">\sigma</span>, because it imputes each censored <span class="math inline">x_i</span> from its conditional and so propagates the uncertainty about where in <span class="math inline">I_i</span> it lies.</p>
+</section></section>
+<section>
+<section id="example-4-cauchy-data-with-unknown-location-and-scale" class="title-slide slide level1 center">
+<h1>Example 4: Cauchy Data with Unknown Location and Scale</h1>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/data-augmentation-continued-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"><p>The same pattern handles censored, binned, or interval-valued data: augment with the latent exact values, and every conditional becomes standard.</p>
+</section>
+<section id="example-4-the-problem" class="slide level2 smaller">
+<h2>Example 4: The Problem</h2>
+<p>Observations <span class="math inline">y_1,\ldots,y_n</span> modelled as <span class="math inline">\text{Cauchy}(\mu,\sigma)</span>, a heavy-tailed model that is robust to outliers: <span class="math display">p(y_i\mid\mu,\sigma) = \frac{1}{\pi\sigma(1+r_i^2)}, \qquad r_i = \frac{y_i-\mu}{\sigma}</span></p>
+<p>Priors <span class="math inline">\mu\sim N(\mu_0,\tau^2)</span> and <span class="math inline">\sigma^2\sim\text{IG}(a_0,b_0)</span>. The posterior <span class="math display">p(\mu,\sigma^2\mid y)\propto e^{-(\mu-\mu_0)^2/(2\tau^2)}\,(\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}\prod_i\sigma^{-1}(1+r_i^2)^{-1}</span> has no standard conditionals, because of the factors <span class="math inline">(1+r_i^2)^{-1}</span>.</p>
+<p><strong>Step 1: the Cauchy as a scale mixture of normals.</strong> Introduce a latent variance <span class="math inline">v_i</span> per observation: <span class="math display">y_i\mid\mu,\sigma^2,v_i\sim N(\mu,\sigma^2v_i), \qquad v_i\sim\text{IG}\big(\tfrac12,\tfrac12\big), \qquad p(v_i) = \tfrac{1}{\sqrt{2\pi}}\,v_i^{-3/2}e^{-1/(2v_i)}</span></p>
+<p>Integrating out <span class="math inline">v_i</span>, using <span class="math inline">\int_0^\infty v^{-2}e^{-c/v}\,dv = 1/c</span>: <span class="math display">\int_0^\infty\frac{e^{-r_i^2/(2v_i)}}{\sqrt{2\pi\sigma^2v_i}}\cdot\frac{v_i^{-3/2}e^{-1/(2v_i)}}{\sqrt{2\pi}}\,dv_i
+= \frac{1}{2\pi\sigma}\int_0^\infty v_i^{-2}e^{-(1+r_i^2)/(2v_i)}\,dv_i = \frac{1}{\pi\sigma(1+r_i^2)}</span></p>
+<p>So a Gibbs sampler on <span class="math inline">(v,\mu,\sigma^2)</span> samples the Cauchy posterior once the <span class="math inline">v_i</span> are ignored.</p>
+</section>
+<section id="example-4-the-augmented-posterior" class="slide level2 smaller">
+<h2>Example 4: The Augmented Posterior</h2>
+<div class="columns">
+<div class="column" style="width:62%;">
+<p><strong>Step 2.</strong> Multiplying priors, latent densities and the normal likelihood, <span class="math display">
+\begin{aligned}
+p(\mu,\sigma^2,v\mid y)\propto{}&amp; e^{-\frac{(\mu-\mu_0)^2}{2\tau^2}}(\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}\\
+&amp;\times\prod_{i=1}^n\Big[(\sigma^2v_i)^{-1/2}e^{-\frac{(y_i-\mu)^2}{2\sigma^2v_i}}\cdot v_i^{-3/2}e^{-\frac{1}{2v_i}}\Big]
+\end{aligned}
+</span></p>
+<p>Each full conditional is read off by keeping the factors that contain the parameter being updated and recognizing the kernel.</p>
+<p><strong>Step 3: each <span class="math inline">v_i</span>.</strong> Only the <span class="math inline">i</span>-th term of the product contains <span class="math inline">v_i</span>: <span class="math display">p(v_i\mid\mu,\sigma^2,y)\propto v_i^{-(1+1)}\exp\Big\{-\frac{(1+r_i^2)/2}{v_i}\Big\}</span> <span class="math display">v_i\mid\mu,\sigma^2,y\sim\text{IG}\Big(1,\ \frac{1+r_i^2}{2}\Big), \quad\text{independently over } i</span></p>
+<p>An outlier (large <span class="math inline">|r_i|</span>) gets a large latent variance.</p>
+</div><div class="column" style="width:38%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="Lec_12_mcmc_files/figure-revealjs/plot-dag-cauchy-1.png" class="quarto-figure quarto-figure-center" width="460"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Each <span class="math inline">y_i</span> has its own latent variance <span class="math inline">v_i</span>; its only child is <span class="math inline">y_i</span>, so its conditional involves only <span class="math inline">y_i</span>, <span class="math inline">\mu</span>, <span class="math inline">\sigma^2</span>.</p>
+</div></div>
+</section>
+<section id="example-4-conditionals-of-mu-and-sigma2" class="slide level2 smaller">
+<h2>Example 4: Conditionals of <span class="math inline">\mu</span> and <span class="math inline">\sigma^2</span></h2>
+<p><strong>Step 4: <span class="math inline">\mu</span>.</strong> With observation precisions <span class="math inline">w_i = 1/(\sigma^2v_i)</span>, <span class="math display">p(\mu\mid\sigma^2,v,y)\propto\exp\Big\{-\frac12\Big[\Big(\frac1{\tau^2}+\sum_iw_i\Big)\mu^2-2\Big(\frac{\mu_0}{\tau^2}+\sum_iw_iy_i\Big)\mu\Big]\Big\}</span> <span class="math display">\mu\mid\sigma^2,v,y\sim N(m,s^2), \qquad \frac1{s^2} = \frac1{\tau^2}+\sum_{i=1}^nw_i, \qquad m = s^2\Big(\frac{\mu_0}{\tau^2}+\sum_{i=1}^nw_iy_i\Big)</span></p>
+<p>A precision-weighted mean as in Example 2, but each observation has its own weight <span class="math inline">w_i</span>: an outlier, with large <span class="math inline">v_i</span>, has a small weight and barely moves <span class="math inline">\mu</span>. This is where the robustness comes from.</p>
+<p><strong>Step 5: <span class="math inline">\sigma^2</span>.</strong> <span class="math display">p(\sigma^2\mid\mu,v,y)\propto(\sigma^2)^{-(a_0+\frac n2+1)}\exp\Big\{-\frac{b_0+\sum_i(y_i-\mu)^2/(2v_i)}{\sigma^2}\Big\}</span> <span class="math display">\sigma^2\mid\mu,v,y\sim\text{IG}\Big(a_0+\frac n2,\ b_0+\sum_{i=1}^n\frac{(y_i-\mu)^2}{2v_i}\Big)</span></p>
+</section>
+<section id="example-4-the-sampler" class="slide level2 smaller">
+<h2>Example 4: The Sampler</h2>
+<p><span class="math inline">\mu_0 = 0</span>, <span class="math inline">\tau = 10</span>, <span class="math inline">a_0 = b_0 = 1</span>, and 30 observations from <span class="math inline">\text{Cauchy}(2,1)</span>, including several outliers. The posterior of <span class="math inline">(\mu,\sigma)</span> is two-dimensional, so it can also be computed exactly on a grid as an independent check.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href=""></a>gibbs_cauchy <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, y, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">tau =</span> <span class="dv">10</span>, <span class="at">a0 =</span> <span class="dv">1</span>, <span class="at">b0 =</span> <span class="dv">1</span>, <span class="at">mu =</span> <span class="dv">0</span>, <span class="at">s2 =</span> <span class="dv">1</span>) {</span>
+<span id="cb7-2"><a href=""></a>    n <span class="ot">&lt;-</span> <span class="fu">length</span>(y)</span>
+<span id="cb7-3"><a href=""></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iters, <span class="dv">2</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"sigma"</span>)))</span>
+<span id="cb7-4"><a href=""></a>    <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(iters)) {</span>
+<span id="cb7-5"><a href=""></a>        v <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(n, <span class="at">shape =</span> <span class="dv">1</span>, <span class="at">rate =</span> (<span class="dv">1</span> <span class="sc">+</span> (y <span class="sc">-</span> mu)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> s2) <span class="sc">/</span> <span class="dv">2</span>)         <span class="co"># Step 3</span></span>
+<span id="cb7-6"><a href=""></a>        w <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> (s2 <span class="sc">*</span> v); prec <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> tau<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">sum</span>(w)                           <span class="co"># Step 4</span></span>
+<span id="cb7-7"><a href=""></a>        mu <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(<span class="dv">1</span>, (mu0 <span class="sc">/</span> tau<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">sum</span>(w <span class="sc">*</span> y)) <span class="sc">/</span> prec, <span class="fu">sqrt</span>(<span class="dv">1</span> <span class="sc">/</span> prec))</span>
+<span id="cb7-8"><a href=""></a>        s2 <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">rgamma</span>(<span class="dv">1</span>, <span class="at">shape =</span> a0 <span class="sc">+</span> n <span class="sc">/</span> <span class="dv">2</span>, <span class="at">rate =</span> b0 <span class="sc">+</span> <span class="fu">sum</span>((y <span class="sc">-</span> mu)<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> v)))   <span class="co"># Step 5</span></span>
+<span id="cb7-9"><a href=""></a>        out[t, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(mu, <span class="fu">sqrt</span>(s2))</span>
+<span id="cb7-10"><a href=""></a>    }</span>
+<span id="cb7-11"><a href=""></a>    out</span>
+<span id="cb7-12"><a href=""></a>}</span>
+<span id="cb7-13"><a href=""></a><span class="do">### exact log posterior of (mu, sigma), up to a constant; p(sigma) = p(sigma^2) * 2 sigma</span></span>
+<span id="cb7-14"><a href=""></a>log_post_cauchy <span class="ot">&lt;-</span> <span class="cf">function</span>(mu, sigma, y, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">tau =</span> <span class="dv">10</span>, <span class="at">a0 =</span> <span class="dv">1</span>, <span class="at">b0 =</span> <span class="dv">1</span>)</span>
+<span id="cb7-15"><a href=""></a>    <span class="fu">sum</span>(<span class="fu">dcauchy</span>(y, mu, sigma, <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">+</span> <span class="fu">dnorm</span>(mu, mu0, tau, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">-</span></span>
+<span id="cb7-16"><a href=""></a>        (a0 <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">*</span> <span class="fu">log</span>(sigma<span class="sc">^</span><span class="dv">2</span>) <span class="sc">-</span> b0 <span class="sc">/</span> sigma<span class="sc">^</span><span class="dv">2</span> <span class="sc">+</span> <span class="fu">log</span>(<span class="dv">2</span> <span class="sc">*</span> sigma)</span>
+<span id="cb7-17"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">7</span>)</span>
+<span id="cb7-18"><a href=""></a>y_cauchy <span class="ot">&lt;-</span> <span class="fu">rcauchy</span>(<span class="dv">30</span>, <span class="at">location =</span> <span class="dv">2</span>, <span class="at">scale =</span> <span class="dv">1</span>)</span>
+<span id="cb7-19"><a href=""></a>draws_cauchy <span class="ot">&lt;-</span> <span class="fu">gibbs_cauchy</span>(<span class="dv">20000</span>, y_cauchy, <span class="at">mu =</span> <span class="sc">-</span><span class="dv">5</span>, <span class="at">s2 =</span> <span class="dv">25</span>)   <span class="co"># deliberately poor start</span></span>
+<span id="cb7-20"><a href=""></a>keep_c <span class="ot">&lt;-</span> <span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">1000</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-4-results" class="slide level2 smaller">
+<h2>Example 4: Results</h2>
+<p>Left: the first 15 iterations from a poor start (triangle), as the staircase of <span class="math inline">\mu</span>- and <span class="math inline">\sigma</span>-updates, over the exact posterior contours. Middle, right: traces of the first 500 iterations.</p>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-gibbs-cauchy-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"><div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">quantity</th>
+<th style="text-align: right;">Gibbs</th>
+<th style="text-align: right;">exact (grid)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">posterior mean of mu</td>
+<td style="text-align: right;">2.228</td>
+<td style="text-align: right;">2.228</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">posterior sd of mu</td>
+<td style="text-align: right;">0.179</td>
+<td style="text-align: right;">0.179</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">posterior mean of sigma</td>
+<td style="text-align: right;">0.768</td>
+<td style="text-align: right;">0.765</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">posterior sd of sigma</td>
+<td style="text-align: right;">0.181</td>
+<td style="text-align: right;">0.178</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>The sample mean 3.68 and standard deviation 6.43 are dragged off by the outliers; the posterior of <span class="math inline">\mu</span> stays at the bulk of the data. The <a href="../shinylive_apps/app_gibbs_cauchy.html" target="_blank">Gibbs–Cauchy app</a> runs this sampler one conditional update at a time.</p>
 </section></section>
 <section>
 <section id="metropolishastings" class="title-slide slide level1 center">
@@ -450,197 +841,1208 @@ posterior_sd   0.508 1.784</code></pre>
 </section>
 <section id="the-metropolishastings-algorithm" class="slide level2 smaller">
 <h2>The Metropolis–Hastings Algorithm</h2>
-<p>Target <span class="math inline">\pi(\theta)</span>, known up to a constant. Choose a <strong>proposal</strong> distribution <span class="math inline">\tilde T(\theta^*\mid\theta)</span> that we can sample from. Starting from <span class="math inline">\theta^{(0)}</span>, repeat for <span class="math inline">t = 1,\ldots,n</span>:</p>
+<p>Gibbs needs full conditionals that are known and sample-able. <strong>Metropolis–Hastings</strong> needs only a target <span class="math inline">\pi(\theta)</span> computable up to a constant and <strong>any</strong> proposal <span class="math inline">\tilde T(\theta^*\mid\theta)</span> we can sample from. Starting from <span class="math inline">\theta^{(0)}</span>, repeat:</p>
 <ol type="1">
 <li>Draw a proposal <span class="math inline">\theta^*\sim\tilde T(\cdot\mid\theta^{(t-1)})</span></li>
-<li>Compute the acceptance ratio <span class="math display">r = \min\left\{\frac{\pi(\theta^*)\,\tilde T(\theta^{(t-1)}\mid\theta^*)}{\pi(\theta^{(t-1)})\,\tilde T(\theta^*\mid\theta^{(t-1)})},\ 1\right\}</span></li>
-<li>Draw <span class="math inline">U\sim\text{Unif}(0,1)</span>. If <span class="math inline">U&lt;r</span>, set <span class="math inline">\theta^{(t)} = \theta^*</span> (accept); otherwise set <span class="math inline">\theta^{(t)} = \theta^{(t-1)}</span> (reject and <strong>stay</strong>)</li>
+<li>Compute the acceptance probability <span class="math display">r = \min\left\{\frac{\pi(\theta^*)\,\tilde T(\theta^{(t-1)}\mid\theta^*)}{\pi(\theta^{(t-1)})\,\tilde T(\theta^*\mid\theta^{(t-1)})},\ 1\right\}</span></li>
+<li>With probability <span class="math inline">r</span> set <span class="math inline">\theta^{(t)} = \theta^*</span> (accept); otherwise <span class="math inline">\theta^{(t)} = \theta^{(t-1)}</span> (reject and <strong>repeat the current value</strong>)</li>
 </ol>
 <ul>
 <li>Only the ratio <span class="math inline">\pi(\theta^*)/\pi(\theta^{(t-1)})</span> is needed: normalizing constants cancel</li>
-<li>A rejected step still produces a draw: the current value is <strong>repeated</strong>, unlike rejection sampling</li>
-<li>Unlike Gibbs, no conditional distributions are needed; any <span class="math inline">\tilde T</span> works in principle</li>
+<li>A rejected step still produces a draw (the repeated current value), unlike rejection sampling, so no envelope is needed</li>
+<li>The MH transition satisfies detailed balance for <strong>any</strong> <span class="math inline">\tilde T</span> whose support is compatible with <span class="math inline">\pi</span>’s (next slide)</li>
 </ul>
 </section>
-<section id="symmetric-proposals-random-walk-metropolis" class="slide level2">
-<h2>Symmetric Proposals: Random-Walk Metropolis</h2>
-<p>If <span class="math inline">\tilde T</span> is symmetric, <span class="math inline">\tilde T(\theta^*\mid\theta) = \tilde T(\theta\mid\theta^*)</span>, e.g. <span class="math display">\tilde T(\theta^*\mid\theta^{(t-1)}) = N\big(\theta^{(t-1)},\ \varsigma^2\big)</span></p>
-<p>the proposal terms cancel and <span class="math display">r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}</span></p>
+<section id="justification-detailed-balance" class="slide level2 smaller">
+<h2>Justification: Detailed Balance</h2>
+<p>For <span class="math inline">\theta'\ne\theta</span>, a move <span class="math inline">\theta\to\theta'</span> requires proposing <span class="math inline">\theta'</span> and accepting it: <span class="math display">T(\theta\to\theta') = \tilde T(\theta\to\theta')\cdot\min\left\{\frac{\pi(\theta')\,\tilde T(\theta'\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta')},\ 1\right\}</span></p>
+<p>(For <span class="math inline">\theta' = \theta</span>, the rejections give a point mass, but detailed balance holds trivially there.) Then <span class="math display">
+\begin{aligned}
+\pi(\theta)\,T(\theta\to\theta')
+&amp;= \pi(\theta)\,\tilde T(\theta\to\theta')\cdot\min\left\{\frac{\pi(\theta')\,\tilde T(\theta'\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta')},\ 1\right\} \\
+&amp;= \min\Big\{\pi(\theta')\,\tilde T(\theta'\to\theta),\ \pi(\theta)\,\tilde T(\theta\to\theta')\Big\}
+\end{aligned}
+</span></p>
+<p>This expression is symmetric in <span class="math inline">\theta</span> and <span class="math inline">\theta'</span>, so exchanging their roles gives the same value: <span class="math display">\pi(\theta')\,T(\theta'\to\theta) = \min\Big\{\pi(\theta)\,\tilde T(\theta\to\theta'),\ \pi(\theta')\,\tilde T(\theta'\to\theta)\Big\} = \pi(\theta)\,T(\theta\to\theta'). \qquad\blacksquare</span></p>
+</section>
+<section id="random-walk-metropolis" class="slide level2">
+<h2>Random-Walk Metropolis</h2>
+<p>If <span class="math inline">\tilde T</span> is symmetric, <span class="math inline">\tilde T(\theta^*\mid\theta) = \tilde T(\theta\mid\theta^*)</span>, e.g.&nbsp;<span class="math inline">\theta^*\sim N\big(\theta^{(t-1)},\varsigma^2\big)</span>, the proposal terms cancel: <span class="math display">r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}</span></p>
 <ul>
-<li>Uphill proposals (<span class="math inline">\pi(\theta^*)\ge\pi(\theta^{(t-1)})</span>) are always accepted</li>
-<li>Downhill proposals are accepted with probability equal to the density ratio; the chain can go downhill, which is what lets it explore rather than just climb</li>
-<li><span class="math inline">\varsigma</span> is the <strong>step size</strong>: the single tuning parameter of the algorithm</li>
+<li>Uphill proposals are always accepted; downhill ones are accepted with probability equal to the density ratio, which lets the chain explore rather than just climb</li>
+<li><span class="math inline">\varsigma</span>, the <strong>step size</strong>, is the only tuning parameter</li>
 </ul>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href=""></a>met_gauss <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, log_f, stepsizes, ini_value, ...) {</span>
+<span id="cb8-2"><a href=""></a>    state <span class="ot">&lt;-</span> ini_value; no_var <span class="ot">&lt;-</span> <span class="fu">length</span>(state); logf <span class="ot">&lt;-</span> <span class="fu">log_f</span>(ini_value, ...)</span>
+<span id="cb8-3"><a href=""></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">is.finite</span>(logf)) <span class="fu">stop</span>(<span class="st">"Initial value has zero probability"</span>)</span>
+<span id="cb8-4"><a href=""></a>    out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iters, no_var); n_acc <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb8-5"><a href=""></a>    <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(iters)) {</span>
+<span id="cb8-6"><a href=""></a>        proposal <span class="ot">&lt;-</span> <span class="fu">rnorm</span>(no_var, state, stepsizes); new_logf <span class="ot">&lt;-</span> <span class="fu">log_f</span>(proposal, ...)</span>
+<span id="cb8-7"><a href=""></a>        <span class="cf">if</span> (<span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> new_logf <span class="sc">-</span> logf) { state <span class="ot">&lt;-</span> proposal; logf <span class="ot">&lt;-</span> new_logf; n_acc <span class="ot">&lt;-</span> n_acc <span class="sc">+</span> <span class="dv">1</span> }</span>
+<span id="cb8-8"><a href=""></a>        out[t, ] <span class="ot">&lt;-</span> state</span>
+<span id="cb8-9"><a href=""></a>    }</span>
+<span id="cb8-10"><a href=""></a>    <span class="fu">attr</span>(out, <span class="st">"accept_rate"</span>) <span class="ot">&lt;-</span> n_acc <span class="sc">/</span> iters</span>
+<span id="cb8-11"><a href=""></a>    out</span>
+<span id="cb8-12"><a href=""></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
 </section>
 <section id="random-walk-metropolis-continued" class="slide level2">
 <h2>Random-Walk Metropolis (Continued)</h2>
-<p>Left: two proposals from a <span class="math inline">N(\theta^{(t-1)},\varsigma^2)</span> kernel; the uphill one is accepted, the downhill one accepted with probability <span class="math inline">\pi(\theta^*)/\pi(\theta^{(t-1)})</span>. Right: a trace with rejections showing as flat segments.</p>
+<p>Left: proposals from a symmetric <span class="math inline">N(\theta^{(t-1)},\varsigma^2)</span> kernel; the uphill one is always accepted, the downhill one with probability <span class="math inline">\pi(\theta^*)/\pi(\theta^{(t-1)})</span>. Right: a trace with rejections showing as flat segments.</p>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/random-walk-metropolis-continued-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"></section>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/random-walk-metropolis-picture-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section>
+<section id="example-truncated-normal" class="slide level2">
+<h2>Example: Truncated Normal</h2>
+<p><span class="math inline">\pi(\theta)\propto\varphi(\theta)\,I(l\le\theta\le u)</span>: a proposal outside <span class="math inline">[l,u]</span> has <span class="math inline">\pi(\theta^*) = 0</span>, hence <span class="math inline">r = 0</span>, and is <strong>automatically rejected</strong>. No special handling is needed; the indicator does it.</p>
+<p>Target <span class="math inline">N(0,2^2)</span> truncated to <span class="math inline">[4,5]</span>, for three step sizes:</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href=""></a>log_tnorm <span class="ot">&lt;-</span> <span class="cf">function</span>(x, mu, sigma, lb, ub) <span class="cf">if</span> (x <span class="sc">&gt;</span> lb <span class="sc">&amp;&amp;</span> x <span class="sc">&lt;</span> ub) <span class="fu">dnorm</span>(x, mu, sigma, <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="cf">else</span> <span class="sc">-</span><span class="cn">Inf</span></span>
+<span id="cb9-2"><a href=""></a><span class="fu">par</span>(<span class="at">mfrow =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">3</span>), <span class="at">mar =</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>, <span class="dv">2</span>, <span class="dv">1</span>))</span>
+<span id="cb9-3"><a href=""></a><span class="cf">for</span> (step <span class="cf">in</span> <span class="fu">c</span>(<span class="fl">0.1</span>, <span class="dv">1</span>, <span class="dv">2</span>)) {</span>
+<span id="cb9-4"><a href=""></a>    mc <span class="ot">&lt;-</span> <span class="fu">met_gauss</span>(<span class="dv">5000</span>, log_tnorm, <span class="at">stepsizes =</span> step, <span class="at">ini_value =</span> <span class="fl">4.5</span>, <span class="at">mu =</span> <span class="dv">0</span>, <span class="at">sigma =</span> <span class="dv">2</span>, <span class="at">lb =</span> <span class="dv">4</span>, <span class="at">ub =</span> <span class="dv">5</span>)</span>
+<span id="cb9-5"><a href=""></a>    <span class="fu">plot</span>(mc, <span class="at">type =</span> <span class="st">"l"</span>, <span class="at">col =</span> <span class="st">"steelblue"</span>, <span class="at">xlab =</span> <span class="st">"iteration"</span>, <span class="at">ylab =</span> <span class="fu">expression</span>(theta),</span>
+<span id="cb9-6"><a href=""></a>         <span class="at">main =</span> <span class="fu">sprintf</span>(<span class="st">"step = %.1f, accept = %.2f"</span>, step, <span class="fu">attr</span>(mc, <span class="st">"accept_rate"</span>)))</span>
+<span id="cb9-7"><a href=""></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+
+</div>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-tnorm-mh-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section>
 <section id="choice-of-step-size" class="slide level2">
 <h2>Choice of Step Size</h2>
+<p>Target <span class="math inline">N(0,1)</span>. Tiny steps are almost always accepted but move slowly; huge steps are almost always rejected; both give highly autocorrelated chains.</p>
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/choice-of-step-size-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"><p>Target <span class="math inline">N(0,1)</span>. Tiny steps are almost always accepted but move slowly; huge steps are almost always rejected; both give highly autocorrelated chains.</p>
-</section>
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-stepsize-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"></section>
 <section id="choice-of-step-size-continued" class="slide level2 smaller">
 <h2>Choice of Step Size (Continued)</h2>
 <ul>
-<li>The chain is a sequence of <strong>dependent</strong> draws. For a stationary chain with lag-<span class="math inline">k</span> autocorrelations <span class="math inline">\rho_k</span>, <span class="math display">\text{Var}\Big(\frac1T\sum_{t=1}^T\theta^{(t)}\Big)\ \approx\ \frac{\sigma^2}{T}\Big(1 + 2\sum_{k=1}^\infty\rho_k\Big) = \frac{\sigma^2}{T_{\text{eff}}},
+<li>The draws are <strong>dependent</strong>. For a stationary chain with lag-<span class="math inline">k</span> autocorrelations <span class="math inline">\rho_k</span>, <span class="math display">\text{Var}\Big(\frac1T\sum_{t=1}^T\theta^{(t)}\Big)\ \approx\ \frac{\sigma^2}{T}\Big(1 + 2\sum_{k=1}^\infty\rho_k\Big) = \frac{\sigma^2}{T_{\text{eff}}},
 \qquad T_{\text{eff}} = \frac{T}{1+2\sum_k\rho_k}</span> so the goal of tuning is <strong>small autocorrelation</strong>, not a high acceptance rate</li>
-<li>For random-walk Metropolis on a smooth target, the optimal acceptance rate is about <span class="math inline">0.234</span> in high dimension (up to <span class="math inline">\approx0.44</span> in one dimension), i.e.&nbsp;an optimal <strong>rejection</strong> rate around <span class="math inline">0.75</span></li>
-<li>A rejection rate that is too <strong>low</strong> signals steps that are too small: the chain crawls, and traces look smooth and deceptively stable</li>
-<li>Rule of thumb: scale <span class="math inline">\varsigma</span> to roughly <span class="math inline">2.4/\sqrt d</span> times the posterior standard deviation; tune during burn-in, then fix it (changing <span class="math inline">\varsigma</span> adaptively during the kept run breaks the Markov property unless done carefully)</li>
+<li>A step too small is accepted almost every time but crawls; a step too large is almost always rejected and the chain barely moves. Both waste the same <span class="math inline">T</span> iterations on far fewer effective ones</li>
+<li>For random-walk Metropolis on a smooth target, theory recommends an acceptance rate near <span class="math inline">0.234</span> in high dimension (up to about <span class="math inline">0.44</span> in one dimension): a rule of thumb, not a target to hit exactly</li>
+<li>Tune during burn-in, then fix <span class="math inline">\varsigma</span> (changing it adaptively during the kept run breaks the Markov property unless done carefully)</li>
 </ul>
 </section>
-<section id="example-truncated-normal" class="slide level2">
-<h2>Example: Truncated Normal</h2>
-<p><span class="math display">\pi(\theta)\propto\varphi(\theta)\,I(l\le\theta\le u)</span></p>
-<p>Random-walk Metropolis with <span class="math inline">\theta^*\sim N(\theta^{(t-1)},\varsigma^2)</span> and <span class="math display">r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}</span></p>
-<p>If <span class="math inline">\theta^*</span> falls outside <span class="math inline">[l,u]</span>, then <span class="math inline">\pi(\theta^*) = 0</span>, <span class="math inline">r = 0</span>, and the proposal is <strong>rejected</strong>; the chain stays at <span class="math inline">\theta^{(t-1)}</span>. No special handling is needed: the indicator in <span class="math inline">\pi</span> does it.</p>
-
-<img data-src="Lec_12_mcmc_files/figure-revealjs/example-truncated-normal-1.png" class="quarto-figure quarto-figure-center r-stretch" width="768"></section>
-<section id="example-posterior-of-a-normal-sample-by-metropolishastings" class="slide level2">
-<h2>Example: Posterior of a Normal Sample by Metropolis–Hastings</h2>
-<p>Same model as the Gibbs example. <span class="math inline">\sigma^2&gt;0</span> is awkward for a normal random walk (proposals below zero are wasted), so reparametrize <span class="math inline">w = \log\sigma^2</span>, <span class="math inline">\sigma^2 = e^w</span>, <span class="math inline">w\in\mathbb R</span>.</p>
-<p><strong>Change of variables.</strong> If <span class="math inline">X\sim f_X</span> and <span class="math inline">Y = t(X)</span>, then <span class="math inline">f_Y(y) = f_X\big(t^{-1}(y)\big)\,\big|\tfrac{\partial t^{-1}(y)}{\partial y}\big|</span>. With <span class="math inline">t^{-1}(w) = e^w</span>, the Jacobian is <span class="math inline">e^w</span>, so the posterior in <span class="math inline">(\mu,w)</span> is <span class="math display">P(\mu,w\mid x)\ \propto\ P(x_1,\ldots,x_n\mid\mu,e^w)\cdot p(\mu)\cdot p_{\sigma^2}(e^w)\cdot e^w</span></p>
-<p>Forgetting the factor <span class="math inline">e^w</span> targets the wrong distribution.</p>
-<p><strong>Algorithm.</strong> Random-walk proposal on <span class="math inline">(\mu,w)</span> jointly, <span class="math inline">(\mu^*,w^*) = (\mu,w) + \varsigma\,(z_1,z_2)</span>, <span class="math inline">z\sim N_2(0,I)</span>, and <span class="math display">r = \min\left\{\exp\big[\log P(\mu^*,w^*\mid x) - \log P(\mu,w\mid x)\big],\ 1\right\}</span></p>
-<p>always computed on the log scale.</p>
-</section>
-<section id="example-continued" class="slide level2">
-<h2>Example (Continued)</h2>
-<div class="cell" data-layout-align="center">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href=""></a>log_post <span class="ot">&lt;-</span> <span class="cf">function</span>(mu, w) { s2 <span class="ot">&lt;-</span> <span class="fu">exp</span>(w)</span>
-<span id="cb10-2"><a href=""></a>  <span class="fu">sum</span>(<span class="fu">dnorm</span>(x, mu, <span class="fu">sqrt</span>(s2), <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">+</span> <span class="fu">dnorm</span>(mu, mu0, <span class="fu">sqrt</span>(s02), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb10-3"><a href=""></a>    (<span class="sc">-</span>(a0 <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">*</span> <span class="fu">log</span>(s2) <span class="sc">-</span> lam0 <span class="sc">/</span> s2) <span class="sc">+</span> w }                       <span class="co"># + w is the log Jacobian</span></span>
-<span id="cb10-4"><a href=""></a>mh_normal <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, step, <span class="at">mu =</span> <span class="dv">0</span>, <span class="at">w =</span> <span class="dv">0</span>) {</span>
-<span id="cb10-5"><a href=""></a>  out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, iters, <span class="dv">2</span>, <span class="at">dimnames =</span> <span class="fu">list</span>(<span class="cn">NULL</span>, <span class="fu">c</span>(<span class="st">"mu"</span>, <span class="st">"s2"</span>))); acc <span class="ot">&lt;-</span> <span class="dv">0</span>; lp <span class="ot">&lt;-</span> <span class="fu">log_post</span>(mu, w)</span>
-<span id="cb10-6"><a href=""></a>  <span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>iters) {</span>
-<span id="cb10-7"><a href=""></a>    mu_p <span class="ot">&lt;-</span> mu <span class="sc">+</span> step[<span class="dv">1</span>] <span class="sc">*</span> <span class="fu">rnorm</span>(<span class="dv">1</span>); w_p <span class="ot">&lt;-</span> w <span class="sc">+</span> step[<span class="dv">2</span>] <span class="sc">*</span> <span class="fu">rnorm</span>(<span class="dv">1</span>); lp_p <span class="ot">&lt;-</span> <span class="fu">log_post</span>(mu_p, w_p)</span>
-<span id="cb10-8"><a href=""></a>    <span class="cf">if</span> (<span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> lp_p <span class="sc">-</span> lp) { mu <span class="ot">&lt;-</span> mu_p; w <span class="ot">&lt;-</span> w_p; lp <span class="ot">&lt;-</span> lp_p; acc <span class="ot">&lt;-</span> acc <span class="sc">+</span> <span class="dv">1</span> }</span>
-<span id="cb10-9"><a href=""></a>    out[t, ] <span class="ot">&lt;-</span> <span class="fu">c</span>(mu, <span class="fu">exp</span>(w)) }</span>
-<span id="cb10-10"><a href=""></a>  <span class="fu">list</span>(<span class="at">draws =</span> out, <span class="at">accept =</span> acc <span class="sc">/</span> iters) }</span>
-<span id="cb10-11"><a href=""></a>fit <span class="ot">&lt;-</span> <span class="fu">mh_normal</span>(<span class="dv">20000</span>, <span class="at">step =</span> <span class="fu">c</span>(<span class="fl">1.2</span>, <span class="fl">0.6</span>))</span>
-<span id="cb10-12"><a href=""></a><span class="fu">c</span>(<span class="at">accept =</span> fit<span class="sc">$</span>accept)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>accept 
-0.2589 </code></pre>
-</div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href=""></a><span class="fu">round</span>(<span class="fu">rbind</span>(<span class="at">MH =</span> <span class="fu">colMeans</span>(fit<span class="sc">$</span>draws[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">1000</span>), ]), <span class="at">Gibbs =</span> <span class="fu">colMeans</span>(draws[<span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">200</span>), ])), <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>         mu    s2
-MH    5.934 5.223
-Gibbs 5.902 5.273</code></pre>
-</div>
-</div>
-<p>Gibbs and Metropolis–Hastings target the same posterior; their averages agree up to Monte Carlo error.</p>
-</section>
-<section id="justification-of-metropolishastings" class="slide level2 smaller">
-<h2>Justification of Metropolis–Hastings</h2>
-<p><strong>Claim.</strong> The MH transition <span class="math inline">T</span> satisfies detailed balance with respect to <span class="math inline">\pi</span>, hence leaves <span class="math inline">\pi</span> invariant.</p>
-<p>For <span class="math inline">\theta^T\ne\theta</span>, a move <span class="math inline">\theta\to\theta^T</span> requires proposing <span class="math inline">\theta^T</span> and accepting it: <span class="math display">T(\theta\to\theta^T) = \tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\}</span></p>
-<p>(For <span class="math inline">\theta^T = \theta</span> there is no density expression, the chain has a point mass from rejections, but detailed balance holds trivially there. Then <span class="math display">
-\begin{aligned}
-\text{LHS} = \pi(\theta)\,T(\theta\to\theta^T)
-&amp;= \pi(\theta)\,\tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\} \\
-&amp;= \min\Big\{\pi(\theta^T)\,\tilde T(\theta^T\to\theta),\ \pi(\theta)\,\tilde T(\theta\to\theta^T)\Big\}
-\end{aligned}
-</span></p>
-<p>By the same computation with the roles of <span class="math inline">\theta</span> and <span class="math inline">\theta^T</span> exchanged, <span class="math display">\text{RHS} = \pi(\theta^T)\,T(\theta^T\to\theta) = \min\Big\{\pi(\theta)\,\tilde T(\theta\to\theta^T),\ \pi(\theta^T)\,\tilde T(\theta^T\to\theta)\Big\} = \text{LHS}. \qquad\blacksquare</span></p>
-</section>
-<section id="metropolis-within-gibbs" class="slide level2">
+<section id="metropolis-within-gibbs" class="slide level2 smaller">
 <h2>Metropolis-within-Gibbs</h2>
-<p><span class="math inline">\theta = (\theta_1,\theta_2)</span>. Gibbs sampling alternates <span class="math inline">\theta_1^{(t)}\sim\pi(\theta_1\mid\theta_2^{(t-1)})</span> and <span class="math inline">\theta_2^{(t)}\sim\pi(\theta_2\mid\theta_1^{(t)})</span>. When a full conditional cannot be sampled directly:</p>
+<p><span class="math inline">\theta = (\theta_1,\theta_2)</span>. Gibbs alternates <span class="math inline">\theta_1\sim\pi(\theta_1\mid\theta_2)</span> and <span class="math inline">\theta_2\sim\pi(\theta_2\mid\theta_1)</span>. If <span class="math inline">\pi(\theta_1\mid\theta_2)</span> has no convenient sampler:</p>
 <ul>
-<li>Replace that step by a Metropolis–Hastings transition <span class="math inline">T_j(\theta_j\to\theta_j^T)</span> that leaves <span class="math inline">\pi(\theta_j\mid\theta_{-j})</span> invariant</li>
-<li>Only <span class="math inline">\pi(\theta_j\mid\theta_{-j})\propto\pi(\theta_j,\theta_{-j})</span> is needed, evaluated at the current <span class="math inline">\theta_{-j}</span>: the joint posterior as a function of <span class="math inline">\theta_j</span> alone</li>
+<li>Replace that step by a Metropolis–Hastings update that targets <span class="math inline">\pi(\theta_1\mid\theta_2)</span> at the <strong>current</strong> <span class="math inline">\theta_2</span></li>
+<li>Only <span class="math inline">\pi(\theta_1\mid\theta_2)\propto\pi(\theta_1,\theta_2)</span> is needed: the joint posterior as a function of <span class="math inline">\theta_1</span> alone</li>
+<li>Leave the other step as an exact conditional draw</li>
 </ul>
-<p>Since each block transition leaves <span class="math inline">\pi</span> invariant (the argument for Gibbs applies to any <span class="math inline">\pi(\theta_j\mid\theta_{-j})</span>-invariant <span class="math inline">T_j</span>), the composite sweep leaves <span class="math inline">\pi</span> invariant. A single MH step per block suffices; the inner chain need not converge.</p>
-<p><strong>Practical picture of most MCMC software</strong>: Gibbs updates where conjugacy allows, one-dimensional or block Metropolis (or slice sampling, Hamiltonian Monte Carlo) elsewhere, all combined in one sweep.</p>
+<p>Each block transition leaves <span class="math inline">\pi</span> invariant on its own (the Gibbs argument applies to any <span class="math inline">\pi(\theta_j\mid\theta_{-j})</span>-invariant transition, not only an exact draw), so the composite sweep leaves the joint <span class="math inline">\pi</span> invariant. A single MH step per block suffices.</p>
+<p><strong>Gibbs where conjugate, Metropolis elsewhere</strong>, iterated one parameter or block at a time, is how most general-purpose Bayesian software worked before Hamiltonian methods.</p>
 </section></section>
 <section>
-<section id="hamiltonian-monte-carlo" class="title-slide slide level1 center">
-<h1>4. Hamiltonian Monte Carlo</h1>
+<section id="example-5-normal-data-with-unknown-mean-and-variance-revisited" class="title-slide slide level1 center">
+<h1>Example 5: Normal Data with Unknown Mean and Variance, Revisited</h1>
 
 </section>
-<section id="why-random-walks-struggle" class="slide level2">
+<section id="example-5-reparametrization-and-the-jacobian" class="slide level2 smaller">
+<h2>Example 5: Reparametrization and the Jacobian</h2>
+<p>The model and data of Example 2, now sampled by random-walk Metropolis–Hastings.</p>
+<p><span class="math inline">\sigma^2&gt;0</span> makes a normal random walk on <span class="math inline">\sigma^2</span> wasteful (proposals below zero are rejected), so reparametrize <span class="math inline">w = \log\sigma^2\in\mathbb R</span>.</p>
+<p><strong>Change of variables.</strong> If <span class="math inline">X\sim f_X</span> and <span class="math inline">Y = t(X)</span>, then <span class="math inline">f_Y(y) = f_X\big(t^{-1}(y)\big)\,\big|\tfrac{d t^{-1}(y)}{dy}\big|</span>. With <span class="math inline">\sigma^2 = e^w</span> the Jacobian is <span class="math inline">e^w</span>: <span class="math display">P(\mu,w\mid x)\ \propto\ P(x\mid\mu,e^w)\cdot p(\mu)\cdot p_{\sigma^2}(e^w)\cdot e^w</span></p>
+<p>Omitting the factor <span class="math inline">e^w</span> targets the wrong distribution.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href=""></a>log_post_mu_w <span class="ot">&lt;-</span> <span class="cf">function</span>(mu, w, x, mu0, sigma0, alpha, wprior) {</span>
+<span id="cb10-2"><a href=""></a>    s2 <span class="ot">&lt;-</span> <span class="fu">exp</span>(w)</span>
+<span id="cb10-3"><a href=""></a>    <span class="fu">sum</span>(<span class="fu">dnorm</span>(x, mu, <span class="fu">sqrt</span>(s2), <span class="at">log =</span> <span class="cn">TRUE</span>)) <span class="sc">+</span> <span class="fu">dnorm</span>(mu, mu0, <span class="fu">sqrt</span>(sigma0), <span class="at">log =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb10-4"><a href=""></a>        (<span class="sc">-</span>(alpha <span class="sc">/</span> <span class="dv">2</span> <span class="sc">+</span> <span class="dv">1</span>) <span class="sc">*</span> <span class="fu">log</span>(s2) <span class="sc">-</span> alpha <span class="sc">*</span> wprior <span class="sc">/</span> (<span class="dv">2</span> <span class="sc">*</span> s2)) <span class="sc">+</span> w   <span class="co"># "+ w" is the log Jacobian</span></span>
+<span id="cb10-5"><a href=""></a>}</span>
+<span id="cb10-6"><a href=""></a>mh_norm <span class="ot">&lt;-</span> <span class="cf">function</span>(iters, stepsizes, x, mu0, sigma0, alpha, w) {</span>
+<span id="cb10-7"><a href=""></a>    log_f <span class="ot">&lt;-</span> <span class="cf">function</span>(state) <span class="fu">log_post_mu_w</span>(state[<span class="dv">1</span>], state[<span class="dv">2</span>], x, mu0, sigma0, alpha, w)</span>
+<span id="cb10-8"><a href=""></a>    mc <span class="ot">&lt;-</span> <span class="fu">met_gauss</span>(iters, log_f, stepsizes, <span class="at">ini_value =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb10-9"><a href=""></a>    <span class="fu">list</span>(<span class="at">mu =</span> mc[, <span class="dv">1</span>], <span class="at">sd =</span> <span class="fu">exp</span>(<span class="fl">0.5</span> <span class="sc">*</span> mc[, <span class="dv">2</span>]), <span class="at">accept_rate =</span> <span class="fu">attr</span>(mc, <span class="st">"accept_rate"</span>))</span>
+<span id="cb10-10"><a href=""></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-5-searching-for-the-step-size" class="slide level2">
+<h2>Example 5: Searching for the Step Size</h2>
+<p>Preliminary runs at four step-size scales (step <span class="math inline">=</span> scale<span class="math inline">/\sqrt n</span> in both coordinates). Top: trace of <span class="math inline">\mu</span>; bottom: ACF after discarding 500 iterations.</p>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-mh-stepsize-search-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"><p>Scale <span class="math inline">4</span> gives the least autocorrelated trace, with an acceptance rate in the <span class="math inline">0.2</span>–<span class="math inline">0.4</span> range.</p>
+</section>
+<section id="example-5-comparison-with-gibbs" class="slide level2">
+<h2>Example 5: Comparison with Gibbs</h2>
+<p>A long chain (<span class="math inline">50{,}000</span> iterations) at scale <span class="math inline">4</span>, against the Gibbs sampler of Example 2 on the same data and priors:</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href=""></a>mh_long <span class="ot">&lt;-</span> <span class="fu">mh_norm</span>(<span class="dv">50000</span>, <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">4</span>) <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="fu">length</span>(x)), x, <span class="dv">0</span>, <span class="fl">1e10</span>, <span class="fl">1e-5</span>, <span class="fl">1e-5</span>)</span>
+<span id="cb11-2"><a href=""></a>keep_mh <span class="ot">&lt;-</span> <span class="sc">-</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">1000</span>)</span>
+<span id="cb11-3"><a href=""></a>knitr<span class="sc">::</span><span class="fu">kable</span>(<span class="fu">data.frame</span>(</span>
+<span id="cb11-4"><a href=""></a>    <span class="at">method =</span> <span class="fu">c</span>(<span class="st">"Metropolis-Hastings"</span>, <span class="st">"Gibbs"</span>),</span>
+<span id="cb11-5"><a href=""></a>    <span class="at">mean_mu =</span> <span class="fu">c</span>(<span class="fu">mean</span>(mh_long<span class="sc">$</span>mu[keep_mh]), <span class="fu">mean</span>(mu_g)), <span class="at">sd_mu =</span> <span class="fu">c</span>(<span class="fu">sd</span>(mh_long<span class="sc">$</span>mu[keep_mh]), <span class="fu">sd</span>(mu_g)),</span>
+<span id="cb11-6"><a href=""></a>    <span class="at">mean_sigma =</span> <span class="fu">c</span>(<span class="fu">mean</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">mean</span>(sd_g)), <span class="at">sd_sigma =</span> <span class="fu">c</span>(<span class="fu">sd</span>(mh_long<span class="sc">$</span>sd[keep_mh]), <span class="fu">sd</span>(sd_g))</span>
+<span id="cb11-7"><a href=""></a>), <span class="at">digits =</span> <span class="dv">3</span>, <span class="at">align =</span> <span class="fu">c</span>(<span class="st">"l"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>, <span class="st">"r"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">method</th>
+<th style="text-align: right;">mean_mu</th>
+<th style="text-align: right;">sd_mu</th>
+<th style="text-align: right;">mean_sigma</th>
+<th style="text-align: right;">sd_sigma</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Metropolis-Hastings</td>
+<td style="text-align: right;">10.134</td>
+<td style="text-align: right;">0.333</td>
+<td style="text-align: right;">2.295</td>
+<td style="text-align: right;">0.237</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Gibbs</td>
+<td style="text-align: right;">10.141</td>
+<td style="text-align: right;">0.330</td>
+<td style="text-align: right;">2.293</td>
+<td style="text-align: right;">0.239</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Two exact samplers of the same posterior agree up to Monte Carlo error.</p>
+</section></section>
+<section>
+<section id="hamiltonian-monte-carlo-and-stan" class="title-slide slide level1 center">
+<h1>4. Hamiltonian Monte Carlo and Stan</h1>
+
+</section>
+<section id="why-random-walks-struggle" class="slide level2 smaller">
 <h2>Why Random Walks Struggle</h2>
-<p>A random-walk proposal has no sense of direction: in <span class="math inline">d</span> dimensions it needs <span class="math inline">O(d)</span> steps to move a distance of one posterior standard deviation, and along a narrow, correlated ridge it needs far more. Gibbs suffers the same way when coordinates are strongly correlated.</p>
+<p>A random-walk proposal has no sense of direction: reaching a point one posterior standard deviation away takes <span class="math inline">O(d)</span> steps in <span class="math inline">d</span> dimensions, and far more along a narrow, correlated ridge, where most proposed directions step off the ridge and are rejected. Gibbs suffers the same way with strongly correlated parameters, since it moves along one axis at a time.</p>
 <p><strong>Hamiltonian Monte Carlo</strong> (HMC) uses the <strong>gradient</strong> <span class="math inline">\nabla\log\pi(\theta)</span> to propose distant points with high acceptance.</p>
 <p>Introduce an auxiliary <strong>momentum</strong> <span class="math inline">p\in\mathbb R^d</span> and the joint density <span class="math display">\pi(\theta,p)\ \propto\ \exp\big\{-H(\theta,p)\big\}, \qquad
 H(\theta,p) = \underbrace{-\log\pi(\theta)}_{U(\theta)\ \text{potential energy}} + \underbrace{\tfrac12\,p^\top M^{-1}p}_{K(p)\ \text{kinetic energy}}</span></p>
 <ul>
-<li>The marginal of <span class="math inline">\theta</span> is the target <span class="math inline">\pi(\theta)</span>; <span class="math inline">p\sim N_d(0,M)</span> independently of <span class="math inline">\theta</span></li>
+<li>The marginal of <span class="math inline">\theta</span> is exactly the target <span class="math inline">\pi(\theta)</span>; <span class="math inline">p\sim N_d(0,M)</span> independently of <span class="math inline">\theta</span></li>
 <li><span class="math inline">M</span> (the “mass matrix”) is a tuning choice, often <span class="math inline">I</span> or a diagonal estimate of posterior precision</li>
-<li>Physical picture: a particle at position <span class="math inline">\theta</span> rolling on the surface <span class="math inline">U(\theta)</span> with momentum <span class="math inline">p</span></li>
+<li>Physical picture: a particle at position <span class="math inline">\theta</span> with momentum <span class="math inline">p</span>, rolling without friction on the surface <span class="math inline">U(\theta)</span></li>
 </ul>
 </section>
-<section id="hamiltonian-dynamics-and-the-leapfrog-integrator" class="slide level2">
+<section id="hamiltonian-dynamics-and-the-leapfrog-integrator" class="slide level2 smaller">
 <h2>Hamiltonian Dynamics and the Leapfrog Integrator</h2>
 <p>Hamilton’s equations move <span class="math inline">(\theta,p)</span> in fictitious time <span class="math inline">\tau</span>: <span class="math display">\frac{d\theta}{d\tau} = \frac{\partial H}{\partial p} = M^{-1}p, \qquad
 \frac{dp}{d\tau} = -\frac{\partial H}{\partial\theta} = \nabla\log\pi(\theta)</span></p>
-<p>Exact dynamics <strong>conserve <span class="math inline">H</span></strong>, preserve volume, and are reversible, so following them for any time and then accepting would leave <span class="math inline">\pi(\theta,p)</span> invariant with acceptance probability 1. In practice the equations are discretized by the <strong>leapfrog</strong> integrator with step size <span class="math inline">\epsilon</span>, repeated <span class="math inline">L</span> times: <span class="math display">
+<p>Exact dynamics <strong>conserve <span class="math inline">H</span></strong>, preserve volume, and are reversible. In practice they are discretized by the <strong>leapfrog</strong> integrator with step size <span class="math inline">\epsilon</span>, repeated <span class="math inline">L</span> times: <span class="math display">
 p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta), \qquad
 \theta \leftarrow \theta + \epsilon\,M^{-1}p, \qquad
 p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta)
 </span></p>
-<p>Leapfrog is still volume-preserving and reversible (negate <span class="math inline">p</span> and run backwards), so it can be used inside a Metropolis step; only energy conservation is approximate, with error <span class="math inline">O(\epsilon^2)</span> per trajectory. The Metropolis correction removes this discretization bias.</p>
+<p>Leapfrog keeps volume preservation and reversibility exactly (negate <span class="math inline">p</span> and re-run to get back the start), and introduces only an <span class="math inline">O(\epsilon^2)</span> error in <span class="math inline">H</span>, which a Metropolis accept/reject step corrects exactly.</p>
 </section>
 <section id="the-hmc-algorithm" class="slide level2 smaller">
 <h2>The HMC Algorithm</h2>
-<p>Starting from <span class="math inline">\theta^{(0)}</span>, repeat for <span class="math inline">t = 1,\ldots,n</span>:</p>
+<p>Starting from <span class="math inline">\theta^{(0)}</span>, repeat:</p>
 <ol type="1">
-<li>Draw a fresh momentum <span class="math inline">p\sim N_d(0,M)</span>; set <span class="math inline">(\theta,p)</span> with <span class="math inline">\theta = \theta^{(t-1)}</span></li>
-<li>Run <span class="math inline">L</span> leapfrog steps of size <span class="math inline">\epsilon</span> to obtain <span class="math inline">(\theta^*,p^*)</span></li>
-<li>Accept <span class="math inline">\theta^{(t)} = \theta^*</span> with probability <span class="math display">r = \min\Big\{\exp\big[-H(\theta^*,p^*) + H(\theta,p)\big],\ 1\Big\}</span> otherwise <span class="math inline">\theta^{(t)} = \theta^{(t-1)}</span></li>
+<li>Draw a fresh momentum <span class="math inline">p\sim N_d(0,M)</span></li>
+<li>Run <span class="math inline">L</span> leapfrog steps of size <span class="math inline">\epsilon</span> from <span class="math inline">(\theta^{(t-1)},p)</span> to reach <span class="math inline">(\theta^*,p^*)</span></li>
+<li>Accept <span class="math inline">\theta^{(t)} = \theta^*</span> with probability <span class="math inline">\min\big\{\exp\big[H(\theta^{(t-1)},p) - H(\theta^*,p^*)\big],\ 1\big\}</span>; otherwise <span class="math inline">\theta^{(t)} = \theta^{(t-1)}</span></li>
 </ol>
 <ul>
-<li>Step 1 is a Gibbs update of <span class="math inline">p</span> from its conditional, step 2–3 is a Metropolis update of <span class="math inline">(\theta,p)</span> with a deterministic, reversible proposal (momentum negation makes it symmetric); each leaves <span class="math inline">\pi(\theta,p)</span> invariant</li>
-<li>Because <span class="math inline">H</span> is nearly conserved, acceptance stays high (target <span class="math inline">\approx0.65</span>–<span class="math inline">0.8</span>) even though <span class="math inline">\theta^*</span> is far from <span class="math inline">\theta^{(t-1)}</span></li>
-<li>Needs <span class="math inline">\nabla\log\pi</span>: analytic, or by automatic differentiation</li>
+<li>Step 1 is a Gibbs update of <span class="math inline">p</span> from its conditional; steps 2–3 are a Metropolis update with a deterministic, reversible proposal. Each leaves <span class="math inline">\pi(\theta,p)</span> invariant</li>
+<li>Because <span class="math inline">H</span> is nearly conserved, acceptance stays high (typically <span class="math inline">0.65</span>–<span class="math inline">0.8</span>) even though <span class="math inline">\theta^*</span> may be far from <span class="math inline">\theta^{(t-1)}</span></li>
+<li>Needs <span class="math inline">\nabla\log\pi</span> (analytic, or by automatic differentiation) and two tuning parameters: <span class="math inline">\epsilon</span> (too large: leapfrog unstable, rejections) and <span class="math inline">L</span> (too small: random-walk behaviour; too large: the trajectory turns back)</li>
+</ul>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href=""></a>hmc <span class="ot">&lt;-</span> <span class="cf">function</span>(log_pi, grad_log_pi, theta, eps, L, iters, <span class="at">M =</span> <span class="fu">diag</span>(<span class="fu">length</span>(theta))) {</span>
+<span id="cb12-2"><a href=""></a>    d <span class="ot">&lt;-</span> <span class="fu">length</span>(theta); Minv <span class="ot">&lt;-</span> <span class="fu">solve</span>(M); R <span class="ot">&lt;-</span> <span class="fu">chol</span>(M); out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA_real_</span>, iters, d); n_acc <span class="ot">&lt;-</span> <span class="dv">0</span></span>
+<span id="cb12-3"><a href=""></a>    <span class="cf">for</span> (t <span class="cf">in</span> <span class="fu">seq_len</span>(iters)) {</span>
+<span id="cb12-4"><a href=""></a>        p0 <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(R) <span class="sc">%*%</span> <span class="fu">rnorm</span>(d)); th <span class="ot">&lt;-</span> theta; p <span class="ot">&lt;-</span> p0 <span class="sc">+</span> eps <span class="sc">/</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th)</span>
+<span id="cb12-5"><a href=""></a>        <span class="cf">for</span> (l <span class="cf">in</span> <span class="fu">seq_len</span>(L)) { th <span class="ot">&lt;-</span> th <span class="sc">+</span> eps <span class="sc">*</span> <span class="fu">as.vector</span>(Minv <span class="sc">%*%</span> p); <span class="cf">if</span> (l <span class="sc">&lt;</span> L) p <span class="ot">&lt;-</span> p <span class="sc">+</span> eps <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th) }</span>
+<span id="cb12-6"><a href=""></a>        p <span class="ot">&lt;-</span> p <span class="sc">+</span> eps <span class="sc">/</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th)</span>
+<span id="cb12-7"><a href=""></a>        H0 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">log_pi</span>(theta) <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">sum</span>(p0 <span class="sc">*</span> (Minv <span class="sc">%*%</span> p0)); H1 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">log_pi</span>(th) <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">sum</span>(p <span class="sc">*</span> (Minv <span class="sc">%*%</span> p))</span>
+<span id="cb12-8"><a href=""></a>        <span class="cf">if</span> (<span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> H0 <span class="sc">-</span> H1) { theta <span class="ot">&lt;-</span> th; n_acc <span class="ot">&lt;-</span> n_acc <span class="sc">+</span> <span class="dv">1</span> }</span>
+<span id="cb12-9"><a href=""></a>        out[t, ] <span class="ot">&lt;-</span> theta</span>
+<span id="cb12-10"><a href=""></a>    }</span>
+<span id="cb12-11"><a href=""></a>    <span class="fu">attr</span>(out, <span class="st">"accept_rate"</span>) <span class="ot">&lt;-</span> n_acc <span class="sc">/</span> iters</span>
+<span id="cb12-12"><a href=""></a>    out</span>
+<span id="cb12-13"><a href=""></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-6-bivariate-normal-with-correlation-0.98" class="slide level2">
+<h2>Example 6: Bivariate Normal with Correlation 0.98</h2>
+<p>Both samplers get 2,000 iterations from the same start <span class="math inline">(-2,-2)</span>. Left, middle: first 100 draws over the target contours. Right: autocorrelation of <span class="math inline">\theta_1</span>.</p>
+
+<img data-src="Lec_12_mcmc_files/figure-revealjs/plot-hmc-vs-rw-1.png" class="quarto-figure quarto-figure-center r-stretch" width="1152"><p>Random-walk Metropolis creeps along the ridge; HMC follows it in one trajectory and its draws are nearly independent. Chi Feng’s <a href="https://chi-feng.github.io/mcmc-demo/app.html" target="_blank">MCMC simulators</a> let you tune <span class="math inline">\epsilon</span> and <span class="math inline">L</span> and compare samplers interactively.</p>
+</section>
+<section id="stan-automating-hmc" class="slide level2 smaller">
+<h2>Stan: Automating HMC</h2>
+<p>Every sampler so far needed something derived by hand:</p>
+<ul>
+<li>Gibbs: full conditionals worked out algebraically</li>
+<li>Metropolis–Hastings: only a target density, but step sizes tuned by trial and error</li>
+<li>HMC: an analytic gradient, and <span class="math inline">\epsilon</span> and <span class="math inline">L</span> tuned by hand</li>
+</ul>
+<p><strong>Stan</strong> is a probabilistic programming language that automates all of this. Given a model written declaratively (data, parameters, and a log-density), it</p>
+<ul>
+<li>computes gradients by <strong>automatic differentiation</strong></li>
+<li>runs the <strong>No-U-Turn Sampler (NUTS)</strong>, an adaptive HMC that picks <span class="math inline">L</span> on the fly by extending the leapfrog trajectory until it starts to double back</li>
+<li>tunes the step size during a <strong>warm-up</strong> phase</li>
+</ul>
+<p>The user never derives a conditional or a gradient.</p>
+<p><strong>Where Stan earns its keep</strong>: hierarchical models with many levels of latent structure, time series with a latent state at every time point, non-conjugate likelihood/prior combinations. Examples 7–9 move from a model where Gibbs is easy to one where nothing else is practical.</p>
+</section>
+<section id="example-7-normal-data-with-unknown-mean-and-variance-in-stan" class="slide level2 smaller">
+<h2>Example 7: Normal Data with Unknown Mean and Variance, in Stan</h2>
+<p>The identical model, priors and data as Examples 2 and 5:</p>
+<div class="columns">
+<div class="column" style="width:40%;">
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href=""></a>stan_normal_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb13-2"><a href=""></a><span class="st">data {</span></span>
+<span id="cb13-3"><a href=""></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
+<span id="cb13-4"><a href=""></a><span class="st">  vector[n] x;</span></span>
+<span id="cb13-5"><a href=""></a><span class="st">  real mu0;</span></span>
+<span id="cb13-6"><a href=""></a><span class="st">  real&lt;lower=0&gt; sigma0;</span></span>
+<span id="cb13-7"><a href=""></a><span class="st">  real&lt;lower=0&gt; alpha;</span></span>
+<span id="cb13-8"><a href=""></a><span class="st">  real&lt;lower=0&gt; w;</span></span>
+<span id="cb13-9"><a href=""></a><span class="st">}</span></span>
+<span id="cb13-10"><a href=""></a><span class="st">parameters {</span></span>
+<span id="cb13-11"><a href=""></a><span class="st">  real mu;</span></span>
+<span id="cb13-12"><a href=""></a><span class="st">  real&lt;lower=0&gt; sigma2;</span></span>
+<span id="cb13-13"><a href=""></a><span class="st">}</span></span>
+<span id="cb13-14"><a href=""></a><span class="st">model {</span></span>
+<span id="cb13-15"><a href=""></a><span class="st">  mu ~ normal(mu0, sqrt(sigma0));</span></span>
+<span id="cb13-16"><a href=""></a><span class="st">  sigma2 ~ inv_gamma(alpha / 2, alpha * w / 2);</span></span>
+<span id="cb13-17"><a href=""></a><span class="st">  x ~ normal(mu, sqrt(sigma2));</span></span>
+<span id="cb13-18"><a href=""></a><span class="st">}</span></span>
+<span id="cb13-19"><a href=""></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div><div class="column" style="width:60%;">
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href=""></a>fit_stan <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
+<span id="cb14-2"><a href=""></a>    <span class="at">model_code =</span> stan_normal_code,</span>
+<span id="cb14-3"><a href=""></a>    <span class="at">data =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="fu">length</span>(x), <span class="at">x =</span> x, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">sigma0 =</span> <span class="fl">1e10</span>, <span class="at">alpha =</span> <span class="fl">1e-5</span>, <span class="at">w =</span> <span class="fl">1e-5</span>),</span>
+<span id="cb14-4"><a href=""></a>    <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">5</span>, <span class="at">refresh =</span> <span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">method</th>
+<th style="text-align: right;">mean_mu</th>
+<th style="text-align: right;">sd_mu</th>
+<th style="text-align: right;">mean_sigma</th>
+<th style="text-align: right;">sd_sigma</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Gibbs</td>
+<td style="text-align: right;">10.141</td>
+<td style="text-align: right;">0.330</td>
+<td style="text-align: right;">2.293</td>
+<td style="text-align: right;">0.239</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Metropolis-Hastings</td>
+<td style="text-align: right;">10.134</td>
+<td style="text-align: right;">0.333</td>
+<td style="text-align: right;">2.295</td>
+<td style="text-align: right;">0.237</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Stan (NUTS)</td>
+<td style="text-align: right;">10.132</td>
+<td style="text-align: right;">0.326</td>
+<td style="text-align: right;">2.295</td>
+<td style="text-align: right;">0.245</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Three independent implementations (hand-derived conditionals, a hand-tuned random walk, automatic NUTS) agree to within Monte Carlo noise.</p>
+</div></div>
+</section>
+<section id="example-8-cauchy-data-in-stan" class="slide level2 smaller">
+<h2>Example 8: Cauchy Data, in Stan</h2>
+<p>Example 4 needed a scale-mixture representation, an augmented posterior and three full conditionals. In Stan, the Cauchy likelihood is used directly, with no latent variances. Same data and priors as Example 4.</p>
+<div class="columns">
+<div class="column" style="width:40%;">
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href=""></a>stan_cauchy_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb15-2"><a href=""></a><span class="st">data {</span></span>
+<span id="cb15-3"><a href=""></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
+<span id="cb15-4"><a href=""></a><span class="st">  vector[n] y;</span></span>
+<span id="cb15-5"><a href=""></a><span class="st">  real mu0;</span></span>
+<span id="cb15-6"><a href=""></a><span class="st">  real&lt;lower=0&gt; tau;</span></span>
+<span id="cb15-7"><a href=""></a><span class="st">  real&lt;lower=0&gt; a0;</span></span>
+<span id="cb15-8"><a href=""></a><span class="st">  real&lt;lower=0&gt; b0;</span></span>
+<span id="cb15-9"><a href=""></a><span class="st">}</span></span>
+<span id="cb15-10"><a href=""></a><span class="st">parameters {</span></span>
+<span id="cb15-11"><a href=""></a><span class="st">  real mu;</span></span>
+<span id="cb15-12"><a href=""></a><span class="st">  real&lt;lower=0&gt; sigma2;</span></span>
+<span id="cb15-13"><a href=""></a><span class="st">}</span></span>
+<span id="cb15-14"><a href=""></a><span class="st">transformed parameters {</span></span>
+<span id="cb15-15"><a href=""></a><span class="st">  real&lt;lower=0&gt; sigma = sqrt(sigma2);</span></span>
+<span id="cb15-16"><a href=""></a><span class="st">}</span></span>
+<span id="cb15-17"><a href=""></a><span class="st">model {</span></span>
+<span id="cb15-18"><a href=""></a><span class="st">  mu ~ normal(mu0, tau);</span></span>
+<span id="cb15-19"><a href=""></a><span class="st">  sigma2 ~ inv_gamma(a0, b0);</span></span>
+<span id="cb15-20"><a href=""></a><span class="st">  y ~ cauchy(mu, sigma);</span></span>
+<span id="cb15-21"><a href=""></a><span class="st">}</span></span>
+<span id="cb15-22"><a href=""></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div><div class="column" style="width:60%;">
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href=""></a>fit_cauchy_stan <span class="ot">&lt;-</span> <span class="fu">stan</span>(</span>
+<span id="cb16-2"><a href=""></a>    <span class="at">model_code =</span> stan_cauchy_code,</span>
+<span id="cb16-3"><a href=""></a>    <span class="at">data =</span> <span class="fu">list</span>(<span class="at">n =</span> <span class="fu">length</span>(y_cauchy), <span class="at">y =</span> y_cauchy, <span class="at">mu0 =</span> <span class="dv">0</span>, <span class="at">tau =</span> <span class="dv">10</span>, <span class="at">a0 =</span> <span class="dv">1</span>, <span class="at">b0 =</span> <span class="dv">1</span>),</span>
+<span id="cb16-4"><a href=""></a>    <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">8</span>, <span class="at">refresh =</span> <span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">posterior</th>
+<th style="text-align: right;">Gibbs (Ex. 4)</th>
+<th style="text-align: right;">Stan (NUTS)</th>
+<th style="text-align: right;">exact (grid)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">mean of mu</td>
+<td style="text-align: right;">2.228</td>
+<td style="text-align: right;">2.234</td>
+<td style="text-align: right;">2.228</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sd of mu</td>
+<td style="text-align: right;">0.179</td>
+<td style="text-align: right;">0.177</td>
+<td style="text-align: right;">0.179</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">mean of sigma</td>
+<td style="text-align: right;">0.768</td>
+<td style="text-align: right;">0.764</td>
+<td style="text-align: right;">0.765</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sd of sigma</td>
+<td style="text-align: right;">0.181</td>
+<td style="text-align: right;">0.180</td>
+<td style="text-align: right;">0.178</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>The Gibbs sampler needs no tuning and is cheap per iteration, but needed the mixture trick and three derivations. Stan needed only the model statement, and works unchanged for a different prior or a Student-<span class="math inline">t</span> likelihood with any degrees of freedom.</p>
+</div></div>
+</section></section>
+<section>
+<section id="example-9-logistic-regression-with-50-predictors-and-100-cases" class="title-slide slide level1 center">
+<h1>Example 9: Logistic Regression with 50 Predictors and 100 Cases</h1>
+
+</section>
+<section id="example-9-the-problem" class="slide level2 smaller">
+<h2>Example 9: The Problem</h2>
+<p>Binary responses depend on <span class="math inline">p</span> predictors through <span class="math display">y_i\mid\alpha,\beta\sim\text{Bernoulli}\big(\text{logit}^{-1}(\alpha+x_i^\top\beta)\big), \qquad \text{logit}^{-1}(\eta) = \frac{1}{1+e^{-\eta}}</span></p>
+<p><span class="math inline">p = 50</span> standard normal predictors for only <span class="math inline">n = 100</span> cases; only two carry signal: <span class="math inline">\alpha = 0</span>, <span class="math inline">\beta_1 = 1</span>, <span class="math inline">\beta_2 = -1</span>, <span class="math inline">\beta_3 = \cdots = \beta_{50} = 0</span>.</p>
+<p><strong>Why maximum likelihood fails.</strong> With 51 unknowns and 100 cases, the data are (here) perfectly <strong>separable</strong>: some <span class="math inline">\alpha+x_i^\top\beta</span> is positive for every <span class="math inline">y_i = 1</span> and negative for every <span class="math inline">y_i = 0</span>. Scaling such a <span class="math inline">\beta</span> up keeps increasing the likelihood, so the MLE does not exist; <code>glm</code> stops with coefficients up to about <span class="math inline">60</span> in absolute value and warns that fitted probabilities are numerically <span class="math inline">0</span> or <span class="math inline">1</span>.</p>
+<p><strong>A sparse prior.</strong> A vague <span class="math inline">\beta_j\sim N(0,2.5^2)</span> lets all 48 null coefficients wander. The <strong>horseshoe prior</strong> says <em>most coefficients are near 0, but a few may be large</em>: <span class="math display">\beta_j = \tau\,\lambda_j\,z_j, \qquad z_j\sim N(0,1), \qquad \lambda_j\sim\text{Cauchy}^+(0,1), \qquad \tau\sim\text{Cauchy}^+(0,0.1)</span></p>
+<ul>
+<li>The small <strong>global</strong> scale <span class="math inline">\tau</span> shrinks every coefficient towards <span class="math inline">0</span></li>
+<li>The heavy-tailed <strong>local</strong> scale <span class="math inline">\lambda_j</span> lets a coefficient the data support escape the shrinkage</li>
+<li>Intercept <span class="math inline">\alpha\sim N(0,5^2)</span>; <span class="math inline">\beta_j = \tau\lambda_jz_j</span> is the non-centred form, and <code>adapt_delta = 0.995</code> (smaller steps) helps NUTS with the very different scales of <span class="math inline">\tau</span> and the <span class="math inline">\lambda_j</span></li>
 </ul>
 </section>
-<section id="the-hmc-algorithm-continued" class="slide level2">
-<h2>The HMC Algorithm (Continued)</h2>
+<section id="example-9-stan-models" class="slide level2 smaller">
+<h2>Example 9: Stan Models</h2>
+<div class="columns">
+<div class="column" style="width:50%;">
 <div class="cell" data-layout-align="center">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href=""></a>hmc <span class="ot">&lt;-</span> <span class="cf">function</span>(log_pi, grad_log_pi, theta, eps, L, iters, <span class="at">M =</span> <span class="fu">diag</span>(<span class="fu">length</span>(theta))) {</span>
-<span id="cb14-2"><a href=""></a>  out <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, iters, <span class="fu">length</span>(theta)); acc <span class="ot">&lt;-</span> <span class="dv">0</span>; Minv <span class="ot">&lt;-</span> <span class="fu">solve</span>(M)</span>
-<span id="cb14-3"><a href=""></a>  <span class="cf">for</span> (t <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>iters) {</span>
-<span id="cb14-4"><a href=""></a>    p <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(<span class="fu">t</span>(<span class="fu">chol</span>(M)) <span class="sc">%*%</span> <span class="fu">rnorm</span>(<span class="fu">length</span>(theta))); th <span class="ot">&lt;-</span> theta; pp <span class="ot">&lt;-</span> p</span>
-<span id="cb14-5"><a href=""></a>    pp <span class="ot">&lt;-</span> pp <span class="sc">+</span> eps <span class="sc">/</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th)                            <span class="co"># leapfrog: half step in p</span></span>
-<span id="cb14-6"><a href=""></a>    <span class="cf">for</span> (l <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span>L) { th <span class="ot">&lt;-</span> th <span class="sc">+</span> eps <span class="sc">*</span> Minv <span class="sc">%*%</span> pp</span>
-<span id="cb14-7"><a href=""></a>      <span class="cf">if</span> (l <span class="sc">&lt;</span> L) pp <span class="ot">&lt;-</span> pp <span class="sc">+</span> eps <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th) }                 <span class="co"># full steps in theta and p</span></span>
-<span id="cb14-8"><a href=""></a>    pp <span class="ot">&lt;-</span> pp <span class="sc">+</span> eps <span class="sc">/</span> <span class="dv">2</span> <span class="sc">*</span> <span class="fu">grad_log_pi</span>(th)                            <span class="co"># final half step in p</span></span>
-<span id="cb14-9"><a href=""></a>    H0 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">log_pi</span>(theta) <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">sum</span>(p <span class="sc">*</span> (Minv <span class="sc">%*%</span> p)); H1 <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fu">log_pi</span>(th) <span class="sc">+</span> <span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">sum</span>(pp <span class="sc">*</span> (Minv <span class="sc">%*%</span> pp))</span>
-<span id="cb14-10"><a href=""></a>    <span class="cf">if</span> (<span class="fu">log</span>(<span class="fu">runif</span>(<span class="dv">1</span>)) <span class="sc">&lt;</span> H0 <span class="sc">-</span> H1) { theta <span class="ot">&lt;-</span> <span class="fu">as.vector</span>(th); acc <span class="ot">&lt;-</span> acc <span class="sc">+</span> <span class="dv">1</span> }</span>
-<span id="cb14-11"><a href=""></a>    out[t, ] <span class="ot">&lt;-</span> theta }</span>
-<span id="cb14-12"><a href=""></a>  <span class="fu">list</span>(<span class="at">draws =</span> out, <span class="at">accept =</span> acc <span class="sc">/</span> iters) }</span>
-<span id="cb14-13"><a href=""></a>Sigma <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.98</span>, <span class="fl">0.98</span>, <span class="dv">1</span>), <span class="dv">2</span>); Sinv <span class="ot">&lt;-</span> <span class="fu">solve</span>(Sigma)    <span class="co"># target: strongly correlated N(0, Sigma)</span></span>
-<span id="cb14-14"><a href=""></a>fit_hmc <span class="ot">&lt;-</span> <span class="fu">hmc</span>(<span class="cf">function</span>(z) <span class="sc">-</span><span class="fl">0.5</span> <span class="sc">*</span> <span class="fu">sum</span>(z <span class="sc">*</span> (Sinv <span class="sc">%*%</span> z)), <span class="cf">function</span>(z) <span class="sc">-</span><span class="fu">as.vector</span>(Sinv <span class="sc">%*%</span> z),</span>
-<span id="cb14-15"><a href=""></a>               <span class="at">theta =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="sc">-</span><span class="dv">2</span>), <span class="at">eps =</span> <span class="fl">0.05</span>, <span class="at">L =</span> <span class="dv">30</span>, <span class="at">iters =</span> <span class="dv">2000</span>)</span>
-<span id="cb14-16"><a href=""></a><span class="fu">c</span>(<span class="at">accept =</span> fit_hmc<span class="sc">$</span>accept, <span class="at">mean1 =</span> <span class="fu">mean</span>(fit_hmc<span class="sc">$</span>draws[, <span class="dv">1</span>]), <span class="at">sd1 =</span> <span class="fu">sd</span>(fit_hmc<span class="sc">$</span>draws[, <span class="dv">1</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<pre><code>     accept       mean1         sd1 
-0.988000000 0.007152857 1.001538076 </code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href=""></a>stan_logit_hs_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb17-2"><a href=""></a><span class="st">data {</span></span>
+<span id="cb17-3"><a href=""></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
+<span id="cb17-4"><a href=""></a><span class="st">  int&lt;lower=1&gt; p;</span></span>
+<span id="cb17-5"><a href=""></a><span class="st">  matrix[n, p] X;</span></span>
+<span id="cb17-6"><a href=""></a><span class="st">  array[n] int&lt;lower=0, upper=1&gt; y;</span></span>
+<span id="cb17-7"><a href=""></a><span class="st">}</span></span>
+<span id="cb17-8"><a href=""></a><span class="st">parameters {</span></span>
+<span id="cb17-9"><a href=""></a><span class="st">  real alpha;</span></span>
+<span id="cb17-10"><a href=""></a><span class="st">  real&lt;lower=0&gt; tau;             // global scale</span></span>
+<span id="cb17-11"><a href=""></a><span class="st">  vector&lt;lower=0&gt;[p] lambda;     // local scales</span></span>
+<span id="cb17-12"><a href=""></a><span class="st">  vector[p] z;</span></span>
+<span id="cb17-13"><a href=""></a><span class="st">}</span></span>
+<span id="cb17-14"><a href=""></a><span class="st">transformed parameters {</span></span>
+<span id="cb17-15"><a href=""></a><span class="st">  vector[p] beta = tau * lambda .* z;</span></span>
+<span id="cb17-16"><a href=""></a><span class="st">}</span></span>
+<span id="cb17-17"><a href=""></a><span class="st">model {</span></span>
+<span id="cb17-18"><a href=""></a><span class="st">  alpha ~ normal(0, 5);</span></span>
+<span id="cb17-19"><a href=""></a><span class="st">  tau ~ cauchy(0, 0.1);</span></span>
+<span id="cb17-20"><a href=""></a><span class="st">  lambda ~ cauchy(0, 1);</span></span>
+<span id="cb17-21"><a href=""></a><span class="st">  z ~ std_normal();</span></span>
+<span id="cb17-22"><a href=""></a><span class="st">  y ~ bernoulli_logit(alpha + X * beta);</span></span>
+<span id="cb17-23"><a href=""></a><span class="st">}</span></span>
+<span id="cb17-24"><a href=""></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+</div><div class="column" style="width:50%;">
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href=""></a><span class="do">### vague normal prior, for comparison</span></span>
+<span id="cb18-2"><a href=""></a>stan_logit_normal_code <span class="ot">&lt;-</span> <span class="st">"</span></span>
+<span id="cb18-3"><a href=""></a><span class="st">data {</span></span>
+<span id="cb18-4"><a href=""></a><span class="st">  int&lt;lower=0&gt; n;</span></span>
+<span id="cb18-5"><a href=""></a><span class="st">  int&lt;lower=1&gt; p;</span></span>
+<span id="cb18-6"><a href=""></a><span class="st">  matrix[n, p] X;</span></span>
+<span id="cb18-7"><a href=""></a><span class="st">  array[n] int&lt;lower=0, upper=1&gt; y;</span></span>
+<span id="cb18-8"><a href=""></a><span class="st">}</span></span>
+<span id="cb18-9"><a href=""></a><span class="st">parameters {</span></span>
+<span id="cb18-10"><a href=""></a><span class="st">  real alpha;</span></span>
+<span id="cb18-11"><a href=""></a><span class="st">  vector[p] beta;</span></span>
+<span id="cb18-12"><a href=""></a><span class="st">}</span></span>
+<span id="cb18-13"><a href=""></a><span class="st">model {</span></span>
+<span id="cb18-14"><a href=""></a><span class="st">  alpha ~ normal(0, 5);</span></span>
+<span id="cb18-15"><a href=""></a><span class="st">  beta ~ normal(0, 2.5);</span></span>
+<span id="cb18-16"><a href=""></a><span class="st">  y ~ bernoulli_logit(alpha + X * beta);</span></span>
+<span id="cb18-17"><a href=""></a><span class="st">}</span></span>
+<span id="cb18-18"><a href=""></a><span class="st">"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
-<p>Tuning: <span class="math inline">\epsilon</span> (too large: leapfrog unstable, rejections) and <span class="math inline">L</span> (too small: random-walk behaviour; too large: trajectory turns back). The <strong>No-U-Turn Sampler</strong> (NUTS) chooses <span class="math inline">L</span> adaptively and is the default in Stan</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">2024</span>)</span>
+<span id="cb19-2"><a href=""></a>n_lr <span class="ot">&lt;-</span> <span class="dv">100</span>; p_lr <span class="ot">&lt;-</span> <span class="dv">50</span></span>
+<span id="cb19-3"><a href=""></a>X_lr <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(n_lr <span class="sc">*</span> p_lr), n_lr, p_lr)</span>
+<span id="cb19-4"><a href=""></a>beta_true <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="fu">rep</span>(<span class="dv">0</span>, p_lr <span class="sc">-</span> <span class="dv">2</span>))</span>
+<span id="cb19-5"><a href=""></a>y_lr <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(n_lr, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fu">drop</span>(X_lr <span class="sc">%*%</span> beta_true)))</span>
+<span id="cb19-6"><a href=""></a>data_lr <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">n =</span> n_lr, <span class="at">p =</span> p_lr, <span class="at">X =</span> X_lr, <span class="at">y =</span> y_lr)</span>
+<span id="cb19-7"><a href=""></a>fit_logit <span class="ot">&lt;-</span> <span class="fu">stan</span>(<span class="at">model_code =</span> stan_logit_hs_code, <span class="at">data =</span> data_lr,</span>
+<span id="cb19-8"><a href=""></a>    <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">3000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>, <span class="at">seed =</span> <span class="dv">9</span>, <span class="at">refresh =</span> <span class="dv">0</span>,</span>
+<span id="cb19-9"><a href=""></a>    <span class="at">control =</span> <span class="fu">list</span>(<span class="at">adapt_delta =</span> <span class="fl">0.995</span>))</span>
+<span id="cb19-10"><a href=""></a>fit_logit_normal <span class="ot">&lt;-</span> <span class="fu">stan</span>(<span class="at">model_code =</span> stan_logit_normal_code,</span>
+<span id="cb19-11"><a href=""></a>    <span class="at">data =</span> data_lr, <span class="at">chains =</span> <span class="dv">4</span>, <span class="at">iter =</span> <span class="dv">2000</span>, <span class="at">warmup =</span> <span class="dv">1000</span>,</span>
+<span id="cb19-12"><a href=""></a>    <span class="at">seed =</span> <span class="dv">9</span>, <span class="at">refresh =</span> <span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</div></div>
 </section>
-<section id="hmc-versus-random-walk-metropolis" class="slide level2">
-<h2>HMC versus Random-Walk Metropolis</h2>
-<p>Target: bivariate normal with correlation <span class="math inline">0.98</span>. Same number of iterations for both samplers.</p>
+<section id="example-9-horseshoe-posterior" class="slide level2 smaller">
+<h2>Example 9: Horseshoe Posterior</h2>
+<div class="columns">
+<div class="column" style="width:45%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">coef</th>
+<th style="text-align: right;">true</th>
+<th style="text-align: right;">mean</th>
+<th style="text-align: right;">sd</th>
+<th style="text-align: right;">2.5%</th>
+<th style="text-align: right;">97.5%</th>
+<th style="text-align: right;">Rhat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">beta[1]</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.972</td>
+<td style="text-align: right;">0.388</td>
+<td style="text-align: right;">0.063</td>
+<td style="text-align: right;">1.713</td>
+<td style="text-align: right;">1.001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">beta[2]</td>
+<td style="text-align: right;">-1</td>
+<td style="text-align: right;">-1.222</td>
+<td style="text-align: right;">0.375</td>
+<td style="text-align: right;">-1.973</td>
+<td style="text-align: right;">-0.518</td>
+<td style="text-align: right;">1.001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">beta[3]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.034</td>
+<td style="text-align: right;">0.119</td>
+<td style="text-align: right;">-0.380</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">beta[4]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.037</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">-0.383</td>
+<td style="text-align: right;">0.117</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">beta[5]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.032</td>
+<td style="text-align: right;">0.119</td>
+<td style="text-align: right;">-0.130</td>
+<td style="text-align: right;">0.384</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">beta[6]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.023</td>
+<td style="text-align: right;">0.098</td>
+<td style="text-align: right;">-0.303</td>
+<td style="text-align: right;">0.120</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">beta[7]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.002</td>
+<td style="text-align: right;">0.089</td>
+<td style="text-align: right;">-0.199</td>
+<td style="text-align: right;">0.208</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">beta[8]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.039</td>
+<td style="text-align: right;">0.121</td>
+<td style="text-align: right;">-0.407</td>
+<td style="text-align: right;">0.127</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">beta[9]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.011</td>
+<td style="text-align: right;">0.092</td>
+<td style="text-align: right;">-0.243</td>
+<td style="text-align: right;">0.163</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">beta[10]</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">-0.011</td>
+<td style="text-align: right;">0.095</td>
+<td style="text-align: right;">-0.253</td>
+<td style="text-align: right;">0.166</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div><div class="column" style="width:55%;">
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure>
+<p><img data-src="Lec_12_mcmc_files/figure-revealjs/plot-stan-logit-1.png" class="quarto-figure quarto-figure-center" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+</div></div>
+<p>The null coefficients are shrunk tightly around <span class="math inline">0</span> (posterior sd near <span class="math inline">0.1</span>). The two signals escape the shrinkage: posterior means near <span class="math inline">1</span> and <span class="math inline">-1</span>, with 95% intervals excluding <span class="math inline">0</span>. <span class="math inline">\hat R\approx1</span> shows the chains have mixed.</p>
+</section>
+<section id="example-9-prediction-on-test-data" class="slide level2 smaller">
+<h2>Example 9: Prediction on Test Data</h2>
+<p><span class="math inline">m = 1000</span> new test cases from the same design. The <strong>posterior predictive probability</strong> averages over the <span class="math inline">S</span> posterior draws: <span class="math display">P(\tilde y = 1\mid\tilde x,\text{data}) = \int\text{logit}^{-1}(\alpha+\tilde x^\top\beta)\,p(\alpha,\beta\mid\text{data})\,d(\alpha,\beta)
+\approx\frac1S\sum_{s=1}^S\text{logit}^{-1}\big(\alpha^{(s)}+\tilde x^\top\beta^{(s)}\big)</span></p>
+<p>Scores: <strong>test deviance</strong> <span class="math inline">-2\sum_i\log\hat P(\tilde y_i)</span> (smaller is better; predicting <span class="math inline">0.5</span> always gives <span class="math inline">2m\log2\approx1386.3</span>) and <strong>error rate</strong> of <span class="math inline">\hat y_i = 1\{\hat p_i&gt;0.5\}</span>.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode numberSource r number-lines code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href=""></a><span class="fu">set.seed</span>(<span class="dv">2025</span>)</span>
+<span id="cb20-2"><a href=""></a>m_test <span class="ot">&lt;-</span> <span class="dv">1000</span></span>
+<span id="cb20-3"><a href=""></a>X_test <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">rnorm</span>(m_test <span class="sc">*</span> p_lr), m_test, p_lr)</span>
+<span id="cb20-4"><a href=""></a>y_test <span class="ot">&lt;-</span> <span class="fu">rbinom</span>(m_test, <span class="dv">1</span>, <span class="fu">plogis</span>(<span class="fu">drop</span>(X_test <span class="sc">%*%</span> beta_true)))</span>
+<span id="cb20-5"><a href=""></a>post_pred <span class="ot">&lt;-</span> <span class="cf">function</span>(fit) {                       <span class="co"># average logit^{-1}(alpha + x beta) over the draws</span></span>
+<span id="cb20-6"><a href=""></a>    a <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(fit, <span class="at">pars =</span> <span class="st">"alpha"</span>)[, <span class="dv">1</span>]; b <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(fit, <span class="at">pars =</span> <span class="st">"beta"</span>)</span>
+<span id="cb20-7"><a href=""></a>    <span class="fu">colMeans</span>(<span class="fu">plogis</span>(<span class="fu">sweep</span>(b <span class="sc">%*%</span> <span class="fu">t</span>(X_test), <span class="dv">1</span>, a, <span class="st">"+"</span>)))</span>
+<span id="cb20-8"><a href=""></a>}</span>
+<span id="cb20-9"><a href=""></a>fit_glm <span class="ot">&lt;-</span> <span class="fu">suppressWarnings</span>(<span class="fu">glm</span>(y <span class="sc">~</span> ., <span class="at">family =</span> binomial, <span class="at">data =</span> <span class="fu">data.frame</span>(<span class="at">y =</span> y_lr, X_lr)))</span>
+<span id="cb20-10"><a href=""></a>methods <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="st">"Bayes, horseshoe prior"</span> <span class="ot">=</span> <span class="fu">post_pred</span>(fit_logit), <span class="st">"Bayes, N(0, 2.5^2) prior"</span> <span class="ot">=</span> <span class="fu">post_pred</span>(fit_logit_normal),</span>
+<span id="cb20-11"><a href=""></a>    <span class="st">"glm (MLE)"</span> <span class="ot">=</span> <span class="fu">suppressWarnings</span>(<span class="fu">predict</span>(fit_glm, <span class="at">newdata =</span> <span class="fu">data.frame</span>(X_test), <span class="at">type =</span> <span class="st">"response"</span>)),</span>
+<span id="cb20-12"><a href=""></a>    <span class="st">"true probabilities"</span> <span class="ot">=</span> <span class="fu">plogis</span>(<span class="fu">drop</span>(X_test <span class="sc">%*%</span> beta_true)))</span>
+<span id="cb20-13"><a href=""></a>test_deviance <span class="ot">&lt;-</span> <span class="cf">function</span>(p, y) <span class="sc">-</span><span class="dv">2</span> <span class="sc">*</span> <span class="fu">sum</span>(<span class="fu">dbinom</span>(y, <span class="dv">1</span>, p, <span class="at">log =</span> <span class="cn">TRUE</span>))</span>
+<span id="cb20-14"><a href=""></a>error_rate    <span class="ot">&lt;-</span> <span class="cf">function</span>(p, y) <span class="fu">mean</span>((p <span class="sc">&gt;</span> <span class="fl">0.5</span>) <span class="sc">!=</span> y)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="example-9-test-set-results" class="slide level2 smaller">
+<h2>Example 9: Test-Set Results</h2>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div id="adyzndjbdp" style="padding-left:0px;padding-right:0px;padding-top:10px;padding-bottom:10px;overflow-x:auto;overflow-y:auto;width:auto;height:auto;">
+<style>#adyzndjbdp table {
+  font-family: system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
-<img data-src="Lec_12_mcmc_files/figure-revealjs/hmc-versus-random-walk-metropolis-1.png" class="quarto-figure quarto-figure-center r-stretch" width="960"><p>Random-walk Metropolis creeps along the ridge with autocorrelation persisting for dozens of lags; HMC follows the ridge in a single trajectory and its draws are nearly independent.</p>
+#adyzndjbdp thead, #adyzndjbdp tbody, #adyzndjbdp tfoot, #adyzndjbdp tr, #adyzndjbdp td, #adyzndjbdp th {
+  border-style: none;
+}
+
+#adyzndjbdp p {
+  margin: 0;
+  padding: 0;
+}
+
+#adyzndjbdp .gt_table {
+  display: table;
+  border-collapse: collapse;
+  line-height: normal;
+  margin-left: auto;
+  margin-right: auto;
+  color: #333333;
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  background-color: #FFFFFF;
+  width: auto;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #A8A8A8;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #A8A8A8;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_caption {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+#adyzndjbdp .gt_title {
+  color: #333333;
+  font-size: 125%;
+  font-weight: initial;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-color: #FFFFFF;
+  border-bottom-width: 0;
+}
+
+#adyzndjbdp .gt_subtitle {
+  color: #333333;
+  font-size: 85%;
+  font-weight: initial;
+  padding-top: 3px;
+  padding-bottom: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-color: #FFFFFF;
+  border-top-width: 0;
+}
+
+#adyzndjbdp .gt_heading {
+  background-color: #FFFFFF;
+  text-align: center;
+  border-bottom-color: #FFFFFF;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_bottom_border {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_col_headings {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_col_heading {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 6px;
+  padding-left: 5px;
+  padding-right: 5px;
+  overflow-x: hidden;
+}
+
+#adyzndjbdp .gt_column_spanner_outer {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: normal;
+  text-transform: inherit;
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+#adyzndjbdp .gt_column_spanner_outer:first-child {
+  padding-left: 0;
+}
+
+#adyzndjbdp .gt_column_spanner_outer:last-child {
+  padding-right: 0;
+}
+
+#adyzndjbdp .gt_column_spanner {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: bottom;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  overflow-x: hidden;
+  display: inline-block;
+  width: 100%;
+}
+
+#adyzndjbdp .gt_spanner_row {
+  border-bottom-style: hidden;
+}
+
+#adyzndjbdp .gt_group_heading {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  text-align: left;
+}
+
+#adyzndjbdp .gt_empty_group_heading {
+  padding: 0.5px;
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  vertical-align: middle;
+}
+
+#adyzndjbdp .gt_from_md > :first-child {
+  margin-top: 0;
+}
+
+#adyzndjbdp .gt_from_md > :last-child {
+  margin-bottom: 0;
+}
+
+#adyzndjbdp .gt_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  margin: 10px;
+  border-top-style: solid;
+  border-top-width: 1px;
+  border-top-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 1px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 1px;
+  border-right-color: #D3D3D3;
+  vertical-align: middle;
+  overflow-x: hidden;
+}
+
+#adyzndjbdp .gt_stub {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#adyzndjbdp .gt_stub_row_group {
+  color: #333333;
+  background-color: #FFFFFF;
+  font-size: 100%;
+  font-weight: initial;
+  text-transform: inherit;
+  border-right-style: solid;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+  padding-left: 5px;
+  padding-right: 5px;
+  vertical-align: top;
+}
+
+#adyzndjbdp .gt_row_group_first td {
+  border-top-width: 2px;
+}
+
+#adyzndjbdp .gt_row_group_first th {
+  border-top-width: 2px;
+}
+
+#adyzndjbdp .gt_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#adyzndjbdp .gt_first_summary_row {
+  border-top-style: solid;
+  border-top-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_first_summary_row.thick {
+  border-top-width: 2px;
+}
+
+#adyzndjbdp .gt_last_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_grand_summary_row {
+  color: #333333;
+  background-color: #FFFFFF;
+  text-transform: inherit;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#adyzndjbdp .gt_first_grand_summary_row {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-top-style: double;
+  border-top-width: 6px;
+  border-top-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_last_grand_summary_row_top {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  padding-left: 5px;
+  padding-right: 5px;
+  border-bottom-style: double;
+  border-bottom-width: 6px;
+  border-bottom-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_striped {
+  background-color: rgba(128, 128, 128, 0.05);
+}
+
+#adyzndjbdp .gt_table_body {
+  border-top-style: solid;
+  border-top-width: 2px;
+  border-top-color: #D3D3D3;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_footnotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_footnote {
+  margin: 0px;
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#adyzndjbdp .gt_sourcenotes {
+  color: #333333;
+  background-color: #FFFFFF;
+  border-bottom-style: none;
+  border-bottom-width: 2px;
+  border-bottom-color: #D3D3D3;
+  border-left-style: none;
+  border-left-width: 2px;
+  border-left-color: #D3D3D3;
+  border-right-style: none;
+  border-right-width: 2px;
+  border-right-color: #D3D3D3;
+}
+
+#adyzndjbdp .gt_sourcenote {
+  font-size: 90%;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+#adyzndjbdp .gt_left {
+  text-align: left;
+}
+
+#adyzndjbdp .gt_center {
+  text-align: center;
+}
+
+#adyzndjbdp .gt_right {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#adyzndjbdp .gt_font_normal {
+  font-weight: normal;
+}
+
+#adyzndjbdp .gt_font_bold {
+  font-weight: bold;
+}
+
+#adyzndjbdp .gt_font_italic {
+  font-style: italic;
+}
+
+#adyzndjbdp .gt_super {
+  font-size: 65%;
+}
+
+#adyzndjbdp .gt_footnote_marks {
+  font-size: 75%;
+  vertical-align: 0.4em;
+  position: initial;
+}
+
+#adyzndjbdp .gt_asterisk {
+  font-size: 100%;
+  vertical-align: 0;
+}
+
+#adyzndjbdp .gt_indent_1 {
+  text-indent: 5px;
+}
+
+#adyzndjbdp .gt_indent_2 {
+  text-indent: 10px;
+}
+
+#adyzndjbdp .gt_indent_3 {
+  text-indent: 15px;
+}
+
+#adyzndjbdp .gt_indent_4 {
+  text-indent: 20px;
+}
+
+#adyzndjbdp .gt_indent_5 {
+  text-indent: 25px;
+}
+
+#adyzndjbdp .katex-display {
+  display: inline-flex !important;
+  margin-bottom: 0.75em !important;
+}
+
+#adyzndjbdp div.Reactable > div.rt-table > div.rt-thead > div.rt-tr.rt-tr-group-header > div.rt-th-group:after {
+  height: 0px !important;
+}
+</style>
+
+<table class="gt_table caption-top" data-quarto-bootstrap="false">
+<colgroup>
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 11%">
+</colgroup>
+<thead>
+<tr class="gt_col_headings gt_spanner_row header">
+<th rowspan="2" id="a::stub" class="gt_col_heading gt_columns_bottom_border gt_left" data-quarto-table-cell-role="th" scope="col"></th>
+<th colspan="2" id="Bayes,-horseshoe-prior" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+Bayes, horseshoe prior
+</div></th>
+<th colspan="2" id="Bayes,-N(0,-2.5^2)-prior" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+Bayes, N(0, 2.5^2) prior
+</div></th>
+<th colspan="2" id="glm-(MLE)" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+glm (MLE)
+</div></th>
+<th colspan="2" id="true-probabilities" class="gt_center gt_columns_top_border gt_column_spanner_outer" data-quarto-table-cell-role="th" scope="colgroup"><div class="gt_column_spanner">
+true probabilities
+</div></th>
+</tr>
+<tr class="gt_col_headings even">
+<th id="m1_a0" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 0</th>
+<th id="m1_a1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 1</th>
+<th id="m2_a0" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 0</th>
+<th id="m2_a1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 1</th>
+<th id="m3_a0" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 0</th>
+<th id="m3_a1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 1</th>
+<th id="m4_a0" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 0</th>
+<th id="m4_a1" class="gt_col_heading gt_columns_bottom_border gt_right" data-quarto-table-cell-role="th" scope="col">actual 1</th>
+</tr>
+</thead>
+<tbody class="gt_table_body">
+<tr class="odd">
+<th id="stub_1_1" class="gt_row gt_left gt_stub" data-quarto-table-cell-role="th" scope="row">predicted 0</th>
+<td class="gt_row gt_right" headers="stub_1_1 m1_a0">369</td>
+<td class="gt_row gt_right" headers="stub_1_1 m1_a1">181</td>
+<td class="gt_row gt_right" headers="stub_1_1 m2_a0">330</td>
+<td class="gt_row gt_right" headers="stub_1_1 m2_a1">222</td>
+<td class="gt_row gt_right" headers="stub_1_1 m3_a0">299</td>
+<td class="gt_row gt_right" headers="stub_1_1 m3_a1">225</td>
+<td class="gt_row gt_right" headers="stub_1_1 m4_a0">337</td>
+<td class="gt_row gt_right" headers="stub_1_1 m4_a1">134</td>
+</tr>
+<tr class="even">
+<th id="stub_1_2" class="gt_row gt_left gt_stub" data-quarto-table-cell-role="th" scope="row">predicted 1</th>
+<td class="gt_row gt_right" headers="stub_1_2 m1_a0">106</td>
+<td class="gt_row gt_right" headers="stub_1_2 m1_a1">344</td>
+<td class="gt_row gt_right" headers="stub_1_2 m2_a0">145</td>
+<td class="gt_row gt_right" headers="stub_1_2 m2_a1">303</td>
+<td class="gt_row gt_right" headers="stub_1_2 m3_a0">176</td>
+<td class="gt_row gt_right" headers="stub_1_2 m3_a1">300</td>
+<td class="gt_row gt_right" headers="stub_1_2 m4_a0">138</td>
+<td class="gt_row gt_right" headers="stub_1_2 m4_a1">391</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top">
+<thead>
+<tr class="header">
+<th style="text-align: left;">method</th>
+<th style="text-align: right;">test deviance</th>
+<th style="text-align: right;">error rate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Bayes, horseshoe prior</td>
+<td style="text-align: right;">1105.2</td>
+<td style="text-align: right;">0.287</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Bayes, N(0, 2.5^2) prior</td>
+<td style="text-align: right;">2643.8</td>
+<td style="text-align: right;">0.367</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">glm (MLE)</td>
+<td style="text-align: right;">25472.5</td>
+<td style="text-align: right;">0.401</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">true probabilities</td>
+<td style="text-align: right;">1062.2</td>
+<td style="text-align: right;">0.272</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<ul>
+<li><code>glm</code>’s fitted probabilities are almost all <span class="math inline">0</span> or <span class="math inline">1</span>, so every wrong prediction costs a huge <span class="math inline">-2\log\hat P(\tilde y_i)</span></li>
+<li>A Bayesian fit is not automatically better: the vague normal prior is also worse than the <span class="math inline">0.5</span> baseline</li>
+<li>The horseshoe prior, encoding that only a few predictors matter, comes close to the true probabilities. With as many predictors as cases, <strong>the prior is the part of the model that makes good prediction possible</strong></li>
+</ul>
 </section>
 <section id="summary" class="slide level2 smaller">
 <h2>Summary</h2>
 <ul>
-<li>A Markov chain with transition <span class="math inline">T</span> converges to its equilibrium <span class="math inline">\pi</span> from any start if <span class="math inline">T</span> leaves <span class="math inline">\pi</span> invariant and is irreducible and aperiodic; <strong>detailed balance</strong> <span class="math inline">\pi(\theta)T(\theta,\theta^T) = \pi(\theta^T)T(\theta^T,\theta)</span> is the practical way to guarantee invariance</li>
-<li>MCMC: design <span class="math inline">T</span> for the target posterior, run it, discard burn-in, and average the dependent draws; <span class="math inline">\text{Var}(\bar\theta)\approx\sigma^2(1+2\sum_k\rho_k)/T</span>, so autocorrelation, not just chain length, governs accuracy</li>
-<li><strong>Gibbs sampling</strong>: update each coordinate from its full conditional; automatic when the model is conditionally conjugate; data augmentation adds latent variables to make conditionals standard</li>
-<li><strong>Metropolis–Hastings</strong>: propose from any <span class="math inline">\tilde T</span>, accept with probability <span class="math inline">\min\{\pi(\theta^*)\tilde T(\theta\mid\theta^*)/[\pi(\theta)\tilde T(\theta^*\mid\theta)],1\}</span>; random-walk proposals need a tuned step size (acceptance <span class="math inline">\approx0.25</span>–<span class="math inline">0.45</span>); transform bounded parameters and include the Jacobian</li>
-<li><strong>Metropolis-within-Gibbs</strong> combines the two: MH for the blocks without closed-form conditionals</li>
-<li><strong>Hamiltonian Monte Carlo</strong> adds momentum and follows gradient-driven trajectories (leapfrog + Metropolis correction), giving distant proposals with high acceptance and nearly independent draws; the default in modern software (Stan)</li>
+<li>A Markov chain with transition <span class="math inline">T</span> converges to <span class="math inline">\pi</span> from any start if <span class="math inline">T</span> leaves <span class="math inline">\pi</span> <strong>invariant</strong> and is irreducible and aperiodic; <strong>detailed balance</strong> <span class="math inline">\pi(\theta)T(\theta\to\theta') = \pi(\theta')T(\theta'\to\theta)</span> is the pairwise route to invariance, and solving it finds the equilibrium of a given chain (cyclic walk: uniform; reflecting walk: <span class="math inline">2^i/1023</span>)</li>
+<li>MCMC: design <span class="math inline">T</span> for the target, run it, discard burn-in, and average the dependent draws; <span class="math inline">\text{Var}(\bar\theta)\approx\sigma^2(1+2\sum_k\rho_k)/T</span>, so autocorrelation governs accuracy</li>
+<li><strong>Gibbs sampling</strong>: exact draws from each full conditional; no tuning, but needs sample-able conditionals; <strong>data augmentation</strong> (censored values, latent variances) makes them standard</li>
+<li><strong>Metropolis–Hastings</strong>: propose from any <span class="math inline">\tilde T</span>, accept with probability <span class="math inline">\min\{\pi(\theta^*)\tilde T(\theta\mid\theta^*)/[\pi(\theta)\tilde T(\theta^*\mid\theta)],1\}</span>; tune the step size for low autocorrelation; transform bounded parameters and include the Jacobian; combine with Gibbs block by block</li>
+<li><strong>Hamiltonian Monte Carlo</strong>: momentum plus gradient-driven leapfrog trajectories with a Metropolis correction, giving distant, nearly independent proposals on correlated targets</li>
+<li><strong>Stan</strong> automates gradients and adaptive HMC (NUTS): the model statement replaces the derivations, and on hard models (horseshoe logistic regression) it makes a careful Bayesian analysis practical</li>
 </ul>
 
 </section></section>

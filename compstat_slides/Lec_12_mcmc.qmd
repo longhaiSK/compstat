@@ -12,123 +12,100 @@ number-sections: false
 set.seed(812)
 knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
 library(latex2exp)
+library(truncnorm)
+library(rstan)
+rstan_options(auto_write = TRUE)
+
+### draw a directed acyclic graph of a Bayesian model:
+### squares = fixed hyperparameters, open circles = unknown random quantities,
+### shaded circles = observed data ("observed_square": observed data as a shaded square);
+### arrows point from parent to child; a rounded box (plate) holds the repeated quantities
+draw_dag <- function(nodes, edges, plates = list(), main = "", r = 0.33,
+                     xlim = range(nodes$x) + c(-0.8, 0.8), ylim = range(nodes$y) + c(-0.8, 0.8)) {
+    plot.new(); plot.window(xlim = xlim, ylim = ylim, asp = 1)
+    title(main, cex.main = 1)
+    for (p in plates) {
+        rect(p$x[1], p$y[1], p$x[2], p$y[2], border = "gray45", lwd = 1.5)
+        text(p$x[2] - 0.08, p$y[1] + 0.08, p$label, adj = c(1, 0), cex = 0.85, col = "gray30")
+    }
+    for (k in seq_len(nrow(edges))) {
+        a <- nodes[nodes$id == edges$from[k], ]; b <- nodes[nodes$id == edges$to[k], ]
+        d <- c(b$x - a$x, b$y - a$y); u <- d / sqrt(sum(d^2))
+        arrows(a$x + r * u[1], a$y + r * u[2], b$x - (r + 0.03) * u[1], b$y - (r + 0.03) * u[2],
+               length = 0.08, lwd = 1.4, col = "gray20")
+    }
+    th <- seq(0, 2 * pi, length.out = 100)
+    for (k in seq_len(nrow(nodes))) {
+        nd <- nodes[k, ]
+        if (nd$type %in% c("fixed", "observed_square")) {
+            rect(nd$x - r * 0.85, nd$y - r * 0.85, nd$x + r * 0.85, nd$y + r * 0.85,
+                 col = if (nd$type == "observed_square") "gray80" else "white",
+                 border = "gray20", lwd = 1.5)
+        } else {
+            polygon(nd$x + r * cos(th), nd$y + r * sin(th), border = "gray20", lwd = 1.5,
+                    col = if (nd$type == "observed") "gray80" else "white")
+        }
+        text(nd$x, nd$y, parse(text = nd$label), cex = 1.05)
+    }
+}
 ```
 
 # 1. Markov Chains
 
 ## Goal
 
-Draw $\theta_1,\theta_2,\ldots,\theta_n\sim f$ for a target $f$ (typically a posterior known up to a constant), then use $\frac1n\sum_i a(\theta_i)$.
+Draw $\theta_1,\theta_2,\ldots,\theta_n\sim \pi$ for a target $\pi$ (typically a posterior known up to a constant), then estimate $E_\pi[a(\theta)]$ by $\frac1n\sum_i a(\theta_i)$.
 
-- Rejection sampling and importance sampling use a **fixed** proposal $g$; in high dimensions no fixed $g$ resembles $f$, and they collapse
-- MCMC instead builds a **random process** $\theta_1,\theta_2,\theta_3,\ldots$ that moves locally, and is designed so that, eventually, each $\theta_i$ is distributed as $f$
-- The draws are **dependent**, and only correct **in the limit**; the price for working in any dimension
+- Rejection sampling and importance sampling use a **fixed** proposal $g$; in high dimensions no fixed $g$ resembles $\pi$, and they collapse
+- MCMC instead builds a **random process** $\theta_0,\theta_1,\theta_2,\ldots$ that moves **locally**, each step depending only on the current state, designed so that eventually $\theta_i$ is distributed as $\pi$
+- The draws are **dependent**, and only correct **in the limit**; this is the price for a method that works in any dimension
 
 We first need a little theory of Markov chains.
 
-## Markov Chains and Transition Distributions
+## Definitions {.smaller}
 
-**Definition.** $\{\theta_i: i = 0,1,2,\ldots\}$ is a **Markov chain** if the future depends on the past only through the present:
-$$P(\theta_i\mid\theta_0,\theta_1,\ldots,\theta_{i-1}) = P(\theta_i\mid\theta_{i-1})$$
+**Markov chain.** $\{\theta_i: i = 0,1,2,\ldots\}$ is a Markov chain if the future depends on the past only through the present:
+$$P(\theta_i\mid\theta_0,\theta_1,\ldots,\theta_{i-1}) = T(\theta_i\mid\theta_{i-1})$$
 
-We write $T(\theta_i\mid\theta_{i-1})$, or $T(\theta_{i-1}\to\theta_i)$, and call it the **transition distribution** (a matrix for a finite state space, a conditional density for a continuous one).
+**Transition distribution.** $T(\theta'\mid\theta)$, also written $T(\theta\to\theta')$, is the distribution of the next state given the current one; it does not depend on $i$. For a finite state space it is a matrix, $T_{jk} = P(\theta_i = k\mid\theta_{i-1} = j)$, with rows summing to 1.
 
 $$\theta_0 \xrightarrow{\ T(\theta_1\mid\theta_0)\ } \theta_1 \xrightarrow{\ T(\theta_2\mid\theta_1)\ } \theta_2 \xrightarrow{\ \ } \cdots$$
 
-A chain is specified by a starting value (or distribution) $\theta_0$ and $T$; simulating it means drawing $\theta_i\sim T(\cdot\mid\theta_{i-1})$ repeatedly.
+A chain is specified by a starting value $\theta_0$ and $T$; simulating it means drawing $\theta_i\sim T(\cdot\mid\theta_{i-1})$ repeatedly.
 
-## Example: A Three-State Chain
+## Definitions (Continued)
 
-State space $\{0,1,2\}$. From each state, stay with probability $0.1$, move to each of the other two states with probability $0.45$:
-$$T = \begin{pmatrix} 0.1 & 0.45 & 0.45\\ 0.45 & 0.1 & 0.45\\ 0.45 & 0.45 & 0.1\end{pmatrix}, \qquad T_{jk} = P(\theta_i = k\mid\theta_{i-1} = j)$$
+**Equilibrium distribution.** $\pi$ is the equilibrium (limiting) distribution of the chain if, for **every** start $\theta_0$,
+$$\lim_{n\to\infty} P(\theta_n = \theta\mid\theta_0) = \pi(\theta).$$
+After many steps the chain forgets where it started, and the marginal distribution of $\theta_n$ settles at $\pi$.
 
-```{r}
-#| label: example-a-three-state
-#| echo: true
-simulate_chain <- function(T, theta0, n) {
-  theta <- integer(n + 1); theta[1] <- theta0
-  for (i in 2:(n + 1)) theta[i] <- sample(seq_len(ncol(T)), 1, prob = T[theta[i - 1], ])
-  theta - 1 }                                                  # states 0, 1, 2
-T3 <- matrix(c(0.1, 0.45, 0.45, 0.45, 0.1, 0.45, 0.45, 0.45, 0.1), 3, byrow = TRUE)
-th <- simulate_chain(T3, theta0 = 1, n = 10000)
-head(th, 20); table(th) / length(th)
-```
+**The MCMC question**: the usual Markov-chain problem is *given $T$, find $\pi$*. MCMC reverses it: given a target $\pi$, *design* a $T$ whose equilibrium distribution is $\pi$.
 
-Whatever the start, the long-run frequencies are $(1/3,1/3,1/3)$.
-
-## Example: A Three-State Chain (Continued)
-
-```{r}
-#| label: example-a-three-state-2
-#| fig-width: 10
-#| fig-height: 4.4
-par(mfrow = c(1, 2), mar = c(1, 1, 2, 1))
-ang <- c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3); cx <- cos(ang); cy <- sin(ang)
-plot(NA, xlim = c(-1.6, 1.6), ylim = c(-1.4, 1.6), asp = 1, axes = FALSE, xlab = "", ylab = "", main = "transition diagram")
-for (j in 1:3) for (k in 1:3) if (j != k) {
-  d <- c(cx[k] - cx[j], cy[k] - cy[j]); d <- d / sqrt(sum(d^2)); o <- c(-d[2], d[1]) * 0.08
-  arrows(cx[j] + 0.22 * d[1] + o[1], cy[j] + 0.22 * d[2] + o[2], cx[k] - 0.22 * d[1] + o[1], cy[k] - 0.22 * d[2] + o[2],
-         length = 0.1, col = "steelblue", lwd = 2)
-  text((cx[j] + cx[k]) / 2 + 2.5 * o[1], (cy[j] + cy[k]) / 2 + 2.5 * o[2], "0.45", cex = 0.85, col = "steelblue") }
-symbols(cx, cy, circles = rep(0.2, 3), inches = FALSE, add = TRUE, bg = "white", fg = "firebrick", lwd = 2)
-text(cx, cy, 0:2, cex = 1.3); text(cx * 1.45, cy * 1.45, "0.1 (stay)", cex = 0.85, col = "gray30")
-plot(th[1:60], type = "s", lwd = 2, col = "firebrick", yaxt = "n", xlab = "i", ylab = "state", main = "first 60 steps of the chain", axes = FALSE)
-axis(1); axis(2, at = 0:2); box()
-```
-
-## Convergence and the Equilibrium Distribution
-
-Under regularity conditions (next slide), for **every** starting value $\theta_0$,
-$$\lim_{n\to\infty} P(\theta_n = \theta\mid\theta_0) = \pi(\theta)$$
-
-$\pi$ is the **equilibrium** (stationary, limiting) **distribution** of the chain: after many steps the chain forgets where it started, and the marginal distribution of $\theta_n$ settles at $\pi$.
-
-For the three-state chain, $P(\theta_n = \cdot\mid\theta_0 = 0)$ is the first row of $T^n$:
-
-```{r}
-#| label: convergence-and-the-equilibrium
-#| echo: true
-Tn <- diag(3); for (n in 1:6) { Tn <- Tn %*% T3; cat(sprintf("n = %d:  %s\n", n, paste(round(Tn[1, ], 4), collapse = "  "))) }
-```
-
-## Convergence (Continued)
-
-$P(\theta_n = k\mid\theta_0 = 0)$ for $k = 0,1,2$ as a function of $n$. Starting from state $0$ with certainty, the distribution converges geometrically to $\pi = (1/3,1/3,1/3)$.
-
-```{r}
-#| label: convergence-continued
-#| fig-width: 9
-#| fig-height: 4.4
-par(mar = c(4, 4, 1, 1)); N <- 8; Pn <- matrix(0, N + 1, 3); Pn[1, ] <- c(1, 0, 0); Tn <- diag(3)
-for (n in 1:N) { Tn <- Tn %*% T3; Pn[n + 1, ] <- Tn[1, ] }
-matplot(0:N, Pn, type = "b", pch = 19, lwd = 2, lty = 1, col = c("firebrick", "steelblue", "forestgreen"),
-        xlab = "n", ylab = TeX(r"($P(\theta_n = k \, | \, \theta_0 = 0)$)"), ylim = c(0, 1))
-abline(h = 1 / 3, lty = 3)
-legend("topright", bty = "n", pch = 19, lwd = 2, col = c("firebrick", "steelblue", "forestgreen"), legend = paste("k =", 0:2))
-```
+Two conditions on the pair $(\pi, T)$ are the tools for both directions: **invariance** and **reversibility**.
 
 ## Invariance Condition
 
-$\pi(\theta)$ a distribution, $T(\cdot,\cdot)$ a transition. We say **$T$ leaves $\pi$ invariant** if
-$$\int \pi(\theta)\,T(\theta,\theta^T)\,d\theta = \pi(\theta^T) \qquad\text{for all }\theta^T$$
+$\pi$ is an **invariant** (stationary) distribution of $T$ if
+$$\int \pi(\theta)\,T(\theta\to\theta')\,d\theta = \pi(\theta') \qquad\text{for all }\theta'$$
 
-(for a finite state space, $\pi^\top T = \pi^\top$: $\pi$ is a left eigenvector of $T$ with eigenvalue 1).
+For a finite state space: $\sum_\theta \pi(\theta)\,T(\theta\to\theta') = \pi(\theta')$, i.e. $\pi^\top T = \pi^\top$.
 
-**Meaning**: if $\theta\sim\pi$ and $\theta^T\sim T(\theta,\cdot)$, then $\theta^T\sim\pi$. One step of the chain applied to a $\pi$-distributed input returns a $\pi$-distributed output: $\pi$ is a **fixed point** of $T$.
+**Meaning**: if $\theta\sim\pi$ and $\theta'\sim T(\theta\to\cdot)$, then $\theta'\sim\pi$. One step of the chain applied to a $\pi$-distributed input returns a $\pi$-distributed output: $\pi$ is a **fixed point** of $T$.
 
-Invariance is what makes $\pi$ a candidate equilibrium: once the chain reaches $\pi$, it stays there. Check for the three-state chain:
-$$\big(\tfrac13,\tfrac13,\tfrac13\big)\,T = \big(\tfrac13(0.1+0.45+0.45),\ \ldots\big) = \big(\tfrac13,\tfrac13,\tfrac13\big)$$
+Invariance is what makes $\pi$ a candidate equilibrium: once the chain reaches $\pi$, it stays there.
+
+It is a **global** condition: it involves summing (integrating) over all $\theta$, which is awkward to check directly for a proposed $T$.
 
 ## Invariance (Continued)
 
-Points $\theta_1,\theta_2,\theta_3,\ldots$ drawn from $\pi$ (top), each moved one step by $T$ (arrows). The moved points $\theta_1^T,\theta_2^T,\ldots$ (bottom) are again distributed as $\pi$.
+Points $\theta_1,\theta_2,\ldots$ drawn from $\pi = N(0,1)$ (top), each moved one step by $T$ (arrows), here $\theta' = 0.6\,\theta + 0.8\,Z$. The moved points $\theta_1',\theta_2',\ldots$ (bottom) are again distributed as $\pi$.
 
 ```{r}
-#| label: invariance-continued
+#| label: invariance-picture
 #| fig-width: 9
 #| fig-height: 4.4
 par(mar = c(1, 1, 1, 1)); m <- 400
-th0 <- rnorm(m)                                      # pi = N(0, 1)
+th0 <- rnorm(m)                                             # pi = N(0, 1)
 rho <- 0.6; th1 <- rho * th0 + sqrt(1 - rho^2) * rnorm(m)   # T: AR(1) step, leaves N(0,1) invariant
 plot(NA, xlim = c(-3.5, 3.5), ylim = c(-1.3, 1.3), axes = FALSE, xlab = "", ylab = "")
 curve(dnorm(x) * 2 + 0.1, add = TRUE, lwd = 3); curve(-dnorm(x) * 2 - 0.1, add = TRUE, lwd = 3)
@@ -136,29 +113,48 @@ abline(h = c(0.1, -0.1))
 points(th0, rep(0.1, m) + runif(m, 0, 0.05), pch = 19, col = adjustcolor("firebrick", 0.4), cex = 0.5)
 points(th1, rep(-0.1, m) - runif(m, 0, 0.05), pch = 19, col = adjustcolor("forestgreen", 0.4), cex = 0.5)
 idx <- 1:12; arrows(th0[idx], 0.08, th1[idx], -0.08, length = 0.06, col = "steelblue", lwd = 1.5)
-text(-3.3, 0.9, TeX(r"($\theta_1, \theta_2, \ldots \sim \pi$)"), adj = 0); text(-3.3, -0.9, TeX(r"($\theta_1^T, \theta_2^T, \ldots \sim \pi$ again)"), adj = 0)
+text(-3.3, 0.9, TeX(r"($\theta_1, \theta_2, \ldots \sim \pi$)"), adj = 0)
+text(-3.3, -0.9, TeX(r"($\theta_1', \theta_2', \ldots \sim \pi$ again)"), adj = 0)
 text(3.2, 0, "T", col = "steelblue", cex = 1.3)
 ```
 
+## Reversibility (Detailed Balance) Condition {.smaller}
+
+$T$ is **reversible** with respect to $\pi$, or satisfies **detailed balance**, if
+$$\pi(\theta)\,T(\theta\to\theta') = \pi(\theta')\,T(\theta'\to\theta) \qquad\text{for all }\theta,\theta'$$
+
+- The probability flow $\theta\to\theta'$ equals the flow back; at equilibrium the chain looks the same run forwards or backwards
+- $T$ itself need **not** be symmetric, only the flow weighted by $\pi$; a **local** condition, checked pair by pair
+
+**Theorem.** Detailed balance $\Longrightarrow$ invariance.
+
+**Proof.** Sum (integrate) both sides over $\theta$:
+$$\int\pi(\theta)\,T(\theta\to\theta')\,d\theta = \int\pi(\theta')\,T(\theta'\to\theta)\,d\theta
+= \pi(\theta')\underbrace{\int T(\theta'\to\theta)\,d\theta}_{=\,1} = \pi(\theta'). \qquad\blacksquare$$
+
+**Use**: to find an invariant distribution of a given $T$, solve the pairwise equations for $\pi$; to design $T$ for a given $\pi$ (Gibbs, MH, HMC), make the pairwise equations hold.
+
 ## When Does the Chain Converge to $\pi$? {.smaller}
 
-Given a target $\pi$, design a transition $T$ such that
+Invariance alone is not enough: a chain that never moves leaves every distribution invariant. If
 
-1. **Invariance**: $T$ leaves $\pi$ invariant
-2. **Aperiodicity**: the chain does not cycle deterministically (e.g. $1\to2\to3\to1\to\cdots$ never converges, it oscillates)
-3. **Irreducibility**: every state can be reached from every other state (a chain that splits into non-communicating pieces, or one that never moves, converges to something that depends on where it started)
+1. **Invariance**: $T$ leaves $\pi$ invariant (e.g. by detailed balance)
+2. **Aperiodicity**: the chain does not cycle deterministically (e.g. $1\to2\to3\to1\to\cdots$ never settles, it oscillates)
+3. **Irreducibility**: every state can be reached from every other state
 
-Then, for any $\theta_0$, $\theta_n\to\pi$ in distribution, and ergodic averages converge:
+then, for any $\theta_0$, $\theta_n\to\pi$ in distribution ($\pi$ is the equilibrium distribution), and ergodic averages converge:
 $$\frac1n\sum_{i=1}^n a(\theta_i)\ \longrightarrow\ E_\pi\big[a(\theta)\big]$$
 
-**Practice**: simulate $T$ long enough, discard the initial portion (**burn-in**), and treat the remaining $\theta_i$ as (dependent) draws from $\pi$.
+**Practice**: simulate $T$ long enough, discard an initial **burn-in**, and treat the remaining $\theta_i$ as (dependent) draws from $\pi$.
 
 ## When Does the Chain Converge (Continued)
 
+Left: periodic, the chain oscillates forever. Middle: reducible, the long-run behaviour depends on which piece the chain starts in. Right: irreducible and aperiodic (self-loops break any cycle).
+
 ```{r}
-#| label: when-does-the-chain
-#| fig-width: 10
-#| fig-height: 3.6
+#| label: convergence-conditions
+#| fig-width: 12
+#| fig-height: 4.4
 par(mfrow = c(1, 3), mar = c(1, 1, 2, 1))
 draw_graph <- function(pos, edges, main, self = NULL) {
   plot(NA, xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5), asp = 1, axes = FALSE, xlab = "", ylab = "", main = main)
@@ -167,66 +163,300 @@ draw_graph <- function(pos, edges, main, self = NULL) {
   symbols(pos[, 1], pos[, 2], circles = rep(0.2, nrow(pos)), inches = FALSE, add = TRUE, bg = "white", fg = "firebrick", lwd = 2)
   text(pos[, 1], pos[, 2], seq_len(nrow(pos)))
   for (s in self) { t <- seq(0, 2 * pi, length.out = 50); lines(pos[s, 1] + 0.3 * cos(t) + 0.28 * sign(pos[s, 1] + 1e-9), pos[s, 2] + 0.3 * sin(t) + 0.28, col = "steelblue", lwd = 2) } }
-tri <- cbind(cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)))
+ang3 <- c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)
+tri <- cbind(cos(ang3), sin(ang3))
 draw_graph(tri, list(c(1, 2), c(2, 3), c(3, 1)), "periodic: 1 -> 2 -> 3 -> 1 forever")
-six <- rbind(cbind(-0.9 + 0.45 * cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), 0.45 * sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3))),
-             cbind(0.9 + 0.45 * cos(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3)), 0.45 * sin(c(pi / 2, pi / 2 + 2 * pi / 3, pi / 2 + 4 * pi / 3))))
+six <- rbind(cbind(-0.9 + 0.45 * cos(ang3), 0.45 * sin(ang3)), cbind(0.9 + 0.45 * cos(ang3), 0.45 * sin(ang3)))
 draw_graph(six, list(c(1, 2), c(2, 1), c(2, 3), c(3, 1), c(4, 5), c(5, 6), c(6, 4), c(5, 4)), "reducible: two pieces never communicate")
-draw_graph(tri, list(c(1, 2), c(2, 1), c(2, 3), c(3, 2), c(3, 1), c(1, 3)), "irreducible and aperiodic (with self-loops)", self = 1:3)
+draw_graph(tri, list(c(1, 2), c(2, 1), c(2, 3), c(3, 2), c(3, 1), c(1, 3)), "irreducible and aperiodic", self = 1:3)
 ```
 
-## Detailed Balance (Reversibility) {.smaller}
+# Example 1: Random Walks on a Cycle and on a Segment
 
-$T$ satisfies **detailed balance** with respect to $\pi$ if
-$$\pi(\theta)\,T(\theta,\theta^T) = \pi(\theta^T)\,T(\theta^T,\theta) \qquad\text{for all }\theta,\theta^T$$
+## Example 1: Two Random Walks on Ten States {.smaller}
 
-- The flow of probability from $\theta$ to $\theta^T$ equals the flow back: the chain looks the same run forwards or backwards ("reversible")
-- Note: this does **not** say $T(\theta,\theta^T) = T(\theta^T,\theta)$; the transition itself need not be symmetric, only the flow weighted by $\pi$
+Two chains on the states $\{0,1,\ldots,9\}$ that differ only in their transition rules:
 
-**Theorem.** Detailed balance $\Longrightarrow$ invariance.
+- **Cyclic walk** (states on a circle): move forward (clockwise) with probability $0.45$, backward with probability $0.45$, stay with probability $0.1$. Forward from $9$ wraps to $0$; backward from $0$ wraps to $9$.
+- **Reflecting walk** (states on a segment): move forward with probability $0.4$, backward with probability $0.2$, stay with probability $0.4$. At $0$, "backward" stays at $0$; at $9$, "forward" stays at $9$.
 
-**Proof.** Integrate both sides over $\theta$:
-$$\int\pi(\theta)\,T(\theta,\theta^T)\,d\theta = \int\pi(\theta^T)\,T(\theta^T,\theta)\,d\theta
-= \pi(\theta^T)\underbrace{\int T(\theta^T,\theta)\,d\theta}_{=\,1} = \pi(\theta^T). \qquad\blacksquare$$
+```{r}
+#| label: plot-two-walks-diagram
+#| fig-width: 12
+#| fig-height: 4.6
+par(mfrow = c(1, 2), mar = c(0.5, 0.5, 2, 0.5))
+## cyclic walk: ten states on a circle
+ang <- pi / 2 - 2 * pi * (0:9) / 10; rr <- 0.13; dl <- 0.11
+plot(NA, xlim = c(-1.45, 1.45), ylim = c(-1.35, 1.35), asp = 1, axes = FALSE, xlab = "", ylab = "",
+     main = "cyclic walk")
+for (i in 0:9) {
+  a1 <- ang[i + 1]; a2 <- ang[(i + 1) %% 10 + 1]
+  arrows(1.07 * cos(a1 - dl), 1.07 * sin(a1 - dl), 1.07 * cos(a2 + dl), 1.07 * sin(a2 + dl),
+         length = 0.07, col = "steelblue", lwd = 1.8)                     # forward (clockwise)
+  arrows(0.93 * cos(a2 + dl), 0.93 * sin(a2 + dl), 0.93 * cos(a1 - dl), 0.93 * sin(a1 - dl),
+         length = 0.07, col = "firebrick", lwd = 1.8)                     # backward
+}
+symbols(cos(ang), sin(ang), circles = rep(rr, 10), inches = FALSE, add = TRUE, bg = "white", lwd = 2)
+text(cos(ang), sin(ang), 0:9, cex = 1.1)
+text(0, 0.2, "forward 0.45", col = "steelblue"); text(0, 0, "backward 0.45", col = "firebrick")
+text(0, -0.2, "stay 0.1", col = "gray30")
+## reflecting walk: ten states on a segment
+plot(NA, xlim = c(-0.7, 9.7), ylim = c(-2.2, 2.2), axes = FALSE, xlab = "", ylab = "",
+     main = "reflecting walk")
+for (i in 0:8) {
+  arrows(i + 0.2, 0.35, i + 0.8, 0.35, length = 0.07, col = "steelblue", lwd = 1.8)
+  arrows(i + 0.8, -0.35, i + 0.2, -0.35, length = 0.07, col = "firebrick", lwd = 1.8)
+}
+symbols(0:9, rep(0, 10), circles = rep(0.3, 10), inches = FALSE, add = TRUE, bg = "white", lwd = 2)
+text(0:9, 0, 0:9, cex = 1.1)
+text(4.5, 0.9, "forward 0.4", col = "steelblue"); text(4.5, -0.9, "backward 0.2", col = "firebrick")
+text(4.5, 1.6, "stay 0.4 at states 1, ..., 8", col = "gray30")
+text(c(0, 9), -1.6, c("stay 0.6\n(0.4 + 0.2)", "stay 0.8\n(0.4 + 0.4)"), col = "gray30")
+```
 
-Detailed balance is a **local** condition, checked pair by pair; that is what makes it the standard tool for constructing MCMC transitions.
+## Example 1: Transition Matrices {.smaller}
+
+**Cyclic walk** (indices mod 10):
+$$T_{\text{cyc}}(i\to i+1) = 0.45,\qquad T_{\text{cyc}}(i\to i-1) = 0.45,\qquad T_{\text{cyc}}(i\to i) = 0.1$$
+
+**Reflecting walk**:
+$$
+T_{\text{refl}} = \begin{pmatrix}
+0.6 & 0.4 &        &        &        \\
+0.2 & 0.4 & 0.4    &        &        \\
+    & \ddots & \ddots & \ddots &     \\
+    &        & 0.2    & 0.4    & 0.4 \\
+    &        &        & 0.2    & 0.8
+\end{pmatrix}
+$$
+(rows and columns $0,1,\ldots,9$; blank entries are $0$)
+
+In both chains a state can only move to itself or a neighbour, so $T(i\to j) = 0$ when $|i-j|\ge 2$ (except the wrap-around pair $\{0,9\}$ of the cyclic walk).
+
+**Consequence for detailed balance**: for pairs that are not neighbours both sides are $0$, and for $i = j$ the condition is trivial. Only the **neighbouring pairs** $(i, i+1)$ need to be checked.
+
+## Example 1: Equilibrium of the Cyclic Walk {.smaller}
+
+Detailed balance for each neighbouring pair $(i, i+1)$, $i = 0,\ldots,9$ (with $10\equiv0$):
+$$\pi(i)\,T(i\to i+1) = \pi(i+1)\,T(i+1\to i):
+\qquad
+0.45\,\pi(i) = 0.45\,\pi(i+1)
+\quad\Longleftrightarrow\quad
+\pi(i+1) = \pi(i)$$
+
+Going around the circle, $\pi(0) = \pi(1) = \cdots = \pi(9)$, and normalizing,
+$$\boxed{\ \pi_{\text{cyc}}(i) = \frac{1}{10},\qquad i = 0,1,\ldots,9\ }$$
+
+- The equations are consistent around the cycle (the ratio after a full turn is $1$), so this $\pi$ satisfies detailed balance and, by the theorem, is invariant
+- **Irreducible**: every state is reached from every other by moving around the circle
+- **Aperiodic**: the chain can stay put (probability $0.1$)
+
+Hence the cyclic walk converges to the **uniform** distribution from any start. Every state has the same local picture, so the equilibrium treats them all alike.
+
+## Example 1: Equilibrium of the Reflecting Walk {.smaller}
+
+Detailed balance for each neighbouring pair $(i, i+1)$, $i = 0,\ldots,8$:
+$$\pi(i)\,T(i\to i+1) = \pi(i+1)\,T(i+1\to i):
+\qquad
+0.4\,\pi(i) = 0.2\,\pi(i+1)
+\quad\Longleftrightarrow\quad
+\pi(i+1) = 2\,\pi(i)$$
+
+So $\pi(i) = 2^i\pi(0)$. Normalizing with $\sum_{i=0}^9 2^i = 2^{10}-1 = 1023$,
+$$\boxed{\ \pi_{\text{refl}}(i) = \frac{2^i}{1023},\qquad i = 0,1,\ldots,9\ }$$
+
+```{r}
+#| label: table-refl-pi
+knitr::kable(t(data.frame(state = 0:9, pi = sprintf("%.3f", 2^(0:9) / 1023))),
+             col.names = NULL, align = "r")
+```
+
+- The boundary self-loops ($0.6$ at $0$, $0.8$ at $9$) never enter the equations; irreducible and aperiodic as before, so this is the equilibrium
+- The ratio $0.4/0.2 = 2$ pushes mass right and the wall at $9$ keeps it there: half the time at $9$, a quarter at $8$, ...
+
+## Remark: Reversibility Is Sufficient, Not Necessary {.smaller}
+
+Put the reflecting walk's probabilities on the **cycle**: forward $0.4$, backward $0.2$, stay $0.4$, with wrap-around.
+
+- Detailed balance would require $\pi(i+1) = 2\pi(i)$ for **all** ten pairs around the circle, so $\pi(0) = 2^{10}\pi(0)$: impossible. **No** distribution satisfies detailed balance; the chain is not reversible
+- Yet the uniform distribution is still **invariant**. Each column of $T$ sums to $1$: state $j$ is entered from $j-1$ (prob. $0.4$), from $j+1$ (prob. $0.2$) and from itself (prob. $0.4$), so
+$$\sum_i \tfrac1{10}\,T(i\to j) = \tfrac1{10}(0.4 + 0.2 + 0.4) = \tfrac1{10}$$
+- At equilibrium the chain circulates clockwise forever: there is a net flow around the cycle, but the distribution does not change
+
+So the drift alone does not concentrate the mass; the **wall** at $9$ does. Different boundary rules give completely different equilibria.
+
+MCMC algorithms are almost always built to be reversible, because detailed balance is a pairwise condition that is easy to verify.
+
+## Example 1: Simulation {.smaller}
+
+```{r}
+#| label: sim-walks
+#| echo: true
+sim_cyclic_walk <- function(ini, iters, n = 10) {
+    forward  <- function(i) if (i == n - 1) 0 else i + 1          # 9 wraps to 0
+    backward <- function(i) if (i == 0) n - 1 else i - 1          # 0 wraps to 9
+    mc <- integer(iters + 1); mc[1] <- ini
+    for (i in 2:(iters + 1)) {
+        u <- runif(1)
+        mc[i] <- if (u < 0.45) forward(mc[i - 1]) else if (u > 0.55) backward(mc[i - 1]) else mc[i - 1]
+    }
+    mc
+}
+sim_reflecting_walk <- function(ini, iters, n = 10) {
+    forward  <- function(i) if (i == n - 1) n - 1 else i + 1      # 9 stays at 9
+    backward <- function(i) if (i == 0) 0 else i - 1              # 0 stays at 0
+    mc <- integer(iters + 1); mc[1] <- ini
+    for (i in 2:(iters + 1)) {
+        u <- runif(1)
+        mc[i] <- if (u < 0.4) forward(mc[i - 1]) else if (u > 0.8) backward(mc[i - 1]) else mc[i - 1]
+    }
+    mc
+}
+set.seed(1)
+cyc  <- sim_cyclic_walk(2, 20000)
+refl <- sim_reflecting_walk(2, 20000)
+pi_cyc <- rep(1 / 10, 10); pi_refl <- 2^(0:9) / 1023              # from detailed balance
+freq <- function(mc) as.vector(table(factor(mc[-(1:200)], levels = 0:9))) / length(mc[-(1:200)])
+tab <- rbind(cyc_freq = freq(cyc), pi_cyc, refl_freq = freq(refl), pi_refl); colnames(tab) <- 0:9
+round(tab, 3)
+```
+
+## Example 1: Long-Run Frequencies versus $\pi$
+
+One chain of each kind, started at state $2$, run for $20{,}000$ steps (first $200$ discarded). Bars: observed frequencies; points: $\pi$ from detailed balance.
+
+```{r}
+#| label: plot-two-walks
+#| fig-width: 12
+#| fig-height: 6
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+plot(cyc[1:300], type = "s", col = "steelblue", xlab = "step", ylab = "state", ylim = c(0, 9),
+     main = "cyclic walk: first 300 steps", yaxt = "n"); axis(2, at = 0:9, las = 1)
+plot(refl[1:300], type = "s", col = "firebrick", xlab = "step", ylab = "state", ylim = c(0, 9),
+     main = "reflecting walk: first 300 steps", yaxt = "n"); axis(2, at = 0:9, las = 1)
+bp <- barplot(freq(cyc), names.arg = 0:9, col = "lightsteelblue", ylim = c(0, 0.55),
+              xlab = "state", ylab = "frequency", main = "cyclic walk: uniform, 1/10")
+points(bp, pi_cyc, pch = 19, col = "steelblue4", cex = 1.4)
+bp <- barplot(freq(refl), names.arg = 0:9, col = "mistyrose", ylim = c(0, 0.55),
+              xlab = "state", ylab = "frequency", main = TeX(r"(reflecting walk: $2^i/1023$)"))
+points(bp, pi_refl, pch = 19, col = "firebrick4", cex = 1.4)
+legend("topleft", bty = "n", pch = c(15, 19), col = c("mistyrose", "firebrick4"), pt.cex = c(2, 1.4),
+       legend = c("observed frequency", "equilibrium from detailed balance"))
+```
+
+## Example 1: Convergence from Any Start
+
+$5{,}000$ independent chains, all started at state $0$. The distribution of $\theta_n$ across chains approaches $\pi$ (points) as $n$ grows, which is the definition of the equilibrium distribution.
+
+```{r}
+#| label: plot-walks-n-step
+#| fig-width: 12
+#| fig-height: 5.6
+set.seed(11)
+cyc_step  <- function(s, u) ifelse(u < 0.45, (s + 1) %% 10, ifelse(u > 0.55, (s - 1) %% 10, s))
+refl_step <- function(s, u) ifelse(u < 0.4, pmin(s + 1, 9), ifelse(u > 0.8, pmax(s - 1, 0), s))
+m <- 5000; ns <- c(1, 5, 20, 100)
+run_many <- function(step) {
+  s <- rep(0, m); out <- list(); n <- 0
+  for (nn in ns) { while (n < nn) { s <- step(s, runif(m)); n <- n + 1 }
+    out[[as.character(nn)]] <- as.vector(table(factor(s, levels = 0:9))) / m }
+  out }
+Pc <- run_many(cyc_step); Pr <- run_many(refl_step)
+par(mfrow = c(2, 4), mar = c(4, 4, 2, 0.5))
+for (k in seq_along(ns)) { bp <- barplot(Pc[[k]], names.arg = 0:9, col = "lightsteelblue", ylim = c(0, 0.6),
+    main = sprintf("cyclic, n = %d", ns[k]), xlab = "state"); points(bp, pi_cyc, pch = 19, col = "steelblue4") }
+for (k in seq_along(ns)) { bp <- barplot(Pr[[k]], names.arg = 0:9, col = "mistyrose", ylim = c(0, 0.6),
+    main = sprintf("reflecting, n = %d", ns[k]), xlab = "state"); points(bp, pi_refl, pch = 19, col = "firebrick4") }
+```
 
 # 2. Gibbs Sampling
 
-## Example: Posterior of a Normal Sample {.smaller}
+## The Gibbs Sampler {.smaller}
 
+$\theta = (\theta_1,\theta_2)$, and both full conditionals $\pi(\theta_1\mid\theta_2)$ and $\pi(\theta_2\mid\theta_1)$ can be sampled directly, although the joint $\pi(\theta_1,\theta_2)$ cannot. Repeat for $t = 1,2,\ldots$:
+$$\theta_1^{(t)}\sim\pi\big(\theta_1\mid\theta_2^{(t-1)}\big), \qquad \theta_2^{(t)}\sim\pi\big(\theta_2\mid\theta_1^{(t)}\big)$$
+
+Each step replaces one coordinate by a draw from its full conditional given the **current** values of the others.
+
+**Why it works.** Each half-step leaves $\pi$ invariant: if $(\theta_1,\theta_2)\sim\pi$, then $\theta_2\sim\pi(\theta_2)$ (its marginal), and replacing $\theta_1$ by a fresh draw from $\pi(\theta_1\mid\theta_2)$ gives a pair with joint density
+$$\pi(\theta_2)\,\pi(\theta_1\mid\theta_2) = \pi(\theta_1,\theta_2).$$
+Cycling through both coordinates keeps $\pi$ invariant; with everywhere-positive full conditionals the chain is irreducible and aperiodic.
+
+- No proposal, no acceptance step, no tuning
+- Requires full conditionals that can be sampled; conjugate structure gives them for free
+- Strong posterior correlation between coordinates slows mixing
+
+## Data Augmentation {.smaller}
+
+If the target $\pi(\theta)$ is awkward but is the marginal of a joint density over $\theta$ and extra unknowns $z$,
+$$\pi(\theta) = \int\pi(\theta,z)\,dz,$$
+then a Gibbs sampler on $(\theta,z)$ that alternates
+$$z\sim\pi(z\mid\theta), \qquad \theta\sim\pi(\theta\mid z)$$
+has $\pi(\theta,z)$ as its invariant distribution. Its $\theta$-coordinates are draws from $\pi(\theta)$; the $z$'s are simply discarded.
+
+This pays off when the conditionals given $z$ are standard even though $\pi(\theta)$ is not. The $z$ may be
+
+- real missing data: exact values hidden by censoring (Example 3)
+- a purely mathematical device: a latent variance per observation turns a Cauchy likelihood into a normal one (Example 4)
+
+# Example 2: Normal Data with Unknown Mean and Variance
+
+## Example 2: The Model {.smaller}
+
+:::: {.columns}
+::: {.column width="62%"}
 $$x_1,\ldots,x_n\mid\mu,\sigma^2 \overset{iid}{\sim} N(\mu,\sigma^2), \qquad
-\mu\sim N(\mu_0,\sigma_0^2), \qquad \sigma^2\sim\text{IG}\Big(a_0 = \tfrac\alpha2,\ \lambda_0 = \tfrac{\alpha w}{2}\Big)$$
+\mu\sim N(\mu_0,\sigma_0^2), \qquad \sigma^2\sim\text{IG}(a_0,\lambda_0)$$
 
-Inverse gamma: $\sigma^2\sim\text{IG}(a_0,\lambda_0)$ means $1/\sigma^2\sim\text{Gamma}(a_0,\lambda_0)$, with density $p(\sigma^2)\propto(\sigma^2)^{-(a_0+1)}\,e^{-\lambda_0/\sigma^2}$ ($a_0$ shape, $\lambda_0$ scale; the extra $1/(\sigma^2)^2$ relative to the gamma kernel is the Jacobian of $\tau = 1/\sigma^2$).
-
-Prior for $\mu$: $p(\mu)\propto e^{-(\mu-\mu_0)^2/(2\sigma_0^2)}$. Likelihood:
-$$L(\mu,\sigma^2;x) = \prod_{i=1}^n\frac{1}{\sqrt{2\pi}\sigma}e^{-(x_i-\mu)^2/(2\sigma^2)} \propto (\sigma^2)^{-n/2}\exp\Big\{-\sum_{i=1}^n\frac{(x_i-\mu)^2}{2\sigma^2}\Big\}$$
+Inverse gamma: $1/\sigma^2\sim\text{Gamma}(a_0,\lambda_0)$, with density $p(\sigma^2)\propto(\sigma^2)^{-(a_0+1)}\,e^{-\lambda_0/\sigma^2}$.
 
 **Joint posterior**
-$$P(\mu,\sigma^2\mid x)\propto e^{-\frac{(\mu-\mu_0)^2}{2\sigma_0^2}}\cdot(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\sigma^2)^{-n/2}e^{-\sum_i(x_i-\mu)^2/(2\sigma^2)}$$
-
-Two-dimensional, no closed form for the normalizing constant, but each **conditional** is standard.
-
-## Full Conditional of $\mu$ {.smaller}
-
-Keep only factors involving $\mu$ and complete the square, using $\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2$:
 $$
 \begin{aligned}
-P(\mu\mid\sigma^2,x) &\propto \exp\Big\{-\frac{\mu^2-2\mu\mu_0}{2\sigma_0^2}\Big\}\exp\Big\{-\frac{n\mu^2-2n\mu\bar x}{2\sigma^2}\Big\} \\
-&= \exp\Big\{-\frac12\Big[\Big(\frac1{\sigma_0^2}+\frac n{\sigma^2}\Big)\mu^2 - 2\Big(\frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}\Big)\mu\Big]\Big\}
+P(\mu,\sigma^2\mid x)\ \propto\ & e^{-(\mu-\mu_0)^2/(2\sigma_0^2)}\cdot(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2} \\
+&\times(\sigma^2)^{-n/2}\exp\Big\{-\sum_{i=1}^n\frac{(x_i-\mu)^2}{2\sigma^2}\Big\}
 \end{aligned}
 $$
 
-Matching with $N(m,v)$, whose kernel is $\exp\{-\tfrac12(\mu^2/v - 2m\mu/v)\}$:
+Two-dimensional, no closed-form normalizing constant, but each **conditional** is standard.
+
+**Graph**: squares are fixed hyperparameters, open circles unknowns, shaded circles data; the plate repeats $x_i$. A node's full conditional depends only on its parents, children and children's other parents.
+:::
+::: {.column width="38%"}
+```{r}
+#| label: plot-dag-normal
+#| fig-width: 4.5
+#| fig-height: 3.8
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_norm <- data.frame(
+    id    = c("m0", "s0", "a0", "l0", "mu", "s2", "x"),
+    label = c("mu[0]", "sigma[0]^2", "a[0]", "lambda[0]", "mu", "sigma^2", "x[i]"),
+    x = c(-1.6, -0.6, 0.6, 1.6, -1.1, 1.1, 0), y = c(2, 2, 2, 2, 1, 1, -0.2),
+    type = c(rep("fixed", 4), "latent", "latent", "observed"))
+edges_norm <- data.frame(from = c("m0", "s0", "a0", "l0", "mu", "s2"),
+                         to   = c("mu", "mu", "s2", "s2", "x", "x"))
+draw_dag(nodes_norm, edges_norm,
+         plates = list(list(x = c(-0.8, 0.8), y = c(-0.9, 0.5), label = "i = 1, ..., n")))
+```
+:::
+::::
+
+## Example 2: Full Conditional of $\mu$ {.smaller}
+
+Keep only factors involving $\mu$ and expand $\sum_i(x_i-\mu)^2 = n\mu^2 - 2n\mu\bar x + \sum_i x_i^2$:
+$$
+P(\mu\mid\sigma^2,x) \propto \exp\Big\{-\frac12\Big[\Big(\frac1{\sigma_0^2}+\frac n{\sigma^2}\Big)\mu^2 - 2\Big(\frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}\Big)\mu\Big]\Big\}
+$$
+
+Matching with the $N(m,v)$ kernel $\exp\{-\tfrac12(\mu^2/v - 2m\mu/v)\}$:
 $$\mu\mid\sigma^2,x\ \sim\ N(m,v), \qquad
 \frac1v = \frac1{\sigma_0^2}+\frac n{\sigma^2}, \qquad
 \frac mv = \frac{\mu_0}{\sigma_0^2}+\frac{n\bar x}{\sigma^2}$$
 
-- $m = \dfrac{\mu_0/\sigma_0^2 + n\bar x/\sigma^2}{1/\sigma_0^2 + n/\sigma^2}$: precision-weighted average of prior mean and sample mean; $n/\sigma^2$ is the **weight of the data**
-- As $n\to\infty$: $m\to\bar x$ and $v\approx\sigma^2/n$
+- $m$ is a precision-weighted average of the prior mean and the sample mean; $n/\sigma^2$ is the **weight of the data**
+- As $n\to\infty$: $m\to\bar x$ and $v\approx\sigma^2/n$; the prior is overwhelmed
 
-## Full Conditional of $\sigma^2$ {.smaller}
+## Example 2: Full Conditional of $\sigma^2$ {.smaller}
 
 Keep only factors involving $\sigma^2$:
 $$
@@ -236,135 +466,405 @@ P(\sigma^2\mid\mu,x) &\propto(\sigma^2)^{-(a_0+1)}e^{-\lambda_0/\sigma^2}\cdot(\
 \end{aligned}
 $$
 
-which is again an inverse gamma kernel:
-$$\sigma^2\mid\mu,x\ \sim\ \text{IG}\Big(\frac n2+a_0,\ \frac12\sum_{i=1}^n(x_i-\mu)^2+\lambda_0\Big)
-= \text{IG}\Big(\frac{n+\alpha}{2},\ \frac{\alpha w+\sum_i(x_i-\mu)^2}{2}\Big)$$
+again an inverse gamma kernel:
+$$\sigma^2\mid\mu,x\ \sim\ \text{IG}\Big(\frac n2+a_0,\ \frac12\sum_{i=1}^n(x_i-\mu)^2+\lambda_0\Big)$$
 
-- Shape: prior "sample size" $\alpha$ plus $n$; scale: prior "sum of squares" $\alpha w$ plus the data sum of squares
+- The prior contributes $a_0$ to the shape and $\lambda_0$ to the sum of squares; the data add $n/2$ and $\frac12\sum_i(x_i-\mu)^2$
 - To draw: $\tau\sim\text{Gamma}(\text{shape},\text{rate})$ with the same two numbers, then $\sigma^2 = 1/\tau$
 
-## The Gibbs Sampler
+## Example 2: Implementation
 
-Starting from $(\mu^{(0)},(\sigma^2)^{(0)})$, repeat for $t = 1,2,\ldots$:
-
-1. Draw $\mu^{(t)}\sim P\big(\mu\mid(\sigma^2)^{(t-1)},x\big)$
-2. Draw $(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid\mu^{(t)},x\big)$
-
-Each step replaces one coordinate by a draw from its full conditional given the **current** values of the others.
-
-**Why it works.** A step that draws $\theta_j\sim\pi(\theta_j\mid\theta_{-j})$ leaves $\pi$ invariant: if $(\theta_j,\theta_{-j})\sim\pi$, then $\theta_{-j}\sim\pi(\theta_{-j})$, and replacing $\theta_j$ by a draw from $\pi(\theta_j\mid\theta_{-j})$ gives a pair with joint density $\pi(\theta_{-j})\pi(\theta_j\mid\theta_{-j}) = \pi$. Cycling through all coordinates keeps $\pi$ invariant; with positive full conditionals the chain is irreducible and aperiodic.
-
-- No tuning parameters, no rejections
-- Requires full conditionals that can be sampled; conjugate structure gives them for free
-- Strong posterior correlation between coordinates slows mixing
-
-## The Gibbs Sampler (Continued)
+In the code, `sigma0` is the prior **variance** $\sigma_0^2$, and $\text{IG}(a_0,\lambda_0)$ is written as $a_0 = \alpha/2$, $\lambda_0 = \alpha w/2$.
 
 ```{r}
-#| label: the-gibbs-sampler-continued
+#| label: gibbs-normal
 #| echo: true
-x <- rnorm(20, 5, 2); n <- length(x); xbar <- mean(x)
-mu0 <- 0; s02 <- 100; a0 <- 1; lam0 <- 1                        # prior: N(0, 10^2), IG(1, 1)
-gibbs <- function(iters, mu = 0, s2 = 1) {
-  out <- matrix(NA, iters, 2, dimnames = list(NULL, c("mu", "s2")))
-  for (t in 1:iters) {
-    v  <- 1 / (1 / s02 + n / s2); m <- v * (mu0 / s02 + n * xbar / s2)
-    mu <- rnorm(1, m, sqrt(v))
-    s2 <- 1 / rgamma(1, shape = n / 2 + a0, rate = sum((x - mu)^2) / 2 + lam0)
-    out[t, ] <- c(mu, s2) }
-  out }
-draws <- gibbs(5000, mu = 20, s2 = 50)                          # deliberately poor start
-round(rbind(posterior_mean = colMeans(draws[-(1:200), ]), posterior_sd = apply(draws[-(1:200), ], 2, sd)), 3)
+gibbs_norm <- function(iters, x, mu0, sigma0, alpha, w, mu_init = 0, s2_init = 1) {
+    n <- length(x); sumx <- sum(x)
+    out <- matrix(NA_real_, iters, 2, dimnames = list(NULL, c("mu", "s2")))
+    mu <- mu_init; s2 <- s2_init
+    for (t in seq_len(iters)) {
+        v  <- 1 / (n / s2 + 1 / sigma0)
+        mu <- rnorm(1, (sumx / s2 + mu0 / sigma0) * v, sqrt(v))
+        s2 <- 1 / rgamma(1, (alpha + n) / 2, (alpha * w + sum((x - mu)^2)) / 2)
+        out[t, ] <- c(mu, s2)
+    }
+    out
+}
+set.seed(2)
+x <- rnorm(50, 10, 2)                                           # 50 observations from N(10, 2^2)
+draws_gibbs <- gibbs_norm(10000, x, mu0 = 0, sigma0 = 1e10, alpha = 1e-5, w = 1e-5)   # vague prior
+burn <- 1:200
+mu_g <- draws_gibbs[-burn, "mu"]; sd_g <- sqrt(draws_gibbs[-burn, "s2"])
 ```
 
-## The Gibbs Sampler (Continued)
-
-Left: the first 30 Gibbs moves on the joint posterior (contours). Each move is horizontal or vertical, since one coordinate changes at a time. Right: trace plots showing the burn-in from the poor start.
+## Example 2: Results
 
 ```{r}
-#| label: the-gibbs-sampler-continued-2
-#| fig-width: 10
-#| fig-height: 4.4
-layout(matrix(c(1, 2, 1, 3), 2)); par(mar = c(4, 4, 2, 1))
-lpost <- function(mu, s2) sum(dnorm(x, mu, sqrt(s2), log = TRUE)) + dnorm(mu, mu0, sqrt(s02), log = TRUE) + (-(a0 + 1) * log(s2) - lam0 / s2)
-mg <- seq(2.5, 7.5, length.out = 80); sg <- seq(1, 12, length.out = 80)
+#| label: plot-gibbs-demo
+#| fig-width: 12
+#| fig-height: 5
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+plot(mu_g, type = "l", col = "steelblue", xlab = "iteration", ylab = expression(mu), main = "trace of mu")
+plot(density(mu_g), col = "steelblue", lwd = 2, main = "posterior density of mu", xlab = expression(mu))
+plot(sd_g, type = "l", col = "firebrick", xlab = "iteration", ylab = expression(sigma), main = "trace of sigma")
+plot(density(sd_g), col = "firebrick", lwd = 2, main = "posterior density of sigma", xlab = expression(sigma))
+```
+
+```{r}
+#| label: table-gibbs-summary
+gibbs_summary <- data.frame(
+    parameter = c("mu", "sigma"),
+    mean = c(mean(mu_g), mean(sd_g)), sd = c(sd(mu_g), sd(sd_g)),
+    q025 = c(quantile(mu_g, 0.025), quantile(sd_g, 0.025)),
+    q975 = c(quantile(mu_g, 0.975), quantile(sd_g, 0.975)))
+knitr::kable(gibbs_summary, digits = 3, col.names = c("parameter", "mean", "sd", "2.5%", "97.5%"),
+             align = c("l", "r", "r", "r", "r"))
+```
+
+## Example 2: The Gibbs Path
+
+Left: the first 30 Gibbs moves on the joint posterior (contours), from a poor start. Each move is horizontal or vertical, since one coordinate changes at a time. Right: trace plots of the first 100 iterations.
+
+```{r}
+#| label: plot-gibbs-path
+#| fig-width: 12
+#| fig-height: 5
+set.seed(21)
+d2 <- gibbs_norm(30, x, mu0 = 0, sigma0 = 1e10, alpha = 1e-5, w = 1e-5, mu_init = 8, s2_init = 8)
+lpost <- function(mu, s2) sum(dnorm(x, mu, sqrt(s2), log = TRUE)) - log(s2)
+mg <- seq(7.5, 11.5, length.out = 100); sg <- seq(1.5, 9, length.out = 100)
 Z <- outer(mg, sg, Vectorize(lpost)); Z <- exp(Z - max(Z))
-contour(mg, sg, Z, nlevels = 8, drawlabels = FALSE, xlab = TeX(r"($\mu$)"), ylab = TeX(r"($\sigma^2$)"), main = "Gibbs path (first 30 moves after burn-in)")
-d2 <- gibbs(30, mu = 3, s2 = 10)                                   # start (3, 10)
-pp <- rbind(c(3, 10)); for (t in 1:30) pp <- rbind(pp, c(d2[t, 1], pp[nrow(pp), 2]), d2[t, ])   # horizontal then vertical
+layout(matrix(c(1, 1, 2, 3), 2)); par(mar = c(4, 4, 2, 1))
+contour(mg, sg, Z, nlevels = 8, drawlabels = FALSE, xlab = TeX(r"($\mu$)"), ylab = TeX(r"($\sigma^2$)"),
+        main = "Gibbs path: first 30 moves from (8, 8)")
+pp <- rbind(c(8, 8)); for (t in 1:30) pp <- rbind(pp, c(d2[t, 1], pp[nrow(pp), 2]), d2[t, ])   # horizontal then vertical
 lines(pp, col = "firebrick", lwd = 1.5); points(d2, pch = 19, col = "firebrick", cex = 0.7)
-plot(draws[1:300, "mu"], type = "l", xlab = "t", ylab = TeX(r"($\mu^{(t)}$)"), main = "trace of mu (start 20)")
-plot(draws[1:300, "s2"], type = "l", xlab = "t", ylab = TeX(r"($(\sigma^2)^{(t)}$)"), main = "trace of sigma^2 (start 50)")
+points(8, 8, pch = 17, cex = 1.5)
+plot(draws_gibbs[1:100, "mu"], type = "l", xlab = "t", ylab = TeX(r"($\mu^{(t)}$)"), main = "trace of mu")
+plot(draws_gibbs[1:100, "s2"], type = "l", xlab = "t", ylab = TeX(r"($(\sigma^2)^{(t)}$)"), main = "trace of sigma^2")
 ```
 
-## Data Augmentation: Rounded Observations
+# Example 3: Interval-Censored Normal Data
 
-Suppose we observe only $y_i = \lfloor x_i\rfloor$ (e.g. ages in whole years), with $x_i\sim N(\mu,\sigma^2)$ latent. Treat $x_1,\ldots,x_n$ as extra unknowns and Gibbs-sample all three blocks. Repeat:
+## Example 3: The Problem {.smaller}
 
-1. $x_i^{(t)}\sim P\big(x_i\mid\mu^{(t-1)},(\sigma^2)^{(t-1)},y_i\big)$, for $i = 1,\ldots,n$
-2. $\mu^{(t)}\sim P\big(\mu\mid x^{(t)},(\sigma^2)^{(t-1)}\big)$
-3. $(\sigma^2)^{(t)}\sim P\big(\sigma^2\mid x^{(t)},\mu^{(t)}\big)$
+$x_1,\ldots,x_n\mid\mu,\sigma^2\overset{iid}{\sim}N(\mu,\sigma^2)$ with the priors of Example 2, but not every $x_i$ is seen exactly. For each unit we observe $(I_i,\delta_i)$:
 
-Steps 2–3 are the conditionals already derived, applied to the imputed $x$. For step 1,
-$$P(x_i\mid\mu,\sigma^2,y_i) = \frac{P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)}{\int P(x_i\mid\mu,\sigma^2)\,I\big(y_i = \lfloor x_i\rfloor\big)\,dx_i}
-= \frac{P(x_i\mid\mu,\sigma^2)}{\int_{y_i}^{y_i+1}P(x_i\mid\mu,\sigma^2)\,dx_i}, \qquad x_i\in[y_i,y_i+1)$$
+- $\delta_i = 1$: $x_i$ is **not censored**, observed exactly, $I_i = \{x_i\}$
+- $\delta_i = 0$: $x_i$ is **censored**, we only learn an interval $I_i = [a_i,b_i)$ containing it; bounded (a value known to the decade) or open-ended, $b_i = \infty$ (right censoring)
 
-a normal truncated to $[y_i,y_i+1)$, drawn by inversion: $x_i = \mu + \sigma\,\Phi^{-1}\big(U\big)$ with $U\sim\text{Unif}\big(\Phi(\tfrac{y_i-\mu}\sigma),\Phi(\tfrac{y_i+1-\mu}\sigma)\big)$.
+The $\delta_i$ are independent of the $x_i$ and of $(\mu,\sigma^2)$, so the likelihood is
+$$
+L(\mu,\sigma^2) = \prod_{i:\,\delta_i = 1}\frac1\sigma\,\varphi\Big(\frac{x_i-\mu}\sigma\Big)
+\times\prod_{i:\,\delta_i = 0}\Big[\Phi\Big(\frac{b_i-\mu}\sigma\Big)-\Phi\Big(\frac{a_i-\mu}\sigma\Big)\Big]
+$$
 
-## Data Augmentation (Continued)
+The products of $\Phi$ differences make the posterior non-standard: neither conditional of $\mu$ nor of $\sigma^2$ is normal or inverse gamma.
 
-The conditional of a latent $x_i$ is the $N(\mu,\sigma^2)$ density restricted to the unit interval $[y_i,y_i+1)$ and renormalized.
+## Example 3: Data Augmentation {.smaller}
+
+:::: {.columns}
+::: {.column width="62%"}
+Treat the censored $x_i$ as extra unknowns.
+
+- Given all $x_i$, the data are complete: the conditionals of $\mu$ and $\sigma^2$ are exactly those of Example 2
+- Given $(\mu,\sigma^2)$, a censored $x_i$ has density $\propto N(\mu,\sigma^2)\times I(x_i\in I_i)$:
+$$x_i\mid\mu,\sigma^2,I_i,\delta_i = 0\ \sim\ N(\mu,\sigma^2)\text{ truncated to }[a_i,b_i)$$
+
+One Gibbs iteration:
+$$
+\begin{aligned}
+x_i^{(t)} &\sim P\big(x_i\mid\mu^{(t-1)},\sigma^{2(t-1)},I_i,\delta_i\big)\ \ (\text{censored }i)\\
+\mu^{(t)} &\sim P\big(\mu\mid x^{(t)},\sigma^{2(t-1)}\big)\\
+\sigma^{2(t)} &\sim P\big(\sigma^2\mid x^{(t)},\mu^{(t)}\big)
+\end{aligned}
+$$
+
+Integrating $x_i$ out gives back the likelihood: $\int_{a_i}^{b_i}\sigma^{-1}\varphi((x-\mu)/\sigma)\,dx$ is the $\Phi$ difference.
+:::
+::: {.column width="38%"}
+```{r}
+#| label: plot-dag-censored
+#| fig-width: 4.5
+#| fig-height: 4.6
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_cens <- rbind(nodes_norm[1:6, ], data.frame(
+    id = c("x", "d", "I"), label = c("x[i]", "delta[i]", "I[i]"),
+    x = c(0, 1.3, 0), y = c(-0.2, -1.4, -1.4),
+    type = c("latent", "observed_square", "observed_square")))
+edges_cens <- rbind(edges_norm, data.frame(from = "x", to = "I"))
+draw_dag(nodes_cens, edges_cens,
+         plates = list(list(x = c(-0.8, 2.0), y = c(-2.1, 0.5), label = "i = 1, ..., n")))
+```
+$x_i$ is now unknown; the observed $I_i$ and $\delta_i$ are shaded squares. $\delta_i$ has no arrows: it carries no information about $(\mu,\sigma^2)$.
+:::
+::::
+
+## Example 3: The Sampler
+
+Each interval is stored as its endpoints `a`, `b`, with `a = b = x` for an uncensored unit; `truncnorm::rtruncnorm` also handles $b_i = \infty$.
 
 ```{r}
-#| label: data-augmentation-continued
-#| fig-width: 10
-#| fig-height: 4
-par(mfrow = c(1, 2), mar = c(4, 4, 2, 1)); mu <- 50; s <- 10; yi <- 41
-curve(dnorm(x, mu, s), 15, 85, lwd = 3, xlab = "x", ylab = "", main = TeX(r"($N(\mu, \sigma^2)$ with observed $y_i = 41$)"))
-xs <- seq(yi, yi + 1, length.out = 50)
-polygon(c(xs, rev(xs)), c(dnorm(xs, mu, s), rep(0, 50)), col = "firebrick", border = "firebrick")
-abline(v = c(yi, yi + 1), lty = 3)
-curve(dnorm(x, mu, s) / (pnorm(yi + 1, mu, s) - pnorm(yi, mu, s)), yi, yi + 1, lwd = 3, col = "firebrick",
-      xlab = "x", ylab = "density", main = TeX(r"($P(x_i | \mu, \sigma^2, y_i)$,  $y_i \leq x_i < y_i + 1$)"), ylim = c(0, 1.2))
+#| label: gibbs-censored
+#| echo: true
+gibbs_norm_censored <- function(iters, a, b, delta, mu0, sigma0, alpha, w) {
+    n <- length(a); cens <- delta == 0
+    x <- ifelse(cens, pmin(a + 1, b), a)     # start: exact values, or a point in the interval
+    mu <- mean(x); s2 <- var(x)
+    out <- matrix(NA_real_, iters, 2)
+    for (t in seq_len(iters)) {
+        ### censored units: x_i | mu, sigma^2 ~ N(mu, sigma^2) truncated to [a_i, b_i)
+        x[cens] <- rtruncnorm(sum(cens), a = a[cens], b = b[cens], mean = mu, sd = sqrt(s2))
+        ### complete-data conditionals of Example 2
+        v  <- 1 / (n / s2 + 1 / sigma0)
+        mu <- rnorm(1, (sum(x) / s2 + mu0 / sigma0) * v, sqrt(v))
+        s2 <- 1 / rgamma(1, (alpha + n) / 2, (alpha * w + sum((x - mu)^2)) / 2)
+        out[t, ] <- c(mu, s2)
+    }
+    list(mu = out[, 1], sd = sqrt(out[, 2]))
+}
 ```
 
-The same pattern handles censored, binned, or interval-valued data: augment with the latent exact values, and every conditional becomes standard.
+## Example 3: Results {.smaller}
+
+$n = 200$ values from $N(100,40^2)$. Each is observed exactly with probability $0.3$; otherwise values above $150$ are only known to be at least $150$ ($I_i = [150,\infty)$), and the rest only to the decade, $I_i = [10k,10k+10)$.
+
+```{r}
+#| label: table-gibbs-censored
+set.seed(3)
+n_c <- 200
+x_true <- rnorm(n_c, 100, 40)
+delta  <- rbinom(n_c, 1, 0.3)
+a_obs  <- ifelse(delta == 1, x_true, ifelse(x_true >= 150, 150, floor(x_true / 10) * 10))
+b_obs  <- ifelse(delta == 1, x_true, ifelse(x_true >= 150, Inf, a_obs + 10))
+fit_cens <- gibbs_norm_censored(5000, a_obs, b_obs, delta, mu0 = 0, sigma0 = 1e10, alpha = 1e-5, w = 1e-5)
+burn2 <- 1:200
+knitr::kable(data.frame(
+    quantity = c("mu", "sigma"),
+    truth = c("100", "40"),
+    naive = c(sprintf("%.2f", mean(a_obs)), sprintf("%.2f", sd(a_obs))),
+    posterior = c(sprintf("%.2f (%.2f, %.2f)", mean(fit_cens$mu[-burn2]),
+                              quantile(fit_cens$mu[-burn2], 0.025), quantile(fit_cens$mu[-burn2], 0.975)),
+                  sprintf("%.2f (%.2f, %.2f)", mean(fit_cens$sd[-burn2]),
+                          quantile(fit_cens$sd[-burn2], 0.025), quantile(fit_cens$sd[-burn2], 0.975)))
+), col.names = c("", "truth", "naive (lower ends)", "posterior mean (95% interval)"), align = c("l", "r", "r", "r"))
+```
+
+The data have `r sum(delta == 1)` exact values, `r sum(delta == 0 & is.finite(b_obs))` decade intervals and `r sum(is.infinite(b_obs))` right-censored values. Treating each censored value as the lower end of its interval biases both estimates downward. The augmented Gibbs sampler recovers $\mu$ and $\sigma$, because it imputes each censored $x_i$ from its conditional and so propagates the uncertainty about where in $I_i$ it lies.
+
+# Example 4: Cauchy Data with Unknown Location and Scale
+
+## Example 4: The Problem {.smaller}
+
+Observations $y_1,\ldots,y_n$ modelled as $\text{Cauchy}(\mu,\sigma)$, a heavy-tailed model that is robust to outliers:
+$$p(y_i\mid\mu,\sigma) = \frac{1}{\pi\sigma(1+r_i^2)}, \qquad r_i = \frac{y_i-\mu}{\sigma}$$
+
+Priors $\mu\sim N(\mu_0,\tau^2)$ and $\sigma^2\sim\text{IG}(a_0,b_0)$. The posterior
+$$p(\mu,\sigma^2\mid y)\propto e^{-(\mu-\mu_0)^2/(2\tau^2)}\,(\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}\prod_i\sigma^{-1}(1+r_i^2)^{-1}$$
+has no standard conditionals, because of the factors $(1+r_i^2)^{-1}$. Data augmentation fixes this.
+
+## Example 4: The Cauchy as a Scale Mixture of Normals {.smaller}
+
+**Step 1.** Introduce a latent variance $v_i$ per observation:
+$$y_i\mid\mu,\sigma^2,v_i\sim N(\mu,\sigma^2v_i), \qquad v_i\sim\text{IG}\big(\tfrac12,\tfrac12\big), \qquad p(v_i) = \tfrac{1}{\sqrt{2\pi}}\,v_i^{-3/2}e^{-1/(2v_i)}$$
+
+Integrating out $v_i$, using $\int_0^\infty v^{-2}e^{-c/v}\,dv = 1/c$:
+$$\int_0^\infty\frac{e^{-r_i^2/(2v_i)}}{\sqrt{2\pi\sigma^2v_i}}\cdot\frac{v_i^{-3/2}e^{-1/(2v_i)}}{\sqrt{2\pi}}\,dv_i
+= \frac{1}{2\pi\sigma}\int_0^\infty v_i^{-2}e^{-(1+r_i^2)/(2v_i)}\,dv_i = \frac{1}{\pi\sigma(1+r_i^2)}$$
+
+So a Gibbs sampler on $(v,\mu,\sigma^2)$ samples the Cauchy posterior once the $v_i$ are ignored.
+
+## Example 4: The Augmented Posterior {.smaller}
+
+:::: {.columns}
+::: {.column width="62%"}
+**Step 2.** Multiplying priors, latent densities and the normal likelihood,
+$$
+\begin{aligned}
+p(\mu,\sigma^2,v\mid y)\propto{}& e^{-\frac{(\mu-\mu_0)^2}{2\tau^2}}(\sigma^2)^{-(a_0+1)}e^{-b_0/\sigma^2}\\
+&\times\prod_{i=1}^n\Big[(\sigma^2v_i)^{-1/2}e^{-\frac{(y_i-\mu)^2}{2\sigma^2v_i}}\cdot v_i^{-3/2}e^{-\frac{1}{2v_i}}\Big]
+\end{aligned}
+$$
+
+**Step 3: each $v_i$.** Only the $i$-th term of the product contains $v_i$:
+$$p(v_i\mid\mu,\sigma^2,y)\propto v_i^{-(1+1)}\exp\Big\{-\frac{(1+r_i^2)/2}{v_i}\Big\}$$
+$$v_i\mid\mu,\sigma^2,y\sim\text{IG}\Big(1,\ \frac{1+r_i^2}{2}\Big), \quad\text{independently over } i$$
+
+An outlier (large $|r_i|$) gets a large latent variance.
+:::
+::: {.column width="38%"}
+```{r}
+#| label: plot-dag-cauchy
+#| fig-width: 4.8
+#| fig-height: 4
+par(mar = c(0.5, 0.5, 0.5, 0.5))
+nodes_cauchy <- data.frame(
+    id    = c("m0", "t2", "a0", "b0", "mu", "s2", "half", "v", "y"),
+    label = c("mu[0]", "tau^2", "a[0]", "b[0]", "mu", "sigma^2", "frac(1, 2)", "v[i]", "y[i]"),
+    x = c(-1.6, -0.6, 0.6, 1.6, -1.1, 1.1, -2.4, -1.3, 0),
+    y = c(2, 2, 2, 2, 1, 1, -0.2, -0.2, -1.2),
+    type = c(rep("fixed", 4), "latent", "latent", "fixed", "latent", "observed"))
+edges_cauchy <- data.frame(from = c("m0", "t2", "a0", "b0", "half", "mu", "s2", "v"),
+                           to   = c("mu", "mu", "s2", "s2", "v", "y", "y", "y"))
+draw_dag(nodes_cauchy, edges_cauchy,
+         plates = list(list(x = c(-1.9, 0.6), y = c(-1.9, 0.4), label = "i = 1, ..., n")))
+```
+Each $y_i$ has its own latent variance $v_i$; its only child is $y_i$, so its conditional involves only $y_i$, $\mu$, $\sigma^2$.
+:::
+::::
+
+## Example 4: Conditionals of $\mu$ and $\sigma^2$ {.smaller}
+
+**Step 4: $\mu$.** With observation precisions $w_i = 1/(\sigma^2v_i)$,
+$$p(\mu\mid\sigma^2,v,y)\propto\exp\Big\{-\frac12\Big[\Big(\frac1{\tau^2}+\sum_iw_i\Big)\mu^2-2\Big(\frac{\mu_0}{\tau^2}+\sum_iw_iy_i\Big)\mu\Big]\Big\}$$
+$$\mu\mid\sigma^2,v,y\sim N(m,s^2), \qquad \frac1{s^2} = \frac1{\tau^2}+\sum_{i=1}^nw_i, \qquad m = s^2\Big(\frac{\mu_0}{\tau^2}+\sum_{i=1}^nw_iy_i\Big)$$
+
+A precision-weighted mean as in Example 2, but each observation has its own weight $w_i$: an outlier, with large $v_i$, has a small weight and barely moves $\mu$. This is where the robustness comes from.
+
+**Step 5: $\sigma^2$.**
+$$p(\sigma^2\mid\mu,v,y)\propto(\sigma^2)^{-(a_0+\frac n2+1)}\exp\Big\{-\frac{b_0+\sum_i(y_i-\mu)^2/(2v_i)}{\sigma^2}\Big\}$$
+$$\sigma^2\mid\mu,v,y\sim\text{IG}\Big(a_0+\frac n2,\ b_0+\sum_{i=1}^n\frac{(y_i-\mu)^2}{2v_i}\Big)$$
+
+## Example 4: The Sampler {.smaller}
+
+$\mu_0 = 0$, $\tau = 10$, $a_0 = b_0 = 1$, and 30 observations from $\text{Cauchy}(2,1)$, including several outliers. The posterior of $(\mu,\sigma)$ is two-dimensional, so it can also be computed exactly on a grid as an independent check.
+
+```{r}
+#| label: gibbs-cauchy
+#| echo: true
+gibbs_cauchy <- function(iters, y, mu0 = 0, tau = 10, a0 = 1, b0 = 1, mu = 0, s2 = 1) {
+    n <- length(y)
+    out <- matrix(NA_real_, iters, 2, dimnames = list(NULL, c("mu", "sigma")))
+    for (t in seq_len(iters)) {
+        v <- 1 / rgamma(n, shape = 1, rate = (1 + (y - mu)^2 / s2) / 2)         # Step 3
+        w <- 1 / (s2 * v); prec <- 1 / tau^2 + sum(w)                           # Step 4
+        mu <- rnorm(1, (mu0 / tau^2 + sum(w * y)) / prec, sqrt(1 / prec))
+        s2 <- 1 / rgamma(1, shape = a0 + n / 2, rate = b0 + sum((y - mu)^2 / (2 * v)))   # Step 5
+        out[t, ] <- c(mu, sqrt(s2))
+    }
+    out
+}
+### exact log posterior of (mu, sigma), up to a constant; p(sigma) = p(sigma^2) * 2 sigma
+log_post_cauchy <- function(mu, sigma, y, mu0 = 0, tau = 10, a0 = 1, b0 = 1)
+    sum(dcauchy(y, mu, sigma, log = TRUE)) + dnorm(mu, mu0, tau, log = TRUE) -
+        (a0 + 1) * log(sigma^2) - b0 / sigma^2 + log(2 * sigma)
+set.seed(7)
+y_cauchy <- rcauchy(30, location = 2, scale = 1)
+draws_cauchy <- gibbs_cauchy(20000, y_cauchy, mu = -5, s2 = 25)   # deliberately poor start
+keep_c <- -(1:1000)
+```
+
+```{r}
+#| label: cauchy-grid
+mu_grid <- seq(0, 4, length.out = 300); sg_grid <- seq(0.2, 3.5, length.out = 300)
+lp <- outer(mu_grid, sg_grid, Vectorize(function(m, s) log_post_cauchy(m, s, y_cauchy)))
+post <- exp(lp - max(lp)); post <- post / sum(post)
+```
+
+## Example 4: Results {.smaller}
+
+Left: the first 15 iterations from a poor start (triangle), as the staircase of $\mu$- and $\sigma$-updates, over the exact posterior contours. Middle, right: traces of the first 500 iterations.
+
+```{r}
+#| label: plot-gibbs-cauchy
+#| fig-width: 12
+#| fig-height: 4.6
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+contour(mu_grid, sg_grid, post, nlevels = 8, drawlabels = FALSE, col = "gray55",
+        xlim = c(-5.5, 4), ylim = c(0, 5.5), xlab = expression(mu), ylab = expression(sigma),
+        main = "first 15 iterations")
+path <- rbind(c(-5, 5), draws_cauchy[1:15, ])
+for (t in 1:15) {
+    segments(path[t, 1], path[t, 2], path[t + 1, 1], path[t, 2], col = "darkorange", lwd = 1.5)
+    segments(path[t + 1, 1], path[t, 2], path[t + 1, 1], path[t + 1, 2], col = "steelblue", lwd = 1.5)
+}
+points(-5, 5, pch = 17, cex = 1.4)
+plot(draws_cauchy[1:500, "mu"], type = "l", col = "darkorange", xlab = "iteration", ylab = expression(mu), main = "trace of mu")
+plot(draws_cauchy[1:500, "sigma"], type = "l", col = "steelblue", xlab = "iteration", ylab = expression(sigma), main = "trace of sigma")
+```
+
+## Example 4: Check against the Exact Posterior {.smaller}
+
+```{r}
+#| label: table-gibbs-cauchy
+grid_mean <- function(g, margin) sum(apply(post, margin, sum) * g)
+grid_sd   <- function(g, margin) sqrt(sum(apply(post, margin, sum) * g^2) - grid_mean(g, margin)^2)
+knitr::kable(data.frame(
+    quantity = c("posterior mean of mu", "posterior sd of mu", "posterior mean of sigma", "posterior sd of sigma"),
+    gibbs = c(mean(draws_cauchy[keep_c, "mu"]), sd(draws_cauchy[keep_c, "mu"]),
+              mean(draws_cauchy[keep_c, "sigma"]), sd(draws_cauchy[keep_c, "sigma"])),
+    exact = c(grid_mean(mu_grid, 1), grid_sd(mu_grid, 1), grid_mean(sg_grid, 2), grid_sd(sg_grid, 2))
+), digits = 3, col.names = c("quantity", "Gibbs", "exact (grid)"), align = c("l", "r", "r"))
+```
+
+The sample mean `r round(mean(y_cauchy), 2)` and standard deviation `r round(sd(y_cauchy), 2)` are dragged off by the outliers; the posterior of $\mu$ stays at the bulk of the data. The [Gibbs–Cauchy app](../shinylive_apps/app_gibbs_cauchy.html){target="_blank"} runs this sampler one conditional update at a time.
 
 # 3. Metropolis–Hastings
 
 ## The Metropolis–Hastings Algorithm {.smaller}
 
-Target $\pi(\theta)$, known up to a constant. Choose a **proposal** distribution $\tilde T(\theta^*\mid\theta)$ that we can sample from. Starting from $\theta^{(0)}$, repeat for $t = 1,\ldots,n$:
+Gibbs needs full conditionals that are known and sample-able. **Metropolis–Hastings** needs only a target $\pi(\theta)$ computable up to a constant and **any** proposal $\tilde T(\theta^*\mid\theta)$ we can sample from. Starting from $\theta^{(0)}$, repeat:
 
 1. Draw a proposal $\theta^*\sim\tilde T(\cdot\mid\theta^{(t-1)})$
-2. Compute the acceptance ratio
+2. Compute the acceptance probability
 $$r = \min\left\{\frac{\pi(\theta^*)\,\tilde T(\theta^{(t-1)}\mid\theta^*)}{\pi(\theta^{(t-1)})\,\tilde T(\theta^*\mid\theta^{(t-1)})},\ 1\right\}$$
-3. Draw $U\sim\text{Unif}(0,1)$. If $U<r$, set $\theta^{(t)} = \theta^*$ (accept); otherwise set $\theta^{(t)} = \theta^{(t-1)}$ (reject and **stay**)
+3. With probability $r$ set $\theta^{(t)} = \theta^*$ (accept); otherwise $\theta^{(t)} = \theta^{(t-1)}$ (reject and **repeat the current value**)
 
 - Only the ratio $\pi(\theta^*)/\pi(\theta^{(t-1)})$ is needed: normalizing constants cancel
-- A rejected step still produces a draw: the current value is **repeated**, unlike rejection sampling
-- Unlike Gibbs, no conditional distributions are needed; any $\tilde T$ works in principle
+- A rejection still produces a draw (the repeated current value), so no envelope is needed
+- Detailed balance holds for **any** suitable $\tilde T$ (next slide)
 
-## Symmetric Proposals: Random-Walk Metropolis
+## Justification: Detailed Balance {.smaller}
 
-If $\tilde T$ is symmetric, $\tilde T(\theta^*\mid\theta) = \tilde T(\theta\mid\theta^*)$, e.g.
-$$\tilde T(\theta^*\mid\theta^{(t-1)}) = N\big(\theta^{(t-1)},\ \varsigma^2\big)$$
+For $\theta'\ne\theta$, a move $\theta\to\theta'$ requires proposing $\theta'$ and accepting it:
+$$T(\theta\to\theta') = \tilde T(\theta\to\theta')\cdot\min\left\{\frac{\pi(\theta')\,\tilde T(\theta'\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta')},\ 1\right\}$$
 
-the proposal terms cancel and
+(For $\theta' = \theta$, the rejections give a point mass, but detailed balance holds trivially there.) Then
+$$
+\begin{aligned}
+\pi(\theta)\,T(\theta\to\theta')
+&= \pi(\theta)\,\tilde T(\theta\to\theta')\cdot\min\left\{\frac{\pi(\theta')\,\tilde T(\theta'\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta')},\ 1\right\} \\
+&= \min\Big\{\pi(\theta')\,\tilde T(\theta'\to\theta),\ \pi(\theta)\,\tilde T(\theta\to\theta')\Big\}
+\end{aligned}
+$$
+
+This expression is symmetric in $\theta$ and $\theta'$, so exchanging their roles gives the same value:
+$$\pi(\theta')\,T(\theta'\to\theta) = \min\Big\{\pi(\theta)\,\tilde T(\theta\to\theta'),\ \pi(\theta')\,\tilde T(\theta'\to\theta)\Big\} = \pi(\theta)\,T(\theta\to\theta'). \qquad\blacksquare$$
+
+## Random-Walk Metropolis
+
+If $\tilde T$ is symmetric, $\tilde T(\theta^*\mid\theta) = \tilde T(\theta\mid\theta^*)$, e.g. $\theta^*\sim N\big(\theta^{(t-1)},\varsigma^2\big)$, the proposal terms cancel:
 $$r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}$$
 
-- Uphill proposals ($\pi(\theta^*)\ge\pi(\theta^{(t-1)})$) are always accepted
-- Downhill proposals are accepted with probability equal to the density ratio; the chain can go downhill, which is what lets it explore rather than just climb
-- $\varsigma$ is the **step size**: the single tuning parameter of the algorithm
+- Uphill proposals are always accepted; downhill ones are accepted with probability equal to the density ratio, which lets the chain explore rather than just climb
+- $\varsigma$, the **step size**, is the only tuning parameter
+
+```{r}
+#| label: met-gauss
+#| echo: true
+met_gauss <- function(iters, log_f, stepsizes, ini_value, ...) {
+    state <- ini_value; no_var <- length(state); logf <- log_f(ini_value, ...)
+    if (!is.finite(logf)) stop("Initial value has zero probability")
+    out <- matrix(NA_real_, iters, no_var); n_acc <- 0
+    for (t in seq_len(iters)) {
+        proposal <- rnorm(no_var, state, stepsizes); new_logf <- log_f(proposal, ...)
+        if (log(runif(1)) < new_logf - logf) { state <- proposal; logf <- new_logf; n_acc <- n_acc + 1 }
+        out[t, ] <- state
+    }
+    attr(out, "accept_rate") <- n_acc / iters
+    out
+}
+```
 
 ## Random-Walk Metropolis (Continued)
 
-Left: two proposals from a $N(\theta^{(t-1)},\varsigma^2)$ kernel; the uphill one is accepted, the downhill one accepted with probability $\pi(\theta^*)/\pi(\theta^{(t-1)})$. Right: a trace with rejections showing as flat segments.
+Left: proposals from a symmetric $N(\theta^{(t-1)},\varsigma^2)$ kernel; the uphill one is always accepted, the downhill one with probability $\pi(\theta^*)/\pi(\theta^{(t-1)})$. Right: a trace with rejections showing as flat segments.
 
 ```{r}
-#| label: random-walk-metropolis-continued
-#| fig-width: 10
-#| fig-height: 4.2
+#| label: random-walk-metropolis-picture
+#| fig-width: 12
+#| fig-height: 4.6
 par(mfrow = c(1, 2), mar = c(4, 4, 2, 1))
 curve(dnorm, -3.5, 3.5, lwd = 3, xlab = TeX(r"($\theta$)"), ylab = TeX(r"($\pi(\theta)$)"), main = "proposals from a symmetric kernel")
 for (cur in c(-2, 1.2)) { pr <- cur + c(-0.6, 0.6)[1 + (cur < 0)]
@@ -377,127 +877,141 @@ plot(th, type = "s", lwd = 2, col = "steelblue", xlab = "t", ylab = TeX(r"($\the
 rej <- which(diff(th) == 0); points(rej + 1, th[rej + 1], pch = 4, col = "firebrick")
 ```
 
-## Choice of Step Size
+## Example: Truncated Normal
+
+$\pi(\theta)\propto\varphi(\theta)\,I(l\le\theta\le u)$: a proposal outside $[l,u]$ has $\pi(\theta^*) = 0$, hence $r = 0$, and is **automatically rejected**. No special handling is needed; the indicator does it.
+
+Target $N(0,2^2)$ truncated to $[4,5]$, for three step sizes:
 
 ```{r}
-#| label: choice-of-step-size
-#| fig-width: 10
-#| fig-height: 4.4
-par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
-mh <- function(sig, n = 2000) { th <- numeric(n); th[1] <- 0; acc <- 0
-  for (t in 2:n) { p <- th[t - 1] + rnorm(1, 0, sig)
-    if (runif(1) < dnorm(p) / dnorm(th[t - 1])) { th[t] <- p; acc <- acc + 1 } else th[t] <- th[t - 1] }
-  list(th = th, acc = acc / (n - 1)) }
-res <- lapply(c(0.1, 2.4, 40), mh)
-labs <- c("too small", "about right", "too large")
-for (k in 1:3) plot(res[[k]]$th[1:500], type = "l", xlab = "t", ylab = TeX(r"($\theta^{(t)}$)"), ylim = c(-3.5, 3.5),
-                    main = sprintf("step %s (sd = %g): accept %.2f", labs[k], c(0.1, 2.4, 40)[k], res[[k]]$acc))
-for (k in 1:3) acf(res[[k]]$th, lag.max = 50, main = "autocorrelation")
+#| label: plot-tnorm-mh
+#| echo: true
+#| fig-width: 12
+#| fig-height: 3.6
+log_tnorm <- function(x, mu, sigma, lb, ub) if (x > lb && x < ub) dnorm(x, mu, sigma, log = TRUE) else -Inf
+par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
+for (step in c(0.1, 1, 2)) {
+    mc <- met_gauss(5000, log_tnorm, stepsizes = step, ini_value = 4.5, mu = 0, sigma = 2, lb = 4, ub = 5)
+    plot(mc, type = "l", col = "steelblue", xlab = "iteration", ylab = expression(theta),
+         main = sprintf("step = %.1f, accept = %.2f", step, attr(mc, "accept_rate")))
+}
 ```
+
+## Choice of Step Size
 
 Target $N(0,1)$. Tiny steps are almost always accepted but move slowly; huge steps are almost always rejected; both give highly autocorrelated chains.
 
+```{r}
+#| label: plot-stepsize
+#| fig-width: 12
+#| fig-height: 5
+mh_std_normal <- function(sig, n = 2000) {
+    th <- numeric(n); th[1] <- 0; acc <- 0
+    for (t in 2:n) { p <- th[t - 1] + rnorm(1, 0, sig)
+        if (runif(1) < dnorm(p) / dnorm(th[t - 1])) { th[t] <- p; acc <- acc + 1 } else th[t] <- th[t - 1] }
+    list(th = th, acc = acc / (n - 1)) }
+res <- lapply(c(0.1, 2.4, 40), mh_std_normal)
+labs <- c("too small", "about right", "too large")
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+for (k in 1:3) plot(res[[k]]$th[1:500], type = "l", col = "steelblue", xlab = "t", ylab = TeX(r"($\theta^{(t)}$)"),
+                    ylim = c(-3.5, 3.5), main = sprintf("%s (sd = %g): accept %.2f", labs[k], c(0.1, 2.4, 40)[k], res[[k]]$acc))
+for (k in 1:3) acf(res[[k]]$th, lag.max = 50, main = "ACF")
+```
+
 ## Choice of Step Size (Continued) {.smaller}
 
-- The chain is a sequence of **dependent** draws. For a stationary chain with lag-$k$ autocorrelations $\rho_k$,
+- The draws are **dependent**. For a stationary chain with lag-$k$ autocorrelations $\rho_k$,
 $$\text{Var}\Big(\frac1T\sum_{t=1}^T\theta^{(t)}\Big)\ \approx\ \frac{\sigma^2}{T}\Big(1 + 2\sum_{k=1}^\infty\rho_k\Big) = \frac{\sigma^2}{T_{\text{eff}}},
 \qquad T_{\text{eff}} = \frac{T}{1+2\sum_k\rho_k}$$
 so the goal of tuning is **small autocorrelation**, not a high acceptance rate
-- For random-walk Metropolis on a smooth target, the optimal acceptance rate is about $0.234$ in high dimension (up to $\approx0.44$ in one dimension), i.e. an optimal **rejection** rate around $0.75$
-- A rejection rate that is too **low** signals steps that are too small: the chain crawls, and traces look smooth and deceptively stable
-- Rule of thumb: scale $\varsigma$ to roughly $2.4/\sqrt d$ times the posterior standard deviation; tune during burn-in, then fix it (changing $\varsigma$ adaptively during the kept run breaks the Markov property unless done carefully)
+- A step too small is accepted almost every time but crawls; a step too large is almost always rejected and the chain barely moves. Both waste the same $T$ iterations on far fewer effective ones
+- For random-walk Metropolis on a smooth target, theory recommends an acceptance rate near $0.234$ in high dimension (up to about $0.44$ in one dimension): a rule of thumb, not a target to hit exactly
+- Tune during burn-in, then fix $\varsigma$ (changing it adaptively during the kept run breaks the Markov property unless done carefully)
 
-## Example: Truncated Normal
+## Metropolis-within-Gibbs {.smaller}
 
-$$\pi(\theta)\propto\varphi(\theta)\,I(l\le\theta\le u)$$
+$\theta = (\theta_1,\theta_2)$. Gibbs alternates $\theta_1\sim\pi(\theta_1\mid\theta_2)$ and $\theta_2\sim\pi(\theta_2\mid\theta_1)$. If $\pi(\theta_1\mid\theta_2)$ has no convenient sampler:
 
-Random-walk Metropolis with $\theta^*\sim N(\theta^{(t-1)},\varsigma^2)$ and
-$$r = \min\left\{\frac{\pi(\theta^*)}{\pi(\theta^{(t-1)})},\ 1\right\}$$
+- Replace that step by a Metropolis–Hastings update that targets $\pi(\theta_1\mid\theta_2)$ at the **current** $\theta_2$
+- Only $\pi(\theta_1\mid\theta_2)\propto\pi(\theta_1,\theta_2)$ is needed: the joint posterior as a function of $\theta_1$ alone
+- Leave the other step as an exact conditional draw
 
-If $\theta^*$ falls outside $[l,u]$, then $\pi(\theta^*) = 0$, $r = 0$, and the proposal is **rejected**; the chain stays at $\theta^{(t-1)}$. No special handling is needed: the indicator in $\pi$ does it.
+Each block transition leaves $\pi$ invariant on its own (the Gibbs argument applies to any $\pi(\theta_j\mid\theta_{-j})$-invariant transition, not only an exact draw), so the composite sweep leaves the joint $\pi$ invariant. A single MH step per block suffices.
 
-```{r}
-#| label: example-truncated-normal
-#| fig-width: 8
-#| fig-height: 2.8
-par(mar = c(4, 1, 1, 1)); l <- -1; u <- 0.5
-curve(dnorm(x) * (x >= l & x <= u), -2.5, 2, n = 1001, lwd = 3, xlab = TeX(r"($\theta$)"), ylab = "", yaxt = "n", col = "firebrick")
-abline(v = c(l, u), lty = 3); axis(1, at = c(l, u), labels = c("l", "u"), line = -1, tick = FALSE)
-arrows(0.3, 0.05, 0.9, 0.05, length = 0.08, lwd = 2); text(0.9, 0.05, TeX(r"($\theta^*$ outside: $r = 0$, reject)"), pos = 4)
-points(0.3, 0.05, pch = 19)
-```
+**Gibbs where conjugate, Metropolis elsewhere**, iterated one parameter or block at a time, is how most general-purpose Bayesian software worked before Hamiltonian methods.
 
-## Example: Posterior of a Normal Sample by Metropolis–Hastings
+# Example 5: Normal Data with Unknown Mean and Variance, Revisited
 
-Same model as the Gibbs example. $\sigma^2>0$ is awkward for a normal random walk (proposals below zero are wasted), so reparametrize $w = \log\sigma^2$, $\sigma^2 = e^w$, $w\in\mathbb R$.
+## Example 5: Reparametrization and the Jacobian {.smaller}
 
-**Change of variables.** If $X\sim f_X$ and $Y = t(X)$, then $f_Y(y) = f_X\big(t^{-1}(y)\big)\,\big|\tfrac{\partial t^{-1}(y)}{\partial y}\big|$. With $t^{-1}(w) = e^w$, the Jacobian is $e^w$, so the posterior in $(\mu,w)$ is
-$$P(\mu,w\mid x)\ \propto\ P(x_1,\ldots,x_n\mid\mu,e^w)\cdot p(\mu)\cdot p_{\sigma^2}(e^w)\cdot e^w$$
+The model and data of Example 2, now sampled by random-walk Metropolis–Hastings.
 
-Forgetting the factor $e^w$ targets the wrong distribution.
+$\sigma^2>0$ makes a normal random walk on $\sigma^2$ wasteful (proposals below zero are rejected), so reparametrize $w = \log\sigma^2\in\mathbb R$.
 
-**Algorithm.** Random-walk proposal on $(\mu,w)$ jointly, $(\mu^*,w^*) = (\mu,w) + \varsigma\,(z_1,z_2)$, $z\sim N_2(0,I)$, and
-$$r = \min\left\{\exp\big[\log P(\mu^*,w^*\mid x) - \log P(\mu,w\mid x)\big],\ 1\right\}$$
+**Change of variables.** If $X\sim f_X$ and $Y = t(X)$, then $f_Y(y) = f_X\big(t^{-1}(y)\big)\,\big|\tfrac{d t^{-1}(y)}{dy}\big|$. With $\sigma^2 = e^w$ the Jacobian is $e^w$:
+$$P(\mu,w\mid x)\ \propto\ P(x\mid\mu,e^w)\cdot p(\mu)\cdot p_{\sigma^2}(e^w)\cdot e^w$$
 
-always computed on the log scale.
-
-## Example (Continued)
+Omitting the factor $e^w$ targets the wrong distribution.
 
 ```{r}
-#| label: example-continued
+#| label: mh-normal
 #| echo: true
-log_post <- function(mu, w) { s2 <- exp(w)
-  sum(dnorm(x, mu, sqrt(s2), log = TRUE)) + dnorm(mu, mu0, sqrt(s02), log = TRUE) +
-    (-(a0 + 1) * log(s2) - lam0 / s2) + w }                       # + w is the log Jacobian
-mh_normal <- function(iters, step, mu = 0, w = 0) {
-  out <- matrix(NA, iters, 2, dimnames = list(NULL, c("mu", "s2"))); acc <- 0; lp <- log_post(mu, w)
-  for (t in 1:iters) {
-    mu_p <- mu + step[1] * rnorm(1); w_p <- w + step[2] * rnorm(1); lp_p <- log_post(mu_p, w_p)
-    if (log(runif(1)) < lp_p - lp) { mu <- mu_p; w <- w_p; lp <- lp_p; acc <- acc + 1 }
-    out[t, ] <- c(mu, exp(w)) }
-  list(draws = out, accept = acc / iters) }
-fit <- mh_normal(20000, step = c(1.2, 0.6))
-c(accept = fit$accept)
-round(rbind(MH = colMeans(fit$draws[-(1:1000), ]), Gibbs = colMeans(draws[-(1:200), ])), 3)
+log_post_mu_w <- function(mu, w, x, mu0, sigma0, alpha, wprior) {
+    s2 <- exp(w)
+    sum(dnorm(x, mu, sqrt(s2), log = TRUE)) + dnorm(mu, mu0, sqrt(sigma0), log = TRUE) +
+        (-(alpha / 2 + 1) * log(s2) - alpha * wprior / (2 * s2)) + w   # "+ w" is the log Jacobian
+}
+mh_norm <- function(iters, stepsizes, x, mu0, sigma0, alpha, w) {
+    log_f <- function(state) log_post_mu_w(state[1], state[2], x, mu0, sigma0, alpha, w)
+    mc <- met_gauss(iters, log_f, stepsizes, ini_value = c(0, 0))
+    list(mu = mc[, 1], sd = exp(0.5 * mc[, 2]), accept_rate = attr(mc, "accept_rate"))
+}
 ```
 
-Gibbs and Metropolis–Hastings target the same posterior; their averages agree up to Monte Carlo error.
+## Example 5: Searching for the Step Size
 
-## Justification of Metropolis–Hastings{.smaller}
+Preliminary runs at four step-size scales (step $=$ scale$/\sqrt n$ in both coordinates). Top: trace of $\mu$; bottom: ACF after discarding 500 iterations.
 
-**Claim.** The MH transition $T$ satisfies detailed balance with respect to $\pi$, hence leaves $\pi$ invariant.
+```{r}
+#| label: plot-mh-stepsize-search
+#| fig-width: 12
+#| fig-height: 5
+set.seed(5)
+scales <- c(20, 10, 4, 2)
+fits <- lapply(scales, function(s) mh_norm(10000, c(s, s) / sqrt(length(x)), x, 0, 1e10, 1e-5, 1e-5))
+par(mfcol = c(2, 4), mar = c(4, 4, 2, 1))
+for (k in seq_along(fits)) {
+    plot(fits[[k]]$mu[1:1000], type = "l", col = "steelblue", xlab = "t", ylab = expression(mu),
+         main = sprintf("scale %g, accept %.2f", scales[k], fits[[k]]$accept_rate))
+    acf(fits[[k]]$mu[-(1:500)], main = "ACF")
+}
+```
 
-For $\theta^T\ne\theta$, a move $\theta\to\theta^T$ requires proposing $\theta^T$ and accepting it:
-$$T(\theta\to\theta^T) = \tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\}$$
+Scale $4$ gives the least autocorrelated trace, with an acceptance rate in the $0.2$–$0.4$ range.
 
-(For $\theta^T = \theta$ there is no density expression, the chain has a point mass from rejections, but detailed balance holds trivially there. Then
-$$
-\begin{aligned}
-\text{LHS} = \pi(\theta)\,T(\theta\to\theta^T)
-&= \pi(\theta)\,\tilde T(\theta\to\theta^T)\cdot\min\left\{\frac{\pi(\theta^T)\,\tilde T(\theta^T\to\theta)}{\pi(\theta)\,\tilde T(\theta\to\theta^T)},\ 1\right\} \\
-&= \min\Big\{\pi(\theta^T)\,\tilde T(\theta^T\to\theta),\ \pi(\theta)\,\tilde T(\theta\to\theta^T)\Big\}
-\end{aligned}
-$$
+## Example 5: Comparison with Gibbs
 
-By the same computation with the roles of $\theta$ and $\theta^T$ exchanged,
-$$\text{RHS} = \pi(\theta^T)\,T(\theta^T\to\theta) = \min\Big\{\pi(\theta)\,\tilde T(\theta\to\theta^T),\ \pi(\theta^T)\,\tilde T(\theta^T\to\theta)\Big\} = \text{LHS}. \qquad\blacksquare$$
+A long chain ($50{,}000$ iterations) at scale $4$, against the Gibbs sampler of Example 2 on the same data and priors:
 
-## Metropolis-within-Gibbs
+```{r}
+#| label: table-mh-vs-gibbs
+#| echo: true
+mh_long <- mh_norm(50000, c(4, 4) / sqrt(length(x)), x, 0, 1e10, 1e-5, 1e-5)
+keep_mh <- -(1:1000)
+knitr::kable(data.frame(
+    method = c("Metropolis-Hastings", "Gibbs"),
+    mean_mu = c(mean(mh_long$mu[keep_mh]), mean(mu_g)), sd_mu = c(sd(mh_long$mu[keep_mh]), sd(mu_g)),
+    mean_sigma = c(mean(mh_long$sd[keep_mh]), mean(sd_g)), sd_sigma = c(sd(mh_long$sd[keep_mh]), sd(sd_g))
+), digits = 3, align = c("l", "r", "r", "r", "r"))
+```
 
-$\theta = (\theta_1,\theta_2)$. Gibbs sampling alternates $\theta_1^{(t)}\sim\pi(\theta_1\mid\theta_2^{(t-1)})$ and $\theta_2^{(t)}\sim\pi(\theta_2\mid\theta_1^{(t)})$. When a full conditional cannot be sampled directly:
+Two exact samplers of the same posterior agree up to Monte Carlo error.
 
-- Replace that step by a Metropolis–Hastings transition $T_j(\theta_j\to\theta_j^T)$ that leaves $\pi(\theta_j\mid\theta_{-j})$ invariant
-- Only $\pi(\theta_j\mid\theta_{-j})\propto\pi(\theta_j,\theta_{-j})$ is needed, evaluated at the current $\theta_{-j}$: the joint posterior as a function of $\theta_j$ alone
+# 4. Hamiltonian Monte Carlo and Stan
 
-Since each block transition leaves $\pi$ invariant (the argument for Gibbs applies to any $\pi(\theta_j\mid\theta_{-j})$-invariant $T_j$), the composite sweep leaves $\pi$ invariant. A single MH step per block suffices; the inner chain need not converge.
+## Why Random Walks Struggle {.smaller}
 
-**Practical picture of most MCMC software**: Gibbs updates where conjugacy allows, one-dimensional or block Metropolis (or slice sampling, Hamiltonian Monte Carlo) elsewhere, all combined in one sweep.
-
-# 4. Hamiltonian Monte Carlo
-
-## Why Random Walks Struggle
-
-A random-walk proposal has no sense of direction: in $d$ dimensions it needs $O(d)$ steps to move a distance of one posterior standard deviation, and along a narrow, correlated ridge it needs far more. Gibbs suffers the same way when coordinates are strongly correlated.
+A random-walk proposal has no sense of direction: reaching a point one posterior standard deviation away takes $O(d)$ steps in $d$ dimensions, and far more along a narrow, correlated ridge, where most proposed directions step off the ridge and are rejected. Gibbs suffers the same way with strongly correlated parameters, since it moves along one axis at a time.
 
 **Hamiltonian Monte Carlo** (HMC) uses the **gradient** $\nabla\log\pi(\theta)$ to propose distant points with high acceptance.
 
@@ -505,94 +1019,455 @@ Introduce an auxiliary **momentum** $p\in\mathbb R^d$ and the joint density
 $$\pi(\theta,p)\ \propto\ \exp\big\{-H(\theta,p)\big\}, \qquad
 H(\theta,p) = \underbrace{-\log\pi(\theta)}_{U(\theta)\ \text{potential energy}} + \underbrace{\tfrac12\,p^\top M^{-1}p}_{K(p)\ \text{kinetic energy}}$$
 
-- The marginal of $\theta$ is the target $\pi(\theta)$; $p\sim N_d(0,M)$ independently of $\theta$
+- The marginal of $\theta$ is exactly the target $\pi(\theta)$; $p\sim N_d(0,M)$ independently of $\theta$
 - $M$ (the "mass matrix") is a tuning choice, often $I$ or a diagonal estimate of posterior precision
-- Physical picture: a particle at position $\theta$ rolling on the surface $U(\theta)$ with momentum $p$
+- Physical picture: a particle at position $\theta$ with momentum $p$, rolling without friction on the surface $U(\theta)$
 
-## Hamiltonian Dynamics and the Leapfrog Integrator
+## Hamiltonian Dynamics and the Leapfrog Integrator {.smaller}
 
 Hamilton's equations move $(\theta,p)$ in fictitious time $\tau$:
 $$\frac{d\theta}{d\tau} = \frac{\partial H}{\partial p} = M^{-1}p, \qquad
 \frac{dp}{d\tau} = -\frac{\partial H}{\partial\theta} = \nabla\log\pi(\theta)$$
 
-Exact dynamics **conserve $H$**, preserve volume, and are reversible, so following them for any time and then accepting would leave $\pi(\theta,p)$ invariant with acceptance probability 1. In practice the equations are discretized by the **leapfrog** integrator with step size $\epsilon$, repeated $L$ times:
+Exact dynamics **conserve $H$**, preserve volume, and are reversible. In practice they are discretized by the **leapfrog** integrator with step size $\epsilon$, repeated $L$ times:
 $$
 p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta), \qquad
 \theta \leftarrow \theta + \epsilon\,M^{-1}p, \qquad
 p \leftarrow p + \tfrac\epsilon2\,\nabla\log\pi(\theta)
 $$
 
-Leapfrog is still volume-preserving and reversible (negate $p$ and run backwards), so it can be used inside a Metropolis step; only energy conservation is approximate, with error $O(\epsilon^2)$ per trajectory. The Metropolis correction removes this discretization bias.
+Leapfrog keeps volume preservation and reversibility exactly (negate $p$ and re-run to get back the start), and introduces only an $O(\epsilon^2)$ error in $H$, which a Metropolis accept/reject step corrects exactly.
 
 ## The HMC Algorithm {.smaller}
 
-Starting from $\theta^{(0)}$, repeat for $t = 1,\ldots,n$:
+Starting from $\theta^{(0)}$, repeat:
 
-1. Draw a fresh momentum $p\sim N_d(0,M)$; set $(\theta,p)$ with $\theta = \theta^{(t-1)}$
-2. Run $L$ leapfrog steps of size $\epsilon$ to obtain $(\theta^*,p^*)$
-3. Accept $\theta^{(t)} = \theta^*$ with probability
-$$r = \min\Big\{\exp\big[-H(\theta^*,p^*) + H(\theta,p)\big],\ 1\Big\}$$
-otherwise $\theta^{(t)} = \theta^{(t-1)}$
+1. Draw a fresh momentum $p\sim N_d(0,M)$
+2. Run $L$ leapfrog steps of size $\epsilon$ from $(\theta^{(t-1)},p)$ to reach $(\theta^*,p^*)$
+3. Accept $\theta^{(t)} = \theta^*$ with probability $\min\big\{\exp\big[H(\theta^{(t-1)},p) - H(\theta^*,p^*)\big],\ 1\big\}$; otherwise $\theta^{(t)} = \theta^{(t-1)}$
 
-- Step 1 is a Gibbs update of $p$ from its conditional, step 2–3 is a Metropolis update of $(\theta,p)$ with a deterministic, reversible proposal (momentum negation makes it symmetric); each leaves $\pi(\theta,p)$ invariant
-- Because $H$ is nearly conserved, acceptance stays high (target $\approx0.65$–$0.8$) even though $\theta^*$ is far from $\theta^{(t-1)}$
-- Needs $\nabla\log\pi$: analytic, or by automatic differentiation
+- Step 1 is a Gibbs update of $p$ from its conditional; steps 2–3 are a Metropolis update with a deterministic, reversible proposal. Each leaves $\pi(\theta,p)$ invariant
+- Because $H$ is nearly conserved, acceptance stays high (typically $0.65$–$0.8$) even though $\theta^*$ may be far from $\theta^{(t-1)}$
+- Needs $\nabla\log\pi$ (analytic, or by automatic differentiation) and two tuning parameters: $\epsilon$ (too large: leapfrog unstable, rejections) and $L$ (too small: random-walk behaviour; too large: the trajectory turns back)
 
-
-## The HMC Algorithm (Continued)
+## The HMC Algorithm: Implementation
 
 ```{r}
-#| label: the-hmc-algorithm-continued
+#| label: hmc-fn
 #| echo: true
 hmc <- function(log_pi, grad_log_pi, theta, eps, L, iters, M = diag(length(theta))) {
-  out <- matrix(NA, iters, length(theta)); acc <- 0; Minv <- solve(M)
-  for (t in 1:iters) {
-    p <- as.vector(t(chol(M)) %*% rnorm(length(theta))); th <- theta; pp <- p
-    pp <- pp + eps / 2 * grad_log_pi(th)                            # leapfrog: half step in p
-    for (l in 1:L) { th <- th + eps * Minv %*% pp
-      if (l < L) pp <- pp + eps * grad_log_pi(th) }                 # full steps in theta and p
-    pp <- pp + eps / 2 * grad_log_pi(th)                            # final half step in p
-    H0 <- -log_pi(theta) + 0.5 * sum(p * (Minv %*% p)); H1 <- -log_pi(th) + 0.5 * sum(pp * (Minv %*% pp))
-    if (log(runif(1)) < H0 - H1) { theta <- as.vector(th); acc <- acc + 1 }
-    out[t, ] <- theta }
-  list(draws = out, accept = acc / iters) }
-Sigma <- matrix(c(1, 0.98, 0.98, 1), 2); Sinv <- solve(Sigma)    # target: strongly correlated N(0, Sigma)
-fit_hmc <- hmc(function(z) -0.5 * sum(z * (Sinv %*% z)), function(z) -as.vector(Sinv %*% z),
-               theta = c(-2, -2), eps = 0.05, L = 30, iters = 2000)
-c(accept = fit_hmc$accept, mean1 = mean(fit_hmc$draws[, 1]), sd1 = sd(fit_hmc$draws[, 1]))
+    d <- length(theta); Minv <- solve(M); R <- chol(M); out <- matrix(NA_real_, iters, d); n_acc <- 0
+    for (t in seq_len(iters)) {
+        p0 <- as.vector(t(R) %*% rnorm(d)); th <- theta; p <- p0 + eps / 2 * grad_log_pi(th)
+        for (l in seq_len(L)) { th <- th + eps * as.vector(Minv %*% p); if (l < L) p <- p + eps * grad_log_pi(th) }
+        p <- p + eps / 2 * grad_log_pi(th)
+        H0 <- -log_pi(theta) + 0.5 * sum(p0 * (Minv %*% p0)); H1 <- -log_pi(th) + 0.5 * sum(p * (Minv %*% p))
+        if (log(runif(1)) < H0 - H1) { theta <- th; n_acc <- n_acc + 1 }
+        out[t, ] <- theta
+    }
+    attr(out, "accept_rate") <- n_acc / iters
+    out
+}
 ```
 
-Tuning: $\epsilon$ (too large: leapfrog unstable, rejections) and $L$ (too small: random-walk behaviour; too large: trajectory turns back). The **No-U-Turn Sampler** (NUTS) chooses $L$ adaptively and is the default in Stan
+## Example 6: Bivariate Normal with Correlation 0.98
 
-## HMC versus Random-Walk Metropolis
-
-Target: bivariate normal with correlation $0.98$. Same number of iterations for both samplers.
+Both samplers get 2,000 iterations from the same start $(-2,-2)$. Left, middle: first 100 draws over the target contours. Right: autocorrelation of $\theta_1$.
 
 ```{r}
-#| label: hmc-versus-random-walk-metropolis
-#| fig-width: 10
-#| fig-height: 4.4
+#| label: plot-hmc-vs-rw
+#| fig-width: 12
+#| fig-height: 4.6
+set.seed(4)
+Sigma <- matrix(c(1, 0.98, 0.98, 1), 2); Sinv <- solve(Sigma)
+log_pi_corr  <- function(z) -0.5 * sum(z * (Sinv %*% z))
+grad_pi_corr <- function(z) -as.vector(Sinv %*% z)
+rw <- matrix(NA_real_, 2000, 2); cur <- c(-2, -2); lp <- log_pi_corr(cur); acc <- 0
+for (t in 1:2000) { pr <- cur + 0.3 * rnorm(2); lpp <- log_pi_corr(pr)
+    if (log(runif(1)) < lpp - lp) { cur <- pr; lp <- lpp; acc <- acc + 1 }; rw[t, ] <- cur }
+draws_hmc <- hmc(log_pi_corr, grad_pi_corr, theta = c(-2, -2), eps = 0.05, L = 30, iters = 2000)
+g <- seq(-3.5, 3.5, length.out = 80)
+Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
 par(mfrow = c(1, 3), mar = c(4, 4, 2, 1))
-rw <- matrix(NA, 2000, 2); cur <- c(-2, -2); lp <- -0.5 * sum(cur * (Sinv %*% cur)); acc <- 0
-for (t in 1:2000) { pr <- cur + 0.3 * rnorm(2); lpp <- -0.5 * sum(pr * (Sinv %*% pr))
-  if (log(runif(1)) < lpp - lp) { cur <- pr; lp <- lpp; acc <- acc + 1 }; rw[t, ] <- cur }
-g <- seq(-3.5, 3.5, length.out = 80); Z <- outer(g, g, Vectorize(function(a, b) exp(-0.5 * c(a, b) %*% Sinv %*% c(a, b))))
-for (k in 1:2) { d <- if (k == 1) rw else fit_hmc$draws
-  contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60", xlab = TeX(r"($\theta_1$)"), ylab = TeX(r"($\theta_2$)"),
-          main = sprintf("%s: first 100 draws, accept %.2f", c("random walk (sd 0.3)", "HMC (eps 0.05, L 30)")[k], c(acc / 2000, fit_hmc$accept)[k]))
-  lines(d[1:100, ], col = c("firebrick", "steelblue")[k], lwd = 1.5); points(d[1:100, ], pch = 19, cex = 0.5, col = c("firebrick", "steelblue")[k]) }
-a1 <- acf(rw[, 1], lag.max = 60, plot = FALSE)$acf; a2 <- acf(fit_hmc$draws[, 1], lag.max = 60, plot = FALSE)$acf
-plot(0:60, a1, type = "h", lwd = 2, col = "firebrick", xlab = "lag", ylab = TeX(r"(ACF of $\theta_1$)"), main = "autocorrelation", ylim = c(-0.2, 1))
-lines(0:60 + 0.3, a2, type = "h", lwd = 2, col = "steelblue"); legend("topright", bty = "n", lwd = 2, col = c("firebrick", "steelblue"), legend = c("random walk", "HMC"))
+for (nm in c("random walk (sd 0.3)", "HMC (eps 0.05, L 30)")) {
+    rwk <- nm == "random walk (sd 0.3)"; d <- if (rwk) rw else draws_hmc
+    ar <- if (rwk) acc / 2000 else attr(draws_hmc, "accept_rate")
+    contour(g, g, Z, nlevels = 6, drawlabels = FALSE, col = "gray60", xlab = expression(theta[1]),
+            ylab = expression(theta[2]), main = sprintf("%s: accept %.2f", nm, ar))
+    lines(d[1:100, ], col = if (rwk) "firebrick" else "steelblue", lwd = 1.5)
+    points(d[1:100, ], pch = 19, cex = 0.5, col = if (rwk) "firebrick" else "steelblue")
+}
+a1 <- acf(rw[, 1], lag.max = 60, plot = FALSE)$acf; a2 <- acf(draws_hmc[, 1], lag.max = 60, plot = FALSE)$acf
+plot(0:60, a1, type = "h", lwd = 2, col = "firebrick", xlab = "lag", ylab = "ACF", ylim = c(-0.2, 1), main = "autocorrelation")
+lines((0:60) + 0.3, a2, type = "h", lwd = 2, col = "steelblue")
+legend("topright", bty = "n", lwd = 2, col = c("firebrick", "steelblue"), legend = c("random walk", "HMC"))
 ```
 
-Random-walk Metropolis creeps along the ridge with autocorrelation persisting for dozens of lags; HMC follows the ridge in a single trajectory and its draws are nearly independent.
+Random-walk Metropolis creeps along the ridge; HMC follows it in one trajectory and its draws are nearly independent. Chi Feng's [MCMC simulators](https://chi-feng.github.io/mcmc-demo/app.html){target="_blank"} let you tune $\epsilon$ and $L$ and compare samplers interactively.
+
+## Stan: Automating HMC {.smaller}
+
+Every sampler so far needed something derived by hand:
+
+- Gibbs: full conditionals worked out algebraically
+- Metropolis–Hastings: only a target density, but step sizes tuned by trial and error
+- HMC: an analytic gradient, and $\epsilon$ and $L$ tuned by hand
+
+**Stan** is a probabilistic programming language that automates all of this. Given a model written declaratively (data, parameters, and a log-density), it
+
+- computes gradients by **automatic differentiation**
+- runs the **No-U-Turn Sampler (NUTS)**, an adaptive HMC that picks $L$ on the fly by extending the leapfrog trajectory until it starts to double back
+- tunes the step size during a **warm-up** phase
+
+The user never derives a conditional or a gradient.
+
+**Where Stan earns its keep**: hierarchical models with many levels of latent structure, time series with a latent state at every time point, non-conjugate likelihood/prior combinations. Examples 7–9 move from a model where Gibbs is easy to one where nothing else is practical.
+
+## Example 7: Normal Data with Unknown Mean and Variance, in Stan {.smaller}
+
+The identical model, priors and data as Examples 2 and 5:
+
+:::: {.columns}
+::: {.column width="45%"}
+```{r}
+#| label: stan-model-normal
+#| echo: true
+stan_normal_code <- "
+data {
+  int<lower=0> n;
+  vector[n] x;
+  real mu0;
+  real<lower=0> sigma0;
+  real<lower=0> alpha;
+  real<lower=0> w;
+}
+parameters {
+  real mu;
+  real<lower=0> sigma2;
+}
+model {
+  mu ~ normal(mu0, sqrt(sigma0));
+  sigma2 ~ inv_gamma(alpha / 2, alpha * w / 2);
+  x ~ normal(mu, sqrt(sigma2));
+}
+"
+```
+:::
+::: {.column width="55%"}
+```{r}
+#| label: stan-fit-normal
+#| echo: true
+#| cache: true
+#| message: false
+#| warning: false
+fit_stan <- stan(
+  model_code = stan_normal_code,
+  data = list(n = length(x), x = x, mu0 = 0,
+              sigma0 = 1e10, alpha = 1e-5, w = 1e-5),
+  chains = 4, iter = 2000, warmup = 1000,
+  seed = 5, refresh = 0)
+```
+
+Stan works on an unconstrained scale internally (here $\log\sigma^2$, with the Jacobian added automatically), computes gradients by automatic differentiation, and tunes the step size during warm-up.
+:::
+::::
+
+## Example 7: Three Samplers, One Posterior
+
+```{r}
+#| label: table-stan-vs-hand
+stan_summary <- summary(fit_stan, pars = c("mu", "sigma2"))$summary
+stan_sigma_draws <- sqrt(as.matrix(fit_stan, pars = "sigma2")[, 1])
+knitr::kable(data.frame(
+    method = c("Gibbs (Example 2)", "Metropolis-Hastings (Example 5)", "Stan (NUTS)"),
+    mean_mu = c(mean(mu_g), mean(mh_long$mu[keep_mh]), stan_summary["mu", "mean"]),
+    sd_mu   = c(sd(mu_g), sd(mh_long$mu[keep_mh]), stan_summary["mu", "sd"]),
+    mean_sigma = c(mean(sd_g), mean(mh_long$sd[keep_mh]), mean(stan_sigma_draws)),
+    sd_sigma   = c(sd(sd_g), sd(mh_long$sd[keep_mh]), sd(stan_sigma_draws))
+), digits = 3, col.names = c("method", "mean of mu", "sd of mu", "mean of sigma", "sd of sigma"),
+   align = c("l", "r", "r", "r", "r"))
+```
+
+Three independent implementations (hand-derived conditionals, a hand-tuned random walk, and Stan's automatic NUTS) agree to within Monte Carlo noise. Independent methods with no shared code landing on the same answer is evidence that none of them is wrong.
+
+## Example 8: Cauchy Data, in Stan {.smaller}
+
+Example 4 needed a scale-mixture representation, an augmented posterior and three full conditionals. In Stan, the Cauchy likelihood is used directly, with no latent variances. Same data and priors as Example 4.
+
+:::: {.columns}
+::: {.column width="45%"}
+```{r}
+#| label: stan-model-cauchy
+#| echo: true
+stan_cauchy_code <- "
+data {
+  int<lower=0> n;
+  vector[n] y;
+  real mu0;
+  real<lower=0> tau;
+  real<lower=0> a0;
+  real<lower=0> b0;
+}
+parameters {
+  real mu;
+  real<lower=0> sigma2;
+}
+transformed parameters {
+  real<lower=0> sigma = sqrt(sigma2);
+}
+model {
+  mu ~ normal(mu0, tau);
+  sigma2 ~ inv_gamma(a0, b0);
+  y ~ cauchy(mu, sigma);
+}
+"
+```
+:::
+::: {.column width="55%"}
+```{r}
+#| label: stan-fit-cauchy
+#| echo: true
+#| cache: true
+#| message: false
+#| warning: false
+fit_cauchy_stan <- stan(
+  model_code = stan_cauchy_code,
+  data = list(n = length(y_cauchy), y = y_cauchy,
+              mu0 = 0, tau = 10, a0 = 1, b0 = 1),
+  chains = 4, iter = 2000, warmup = 1000,
+  seed = 8, refresh = 0)
+```
+:::
+::::
+
+## Example 8: Gibbs, Stan and the Exact Posterior {.smaller}
+
+```{r}
+#| label: table-stan-cauchy
+st_c <- as.matrix(fit_cauchy_stan, pars = c("mu", "sigma"))
+knitr::kable(data.frame(
+    quantity = c("posterior mean of mu", "posterior sd of mu", "posterior mean of sigma", "posterior sd of sigma"),
+    gibbs = c(mean(draws_cauchy[keep_c, "mu"]), sd(draws_cauchy[keep_c, "mu"]),
+              mean(draws_cauchy[keep_c, "sigma"]), sd(draws_cauchy[keep_c, "sigma"])),
+    stan = c(mean(st_c[, "mu"]), sd(st_c[, "mu"]), mean(st_c[, "sigma"]), sd(st_c[, "sigma"])),
+    exact = c(grid_mean(mu_grid, 1), grid_sd(mu_grid, 1), grid_mean(sg_grid, 2), grid_sd(sg_grid, 2))
+), digits = 3, col.names = c("quantity", "Gibbs (Example 4)", "Stan (NUTS)", "exact (grid)"),
+   align = c("l", "r", "r", "r"))
+```
+
+```{r}
+#| label: stan-cauchy-diagnostics
+#| echo: true
+summary(fit_cauchy_stan, pars = c("mu", "sigma"))$summary[, c("mean", "sd", "n_eff", "Rhat")]
+```
+
+$\hat R\approx1$ and effective sample sizes in the thousands show that the four chains have mixed. The Gibbs sampler needs no tuning and is cheap per iteration, but needed the mixture trick and three derivations. Stan needed only the model statement, and works unchanged for a different prior or a Student-$t$ likelihood with any degrees of freedom.
+
+# Example 9: Logistic Regression with 50 Predictors and 100 Cases
+
+## Example 9: The Problem {.smaller}
+
+Binary responses depend on $p$ predictors through
+$$y_i\mid\alpha,\beta\sim\text{Bernoulli}\big(\text{logit}^{-1}(\alpha+x_i^\top\beta)\big), \qquad \text{logit}^{-1}(\eta) = \frac{1}{1+e^{-\eta}}$$
+
+$p = 50$ standard normal predictors for only $n = 100$ cases. Only two carry signal: $\alpha = 0$, $\beta_1 = 1$, $\beta_2 = -1$, $\beta_3 = \cdots = \beta_{50} = 0$.
+
+**Why maximum likelihood fails.** With 51 unknowns and only 100 cases, it is very likely (and true for these data) that the data are perfectly **separable**: some $\alpha+x_i^\top\beta$ is positive for every case with $y_i = 1$ and negative for every case with $y_i = 0$.
+
+- Multiplying such a $\beta$ by a larger and larger constant pushes every fitted probability towards its observed $0$ or $1$, so the likelihood keeps increasing and the **MLE does not exist**
+- `glm` stops after a fixed number of iterations with very large coefficients (here up to about $60$ in absolute value) and warns that the algorithm did not converge and fitted probabilities are numerically $0$ or $1$
+
+A Bayesian fit always has a proper posterior, but now **the prior matters a great deal**.
+
+## Example 9: The Horseshoe Prior {.smaller}
+
+A vague prior such as $\beta_j\sim N(0,2.5^2)$ lets all 48 null coefficients wander, and their sum swamps the signal. We want a prior that says *most coefficients are near 0, but a few may be large*. The **horseshoe prior** does this with two levels of scale:
+$$\beta_j = \tau\,\lambda_j\,z_j, \qquad z_j\sim N(0,1), \qquad \lambda_j\sim\text{Cauchy}^+(0,1), \qquad \tau\sim\text{Cauchy}^+(0,0.1)$$
+
+where $\text{Cauchy}^+$ is the Cauchy distribution restricted to positive values.
+
+- The **global** scale $\tau$ is small, so it shrinks every coefficient strongly towards $0$
+- The **local** scale $\lambda_j$ has a heavy tail, so a coefficient that the data support can take a large $\lambda_j$ and escape the shrinkage
+- The intercept gets $\alpha\sim N(0,5^2)$
+
+**Computation.** Writing $\beta_j$ as a product with a standard normal $z_j$ is the **non-centred** form. A smaller step size (`adapt_delta = 0.995`) helps NUTS handle the very different scales of $\tau$ and the $\lambda_j$, which otherwise cause many divergent transitions. A Gibbs sampler for this posterior would need new derivations; in Stan it is a few lines.
+
+## Example 9: Stan Models {.smaller}
+
+:::: {.columns}
+::: {.column width="50%"}
+```{r}
+#| label: stan-model-logit
+#| echo: true
+stan_logit_hs_code <- "
+data {
+  int<lower=0> n;
+  int<lower=1> p;
+  matrix[n, p] X;
+  array[n] int<lower=0, upper=1> y;
+}
+parameters {
+  real alpha;
+  real<lower=0> tau;           // global
+  vector<lower=0>[p] lambda;   // local
+  vector[p] z;
+}
+transformed parameters {
+  vector[p] beta = tau * lambda .* z;
+}
+model {
+  alpha ~ normal(0, 5);
+  tau ~ cauchy(0, 0.1);
+  lambda ~ cauchy(0, 1);
+  z ~ std_normal();
+  y ~ bernoulli_logit(alpha + X * beta);
+}
+"
+```
+:::
+::: {.column width="50%"}
+```{r}
+#| label: stan-model-logit-normal
+#| echo: true
+### vague normal prior, for comparison
+stan_logit_normal_code <- "
+data {
+  int<lower=0> n;
+  int<lower=1> p;
+  matrix[n, p] X;
+  array[n] int<lower=0, upper=1> y;
+}
+parameters {
+  real alpha;
+  vector[p] beta;
+}
+model {
+  alpha ~ normal(0, 5);
+  beta ~ normal(0, 2.5);
+  y ~ bernoulli_logit(alpha + X * beta);
+}
+"
+```
+:::
+::::
+
+## Example 9: Data and Fits
+
+```{r}
+#| label: stan-fit-logit
+#| echo: true
+#| cache: true
+#| message: false
+#| warning: false
+set.seed(2024)
+n_lr <- 100; p_lr <- 50
+X_lr <- matrix(rnorm(n_lr * p_lr), n_lr, p_lr)
+beta_true <- c(1, -1, rep(0, p_lr - 2))
+y_lr <- rbinom(n_lr, 1, plogis(drop(X_lr %*% beta_true)))
+data_lr <- list(n = n_lr, p = p_lr, X = X_lr, y = y_lr)
+fit_logit <- stan(model_code = stan_logit_hs_code, data = data_lr,
+                  chains = 4, iter = 3000, warmup = 1000, seed = 9, refresh = 0,
+                  control = list(adapt_delta = 0.995))
+fit_logit_normal <- stan(model_code = stan_logit_normal_code, data = data_lr,
+                         chains = 4, iter = 2000, warmup = 1000, seed = 9, refresh = 0)
+```
+
+## Example 9: Horseshoe Posterior {.smaller}
+
+:::: {.columns}
+::: {.column width="55%"}
+```{r}
+#| label: table-stan-logit
+sm_logit <- summary(fit_logit, pars = sprintf("beta[%d]", 1:10))$summary
+knitr::kable(data.frame(
+    coef = sprintf("beta[%d]", 1:10), true = beta_true[1:10],
+    mean = sm_logit[, "mean"], q025 = sm_logit[, "2.5%"], q975 = sm_logit[, "97.5%"],
+    Rhat = sm_logit[, "Rhat"], row.names = NULL),
+    digits = c(0, 0, 2, 2, 2, 3),
+    col.names = c("coef", "true", "mean", "2.5%", "97.5%", "Rhat"), align = c("l", rep("r", 5)))
+```
+:::
+::: {.column width="45%"}
+```{r}
+#| label: plot-stan-logit
+#| fig-width: 6.5
+#| fig-height: 5.5
+draws_beta <- as.matrix(fit_logit, pars = "beta")
+par(mfrow = c(2, 2), mar = c(4, 4, 2.5, 1))
+for (j in 1:4) {
+    hist(draws_beta[, j], breaks = 60, freq = FALSE, col = "gray80", border = "white",
+         xlim = range(c(quantile(draws_beta[, j], c(0.001, 0.999)), 0, beta_true[j])),
+         main = bquote(beta[.(j)] ~ "(true value" ~ .(beta_true[j]) * ")"), xlab = bquote(beta[.(j)]))
+    abline(v = beta_true[j], col = "firebrick", lwd = 2.5); abline(v = 0, lty = 2)
+}
+```
+Red line: true value; dashed: $0$.
+:::
+::::
+
+The null coefficients are shrunk tightly around $0$; the two signals escape the shrinkage, with posterior means near $1$ and $-1$ and 95% intervals excluding $0$. $\hat R\approx1$: the chains have mixed.
+
+## Example 9: Prediction on Test Data {.smaller}
+
+$m = 1000$ new test cases from the same design. The **posterior predictive probability** averages over the $S$ posterior draws:
+$$
+\begin{aligned}
+P(\tilde y = 1\mid\tilde x,\text{data}) &= \int\text{logit}^{-1}(\alpha+\tilde x^\top\beta)\,p(\alpha,\beta\mid\text{data})\,d(\alpha,\beta) \\
+&\approx\frac1S\sum_{s=1}^S\text{logit}^{-1}\big(\alpha^{(s)}+\tilde x^\top\beta^{(s)}\big)
+\end{aligned}
+$$
+
+Scores: **test deviance** $-2\sum_i\log\hat P(\tilde y_i)$ (smaller is better; predicting $0.5$ always gives $2m\log2\approx1386.3$) and **error rate** of $\hat y_i = 1\{\hat p_i>0.5\}$.
+
+```{r}
+#| label: logit-predict
+#| echo: true
+set.seed(2025)
+m_test <- 1000
+X_test <- matrix(rnorm(m_test * p_lr), m_test, p_lr)
+y_test <- rbinom(m_test, 1, plogis(drop(X_test %*% beta_true)))
+post_pred <- function(fit) {                 # average logit^{-1}(alpha + x beta) over the draws
+    a <- as.matrix(fit, pars = "alpha")[, 1]; b <- as.matrix(fit, pars = "beta")
+    colMeans(plogis(sweep(b %*% t(X_test), 1, a, "+")))
+}
+fit_glm <- suppressWarnings(glm(y ~ ., family = binomial, data = data.frame(y = y_lr, X_lr)))
+methods <- list(
+    "Bayes, horseshoe prior"   = post_pred(fit_logit),
+    "Bayes, N(0, 2.5^2) prior" = post_pred(fit_logit_normal),
+    "glm (MLE)"          = suppressWarnings(predict(fit_glm, newdata = data.frame(X_test), type = "response")),
+    "true probabilities" = plogis(drop(X_test %*% beta_true)))
+test_deviance <- function(p, y) -2 * sum(dbinom(y, 1, p, log = TRUE))
+error_rate    <- function(p, y) mean((p > 0.5) != y)
+```
+
+## Example 9: Test-Set Results {.smaller}
+
+```{r}
+#| label: table-logit-scores
+conf <- t(sapply(methods, function(p) {
+    cm <- table(factor(as.integer(p > 0.5), 0:1), y_test)
+    c(cm["0", "0"], cm["1", "0"], cm["0", "1"], cm["1", "1"]) }))
+knitr::kable(data.frame(
+    method = names(methods), conf,
+    deviance = sapply(methods, test_deviance, y = y_test),
+    error = sapply(methods, error_rate, y = y_test), row.names = NULL),
+    digits = c(0, 0, 0, 0, 0, 1, 3),
+    col.names = c("method", "pred 0 | actual 0", "pred 1 | actual 0", "pred 0 | actual 1", "pred 1 | actual 1",
+                  "test deviance", "error rate"),
+    align = c("l", rep("r", 6)))
+```
+
+- `glm` predicts badly: its fitted probabilities are almost all $0$ or $1$, so every wrong prediction costs a huge $-2\log\hat P(\tilde y_i)$, and its test deviance is about `r round(test_deviance(methods[["glm (MLE)"]], y_test) / 1386.3)` times the $1386.3$ of always predicting $0.5$
+- A Bayesian fit is not automatically better: with the vague normal prior the test deviance is also worse than that baseline
+- The horseshoe prior, which encodes the belief that only a few predictors matter, comes close to the true probabilities
+
+When the number of predictors is a large fraction of the number of cases, **the prior is not a detail to be made as vague as possible but the part of the model that makes good prediction possible**.
 
 ## Summary {.smaller}
 
-- A Markov chain with transition $T$ converges to its equilibrium $\pi$ from any start if $T$ leaves $\pi$ invariant and is irreducible and aperiodic; **detailed balance** $\pi(\theta)T(\theta,\theta^T) = \pi(\theta^T)T(\theta^T,\theta)$ is the practical way to guarantee invariance
-- MCMC: design $T$ for the target posterior, run it, discard burn-in, and average the dependent draws; $\text{Var}(\bar\theta)\approx\sigma^2(1+2\sum_k\rho_k)/T$, so autocorrelation, not just chain length, governs accuracy
-- **Gibbs sampling**: update each coordinate from its full conditional; automatic when the model is conditionally conjugate; data augmentation adds latent variables to make conditionals standard
-- **Metropolis–Hastings**: propose from any $\tilde T$, accept with probability $\min\{\pi(\theta^*)\tilde T(\theta\mid\theta^*)/[\pi(\theta)\tilde T(\theta^*\mid\theta)],1\}$; random-walk proposals need a tuned step size (acceptance $\approx0.25$–$0.45$); transform bounded parameters and include the Jacobian
-- **Metropolis-within-Gibbs** combines the two: MH for the blocks without closed-form conditionals
-- **Hamiltonian Monte Carlo** adds momentum and follows gradient-driven trajectories (leapfrog + Metropolis correction), giving distant proposals with high acceptance and nearly independent draws; the default in modern software (Stan)
+- A Markov chain with transition $T$ converges to $\pi$ from any start if $T$ leaves $\pi$ **invariant** and is irreducible and aperiodic; **detailed balance** $\pi(\theta)T(\theta\to\theta') = \pi(\theta')T(\theta'\to\theta)$ is the pairwise route to invariance, and solving it finds the equilibrium of a given chain (cyclic walk: uniform; reflecting walk: $2^i/1023$)
+- MCMC: design $T$ for the target, run it, discard burn-in, and average the dependent draws; $\text{Var}(\bar\theta)\approx\sigma^2(1+2\sum_k\rho_k)/T$, so autocorrelation governs accuracy
+- **Gibbs sampling**: exact draws from each full conditional; no tuning, but needs sample-able conditionals; **data augmentation** (censored values, latent variances) makes them standard
+- **Metropolis–Hastings**: propose from any $\tilde T$, accept with probability $\min\{\pi(\theta^*)\tilde T(\theta\mid\theta^*)/[\pi(\theta)\tilde T(\theta^*\mid\theta)],1\}$; tune the step size for low autocorrelation; transform bounded parameters and include the Jacobian; combine with Gibbs block by block
+- **Hamiltonian Monte Carlo**: momentum plus gradient-driven leapfrog trajectories with a Metropolis correction, giving distant, nearly independent proposals on correlated targets
+- **Stan** automates gradients and adaptive HMC (NUTS): the model statement replaces the derivations, and on hard models (horseshoe logistic regression) it makes a careful Bayesian analysis practical
