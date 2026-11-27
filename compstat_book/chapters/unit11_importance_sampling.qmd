@@ -194,27 +194,64 @@ If the weights are all equal (the proposal has the shape of the target),
 $\hat w^\star_i = 1$ and $n_{\text{eff}} = n$: full efficiency. If one weight
 dominates, $n_{\text{eff}}\approx1$: only one draw is doing any work.
 
-**Where the formula comes from.** Write $\hat A$ as a ratio of averages and
-apply the delta method. To first order,
+### Derivation of ESS
+
+The normalizing constants cancel in $\hat A$: multiplying every $w_i$ by the
+same constant leaves $\hat A$ unchanged. So, without loss of generality,
+assume $f(\theta)$ and $g(\theta)$ are both normalized densities. Then
+$w(\theta) = w^\star(\theta)$, $E_g[w(\theta)] = 1$, and for any function
+$h(\theta)$,
 $$
-\operatorname{Var}_g(\hat A) \approx \frac{1}{n}E_g\!\bigl[w^\star(\theta)^{2}\,(a(\theta)-A)^{2}\bigr]
-= \frac{1}{n}E_f\!\bigl[w^\star(\theta)\,(a(\theta)-A)^{2}\bigr],
+E_g\big[w(\theta)\,h(\theta)\big] = \int h(\theta)\frac{f(\theta)}{g(\theta)}\,g(\theta)\,d\theta = E_f\big[h(\theta)\big].
 $$
-using $E_g[w^\star(\theta)\,h(\theta)] = E_f[h(\theta)]$. If $w^\star(\theta)$
-varies little where $(a(\theta)-A)^2$ has most of its mass, the expectation
-roughly factors as $E_f[w^\star(\theta)]\operatorname{Var}_f(a(\theta)) =
-E_g[w^\star(\theta)^2]\operatorname{Var}_f(a(\theta))$, so
+The derivation then takes five short steps.
+
+1. **Write the error as a ratio.** Since $A$ is a constant,
 $$
-\operatorname{Var}_g(\hat A) \approx \frac{\operatorname{Var}_f\big(a(\theta)\big)}{n_{\text{eff}}^{\star}}, \qquad
-n_{\text{eff}}^{\star} = \frac{n}{E_g\big[w^\star(\theta)^{2}\big]} .
+\hat A - A = \frac{\frac1n\sum_i w_i\,a(\theta_i)}{\frac1n\sum_i w_i} - A
+= \frac{\frac1n\sum_i w_i\,\big(a(\theta_i)-A\big)}{\frac1n\sum_i w_i}.
 $$
-This is the variance of an average of $n^\star_{\text{eff}}$ iid draws from
-$f(\theta)/C_f$ itself. The population ESS $n^\star_{\text{eff}}$ is a
-property of $f(\theta)$ and $g(\theta)$ alone, independent of $a(\theta)$.
-Replacing $E_g[w^\star(\theta)^2]$ by the sample average of
-$(\hat w^\star_i)^2$ gives exactly the $n_{\text{eff}}$ above, also known as
-Kish's formula. So $n_{\text{eff}}$ is a plug-in estimate of
-$n^\star_{\text{eff}}$, not an ad hoc heuristic.
+
+2. **Delta method.** The denominator converges to $E_g[w(\theta)] = 1$.
+Replacing it by its limit is the first-order (delta-method) approximation,
+and the only place the delta method enters:
+$$
+\hat A - A \approx \frac1n\sum_{i=1}^n Z_i, \qquad Z_i = w_i\,\big(a(\theta_i)-A\big).
+$$
+The $Z_i$ are iid with mean $E_g[Z] = E_f[a(\theta)-A] = 0$.
+
+3. **Variance of an iid mean.**
+$$
+\operatorname{Var}(\hat A) \approx \frac1n E_g\big[Z^2\big]
+= \frac1n E_g\Big[w(\theta)^2\big(a(\theta)-A\big)^2\Big]
+= \frac1n E_f\Big[w(\theta)\big(a(\theta)-A\big)^2\Big].
+$$
+
+4. **Assume $w(\theta)$ and $(a(\theta)-A)^2$ are uncorrelated under $f$.**
+The expectation then factors, and $E_f[w(\theta)] = E_g[w(\theta)^2]$ by the
+identity above:
+$$
+E_f\Big[w(\theta)\big(a(\theta)-A\big)^2\Big] \approx E_f\big[w(\theta)\big]\operatorname{Var}_f\big(a(\theta)\big)
+= E_g\big[w(\theta)^2\big]\operatorname{Var}_f\big(a(\theta)\big).
+$$
+
+5. **Match an iid sample from $f$.** An average of $m$ iid draws from $f$
+has variance $\operatorname{Var}_f(a(\theta))/m$. Matching,
+$$
+\operatorname{Var}(\hat A) \approx \frac{\operatorname{Var}_f\big(a(\theta)\big)}{n/E_g[w(\theta)^2]}
+\quad\Longrightarrow\quad
+n_{\text{eff}}^\star = \frac{n}{E_g\big[w^\star(\theta)^2\big]} = \frac{n}{1+\operatorname{Var}_g\big(w^\star(\theta)\big)} \le n.
+$$
+
+The population ESS $n^\star_{\text{eff}}$ is a property of $f(\theta)$ and
+$g(\theta)$ alone, independent of $a(\theta)$. Replacing $E_g[w^\star(\theta)^2]$
+by the sample average of $(\hat w^\star_i)^2$ (which restores mean 1 in the
+sample) gives exactly the $n_{\text{eff}}$ above, also known as Kish's
+formula. So $n_{\text{eff}}$ is a plug-in estimate of $n^\star_{\text{eff}}$,
+not an ad hoc heuristic. Step 4 is the only real approximation; the next
+section shows an example where it fails. The derivation also assumes the
+support condition: if $g(\theta)$ misses part of $f(\theta)$, then
+$E_g[w^\star(\theta)]<1$ and step 2 already fails.
 
 ```{r}
 #| label: ess-helpers
@@ -441,15 +478,15 @@ crescent_is <- function(proposal, n, seed) {
     set.seed(seed)
     if (proposal == "box") {
         x <- runif(n, xlim[1], xlim[2]); y <- runif(n, ylim[1], ylim[2])
-        g <- 1 / ((xlim[2] - xlim[1]) * (ylim[2] - ylim[1]))   # g = I_B / |B|
+        Cg <- (xlim[2] - xlim[1]) * (ylim[2] - ylim[1])        # C_g = |B|
     } else {
         rr <- r1 * sqrt(runif(n)); th <- runif(n, 0, 2 * pi)
         x <- rr * cos(th); y <- rr * sin(th)
-        g <- 1 / (pi * r1^2)
+        Cg <- pi * r1^2                                        # C_g = |D_1|
     }
-    w <- in_A(x, y) / g                                        # = |B| I_A(theta_i)
-    list(x = x, y = y, hit = in_A(x, y),
-         estimate = mean(w), me = 1.96 * sd(w) / sqrt(n), ess = ess(w))
+    w <- in_A(x, y)                                            # w = f/g = I_A(theta_i)
+    list(x = x, y = y, hit = w,
+         estimate = Cg * mean(w), me = 1.96 * Cg * sd(w) / sqrt(n), ess = ess(w))
 }
 ```
 
